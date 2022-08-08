@@ -5,15 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/docker/distribution/registry/storage"
+	"github.com/jitsucom/bulker/base/coordination"
+	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/timestamp"
+	"github.com/jitsucom/bulker/base/utils"
+	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/jitsucom/bulker/errorj"
-	"github.com/jitsucom/bulker/logging"
-	"github.com/jitsucom/bulker/timestamp"
 	"github.com/jitsucom/bulker/types"
-	"github.com/jitsucom/jitsu/server/adapters"
-	"github.com/jitsucom/jitsu/server/drivers/base"
-	"github.com/jitsucom/jitsu/server/typing"
-	"github.com/jitsucom/jitsu/server/uuid"
 	"math"
 	"sort"
 	"strconv"
@@ -66,13 +64,13 @@ WHERE tco.constraint_type = 'PRIMARY KEY' AND
 )
 
 var (
-	SchemaToPostgres = map[typing.DataType]string{
-		typing.STRING:    "text",
-		typing.INT64:     "bigint",
-		typing.FLOAT64:   "double precision",
-		typing.TIMESTAMP: "timestamp",
-		typing.BOOL:      "boolean",
-		typing.UNKNOWN:   "text",
+	SchemaToPostgres = map[types.DataType]string{
+		types.STRING:    "text",
+		types.INT64:     "bigint",
+		types.FLOAT64:   "double precision",
+		types.TIMESTAMP: "timestamp",
+		types.BOOL:      "boolean",
+		types.UNKNOWN:   "text",
 	}
 )
 
@@ -121,10 +119,9 @@ func (ep *ErrorPayload) String() string {
 	if len(ep.PrimaryKeys) > 0 {
 		msgParts = append(msgParts, fmt.Sprintf("primary keys: %v", ep.PrimaryKeys))
 	}
-	//TODO: uncomment
-	//if ep.Statement != "" {
-	//	msgParts = append(msgParts, fmt.Sprintf("statement: %s", utils.ShortenStringWithEllipsis(ep.Statement, 1000)))
-	//}
+	if ep.Statement != "" {
+		msgParts = append(msgParts, fmt.Sprintf("statement: %s", utils.ShortenStringWithEllipsis(ep.Statement, 1000)))
+	}
 	if len(ep.Values) > 0 {
 		msgParts = append(msgParts, fmt.Sprintf("values: %v", ep.Values))
 	}
@@ -254,43 +251,41 @@ func NewPostgres(ctx context.Context, config *DataSourceConfig, queryLogger *log
 }
 
 // syncStoreImpl implements common behaviour used to storing chunk of pulled data to any storages with processing
-func (Postgres) SyncStoreImpl(table *types.Table, objects []map[string]interface{}, deleteConditions *base.DeleteConditions, cacheTable bool, needCopyEvent bool) error {
+func (p *Postgres) SyncStoreImpl(table *types.Table, objects []map[string]interface{}, deleteConditions *types.DeleteConditions, cacheTable bool, needCopyEvent bool) error {
 	if len(objects) == 0 {
 		return nil
 	}
+	//TODO: storage.ID()
+	storageId := "123"
+	config := p.config
+	tableHelper := NewTableHelper(config.Schema, p, coordination.DummyCoordinationService{}, map[string]bool{}, SchemaToPostgres, 100, "postgres")
 
-	adapter, tableHelper := storage.getAdapters()
+	//flatDataPerTable, err := processData(storage, overriddenDataSchema, objects, "", needCopyEvent)
+	//if err != nil {
+	//	return err
+	//}
 
-	flatDataPerTable, err := processData(storage, overriddenDataSchema, objects, "", needCopyEvent)
+	if deleteConditions == nil {
+		deleteConditions = &types.DeleteConditions{}
+	}
+
+	_, err := tableHelper.EnsureTable(storageId, table, cacheTable)
 	if err != nil {
 		return err
 	}
 
-	if deleteConditions == nil {
-		deleteConditions = &base.DeleteConditions{}
+	start := timestamp.Now()
+	//TODO: detect when merge is not necessary (full sync) and set merge to false. Implement it in adapters
+	if err = p.insertBatch(table, objects, deleteConditions); err != nil {
+		return err
 	}
-
-	for _, flatData := range flatDataPerTable {
-		table := tableHelper.MapTableSchema(flatData.BatchHeader)
-
-		dbSchema, err := tableHelper.EnsureTable(storage.ID(), table, cacheTable)
-		if err != nil {
-			return err
-		}
-
-		start := timestamp.Now()
-		//TODO: detect when merge is not necessary (full sync) and set merge to false. Implement it in adapters
-		if err = adapter.Insert(adapters.NewBatchInsertContext(dbSchema, flatData.GetPayload(), true, deleteConditions)); err != nil {
-			return err
-		}
-		logging.Debugf("[%s] Inserted [%d] rows in [%.2f] seconds", storage.ID(), flatData.GetPayloadLen(), timestamp.Now().Sub(start).Seconds())
-	}
+	logging.Debugf("[%s] Inserted [%d] rows in [%.2f] seconds", storageId, len(objects), timestamp.Now().Sub(start).Seconds())
 
 	return nil
 }
 
 //Type returns Postgres type
-func (Postgres) Type() string {
+func (p *Postgres) Type() string {
 	return "Postgres"
 }
 
@@ -390,8 +385,7 @@ func (p *Postgres) GetTableSchema(tableName string) (*types.Table, error) {
 
 	jitsuPrimaryKeyName := types.BuildConstraintName(table.Schema, table.Name)
 	if primaryKeyName != "" && primaryKeyName != jitsuPrimaryKeyName {
-		//TODO: uncomment
-		//logging.Warnf("[%s] table: %s.%s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", p.destinationId(), table.Schema, table.Name, primaryKeyName)
+		logging.Warnf("[%s] table: %s.%s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", p.destinationId(), table.Schema, table.Name, primaryKeyName)
 	}
 	return table, nil
 }
@@ -405,7 +399,7 @@ func (p *Postgres) GetTableSchema(tableName string) (*types.Table, error) {
 //	}
 //}
 
-func (p *Postgres) insertBatch(table *types.Table, objects []map[string]interface{}, deleteConditions *base.DeleteConditions) (err error) {
+func (p *Postgres) insertBatch(table *types.Table, objects []map[string]interface{}, deleteConditions *types.DeleteConditions) (err error) {
 	wrappedTx, err := p.OpenTx()
 	if err != nil {
 		return err
@@ -912,7 +906,7 @@ func (p *Postgres) renameTableInTransaction(wrappedTx *Transaction, ifExists boo
 	return nil
 }
 
-func (p *Postgres) deleteInTransaction(wrappedTx *Transaction, table *types.Table, deleteConditions *base.DeleteConditions) error {
+func (p *Postgres) deleteInTransaction(wrappedTx *Transaction, table *types.Table, deleteConditions *types.DeleteConditions) error {
 	deleteCondition, values := p.toDeleteQuery(table, deleteConditions)
 	query := fmt.Sprintf(deleteQueryTemplate, p.config.Schema, table.Name, deleteCondition)
 	p.queryLogger.LogQueryWithValues(query, values)
@@ -931,14 +925,14 @@ func (p *Postgres) deleteInTransaction(wrappedTx *Transaction, table *types.Tabl
 	return nil
 }
 
-func (p *Postgres) toDeleteQuery(table *types.Table, conditions *base.DeleteConditions) (string, []interface{}) {
+func (p *Postgres) toDeleteQuery(table *types.Table, conditions *types.DeleteConditions) (string, []interface{}) {
 	var queryConditions []string
 	var values []interface{}
 
 	for i, condition := range conditions.Conditions {
 		conditionString := condition.Field + " " + condition.Clause + " $" + strconv.Itoa(i+1) + p.getCastClause(condition.Field, table.Columns[condition.Field])
 		queryConditions = append(queryConditions, conditionString)
-		values = append(values, typing.ReformatValue(condition.Value))
+		values = append(values, types.ReformatValue(condition.Value))
 	}
 
 	return strings.Join(queryConditions, " "+conditions.JoinCondition+" "), values
@@ -1117,19 +1111,19 @@ func (p *Postgres) destinationId() interface{} {
 //reformatMappings handles old (deprecated) mapping types //TODO remove someday
 //put sql types as is
 //if mapping type is inner => map with sql type
-func reformatMappings(mappingTypeCasts types.SQLTypes, dbTypes map[typing.DataType]string) types.SQLTypes {
+func reformatMappings(mappingTypeCasts types.SQLTypes, dbTypes map[types.DataType]string) types.SQLTypes {
 	formattedSqlTypes := types.SQLTypes{}
 	for column, sqlType := range mappingTypeCasts {
-		var columnType, columnStatement typing.DataType
+		var columnType, columnStatement types.DataType
 		var err error
 
-		columnType, err = typing.TypeFromString(sqlType.Type)
+		columnType, err = types.TypeFromString(sqlType.Type)
 		if err != nil {
 			formattedSqlTypes[column] = sqlType
 			continue
 		}
 
-		columnStatement, err = typing.TypeFromString(sqlType.ColumnType)
+		columnStatement, err = types.TypeFromString(sqlType.ColumnType)
 		if err != nil {
 			formattedSqlTypes[column] = sqlType
 			continue

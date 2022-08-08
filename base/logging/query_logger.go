@@ -8,13 +8,6 @@ import (
 )
 
 const (
-	errPrefix   = "[ERROR]:"
-	warnPrefix  = "[WARN]:"
-	infoPrefix  = "[INFO]:"
-	debugPrefix = "[DEBUG]:"
-
-	GlobalType = "global"
-
 	DDLLogerType      = "ddl-debug"
 	QueriesLoggerType = "sql-debug"
 )

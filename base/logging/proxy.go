@@ -1,7 +1,7 @@
 package logging
 
 import (
-	"github.com/jitsucom/bulker/timestamp"
+	"github.com/jitsucom/jitsu/server/timestamp"
 	"io"
 )
 

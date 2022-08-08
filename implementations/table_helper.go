@@ -3,16 +3,13 @@ package implementations
 import (
 	"errors"
 	"fmt"
-	"github.com/jitsucom/jitsu/server/coordination"
-	"github.com/jitsucom/jitsu/server/locks"
+	"github.com/jitsucom/bulker/base/coordination"
+	"github.com/jitsucom/bulker/base/locks"
+	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/bulker"
+	"github.com/jitsucom/bulker/types"
 	"sync"
 	"time"
-
-	"github.com/jitsucom/jitsu/server/adapters"
-	"github.com/jitsucom/jitsu/server/logging"
-	"github.com/jitsucom/jitsu/server/notifications"
-	"github.com/jitsucom/jitsu/server/schema"
-	"github.com/jitsucom/jitsu/server/typing"
 )
 
 const tableLockTimeout = time.Minute
@@ -23,12 +20,12 @@ const tableLockTimeout = time.Minute
 type TableHelper struct {
 	sync.RWMutex
 
-	sqlAdapter          adapters.SQLAdapter
-	coordinationService *coordination.Service
-	tables              map[string]*adapters.Table
+	sqlAdapter          bulker.SQLAdapter
+	coordinationService coordination.Service
+	tables              map[string]*types.Table
 
 	pkFields           map[string]bool
-	columnTypesMapping map[typing.DataType]string
+	columnTypesMapping map[types.DataType]string
 
 	dbSchema        string
 	destinationType string
@@ -38,13 +35,13 @@ type TableHelper struct {
 
 //NewTableHelper returns configured TableHelper instance
 //Note: columnTypesMapping must be not empty (or fields will be ignored)
-func NewTableHelper(dbSchema string, sqlAdapter adapters.SQLAdapter, coordinationService *coordination.Service, pkFields map[string]bool,
-	columnTypesMapping map[typing.DataType]string, maxColumns int, destinationType string) *TableHelper {
+func NewTableHelper(dbSchema string, sqlAdapter bulker.SQLAdapter, coordinationService coordination.Service, pkFields map[string]bool,
+	columnTypesMapping map[types.DataType]string, maxColumns int, destinationType string) *TableHelper {
 
 	return &TableHelper{
 		sqlAdapter:          sqlAdapter,
 		coordinationService: coordinationService,
-		tables:              map[string]*adapters.Table{},
+		tables:              map[string]*types.Table{},
 
 		pkFields:           pkFields,
 		columnTypesMapping: columnTypesMapping,
@@ -55,20 +52,20 @@ func NewTableHelper(dbSchema string, sqlAdapter adapters.SQLAdapter, coordinatio
 	}
 }
 
-//MapTableSchema maps schema.BatchHeader (JSON structure with json data types) into adapters.Table (structure with SQL types)
+//MapTableSchema maps types.BatchHeader (JSON structure with json data types) into types.Table (structure with SQL types)
 //applies column types mapping
-func (th *TableHelper) MapTableSchema(batchHeader *schema.BatchHeader) *adapters.Table {
-	table := &adapters.Table{
+func (th *TableHelper) MapTableSchema(batchHeader *types.BatchHeader) *types.Table {
+	table := &types.Table{
 		Schema:    th.dbSchema,
 		Name:      batchHeader.TableName,
-		Columns:   adapters.Columns{},
+		Columns:   types.Columns{},
 		Partition: batchHeader.Partition,
 		PKFields:  th.pkFields,
 	}
 
 	//pk fields from the configuration
 	if len(th.pkFields) > 0 {
-		table.PrimaryKeyName = adapters.BuildConstraintName(table.Schema, table.Name)
+		table.PrimaryKeyName = types.BuildConstraintName(table.Schema, table.Name)
 	}
 
 	for fieldName, field := range batchHeader.Fields {
@@ -81,7 +78,7 @@ func (th *TableHelper) MapTableSchema(batchHeader *schema.BatchHeader) *adapters
 		//map Jitsu type -> SQL type
 		sqlType, ok := th.columnTypesMapping[field.GetType()]
 		if ok {
-			table.Columns[fieldName] = typing.SQLColumn{Type: sqlType}
+			table.Columns[fieldName] = types.SQLColumn{Type: sqlType}
 		} else {
 			logging.SystemErrorf("Unknown column type mapping for %s mapping: %v", field.GetType(), th.columnTypesMapping)
 		}
@@ -92,13 +89,13 @@ func (th *TableHelper) MapTableSchema(batchHeader *schema.BatchHeader) *adapters
 
 //EnsureTableWithCaching calls EnsureTable with cacheTable = true
 //it is used in stream destinations (because we don't have time to select table schema, but there is retry on error)
-func (th *TableHelper) EnsureTableWithCaching(destinationID string, dataSchema *adapters.Table) (*adapters.Table, error) {
+func (th *TableHelper) EnsureTableWithCaching(destinationID string, dataSchema *types.Table) (*types.Table, error) {
 	return th.EnsureTable(destinationID, dataSchema, true)
 }
 
 //EnsureTableWithoutCaching calls EnsureTable with cacheTable = true
 //it is used in batch destinations and syncStore (because we have time to select table schema)
-func (th *TableHelper) EnsureTableWithoutCaching(destinationID string, dataSchema *adapters.Table) (*adapters.Table, error) {
+func (th *TableHelper) EnsureTableWithoutCaching(destinationID string, dataSchema *types.Table) (*types.Table, error) {
 	return th.EnsureTable(destinationID, dataSchema, false)
 }
 
@@ -106,8 +103,8 @@ func (th *TableHelper) EnsureTableWithoutCaching(destinationID string, dataSchem
 //if table doesn't exist - create a new one and increment version
 //if exists - calculate diff, patch existing one with diff and increment version
 //returns actual db table schema (with actual db types)
-func (th *TableHelper) EnsureTable(destinationID string, dataSchema *adapters.Table, cacheTable bool) (*adapters.Table, error) {
-	var dbSchema *adapters.Table
+func (th *TableHelper) EnsureTable(destinationID string, dataSchema *types.Table, cacheTable bool) (*types.Table, error) {
+	var dbSchema *types.Table
 	var err error
 
 	if cacheTable {
@@ -140,7 +137,7 @@ func (th *TableHelper) EnsureTable(destinationID string, dataSchema *adapters.Ta
 }
 
 //patchTable locks table, get from DWH and patch
-func (th *TableHelper) patchTableWithLock(destinationID string, dataSchema *adapters.Table) (*adapters.Table, error) {
+func (th *TableHelper) patchTableWithLock(destinationID string, dataSchema *types.Table) (*types.Table, error) {
 	tableIdentifier := th.getTableIdentifier(destinationID, dataSchema.Name)
 	tableLock, err := th.lockTable(destinationID, dataSchema.Name, tableIdentifier)
 	if err != nil {
@@ -185,7 +182,7 @@ func (th *TableHelper) patchTableWithLock(destinationID string, dataSchema *adap
 	return dbSchema.Clone(), nil
 }
 
-func (th *TableHelper) getCachedTableSchema(destinationName string, dataSchema *adapters.Table) (*adapters.Table, error) {
+func (th *TableHelper) getCachedTableSchema(destinationName string, dataSchema *types.Table) (*types.Table, error) {
 	th.RLock()
 	dbSchema, ok := th.tables[dataSchema.Name]
 	th.RUnlock()
@@ -209,7 +206,7 @@ func (th *TableHelper) getCachedTableSchema(destinationName string, dataSchema *
 }
 
 //RefreshTableSchema force get (or create) db table schema and update it in-memory
-func (th *TableHelper) RefreshTableSchema(destinationName string, dataSchema *adapters.Table) (*adapters.Table, error) {
+func (th *TableHelper) RefreshTableSchema(destinationName string, dataSchema *types.Table) (*types.Table, error) {
 	dbTableSchema, err := th.getOrCreateWithLock(destinationName, dataSchema)
 	if err != nil {
 		return nil, err
@@ -224,7 +221,7 @@ func (th *TableHelper) RefreshTableSchema(destinationName string, dataSchema *ad
 }
 
 //lock table -> get existing schema -> create a new one if doesn't exist -> return schema with version
-func (th *TableHelper) getOrCreateWithLock(destinationID string, dataSchema *adapters.Table) (*adapters.Table, error) {
+func (th *TableHelper) getOrCreateWithLock(destinationID string, dataSchema *types.Table) (*types.Table, error) {
 	tableIdentifier := th.getTableIdentifier(destinationID, dataSchema.Name)
 	tableLock, err := th.lockTable(destinationID, dataSchema.Name, tableIdentifier)
 	if err != nil {
@@ -235,7 +232,7 @@ func (th *TableHelper) getOrCreateWithLock(destinationID string, dataSchema *ada
 	return th.getOrCreate(dataSchema)
 }
 
-func (th *TableHelper) getOrCreate(dataSchema *adapters.Table) (*adapters.Table, error) {
+func (th *TableHelper) getOrCreate(dataSchema *types.Table) (*types.Table, error) {
 	//Get schema
 	dbTableSchema, err := th.sqlAdapter.GetTableSchema(dataSchema.Name)
 	if err != nil {
@@ -263,7 +260,8 @@ func (th *TableHelper) lockTable(destinationID, tableName, tableIdentifier strin
 	locked, err := tableLock.TryLock(tableLockTimeout)
 	if err != nil {
 		msg := fmt.Sprintf("System error: Unable to lock destination [%s] table %s: %v", destinationID, tableName, err)
-		notifications.SystemError(msg)
+		//TODO: implement system error notification
+		//notifications.SystemError(msg)
 		return nil, errors.New(msg)
 	}
 

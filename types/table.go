@@ -23,7 +23,7 @@ type Table struct {
 	Columns        Columns
 	PKFields       map[string]bool
 	PrimaryKeyName string
-	//Partition      schema.DatePartition
+	Partition      DatePartition
 
 	DeletePkFields bool
 }
