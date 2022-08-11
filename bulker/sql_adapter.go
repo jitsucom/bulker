@@ -1,14 +1,24 @@
 package bulker
 
-import "github.com/jitsucom/bulker/types"
+import (
+	"github.com/jitsucom/bulker/types"
+)
 
-//SQLAdapter is a manager for DWH tables
+// SQLAdapter is a manager for DWH tables
 type SQLAdapter interface {
-	GetTableSchema(tableName string) (*types.Table, error)
-	CreateTable(schemaToCreate *types.Table) error
-	PatchTableSchema(schemaToAdd *types.Table) error
+	Type() string
+	GetConfig() *types.DataSourceConfig
+	//GetTypesMapping return mapping from generic types to SQL types specific for this database
+	GetTypesMapping() map[types.DataType]string
+	OpenTx() (*types.Transaction, error)
+	GetAutoCommitTx() *types.Transaction
+	Insert(wrappedTx types.TxOrDatasource, table *types.Table, merge bool, objects []types.Object) error
+	GetTableSchema(wrappedTx types.TxOrDatasource, tableName string) (*types.Table, error)
+	CreateTable(wrappedTx types.TxOrDatasource, schemaToCreate *types.Table) error
+	MergeTables(wrappedTx types.TxOrDatasource, targetTable *types.Table, sourceTable *types.Table) error
+	PatchTableSchema(wrappedTx types.TxOrDatasource, schemaToAdd *types.Table) error
 	//Truncate(tableName string) error
-	Update(table *types.Table, object map[string]interface{}, whereKey string, whereValue interface{}) error
-	DropTable(table *types.Table) (err error)
-	ReplaceTable(originalTable, replacementTable string, dropOldTable bool) error
+	Update(wrappedTx types.TxOrDatasource, table *types.Table, object map[string]interface{}, whereKey string, whereValue interface{}) error
+	DropTable(wrappedTx types.TxOrDatasource, table *types.Table, ifExists bool) error
+	ReplaceTable(wrappedTx types.TxOrDatasource, originalTable, replacementTable string, dropOldTable bool) error
 }

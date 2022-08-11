@@ -6,6 +6,7 @@ import (
 	"github.com/jitsucom/bulker/base/coordination"
 	"github.com/jitsucom/bulker/base/locks"
 	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 	"sync"
@@ -14,17 +15,18 @@ import (
 
 const tableLockTimeout = time.Minute
 
-//TableHelper keeps tables schema state inmemory and update it according to incoming new data
-//consider that all tables are in one destination schema.
-//note: Assume that after any outer changes in db we need to increment table version in Service
+// TableHelper keeps tables schema state inmemory and update it according to incoming new data
+// consider that all tables are in one destination schema.
+// note: Assume that after any outer changes in db we need to increment table version in Service
 type TableHelper struct {
 	sync.RWMutex
 
 	sqlAdapter          bulker.SQLAdapter
+	tx                  *types.Transaction
 	coordinationService coordination.Service
 	tables              map[string]*types.Table
 
-	pkFields           map[string]bool
+	pkFields           utils.Set
 	columnTypesMapping map[types.DataType]string
 
 	dbSchema        string
@@ -33,27 +35,28 @@ type TableHelper struct {
 	maxColumns      int
 }
 
-//NewTableHelper returns configured TableHelper instance
-//Note: columnTypesMapping must be not empty (or fields will be ignored)
-func NewTableHelper(dbSchema string, sqlAdapter bulker.SQLAdapter, coordinationService coordination.Service, pkFields map[string]bool,
-	columnTypesMapping map[types.DataType]string, maxColumns int, destinationType string) *TableHelper {
+// NewTableHelper returns configured TableHelper instance
+// Note: columnTypesMapping must be not empty (or fields will be ignored)
+func NewTableHelper(sqlAdapter bulker.SQLAdapter, tx *types.Transaction, coordinationService coordination.Service, pkFields utils.Set,
+	maxColumns int) *TableHelper {
 
 	return &TableHelper{
 		sqlAdapter:          sqlAdapter,
+		tx:                  tx,
 		coordinationService: coordinationService,
 		tables:              map[string]*types.Table{},
 
 		pkFields:           pkFields,
-		columnTypesMapping: columnTypesMapping,
+		columnTypesMapping: sqlAdapter.GetTypesMapping(),
 
-		dbSchema:        dbSchema,
-		destinationType: destinationType,
+		dbSchema:        sqlAdapter.GetConfig().Schema,
+		destinationType: sqlAdapter.Type(),
 		maxColumns:      maxColumns,
 	}
 }
 
-//MapTableSchema maps types.BatchHeader (JSON structure with json data types) into types.Table (structure with SQL types)
-//applies column types mapping
+// MapTableSchema maps types.BatchHeader (JSON structure with json data types) into types.Table (structure with SQL types)
+// applies column types mapping
 func (th *TableHelper) MapTableSchema(batchHeader *types.BatchHeader) *types.Table {
 	table := &types.Table{
 		Schema:    th.dbSchema,
@@ -87,28 +90,28 @@ func (th *TableHelper) MapTableSchema(batchHeader *types.BatchHeader) *types.Tab
 	return table
 }
 
-//EnsureTableWithCaching calls EnsureTable with cacheTable = true
-//it is used in stream destinations (because we don't have time to select table schema, but there is retry on error)
+// EnsureTableWithCaching calls EnsureTable with cacheTable = true
+// it is used in stream destinations (because we don't have time to select table schema, but there is retry on error)
 func (th *TableHelper) EnsureTableWithCaching(destinationID string, dataSchema *types.Table) (*types.Table, error) {
 	return th.EnsureTable(destinationID, dataSchema, true)
 }
 
-//EnsureTableWithoutCaching calls EnsureTable with cacheTable = true
-//it is used in batch destinations and syncStore (because we have time to select table schema)
+// EnsureTableWithoutCaching calls EnsureTable with cacheTable = true
+// it is used in batch destinations and syncStore (because we have time to select table schema)
 func (th *TableHelper) EnsureTableWithoutCaching(destinationID string, dataSchema *types.Table) (*types.Table, error) {
 	return th.EnsureTable(destinationID, dataSchema, false)
 }
 
-//EnsureTable returns DB table schema and err if occurred
-//if table doesn't exist - create a new one and increment version
-//if exists - calculate diff, patch existing one with diff and increment version
-//returns actual db table schema (with actual db types)
+// EnsureTable returns DB table schema and err if occurred
+// if table doesn't exist - create a new one and increment version
+// if exists - calculate diff, patch existing one with diff and increment version
+// returns actual db table schema (with actual db types)
 func (th *TableHelper) EnsureTable(destinationID string, dataSchema *types.Table, cacheTable bool) (*types.Table, error) {
 	var dbSchema *types.Table
 	var err error
 
 	if cacheTable {
-		dbSchema, err = th.getCachedTableSchema(destinationID, dataSchema)
+		dbSchema, err = th.getCachedOrCreateTableSchema(destinationID, dataSchema)
 	} else {
 		dbSchema, err = th.getOrCreateWithLock(destinationID, dataSchema)
 	}
@@ -136,7 +139,7 @@ func (th *TableHelper) EnsureTable(destinationID string, dataSchema *types.Table
 	return th.patchTableWithLock(destinationID, dataSchema)
 }
 
-//patchTable locks table, get from DWH and patch
+// patchTable locks table, get from DWH and patch
 func (th *TableHelper) patchTableWithLock(destinationID string, dataSchema *types.Table) (*types.Table, error) {
 	tableIdentifier := th.getTableIdentifier(destinationID, dataSchema.Name)
 	tableLock, err := th.lockTable(destinationID, dataSchema.Name, tableIdentifier)
@@ -156,7 +159,7 @@ func (th *TableHelper) patchTableWithLock(destinationID string, dataSchema *type
 		return dbSchema, nil
 	}
 
-	if err := th.sqlAdapter.PatchTableSchema(diff); err != nil {
+	if err := th.sqlAdapter.PatchTableSchema(th.tx, diff); err != nil {
 		return nil, err
 	}
 
@@ -171,7 +174,7 @@ func (th *TableHelper) patchTableWithLock(destinationID string, dataSchema *type
 	}
 	//remove pk fields if a deletion was
 	if diff.DeletePkFields {
-		dbSchema.PKFields = map[string]bool{}
+		dbSchema.PKFields = utils.Set{}
 	}
 
 	// Save data schema to local cache
@@ -182,7 +185,18 @@ func (th *TableHelper) patchTableWithLock(destinationID string, dataSchema *type
 	return dbSchema.Clone(), nil
 }
 
-func (th *TableHelper) getCachedTableSchema(destinationName string, dataSchema *types.Table) (*types.Table, error) {
+func (th *TableHelper) getCached(tableName string) (*types.Table, bool) {
+	th.RLock()
+	dbSchema, ok := th.tables[tableName]
+	th.RUnlock()
+
+	if ok {
+		return dbSchema.Clone(), ok
+	}
+	return nil, ok
+}
+
+func (th *TableHelper) getCachedOrCreateTableSchema(destinationName string, dataSchema *types.Table) (*types.Table, error) {
 	th.RLock()
 	dbSchema, ok := th.tables[dataSchema.Name]
 	th.RUnlock()
@@ -205,7 +219,7 @@ func (th *TableHelper) getCachedTableSchema(destinationName string, dataSchema *
 	return dbSchema.Clone(), nil
 }
 
-//RefreshTableSchema force get (or create) db table schema and update it in-memory
+// RefreshTableSchema force get (or create) db table schema and update it in-memory
 func (th *TableHelper) RefreshTableSchema(destinationName string, dataSchema *types.Table) (*types.Table, error) {
 	dbTableSchema, err := th.getOrCreateWithLock(destinationName, dataSchema)
 	if err != nil {
@@ -220,7 +234,14 @@ func (th *TableHelper) RefreshTableSchema(destinationName string, dataSchema *ty
 	return dbTableSchema, nil
 }
 
-//lock table -> get existing schema -> create a new one if doesn't exist -> return schema with version
+// ClearCache removes cached table schema for cache for provided table
+func (th *TableHelper) ClearCache(tableName string) {
+	th.Lock()
+	delete(th.tables, tableName)
+	th.Unlock()
+}
+
+// lock table -> get existing schema -> create a new one if doesn't exist -> return schema with version
 func (th *TableHelper) getOrCreateWithLock(destinationID string, dataSchema *types.Table) (*types.Table, error) {
 	tableIdentifier := th.getTableIdentifier(destinationID, dataSchema.Name)
 	tableLock, err := th.lockTable(destinationID, dataSchema.Name, tableIdentifier)
@@ -234,14 +255,14 @@ func (th *TableHelper) getOrCreateWithLock(destinationID string, dataSchema *typ
 
 func (th *TableHelper) getOrCreate(dataSchema *types.Table) (*types.Table, error) {
 	//Get schema
-	dbTableSchema, err := th.sqlAdapter.GetTableSchema(dataSchema.Name)
+	dbTableSchema, err := th.sqlAdapter.GetTableSchema(th.tx, dataSchema.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	//create new
 	if !dbTableSchema.Exists() {
-		if err := th.sqlAdapter.CreateTable(dataSchema); err != nil {
+		if err := th.sqlAdapter.CreateTable(th.tx, dataSchema); err != nil {
 			return nil, err
 		}
 

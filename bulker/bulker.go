@@ -1,6 +1,6 @@
 package bulker
 
-type Object map[string]interface{}
+import "github.com/jitsucom/bulker/types"
 
 type BulkMode int
 
@@ -14,54 +14,59 @@ const (
 	//Any error with just one object will fail the whole transaction and no objects will be written to the database
 	Transactional
 
-	//WholePartition mode manages virtual partitions in the target table based on chosen partition column.
-	// WholePartition stream replaces all rows associated with the chosen partition column value in a single transaction (where applicable).
+	//ReplacePartition stream replaces all rows associated with the chosen partition column value in a single transaction (where applicable).
 	//It is useful when it is required to reprocess all objects associates with specific partition id.
 	//E.g. for processing and reprocessing one day of reporting data
-	//If data of your stream may be reprocessed in some point in time it is recommended to always use WholePartition mode for that stream
-	WholePartition
+	//If data of your stream may be reprocessed in some point in time it is recommended to always use ReplacePartition mode for that stream
+	//
+	//ReplacePartition implies Transactional, meaning that the new data will be available only after BulkerStream.complete() call
+	ReplacePartition
 
-	//WholeTable - atomically replaces target table with a new one filled with the object injected to current stream.
+	//ReplaceTable - atomically replaces target table with a new one filled with the object injected to current stream.
 	//To sync entire collection of object at once without leaving target table in unfinished state
 	//Useful when collection contains finite number of object, and when it is required that target table always represent complete state for some point of time.
-	WholeTable
+	//
+	//ReplaceTable implies Transactional, meaning that the new data will be available only after BulkerStream.complete() call
+	ReplaceTable
 )
 
-//Bulker interface allows streaming object to data warehouses using different modes.
-//See BulkMode for more details.
+// Bulker interface allows streaming object to data warehouses using different modes.
+// See BulkMode for more details.
 type Bulker interface {
-	//CreateStream create a Stream instance that will store objects to the target table in a data warehouse.
-	//bulker Stream creates a new table with provided tableName if it does not exist.
+	//CreateStream create a BulkerStream instance that will store objects to the target table in a data warehouse.
+	//bulker BulkerStream creates a new table with provided tableName if it does not exist.
 	//Table schema is based on flattened object structure but may be overridden by providing WithTable option.
-	//bulker Stream will add new column to a table on the fly if new properties appear in object and table schema is not overridden.
-	CreateStream(tableName string, mode BulkMode, streamOptions ...StreamOption) (Stream, error)
+	//bulker BulkerStream will add new column to a table on the fly if new properties appear in object and table schema is not overridden.
+	CreateStream(id, tableName string, mode BulkMode, streamOptions ...StreamOption) (BulkerStream, error)
 }
 
-type Stream interface {
+type BulkerStream interface {
 	//Consume - put object to the stream. If stream is in AutoCommit mode it will be immediately committed to the database.
 	//Otherwise, it will be buffered and committed on Complete call.
-	Consume(object Object) error
+	Consume(object types.Object) error
 	//Abort - abort stream and rollback all uncommitted objects. For stream in AutoCommit mode does nothing.
-	//Returns stream statistics. Stream cannot be used after Abort call.
-	Abort() Result
+	//Returns stream statistics. BulkerStream cannot be used after Abort call.
+	Abort() (State, error)
 	//Complete - commit all uncommitted objects to the database. For stream in AutoCommit mode does nothing.
-	//Returns stream statistics. Stream cannot be used after Complete call.
-	Complete() Result
+	//Returns stream statistics. BulkerStream cannot be used after Complete call.
+	Complete() (State, error)
 }
 
-type Status int
+type Status string
 
 const (
 	//Completed - stream was completed successfully
-	Completed Status = iota
+	Completed Status = "Completed"
 	//Aborted - stream was aborted by user
-	Aborted
+	Aborted = "Aborted"
 	//Failed - failed to complete stream
-	Failed
+	Failed = "Failed"
+	//Active - stream is active
+	Active = "Active"
 )
 
-//Result is used as a Batch storing result
-type Result struct {
+// State is used as a Batch storing result
+type State struct {
 	Status         Status
 	LastError      error
 	ProcessedRows  int

@@ -3,13 +3,12 @@ package implementations
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"github.com/jitsucom/bulker/base/coordination"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
+	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/errorj"
 	"github.com/jitsucom/bulker/types"
 	"math"
@@ -18,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
@@ -60,6 +58,7 @@ WHERE tco.constraint_type = 'PRIMARY KEY' AND
 	dropTableTemplate = `DROP TABLE %s"%s"."%s"`
 
 	renameTableTemplate = `ALTER TABLE "%s"."%s" RENAME TO "%s"`
+	//TODO: replace values limit
 	PostgresValuesLimit = 65535 // this is a limitation of parameters one can pass as query values. If more parameters are passed, error is returned
 )
 
@@ -74,162 +73,21 @@ var (
 	}
 )
 
-type ErrorPayload struct {
-	Dataset         string
-	Bucket          string
-	Project         string
-	Database        string
-	Cluster         string
-	Schema          string
-	Table           string
-	Partition       string
-	PrimaryKeys     []string
-	Statement       string
-	Values          []interface{}
-	ValuesMapString string
-	TotalObjects    int
-}
-
-func (ep *ErrorPayload) String() string {
-	var msgParts []string
-	if ep.Dataset != "" {
-		msgParts = append(msgParts, fmt.Sprintf("dataset: %s", ep.Dataset))
-	}
-	if ep.Bucket != "" {
-		msgParts = append(msgParts, fmt.Sprintf("bucket: %s", ep.Bucket))
-	}
-	if ep.Project != "" {
-		msgParts = append(msgParts, fmt.Sprintf("project: %s", ep.Project))
-	}
-	if ep.Database != "" {
-		msgParts = append(msgParts, fmt.Sprintf("database: %s", ep.Database))
-	}
-	if ep.Cluster != "" {
-		msgParts = append(msgParts, fmt.Sprintf("cluster: %s", ep.Cluster))
-	}
-	if ep.Schema != "" {
-		msgParts = append(msgParts, fmt.Sprintf("schema: %s", ep.Schema))
-	}
-	if ep.Table != "" {
-		msgParts = append(msgParts, fmt.Sprintf("table: %s", ep.Table))
-	}
-	if ep.Partition != "" {
-		msgParts = append(msgParts, fmt.Sprintf("partition: %s", ep.Partition))
-	}
-	if len(ep.PrimaryKeys) > 0 {
-		msgParts = append(msgParts, fmt.Sprintf("primary keys: %v", ep.PrimaryKeys))
-	}
-	if ep.Statement != "" {
-		msgParts = append(msgParts, fmt.Sprintf("statement: %s", utils.ShortenStringWithEllipsis(ep.Statement, 1000)))
-	}
-	if len(ep.Values) > 0 {
-		msgParts = append(msgParts, fmt.Sprintf("values: %v", ep.Values))
-	}
-	if ep.TotalObjects > 1 {
-		msgParts = append(msgParts, fmt.Sprintf("objects count: %d", ep.TotalObjects))
-	}
-	if ep.ValuesMapString != "" {
-		msgParts = append(msgParts, fmt.Sprintf("values of 1st object: %s", ep.ValuesMapString))
-	}
-	if len(msgParts) > 0 {
-		return "\n" + strings.Join(msgParts, "\n") + "\n"
-	} else {
-		return ""
-	}
-}
-
-func ObjectValuesToString(header []string, valueArgs []interface{}) string {
-	var firstObjectValues strings.Builder
-	firstObjectValues.WriteString("{")
-	for i, name := range header {
-		if i != 0 {
-			firstObjectValues.WriteString(", ")
-		}
-		firstObjectValues.WriteString(name + ": " + fmt.Sprint(valueArgs[i]))
-	}
-	firstObjectValues.WriteString("}")
-	return firstObjectValues.String()
-}
-
-//DataSourceConfig dto for deserialized datasource config (e.g. in Postgres or AwsRedshift destination)
-type DataSourceConfig struct {
-	Host       string            `mapstructure:"host,omitempty" json:"host,omitempty" yaml:"host,omitempty"`
-	Port       int               `mapstructure:"port,omitempty" json:"port,omitempty" yaml:"port,omitempty"`
-	Db         string            `mapstructure:"db,omitempty" json:"db,omitempty" yaml:"db,omitempty"`
-	Schema     string            `mapstructure:"schema,omitempty" json:"schema,omitempty" yaml:"schema,omitempty"`
-	Username   string            `mapstructure:"username,omitempty" json:"username,omitempty" yaml:"username,omitempty"`
-	Password   string            `mapstructure:"password,omitempty" json:"password,omitempty" yaml:"password,omitempty"`
-	Parameters map[string]string `mapstructure:"parameters,omitempty" json:"parameters,omitempty" yaml:"parameters,omitempty"`
-	//SSLConfiguration *SSLConfig        `mapstructure:"ssl,omitempty" json:"ssl,omitempty" yaml:"ssl,omitempty"`
-	//S3               *S3Config         `mapstructure:"s3,omitempty" json:"s3,omitempty" yaml:"s3,omitempty"`
-}
-
-//Validate required fields in DataSourceConfig
-func (dsc *DataSourceConfig) Validate() error {
-	if dsc == nil {
-		return errors.New("Datasource config is required")
-	}
-	if dsc.Host == "" {
-		return errors.New("Datasource host is required parameter")
-	}
-	if dsc.Db == "" {
-		return errors.New("Datasource db is required parameter")
-	}
-	if dsc.Username == "" {
-		return errors.New("Datasource username is required parameter")
-	}
-
-	if dsc.Parameters == nil {
-		dsc.Parameters = map[string]string{}
-	}
-
-	//if dsc.SSLConfiguration != nil {
-	//	if err := dsc.SSLConfiguration.Validate(); err != nil {
-	//		return err
-	//	}
-	//}
-	return nil
-}
-
-//Postgres is adapter for creating,patching (schema or table), inserting data to postgres
+// Postgres is adapter for creating,patching (schema or table), inserting data to postgres
 type Postgres struct {
 	ctx         context.Context
-	config      *DataSourceConfig
+	config      *types.DataSourceConfig
 	dataSource  *sql.DB
 	queryLogger *logging.QueryLogger
 
 	sqlTypes types.SQLTypes
 }
 
-//
-////NewPostgresUnderRedshift returns configured Postgres adapter instance without mapping old types
-//func NewPostgresUnderRedshift(ctx context.Context, config *DataSourceConfig, queryLogger *logging.QueryLogger, sqlTypes types.SQLTypes) (*Postgres, error) {
-//	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s ",
-//		config.Host, config.Port, config.Db, config.Username, config.Password)
-//	//concat provided connection parameters
-//	for k, v := range config.Parameters {
-//		connectionString += k + "=" + v + " "
-//	}
-//	dataSource, err := sql.Open("postgres", connectionString)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	if err := dataSource.Ping(); err != nil {
-//		dataSource.Close()
-//		return nil, err
-//	}
-//
-//	//set default value
-//	dataSource.SetConnMaxLifetime(10 * time.Minute)
-//
-//	return &Postgres{ctx: ctx, config: config, dataSource: dataSource, queryLogger: queryLogger, sqlTypes: sqlTypes}, nil
-//}
-
-//NewPostgres return configured Postgres adapter instance
-func NewPostgres(ctx context.Context, config *DataSourceConfig, queryLogger *logging.QueryLogger, sqlTypes types.SQLTypes) (*Postgres, error) {
+// NewPostgres return configured Postgres adapter instance
+func NewPostgres(ctx context.Context, config *types.DataSourceConfig, queryLogger *logging.QueryLogger, sqlTypes types.SQLTypes) (*Postgres, error) {
 	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s ",
 		config.Host, config.Port, config.Db, config.Username, config.Password)
+	logging.Info(ctx, "connecting to postgres: %s", connectionString)
 	//concat provided connection parameters
 	for k, v := range config.Parameters {
 		connectionString += k + "=" + v + " "
@@ -247,72 +105,68 @@ func NewPostgres(ctx context.Context, config *DataSourceConfig, queryLogger *log
 	//set default value
 	dataSource.SetConnMaxLifetime(10 * time.Minute)
 
-	return &Postgres{ctx: ctx, config: config, dataSource: dataSource, queryLogger: queryLogger, sqlTypes: reformatMappings(sqlTypes, SchemaToPostgres)}, nil
-}
-
-// syncStoreImpl implements common behaviour used to storing chunk of pulled data to any storages with processing
-func (p *Postgres) SyncStoreImpl(table *types.Table, objects []map[string]interface{}, deleteConditions *types.DeleteConditions, cacheTable bool, needCopyEvent bool) error {
-	if len(objects) == 0 {
-		return nil
-	}
-	//TODO: storage.ID()
-	storageId := "123"
-	config := p.config
-	tableHelper := NewTableHelper(config.Schema, p, coordination.DummyCoordinationService{}, map[string]bool{}, SchemaToPostgres, 100, "postgres")
-
-	//flatDataPerTable, err := processData(storage, overriddenDataSchema, objects, "", needCopyEvent)
-	//if err != nil {
-	//	return err
-	//}
-
-	if deleteConditions == nil {
-		deleteConditions = &types.DeleteConditions{}
-	}
-
-	_, err := tableHelper.EnsureTable(storageId, table, cacheTable)
+	p := &Postgres{ctx: ctx, config: config, dataSource: dataSource, queryLogger: queryLogger, sqlTypes: reformatMappings(sqlTypes, SchemaToPostgres)}
+	//create db schema if doesn't exist
+	err = p.CreateDbSchema(config.Schema)
 	if err != nil {
-		return err
+		_ = p.Close()
+		return nil, err
 	}
-
-	start := timestamp.Now()
-	//TODO: detect when merge is not necessary (full sync) and set merge to false. Implement it in adapters
-	if err = p.insertBatch(table, objects, deleteConditions); err != nil {
-		return err
-	}
-	logging.Debugf("[%s] Inserted [%d] rows in [%.2f] seconds", storageId, len(objects), timestamp.Now().Sub(start).Seconds())
-
-	return nil
+	return p, nil
 }
 
-//Type returns Postgres type
+func (p *Postgres) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
+	switch mode {
+	case bulker.AutoCommit:
+		return NewAutoCommitStream(id, p, tableName, streamOptions...)
+	case bulker.Transactional:
+		return NewTransactionalStream(id, p, tableName, streamOptions...)
+	}
+
+	return nil, fmt.Errorf("unsupported bulk mode: %d", mode)
+}
+
+// Type returns Postgres type
 func (p *Postgres) Type() string {
 	return "Postgres"
 }
 
-//OpenTx opens underline sql transaction and return wrapped instance
-func (p *Postgres) OpenTx() (*Transaction, error) {
+func (p *Postgres) GetConfig() *types.DataSourceConfig {
+	return p.config
+}
+
+func (p *Postgres) GetTypesMapping() map[types.DataType]string {
+	return SchemaToPostgres
+}
+
+// OpenTx opens underline sql transaction and return wrapped instance
+func (p *Postgres) OpenTx() (*types.Transaction, error) {
 	tx, err := p.dataSource.BeginTx(p.ctx, nil)
 	if err != nil {
-		err = checkErr(err)
+		err = types.CheckErr(err)
 		return nil, errorj.BeginTransactionError.Wrap(err, "failed to begin transaction").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema: p.config.Schema,
 			})
 	}
 
-	return &Transaction{tx: tx, dbType: p.Type()}, nil
+	return types.NewTransaction(p.Type(), tx), nil
 }
 
-//CreateDbSchema creates database schema instance if doesn't exist
+func (p *Postgres) GetAutoCommitTx() *types.Transaction {
+	return types.NewAutoCommitTx(p.dataSource)
+}
+
+// CreateDbSchema creates database schema instance if doesn't exist
 func (p *Postgres) CreateDbSchema(dbSchemaName string) error {
 	query := fmt.Sprintf(createDbSchemaIfNotExistsTemplate, dbSchemaName)
 	p.queryLogger.LogDDL(query)
 
 	if _, err := p.dataSource.ExecContext(p.ctx, query); err != nil {
-		err = checkErr(err)
+		err = types.CheckErr(err)
 
 		return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    dbSchemaName,
 				Statement: query,
 			})
@@ -321,51 +175,9 @@ func (p *Postgres) CreateDbSchema(dbSchemaName string) error {
 	return nil
 }
 
-//CreateTable creates database table with name,columns provided in Table representation
-func (p *Postgres) CreateTable(table *types.Table) (err error) {
-	wrappedTx, err := p.OpenTx()
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err != nil {
-			rbErr := wrappedTx.Rollback()
-			if rbErr != nil {
-				err = errorj.Group(err, rbErr)
-			}
-		} else {
-			err = wrappedTx.Commit()
-		}
-	}()
-
-	return p.createTableInTransaction(wrappedTx, table)
-}
-
-//PatchTableSchema adds new columns(from provided Table) to existing table
-func (p *Postgres) PatchTableSchema(patchTable *types.Table) (err error) {
-	wrappedTx, err := p.OpenTx()
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err != nil {
-			rbErr := wrappedTx.Rollback()
-			if rbErr != nil {
-				err = errorj.Group(err, rbErr)
-			}
-		} else {
-			err = wrappedTx.Commit()
-		}
-	}()
-
-	return p.patchTableSchemaInTransaction(wrappedTx, patchTable)
-}
-
-//GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
-func (p *Postgres) GetTableSchema(tableName string) (*types.Table, error) {
-	table, err := p.getTable(tableName)
+// GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
+func (p *Postgres) GetTableSchema(wrappedTx types.TxOrDatasource, tableName string) (*types.Table, error) {
+	table, err := p.getTable(wrappedTx, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +187,7 @@ func (p *Postgres) GetTableSchema(tableName string) (*types.Table, error) {
 		return table, nil
 	}
 
-	primaryKeyName, pkFields, err := p.getPrimaryKey(tableName)
+	primaryKeyName, pkFields, err := p.getPrimaryKey(wrappedTx, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -385,117 +197,18 @@ func (p *Postgres) GetTableSchema(tableName string) (*types.Table, error) {
 
 	jitsuPrimaryKeyName := types.BuildConstraintName(table.Schema, table.Name)
 	if primaryKeyName != "" && primaryKeyName != jitsuPrimaryKeyName {
-		logging.Warnf("[%s] table: %s.%s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", p.destinationId(), table.Schema, table.Name, primaryKeyName)
+		logging.Warnf("table: %s.%s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Schema, table.Name, primaryKeyName)
 	}
 	return table, nil
 }
 
-////Insert inserts data with InsertContext as a single object or a batch into Redshift
-//func (p *Postgres) Insert(insertContext *InsertContext) error {
-//	if insertContext.eventContext != nil {
-//		return p.insertSingle(insertContext.eventContext)
-//	} else {
-//		return p.insertBatch(insertContext.table, insertContext.objects, insertContext.deleteConditions)
-//	}
-//}
-
-func (p *Postgres) insertBatch(table *types.Table, objects []map[string]interface{}, deleteConditions *types.DeleteConditions) (err error) {
-	wrappedTx, err := p.OpenTx()
+func (p *Postgres) getTable(wrappedTx types.TxOrDatasource, tableName string) (*types.Table, error) {
+	table := &types.Table{Schema: p.config.Schema, Name: tableName, Columns: map[string]types.SQLColumn{}, PKFields: utils.Set{}}
+	rows, err := wrappedTx.QueryContext(p.ctx, tableSchemaQuery, p.config.Schema, tableName)
 	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err != nil {
-			rbErr := wrappedTx.Rollback()
-			if rbErr != nil {
-				err = errorj.Group(err, rbErr)
-			}
-		} else {
-			err = wrappedTx.Commit()
-		}
-	}()
-
-	if !deleteConditions.IsEmpty() {
-		if err = p.deleteInTransaction(wrappedTx, table, deleteConditions); err != nil {
-			return err
-		}
-	}
-
-	if len(table.PKFields) == 0 {
-		return p.bulkInsertInTransaction(wrappedTx, table, objects, PostgresValuesLimit)
-	}
-
-	//deduplication for bulkMerge success (it fails if there is any duplicate)
-	deduplicatedObjectsBuckets := deduplicateObjects(table, objects)
-
-	for _, objectsBucket := range deduplicatedObjectsBuckets {
-		if err = p.bulkMergeInTransaction(wrappedTx, table, objectsBucket); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-//
-////insertSingle inserts single provided object in postgres with typecasts
-////uses upsert (merge on conflict) if primary_keys are configured
-//func (p *Postgres) insertSingle(eventContext *EventContext) error {
-//	columnsWithoutQuotes, columnsWithQuotes, placeholders, values := p.buildInsertPayload(eventContext.Table, eventContext.ProcessedEvent)
-//
-//	var statement string
-//	if len(eventContext.Table.PKFields) == 0 {
-//		statement = fmt.Sprintf(insertTemplate, p.config.Schema, eventContext.Table.Name, strings.Join(columnsWithQuotes, ", "), "("+strings.Join(placeholders, ", ")+")")
-//	} else {
-//		statement = fmt.Sprintf(mergeTemplate, p.config.Schema, eventContext.Table.Name, strings.Join(columnsWithQuotes, ","), "("+strings.Join(placeholders, ", ")+")", eventContext.Table.PrimaryKeyName, p.buildUpdateSection(columnsWithoutQuotes))
-//	}
-//
-//	p.queryLogger.LogQueryWithValues(statement, values)
-//
-//	if _, err := p.dataSource.ExecContext(p.ctx, statement, values...); err != nil {
-//		err = checkErr(err)
-//
-//		return errorj.ExecuteInsertError.Wrap(err, "failed to execute single insert").
-//			WithProperty(errorj.DBInfo, &ErrorPayload{
-//				Schema:      p.config.Schema,
-//				Table:       eventContext.Table.Name,
-//				PrimaryKeys: eventContext.Table.GetPKFields(),
-//				Statement:   statement,
-//				Values:      values,
-//			})
-//	}
-//
-//	return nil
-//}
-//
-////Truncate deletes all records in tableName table
-//func (p *Postgres) Truncate(tableName string) error {
-//	sqlParams := SqlParams{
-//		dataSource:  p.dataSource,
-//		queryLogger: p.queryLogger,
-//		ctx:         p.ctx,
-//	}
-//	statement := fmt.Sprintf(postgresTruncateTableTemplate, p.config.Schema, tableName)
-//	if err := sqlParams.commonTruncate(statement); err != nil {
-//		return errorj.TruncateError.Wrap(err, "failed to truncate table").
-//			WithProperty(errorj.DBInfo, &ErrorPayload{
-//				Schema:    p.config.Schema,
-//				Table:     tableName,
-//				Statement: statement,
-//			})
-//	}
-//
-//	return nil
-//}
-
-func (p *Postgres) getTable(tableName string) (*types.Table, error) {
-	table := &types.Table{Schema: p.config.Schema, Name: tableName, Columns: map[string]types.SQLColumn{}, PKFields: map[string]bool{}}
-	rows, err := p.dataSource.QueryContext(p.ctx, tableSchemaQuery, p.config.Schema, tableName)
-	if err != nil {
-		err = checkErr(err)
+		err = types.CheckErr(err)
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:      p.config.Schema,
 				Table:       table.Name,
 				PrimaryKeys: table.GetPKFields(),
@@ -509,7 +222,7 @@ func (p *Postgres) getTable(tableName string) (*types.Table, error) {
 		var columnName, columnPostgresType string
 		if err := rows.Scan(&columnName, &columnPostgresType); err != nil {
 			return nil, errorj.GetTableError.Wrap(err, "failed to scan result").
-				WithProperty(errorj.DBInfo, &ErrorPayload{
+				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:      p.config.Schema,
 					Table:       table.Name,
 					PrimaryKeys: table.GetPKFields(),
@@ -521,13 +234,12 @@ func (p *Postgres) getTable(tableName string) (*types.Table, error) {
 			//skip dropped postgres field
 			continue
 		}
-
 		table.Columns[columnName] = types.SQLColumn{Type: columnPostgresType}
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:      p.config.Schema,
 				Table:       table.Name,
 				PrimaryKeys: table.GetPKFields(),
@@ -539,12 +251,12 @@ func (p *Postgres) getTable(tableName string) (*types.Table, error) {
 	return table, nil
 }
 
-//create table columns and pk key
-//override input table sql type with configured cast type
-//make fields from Table PkFields - 'not null'
-func (p *Postgres) createTableInTransaction(wrappedTx *Transaction, table *types.Table) error {
+// CreateTable create table columns and pk key
+// override input table sql type with configured cast type
+// make fields from Table PkFields - 'not null'
+func (p *Postgres) CreateTable(wrappedTx types.TxOrDatasource, table *types.Table) error {
 	var columnsDDL []string
-	pkFields := table.GetPKFieldsMap()
+	pkFields := table.GetPKFieldsSet()
 	for _, columnName := range table.SortedColumnNames() {
 		column := table.Columns[columnName]
 		columnsDDL = append(columnsDDL, p.columnDDL(columnName, column, pkFields))
@@ -555,11 +267,11 @@ func (p *Postgres) createTableInTransaction(wrappedTx *Transaction, table *types
 	query := fmt.Sprintf(createTableTemplate, p.config.Schema, table.Name, strings.Join(columnsDDL, ", "))
 	p.queryLogger.LogDDL(query)
 
-	if _, err := wrappedTx.tx.ExecContext(p.ctx, query); err != nil {
-		err = checkErr(err)
+	if _, err := wrappedTx.ExecContext(p.ctx, query); err != nil {
+		err = types.CheckErr(err)
 
 		return errorj.CreateTableError.Wrap(err, "failed to create table").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:      p.config.Schema,
 				Table:       table.Name,
 				PrimaryKeys: table.GetPKFields(),
@@ -574,10 +286,10 @@ func (p *Postgres) createTableInTransaction(wrappedTx *Transaction, table *types
 	return nil
 }
 
-//alter table with columns (if not empty)
-//recreate primary key (if not empty) or delete primary key if Table.DeletePkFields is true
-func (p *Postgres) patchTableSchemaInTransaction(wrappedTx *Transaction, patchTable *types.Table) error {
-	pkFields := patchTable.GetPKFieldsMap()
+// PatchTableSchema alter table with columns (if not empty)
+// recreate primary key (if not empty) or delete primary key if Table.DeletePkFields is true
+func (p *Postgres) PatchTableSchema(wrappedTx types.TxOrDatasource, patchTable *types.Table) error {
+	pkFields := patchTable.GetPKFieldsSet()
 	//patch columns
 	for _, columnName := range patchTable.SortedColumnNames() {
 		column := patchTable.Columns[columnName]
@@ -585,10 +297,10 @@ func (p *Postgres) patchTableSchemaInTransaction(wrappedTx *Transaction, patchTa
 		query := fmt.Sprintf(addColumnTemplate, p.config.Schema, patchTable.Name, columnDDL)
 		p.queryLogger.LogDDL(query)
 
-		if _, err := wrappedTx.tx.ExecContext(p.ctx, query); err != nil {
-			err = checkErr(err)
+		if _, err := wrappedTx.ExecContext(p.ctx, query); err != nil {
+			err = types.CheckErr(err)
 			return errorj.PatchTableError.Wrap(err, "failed to patch table").
-				WithProperty(errorj.DBInfo, &ErrorPayload{
+				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:      p.config.Schema,
 					Table:       patchTable.Name,
 					PrimaryKeys: patchTable.GetPKFields(),
@@ -616,8 +328,8 @@ func (p *Postgres) patchTableSchemaInTransaction(wrappedTx *Transaction, patchTa
 	return nil
 }
 
-//createPrimaryKeyInTransaction create primary key constraint
-func (p *Postgres) createPrimaryKeyInTransaction(wrappedTx *Transaction, table *types.Table) error {
+// createPrimaryKeyInTransaction create primary key constraint
+func (p *Postgres) createPrimaryKeyInTransaction(wrappedTx types.TxOrDatasource, table *types.Table) error {
 	if len(table.PKFields) == 0 {
 		return nil
 	}
@@ -631,10 +343,10 @@ func (p *Postgres) createPrimaryKeyInTransaction(wrappedTx *Transaction, table *
 		p.config.Schema, table.Name, table.PrimaryKeyName, strings.Join(quotedColumnNames, ","))
 	p.queryLogger.LogDDL(statement)
 
-	if _, err := wrappedTx.tx.ExecContext(p.ctx, statement); err != nil {
-		err = checkErr(err)
+	if _, err := wrappedTx.ExecContext(p.ctx, statement); err != nil {
+		err = types.CheckErr(err)
 		return errorj.CreatePrimaryKeysError.Wrap(err, "failed to set primary key").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:      p.config.Schema,
 				Table:       table.Name,
 				PrimaryKeys: table.GetPKFields(),
@@ -645,15 +357,15 @@ func (p *Postgres) createPrimaryKeyInTransaction(wrappedTx *Transaction, table *
 	return nil
 }
 
-//delete primary key
-func (p *Postgres) deletePrimaryKeyInTransaction(wrappedTx *Transaction, table *types.Table) error {
+// delete primary key
+func (p *Postgres) deletePrimaryKeyInTransaction(wrappedTx types.TxOrDatasource, table *types.Table) error {
 	query := fmt.Sprintf(dropPrimaryKeyTemplate, p.config.Schema, table.Name, table.PrimaryKeyName)
 	p.queryLogger.LogDDL(query)
 
-	if _, err := wrappedTx.tx.ExecContext(p.ctx, query); err != nil {
-		err = checkErr(err)
+	if _, err := wrappedTx.ExecContext(p.ctx, query); err != nil {
+		err = types.CheckErr(err)
 		return errorj.DeletePrimaryKeysError.Wrap(err, "failed to delete primary key").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:      p.config.Schema,
 				Table:       table.Name,
 				PrimaryKeys: table.GetPKFields(),
@@ -664,54 +376,18 @@ func (p *Postgres) deletePrimaryKeyInTransaction(wrappedTx *Transaction, table *
 	return nil
 }
 
-//DropTable drops table in transaction
-func (p *Postgres) DropTable(table *types.Table) (err error) {
-	wrappedTx, err := p.OpenTx()
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err != nil {
-			rbErr := wrappedTx.Rollback()
-			if rbErr != nil {
-				err = errorj.Group(err, rbErr)
-			}
-		} else {
-			err = wrappedTx.Commit()
-		}
-	}()
-
-	return p.dropTableInTransaction(wrappedTx, table, false)
-}
-
-func (p *Postgres) ReplaceTable(originalTable, replacementTable string, dropOldTable bool) (err error) {
-	wrappedTx, err := p.OpenTx()
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err != nil {
-			rbErr := wrappedTx.Rollback()
-			if rbErr != nil {
-				err = errorj.Group(err, rbErr)
-			}
-		} else {
-			err = wrappedTx.Commit()
-		}
-	}()
+func (p *Postgres) ReplaceTable(wrappedTx types.TxOrDatasource, originalTable, replacementTable string, dropOldTable bool) (err error) {
 	tmpTable := "deprecated_" + originalTable + timestamp.Now().Format("_20060102_150405")
 	err1 := p.renameTableInTransaction(wrappedTx, true, originalTable, tmpTable)
 	err = p.renameTableInTransaction(wrappedTx, false, replacementTable, originalTable)
 	if dropOldTable && err1 == nil && err == nil {
-		return p.dropTableInTransaction(wrappedTx, &types.Table{Name: tmpTable}, true)
+		return p.DropTable(wrappedTx, &types.Table{Name: tmpTable}, true)
 	}
 	return
 }
 
-//Update one record in Postgres
-func (p *Postgres) Update(table *types.Table, object map[string]interface{}, whereKey string, whereValue interface{}) error {
+// Update one record in Postgres
+func (p *Postgres) Update(wrappedTx types.TxOrDatasource, table *types.Table, object map[string]interface{}, whereKey string, whereValue interface{}) error {
 	columns := make([]string, len(object), len(object))
 	values := make([]interface{}, len(object)+1, len(object)+1)
 	i := 0
@@ -725,11 +401,11 @@ func (p *Postgres) Update(table *types.Table, object map[string]interface{}, whe
 	statement := fmt.Sprintf(updateStatement, p.config.Schema, table.Name, strings.Join(columns, ", "), whereKey, i+1)
 	p.queryLogger.LogQueryWithValues(statement, values)
 
-	if _, err := p.dataSource.ExecContext(p.ctx, statement, values...); err != nil {
-		err = checkErr(err)
+	if _, err := wrappedTx.ExecContext(p.ctx, statement, values...); err != nil {
+		err = types.CheckErr(err)
 
 		return errorj.UpdateError.Wrap(err, "failed to update").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:      p.config.Schema,
 				Table:       table.Name,
 				PrimaryKeys: table.GetPKFields(),
@@ -741,8 +417,8 @@ func (p *Postgres) Update(table *types.Table, object map[string]interface{}, whe
 	return nil
 }
 
-//bulkInsertInTransaction should be used when table has no primary keys. Inserts data in batches to improve performance.
-func (p *Postgres) bulkInsertInTransaction(wrappedTx *Transaction, table *types.Table, objects []map[string]interface{}, valuesLimit int) error {
+// Insert should be used when table has no primary keys. Inserts data in batches to improve performance.
+func (p *Postgres) Insert(wrappedTx types.TxOrDatasource, table *types.Table, merge bool, objects []types.Object) error {
 	var placeholdersBuilder strings.Builder
 	var headerWithoutQuotes []string
 	for _, name := range table.SortedColumnNames() {
@@ -750,18 +426,18 @@ func (p *Postgres) bulkInsertInTransaction(wrappedTx *Transaction, table *types.
 	}
 	valuesAmount := len(objects) * len(table.Columns)
 	maxValues := valuesAmount
-	if maxValues > valuesLimit {
-		maxValues = valuesLimit
+	if maxValues > PostgresValuesLimit {
+		maxValues = PostgresValuesLimit
 	}
 	valueArgs := make([]interface{}, 0, maxValues)
 	placeholdersCounter := 1
 	operation := 0
-	operations := int(math.Max(1, float64(valuesAmount)/float64(valuesLimit)))
+	operations := int(math.Max(1, float64(valuesAmount)/float64(PostgresValuesLimit)))
 	for _, row := range objects {
 		// if number of values exceeds limit, we have to execute insert query on processed rows
-		if len(valueArgs)+len(headerWithoutQuotes) > valuesLimit {
+		if len(valueArgs)+len(headerWithoutQuotes) > PostgresValuesLimit {
 			operation++
-			if err := p.executeInsertInTransaction(wrappedTx, table, headerWithoutQuotes, removeLastComma(placeholdersBuilder.String()), valueArgs); err != nil {
+			if err := p.executeInsertInTransaction(wrappedTx, table, merge, headerWithoutQuotes, removeLastComma(placeholdersBuilder.String()), valueArgs); err != nil {
 				return errorj.Decorate(err, "middle insert %d of %d in batch", operation, operations)
 			}
 
@@ -797,7 +473,7 @@ func (p *Postgres) bulkInsertInTransaction(wrappedTx *Transaction, table *types.
 
 	if len(valueArgs) > 0 {
 		operation++
-		if err := p.executeInsertInTransaction(wrappedTx, table, headerWithoutQuotes, removeLastComma(placeholdersBuilder.String()), valueArgs); err != nil {
+		if err := p.executeInsertInTransaction(wrappedTx, table, merge, headerWithoutQuotes, removeLastComma(placeholdersBuilder.String()), valueArgs); err != nil {
 			return errorj.Decorate(err, "last insert %d of %d in batch", operation, operations)
 		}
 	}
@@ -805,56 +481,63 @@ func (p *Postgres) bulkInsertInTransaction(wrappedTx *Transaction, table *types.
 	return nil
 }
 
-//bulkMergeInTransaction creates tmp table without duplicates
-//inserts all data into tmp table and using bulkMergeTemplate merges all data to main table
-func (p *Postgres) bulkMergeInTransaction(wrappedTx *Transaction, table *types.Table, objects []map[string]interface{}) error {
+// bulkMergeInTransaction creates tmp table without duplicates
+// inserts all data into tmp table and using bulkMergeTemplate merges all data to main table
+func (p *Postgres) bulkMergeInTransaction(wrappedTx *types.Transaction, table *types.Table, objects []types.Object) error {
 	tmpTable := &types.Table{
 		Name:           fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:5]),
 		Columns:        table.Columns,
-		PKFields:       map[string]bool{},
+		PKFields:       utils.Set{},
 		DeletePkFields: false,
 	}
 
-	if err := p.createTableInTransaction(wrappedTx, tmpTable); err != nil {
+	if err := p.CreateTable(wrappedTx, tmpTable); err != nil {
 		return errorj.Decorate(err, "failed to create temporary table")
 	}
 
-	if err := p.bulkInsertInTransaction(wrappedTx, tmpTable, objects, PostgresValuesLimit); err != nil {
+	if err := p.Insert(wrappedTx, tmpTable, false, objects); err != nil {
 		return errorj.Decorate(err, "failed to insert into temporary table")
 	}
 
-	//insert from select
-	var setValues []string
-	var headerWithQuotes []string
-	for _, name := range table.SortedColumnNames() {
-		setValues = append(setValues, fmt.Sprintf(`"%s"=%s."%s"`, name, bulkMergePrefix, name))
-		headerWithQuotes = append(headerWithQuotes, fmt.Sprintf(`"%s"`, name))
-	}
-
-	insertFromSelectStatement := fmt.Sprintf(bulkMergeTemplate, p.config.Schema, table.Name, strings.Join(headerWithQuotes, ", "), strings.Join(headerWithQuotes, ", "), p.config.Schema, tmpTable.Name, table.PrimaryKeyName, strings.Join(setValues, ", "))
-	p.queryLogger.LogQuery(insertFromSelectStatement)
-
-	if _, err := wrappedTx.tx.ExecContext(p.ctx, insertFromSelectStatement); err != nil {
-		err = checkErr(err)
-
-		return errorj.BulkMergeError.Wrap(err, "failed to bulk merge").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
-				Schema:      p.config.Schema,
-				Table:       table.Name,
-				PrimaryKeys: table.GetPKFields(),
-				Statement:   insertFromSelectStatement,
-			})
+	if err := p.MergeTables(wrappedTx, table, tmpTable); err != nil {
+		return err
 	}
 
 	//delete tmp table
-	if err := p.dropTableInTransaction(wrappedTx, tmpTable, false); err != nil {
+	if err := p.DropTable(wrappedTx, tmpTable, false); err != nil {
 		return errorj.Decorate(err, "failed to drop temporary table")
 	}
 
 	return nil
 }
 
-func (p *Postgres) dropTableInTransaction(wrappedTx *Transaction, table *types.Table, ifExists bool) error {
+func (p *Postgres) MergeTables(wrappedTx types.TxOrDatasource, targetTable *types.Table, sourceTable *types.Table) error {
+	//insert from select
+	var setValues []string
+	var headerWithQuotes []string
+	for _, name := range targetTable.SortedColumnNames() {
+		setValues = append(setValues, fmt.Sprintf(`"%s"=%s."%s"`, name, bulkMergePrefix, name))
+		headerWithQuotes = append(headerWithQuotes, fmt.Sprintf(`"%s"`, name))
+	}
+
+	insertFromSelectStatement := fmt.Sprintf(bulkMergeTemplate, p.config.Schema, targetTable.Name, strings.Join(headerWithQuotes, ", "), strings.Join(headerWithQuotes, ", "), p.config.Schema, sourceTable.Name, targetTable.PrimaryKeyName, strings.Join(setValues, ", "))
+	p.queryLogger.LogQuery(insertFromSelectStatement)
+
+	if _, err := wrappedTx.ExecContext(p.ctx, insertFromSelectStatement); err != nil {
+		err = types.CheckErr(err)
+
+		return errorj.BulkMergeError.Wrap(err, "failed to bulk merge").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Schema:      p.config.Schema,
+				Table:       targetTable.Name,
+				PrimaryKeys: targetTable.GetPKFields(),
+				Statement:   insertFromSelectStatement,
+			})
+	}
+	return nil
+}
+
+func (p *Postgres) DropTable(wrappedTx types.TxOrDatasource, table *types.Table, ifExists bool) error {
 	ifExs := ""
 	if ifExists {
 		ifExs = "IF EXISTS "
@@ -862,11 +545,11 @@ func (p *Postgres) dropTableInTransaction(wrappedTx *Transaction, table *types.T
 	query := fmt.Sprintf(dropTableTemplate, ifExs, p.config.Schema, table.Name)
 	p.queryLogger.LogDDL(query)
 
-	if _, err := wrappedTx.tx.ExecContext(p.ctx, query); err != nil {
-		err = checkErr(err)
+	if _, err := wrappedTx.ExecContext(p.ctx, query); err != nil {
+		err = types.CheckErr(err)
 
 		return errorj.DropError.Wrap(err, "failed to drop table").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:      p.config.Schema,
 				Table:       table.Name,
 				PrimaryKeys: table.GetPKFields(),
@@ -877,9 +560,9 @@ func (p *Postgres) dropTableInTransaction(wrappedTx *Transaction, table *types.T
 	return nil
 }
 
-func (p *Postgres) renameTableInTransaction(wrappedTx *Transaction, ifExists bool, tableName, newTableName string) error {
+func (p *Postgres) renameTableInTransaction(wrappedTx types.TxOrDatasource, ifExists bool, tableName, newTableName string) error {
 	if ifExists {
-		row := wrappedTx.tx.QueryRowContext(p.ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s')`, p.config.Schema, tableName))
+		row := wrappedTx.QueryRowContext(p.ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s')`, p.config.Schema, tableName))
 		exists := false
 		err := row.Scan(&exists)
 		if err != nil {
@@ -892,11 +575,11 @@ func (p *Postgres) renameTableInTransaction(wrappedTx *Transaction, ifExists boo
 	query := fmt.Sprintf(renameTableTemplate, p.config.Schema, tableName, newTableName)
 	p.queryLogger.LogDDL(query)
 
-	if _, err := wrappedTx.tx.ExecContext(p.ctx, query); err != nil {
-		err = checkErr(err)
+	if _, err := wrappedTx.ExecContext(p.ctx, query); err != nil {
+		err = types.CheckErr(err)
 
 		return errorj.RenameError.Wrap(err, "failed to rename table").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
 				Statement: query,
@@ -906,15 +589,15 @@ func (p *Postgres) renameTableInTransaction(wrappedTx *Transaction, ifExists boo
 	return nil
 }
 
-func (p *Postgres) deleteInTransaction(wrappedTx *Transaction, table *types.Table, deleteConditions *types.DeleteConditions) error {
+func (p *Postgres) deleteInTransaction(wrappedTx *types.Transaction, table *types.Table, deleteConditions *types.DeleteConditions) error {
 	deleteCondition, values := p.toDeleteQuery(table, deleteConditions)
 	query := fmt.Sprintf(deleteQueryTemplate, p.config.Schema, table.Name, deleteCondition)
 	p.queryLogger.LogQueryWithValues(query, values)
 
-	if _, err := wrappedTx.tx.ExecContext(p.ctx, query, values...); err != nil {
-		err = checkErr(err)
+	if _, err := wrappedTx.ExecContext(p.ctx, query, values...); err != nil {
+		err = types.CheckErr(err)
 		return errorj.DeleteFromTableError.Wrap(err, "failed to delete data").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:      p.config.Schema,
 				Table:       table.Name,
 				PrimaryKeys: table.GetPKFields(),
@@ -938,35 +621,38 @@ func (p *Postgres) toDeleteQuery(table *types.Table, conditions *types.DeleteCon
 	return strings.Join(queryConditions, " "+conditions.JoinCondition+" "), values
 }
 
-//executeInsert execute insert with insertTemplate
-func (p *Postgres) executeInsertInTransaction(wrappedTx *Transaction, table *types.Table, headerWithoutQuotes []string,
+// executeInsert execute insert with insertTemplate
+func (p *Postgres) executeInsertInTransaction(wrappedTx types.TxOrDatasource, table *types.Table, merge bool, headerWithoutQuotes []string,
 	placeholders string, valueArgs []interface{}) error {
 	var quotedHeader []string
 	for _, columnName := range headerWithoutQuotes {
 		quotedHeader = append(quotedHeader, fmt.Sprintf(`"%s"`, columnName))
 	}
-
-	statement := fmt.Sprintf(insertTemplate, p.config.Schema, table.Name, strings.Join(quotedHeader, ","), placeholders)
-
+	var statement string
+	if merge && len(table.PKFields) > 0 {
+		statement = fmt.Sprintf(mergeTemplate, p.config.Schema, table.Name, strings.Join(quotedHeader, ","), placeholders, table.PrimaryKeyName, p.buildUpdateSection(headerWithoutQuotes))
+	} else {
+		statement = fmt.Sprintf(insertTemplate, p.config.Schema, table.Name, strings.Join(quotedHeader, ","), placeholders)
+	}
 	p.queryLogger.LogQueryWithValues(statement, valueArgs)
 
-	if _, err := wrappedTx.tx.Exec(statement, valueArgs...); err != nil {
-		err = checkErr(err)
+	if _, err := wrappedTx.Exec(statement, valueArgs...); err != nil {
+		err = types.CheckErr(err)
 		return errorj.ExecuteInsertInBatchError.Wrap(err, "failed to execute insert").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:          p.config.Schema,
 				Table:           table.Name,
 				PrimaryKeys:     table.GetPKFields(),
 				Statement:       statement,
-				ValuesMapString: ObjectValuesToString(headerWithoutQuotes, valueArgs),
+				ValuesMapString: types.ObjectValuesToString(headerWithoutQuotes, valueArgs),
 			})
 	}
 
 	return nil
 }
 
-//columnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func (p *Postgres) columnDDL(name string, column types.SQLColumn, pkFields map[string]bool) string {
+// columnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
+func (p *Postgres) columnDDL(name string, column types.SQLColumn, pkFields utils.Set) string {
 	var notNullClause string
 	sqlType := column.DDLType()
 
@@ -982,8 +668,8 @@ func (p *Postgres) columnDDL(name string, column types.SQLColumn, pkFields map[s
 	return fmt.Sprintf(`"%s" %s%s`, name, sqlType, notNullClause)
 }
 
-//getCastClause returns ::SQL_TYPE clause or empty string
-//$1::type, $2::type, $3, etc
+// getCastClause returns ::SQL_TYPE clause or empty string
+// $1::type, $2::type, $3, etc
 func (p *Postgres) getCastClause(name string, column types.SQLColumn) string {
 	castType, ok := p.sqlTypes[name]
 	if !ok && column.Override {
@@ -997,7 +683,7 @@ func (p *Postgres) getCastClause(name string, column types.SQLColumn) string {
 	return ""
 }
 
-//return default value statement for creating column
+// return default value statement for creating column
 func (p *Postgres) getDefaultValueStatement(sqlType string) string {
 	//get default value based on type
 	if strings.Contains(sqlType, "var") || strings.Contains(sqlType, "text") {
@@ -1007,19 +693,19 @@ func (p *Postgres) getDefaultValueStatement(sqlType string) string {
 	return "default 0"
 }
 
-//Close underlying sql.DB
+// Close underlying sql.DB
 func (p *Postgres) Close() error {
 	return p.dataSource.Close()
 }
 
-//getPrimaryKey returns primary key name and fields
-func (p *Postgres) getPrimaryKey(tableName string) (string, map[string]bool, error) {
-	primaryKeys := map[string]bool{}
-	pkFieldsRows, err := p.dataSource.QueryContext(p.ctx, primaryKeyFieldsQuery, p.config.Schema, tableName)
+// getPrimaryKey returns primary key name and fields
+func (p *Postgres) getPrimaryKey(wrappedTx types.TxOrDatasource, tableName string) (string, utils.Set, error) {
+	primaryKeys := utils.Set{}
+	pkFieldsRows, err := wrappedTx.QueryContext(p.ctx, primaryKeyFieldsQuery, p.config.Schema, tableName)
 	if err != nil {
-		err = checkErr(err)
+		err = types.CheckErr(err)
 		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
 				Statement: primaryKeyFieldsQuery,
@@ -1034,7 +720,7 @@ func (p *Postgres) getPrimaryKey(tableName string) (string, map[string]bool, err
 		var constraintName, keyColumn string
 		if err := pkFieldsRows.Scan(&constraintName, &keyColumn); err != nil {
 			return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
-				WithProperty(errorj.DBInfo, &ErrorPayload{
+				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:    p.config.Schema,
 					Table:     tableName,
 					Statement: primaryKeyFieldsQuery,
@@ -1050,7 +736,7 @@ func (p *Postgres) getPrimaryKey(tableName string) (string, map[string]bool, err
 
 	if err := pkFieldsRows.Err(); err != nil {
 		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
-			WithProperty(errorj.DBInfo, &ErrorPayload{
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
 				Statement: primaryKeyFieldsQuery,
@@ -1059,13 +745,13 @@ func (p *Postgres) getPrimaryKey(tableName string) (string, map[string]bool, err
 	}
 
 	for _, field := range pkFields {
-		primaryKeys[field] = true
+		primaryKeys[field] = struct{}{}
 	}
 
 	return primaryKeyName, primaryKeys, nil
 }
 
-//buildInsertPayload returns
+// buildInsertPayload returns
 // 1. column names slice
 // 2. quoted column names slice
 // 2. placeholders slice
@@ -1094,7 +780,7 @@ func (p *Postgres) buildInsertPayload(table *types.Table, valuesMap map[string]i
 	return header, quotedHeader, placeholders, values
 }
 
-//buildUpdateSection returns value for merge update statement ("col1"=$1, "col2"=$2)
+// buildUpdateSection returns value for merge update statement ("col1"=$1, "col2"=$2)
 func (p *Postgres) buildUpdateSection(header []string) string {
 	var updateColumns []string
 	for i, columnName := range header {
@@ -1103,14 +789,9 @@ func (p *Postgres) buildUpdateSection(header []string) string {
 	return strings.Join(updateColumns, ",")
 }
 
-func (p *Postgres) destinationId() interface{} {
-	//TODO: implement
-	return ""
-}
-
-//reformatMappings handles old (deprecated) mapping types //TODO remove someday
-//put sql types as is
-//if mapping type is inner => map with sql type
+// reformatMappings handles old (deprecated) mapping types //TODO remove someday
+// put sql types as is
+// if mapping type is inner => map with sql type
 func reformatMappings(mappingTypeCasts types.SQLTypes, dbTypes map[types.DataType]string) types.SQLTypes {
 	formattedSqlTypes := types.SQLTypes{}
 	for column, sqlType := range mappingTypeCasts {
@@ -1148,15 +829,15 @@ func removeLastComma(str string) string {
 	return str
 }
 
-//deduplicateObjects returns slices with deduplicated objects
-//(two objects with the same pkFields values can't be in one slice)
-func deduplicateObjects(table *types.Table, objects []map[string]interface{}) [][]map[string]interface{} {
+// deduplicateObjects returns slices with deduplicated objects
+// (two objects with the same pkFields values can't be in one slice)
+func deduplicateObjects(table *types.Table, objects []types.Object) [][]types.Object {
 	var pkFields []string
 	for pkField := range table.PKFields {
 		pkFields = append(pkFields, pkField)
 	}
 
-	var result [][]map[string]interface{}
+	var result [][]types.Object
 	duplicatedInput := objects
 	for {
 		deduplicated, duplicated := getDeduplicatedAndOthers(pkFields, duplicatedInput)
@@ -1172,11 +853,11 @@ func deduplicateObjects(table *types.Table, objects []map[string]interface{}) []
 	return result
 }
 
-//getDeduplicatedAndOthers returns slices with deduplicated objects and others objects
-//(two objects with the same pkFields values can't be in deduplicated objects slice)
-func getDeduplicatedAndOthers(pkFields []string, objects []map[string]interface{}) ([]map[string]interface{}, []map[string]interface{}) {
-	var deduplicatedObjects, duplicatedObjects []map[string]interface{}
-	deduplicatedIDs := map[string]bool{}
+// getDeduplicatedAndOthers returns slices with deduplicated objects and others objects
+// (two objects with the same pkFields values can't be in deduplicated objects slice)
+func getDeduplicatedAndOthers(pkFields []string, objects []types.Object) ([]types.Object, []types.Object) {
+	var deduplicatedObjects, duplicatedObjects []types.Object
+	deduplicatedIDs := utils.Set{}
 
 	//find duplicates
 	for _, object := range objects {
@@ -1188,48 +869,10 @@ func getDeduplicatedAndOthers(pkFields []string, objects []map[string]interface{
 		if _, ok := deduplicatedIDs[key]; ok {
 			duplicatedObjects = append(duplicatedObjects, object)
 		} else {
-			deduplicatedIDs[key] = true
+			deduplicatedIDs.Put(key)
 			deduplicatedObjects = append(deduplicatedObjects, object)
 		}
 	}
 
 	return deduplicatedObjects, duplicatedObjects
-}
-
-//checkErr checks and extracts parsed pg.Error and extract code,message,details
-func checkErr(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	if pgErr, ok := err.(*pq.Error); ok {
-		msgParts := []string{"pq:"}
-		if pgErr.Code != "" {
-			msgParts = append(msgParts, string(pgErr.Code))
-		}
-		if pgErr.Message != "" {
-			msgParts = append(msgParts, pgErr.Message)
-		}
-		if pgErr.Detail != "" {
-			msgParts = append(msgParts, pgErr.Detail)
-		}
-		if pgErr.Schema != "" {
-			msgParts = append(msgParts, "schema:"+pgErr.Schema)
-		}
-		if pgErr.Table != "" {
-			msgParts = append(msgParts, "table:"+pgErr.Table)
-		}
-		if pgErr.Column != "" {
-			msgParts = append(msgParts, "column:"+pgErr.Column)
-		}
-		if pgErr.DataTypeName != "" {
-			msgParts = append(msgParts, "data_type:"+pgErr.DataTypeName)
-		}
-		if pgErr.Constraint != "" {
-			msgParts = append(msgParts, "constraint:"+pgErr.Constraint)
-		}
-		return errors.New(strings.Join(msgParts, " "))
-	}
-
-	return err
 }

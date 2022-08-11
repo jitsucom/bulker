@@ -1,34 +1,35 @@
 package types
 
 import (
-	"reflect"
+	"github.com/jitsucom/bulker/base/utils"
 	"sort"
 )
 
-//Columns is a list of columns representation
+// Columns is a list of columns representation
 type Columns map[string]SQLColumn
 
-//TableField is a table column representation
+// TableField is a table column representation
 type TableField struct {
 	Field string      `json:"field,omitempty"`
 	Type  string      `json:"type,omitempty"`
 	Value interface{} `json:"value,omitempty"`
 }
 
-//Table is a dto for DWH Table representation
+// Table is a dto for DWH Table representation
 type Table struct {
+	//Optional name of the schema. Not all databases
 	Schema string
 	Name   string
 
 	Columns        Columns
-	PKFields       map[string]bool
+	PKFields       utils.Set
 	PrimaryKeyName string
 	Partition      DatePartition
 
 	DeletePkFields bool
 }
 
-//Exists returns true if there is at least one column
+// Exists returns true if there is at least one column
 func (t *Table) Exists() bool {
 	if t == nil {
 		return false
@@ -37,7 +38,7 @@ func (t *Table) Exists() bool {
 	return len(t.Columns) > 0 || len(t.PKFields) > 0 || t.DeletePkFields
 }
 
-//SortedColumnNames return column names sorted in alphabetical order
+// SortedColumnNames return column names sorted in alphabetical order
 func (t *Table) SortedColumnNames() []string {
 	columns := make([]string, 0, len(t.Columns))
 	for name := range t.Columns {
@@ -47,17 +48,14 @@ func (t *Table) SortedColumnNames() []string {
 	return columns
 }
 
-//Clone returns clone of current table
+// Clone returns clone of current table
 func (t *Table) Clone() *Table {
 	clonedColumns := Columns{}
 	for k, v := range t.Columns {
 		clonedColumns[k] = v
 	}
 
-	clonedPkFields := map[string]bool{}
-	for k, v := range t.PKFields {
-		clonedPkFields[k] = v
-	}
+	clonedPkFields := t.PKFields.Clone()
 
 	return &Table{
 		Schema:         t.Schema,
@@ -69,24 +67,14 @@ func (t *Table) Clone() *Table {
 	}
 }
 
-//GetPKFields returns primary keys list
+// GetPKFields returns primary keys list
 func (t *Table) GetPKFields() []string {
-	var pkFields []string
-	for pkField := range t.PKFields {
-		pkFields = append(pkFields, pkField)
-	}
-
-	return pkFields
+	return t.PKFields.ToSlice()
 }
 
-//GetPKFieldsMap returns primary keys set
-func (t *Table) GetPKFieldsMap() map[string]bool {
-	pkFields := make(map[string]bool, len(t.PKFields))
-	for name := range t.PKFields {
-		pkFields[name] = true
-	}
-
-	return pkFields
+// GetPKFieldsSet returns primary keys set
+func (t *Table) GetPKFieldsSet() utils.Set {
+	return t.PKFields
 }
 
 // Diff calculates diff between current schema and another one.
@@ -94,8 +82,8 @@ func (t *Table) GetPKFieldsMap() map[string]bool {
 // 1) another one is empty
 // 2) all fields from another schema exist in current schema
 // NOTE: Diff method doesn't take types into account
-func (t Table) Diff(another *Table) *Table {
-	diff := &Table{Schema: t.Schema, Name: t.Name, Columns: map[string]SQLColumn{}, PKFields: map[string]bool{}}
+func (t *Table) Diff(another *Table) *Table {
+	diff := &Table{Schema: t.Schema, Name: t.Name, Columns: map[string]SQLColumn{}, PKFields: utils.Set{}}
 
 	if !another.Exists() {
 		return diff
@@ -116,21 +104,17 @@ func (t Table) Diff(another *Table) *Table {
 	}
 
 	//primary keys logic
-	if len(t.PKFields) > 0 && len(another.PKFields) == 0 {
-		//only delete
-		diff.DeletePkFields = true
-		diff.PrimaryKeyName = t.PrimaryKeyName
-	} else {
-		if len(t.PKFields) == 0 && len(another.PKFields) > 0 {
-			//create
-			diff.PKFields = another.PKFields
-			diff.PrimaryKeyName = jitsuPrimaryKeyName
-		} else if !reflect.DeepEqual(t.PKFields, another.PKFields) {
-			//re-create
+	if len(t.PKFields) > 0 {
+		if !t.PKFields.Equals(another.PKFields) {
+			//re-create or delete if another.PKFields is empty
 			diff.DeletePkFields = true
 			diff.PKFields = another.PKFields
 			diff.PrimaryKeyName = jitsuPrimaryKeyName
 		}
+	} else if len(another.PKFields) > 0 {
+		//create
+		diff.PKFields = another.PKFields
+		diff.PrimaryKeyName = jitsuPrimaryKeyName
 	}
 
 	return diff

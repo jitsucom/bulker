@@ -1,4 +1,169 @@
-//package implementations
+package implementations
+
+import (
+	"github.com/jitsucom/bulker/types"
+	"strings"
+)
+
+//// syncStoreImpl implements common behaviour used to storing chunk of pulled data to any storages with processing
+//func syncStoreImpl(storage Storage, overriddenDataSchema *schema.BatchHeader, objects []map[string]interface{}, deleteConditions *base.DeleteConditions, cacheTable bool, needCopyEvent bool) error {
+//	if len(objects) == 0 {
+//		return nil
+//	}
+//
+//	adapter, tableHelper := storage.getAdapters()
+//
+//	flatData, err := processData(storage, overriddenDataSchema, objects, "", needCopyEvent)
+//	if err != nil {
+//		return err
+//	}
+//
+//	if deleteConditions == nil {
+//		deleteConditions = &base.DeleteConditions{}
+//	}
+//
+//	table := tableHelper.MapTableSchema(flatData.BatchHeader)
+//
+//	dbSchema, err := tableHelper.EnsureTable(storage.ID(), table, cacheTable)
+//	if err != nil {
+//		return err
+//	}
+//
+//	start := timestamp.Now()
+//	//TODO: detect when merge is not necessary (full sync) and set merge to false. Implement it in adapters
+//	if err = adapter.Insert(adapters.NewBatchInsertContext(dbSchema, flatData.GetPayload(), true, deleteConditions)); err != nil {
+//		return err
+//	}
+//	logging.Debugf("[%s] Inserted [%d] rows in [%.2f] seconds", storage.ID(), flatData.GetPayloadLen(), timestamp.Now().Sub(start).Seconds())
+//
+//	return nil
+//}
+
+func processData(overriddenDataSchema *types.BatchHeader, objects []types.Object, fileName string, needCopyEvent bool) (*types.ProcessedFile, error) {
+
+	flatData, err := ProcessEvents(overriddenDataSchema.TableName, objects)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(overriddenDataSchema.Fields) > 0 {
+		// enrich overridden schema types
+		flatData.BatchHeader.Fields.OverrideTypes(overriddenDataSchema.Fields)
+	}
+
+	return flatData, nil
+}
+
+// ProcessEvents processes events objects without applying mapping rules
+// returns array of processed objects under tablename
+// or error if at least 1 was occurred
+func ProcessEvents(tableName string, objects []types.Object) (*types.ProcessedFile, error) {
+
+	var pf *types.ProcessedFile
+	for _, event := range objects {
+		flatObject, err := DefaultFlattener.FlattenObject(event)
+		if err != nil {
+			return nil, err
+		}
+		fields, err := DefaultTypeResolver.Resolve(flatObject)
+		if err != nil {
+			return nil, err
+		}
+		batchHeader := &types.BatchHeader{TableName: tableName, Fields: fields}
+
+		//don't process empty and skipped object
+		if !batchHeader.Exists() {
+			continue
+		}
+
+		foldedBatchHeader, foldedObject, _ := foldLongFields(batchHeader, flatObject)
+
+		if pf == nil {
+			pf = &types.ProcessedFile{
+				FileName:    tableName,
+				BatchHeader: foldedBatchHeader,
+				Payload:     []types.Object{foldedObject},
+			}
+		} else {
+			pf.BatchHeader.Fields.Merge(foldedBatchHeader.Fields)
+			pf.Payload = append(pf.Payload, foldedObject)
+		}
+	}
+
+	return pf, nil
+}
+
+// foldLongFields replace all column names with truncated values if they exceed the limit
+// uses cutName under the hood
+func foldLongFields(header *types.BatchHeader, object types.Object) (*types.BatchHeader, types.Object, error) {
+	//TODO: Get maxColumnNameLen from storage config
+	maxColumnNameLen := 0
+
+	if maxColumnNameLen <= 0 {
+		return header, object, nil
+	}
+
+	changes := map[string]string{}
+	for name := range header.Fields {
+		if len(name) > maxColumnNameLen {
+			newName := cutName(name, maxColumnNameLen)
+			if name != newName {
+				changes[name] = newName
+			}
+		}
+	}
+
+	for oldName, newName := range changes {
+		field, _ := header.Fields[oldName]
+		delete(header.Fields, oldName)
+		header.Fields[newName] = field
+
+		if value, ok := object[oldName]; ok {
+			delete(object, oldName)
+			object[newName] = value
+		}
+	}
+
+	return header, object, nil
+}
+
+// cutName converts input name that exceeds maxLen to lower length string by cutting parts between '_' to 2 symbols.
+// if name len is still greater than returns maxLen symbols from the end of the name
+func cutName(name string, maxLen int) string {
+	if len(name) <= maxLen {
+		return name
+	}
+
+	//just cut from the beginning
+	if !strings.Contains(name, "_") {
+		return name[len(name)-maxLen:]
+	}
+
+	var replaced bool
+	replace := ""
+	for _, part := range strings.Split(name, "_") {
+		if replace != "" {
+			replace += "_"
+		}
+
+		if len(part) > 2 {
+			newPart := part[:2]
+			name = strings.ReplaceAll(name, replace+part, replace+newPart)
+			replaced = true
+			break
+		} else {
+			replace += part
+		}
+	}
+
+	if !replaced {
+		//case when ab_ac_ad and maxLen = 6
+		return name[len(name)-maxLen:]
+	}
+
+	return cutName(name, maxLen)
+}
+
 //
 //import (
 //	"fmt"

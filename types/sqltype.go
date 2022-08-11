@@ -1,5 +1,7 @@
 package types
 
+const SqlTypeKeyword = "__sql_type_"
+
 type SQLTypes map[string]SQLColumn
 
 type SQLColumn struct {
