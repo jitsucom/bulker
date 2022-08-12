@@ -3,7 +3,7 @@ package types
 import (
 	"context"
 	"database/sql"
-	"github.com/jitsucom/bulker/errorj"
+	"github.com/jitsucom/bulker/base/errorj"
 )
 
 // Transaction is sql transaction wrapper. Used for handling and log errors with db type (postgres, mySQL, redshift or snowflake)

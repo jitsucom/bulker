@@ -1,11 +1,12 @@
 package types
 
 import (
+	"fmt"
 	"github.com/jitsucom/bulker/base/logging"
 	"time"
 )
 
-//Granularity is a granularity of TimeInterval
+// Granularity is a granularity of TimeInterval
 type Granularity string
 
 const (
@@ -18,7 +19,7 @@ const (
 	ALL     Granularity = "ALL"
 )
 
-//Lower returns the lower value of interval
+// Lower returns the lower value of interval
 func (g Granularity) Lower(t time.Time) time.Time {
 	switch g {
 	case HOUR:
@@ -41,7 +42,7 @@ func (g Granularity) Lower(t time.Time) time.Time {
 	}
 }
 
-//Upper returns the upper value of interval
+// Upper returns the upper value of interval
 func (g Granularity) Upper(t time.Time) time.Time {
 	switch g {
 	case HOUR:
@@ -64,7 +65,7 @@ func (g Granularity) Upper(t time.Time) time.Time {
 	}
 }
 
-//Format returns formatted string value representation
+// Format returns formatted string value representation
 func (g Granularity) Format(t time.Time) string {
 	switch g {
 	case HOUR:
@@ -87,7 +88,7 @@ func (g Granularity) Format(t time.Time) string {
 	}
 }
 
-//String returns string value representation
+// String returns string value representation
 func (g Granularity) String() string {
 	switch g {
 	case HOUR:
@@ -107,5 +108,27 @@ func (g Granularity) String() string {
 	default:
 		logging.SystemError("Unknown granularity:", g)
 		return ""
+	}
+}
+
+// ParseGranularity returns Granularity value from string
+func ParseGranularity(s string) (Granularity, error) {
+	switch s {
+	case string(HOUR):
+		return HOUR, nil
+	case string(DAY):
+		return DAY, nil
+	case string(WEEK):
+		return WEEK, nil
+	case string(MONTH):
+		return MONTH, nil
+	case string(QUARTER):
+		return QUARTER, nil
+	case string(YEAR):
+		return YEAR, nil
+	case string(ALL):
+		return ALL, nil
+	default:
+		return "", fmt.Errorf("unknown granularity: %s", s)
 	}
 }

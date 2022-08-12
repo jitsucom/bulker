@@ -40,6 +40,7 @@ type Bulker interface {
 	CreateStream(id, tableName string, mode BulkMode, streamOptions ...StreamOption) (BulkerStream, error)
 }
 
+// TODO: Commit() method that commits transaction and start new one ??
 type BulkerStream interface {
 	//Consume - put object to the stream. If stream is in AutoCommit mode it will be immediately committed to the database.
 	//Otherwise, it will be buffered and committed on Complete call.

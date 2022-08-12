@@ -2,6 +2,7 @@ package bulker
 
 import "github.com/jitsucom/bulker/types"
 
+// TODO: return failed objects back to the caller
 // Loader helper class that allows to use batch approach with bulker instead of streaming object 1 by 1.
 type Loader struct {
 	bulker  Bulker
@@ -55,8 +56,8 @@ func NewTransactionalLoader(bulker Bulker, options ...StreamOption) *Loader {
 	return bulkLoader
 }
 
-// NewWholeTableLoader helper method that creates Loader for bulker BulkerStream in ReplaceTable mode
-func NewWholeTableLoader(bulker Bulker, options ...StreamOption) *Loader {
+// NewReplaceTableLoader helper method that creates Loader for bulker BulkerStream in ReplaceTable mode
+func NewReplaceTableLoader(bulker Bulker, options ...StreamOption) *Loader {
 	bulkLoader := &Loader{
 		bulker:  bulker,
 		options: options,
@@ -65,15 +66,13 @@ func NewWholeTableLoader(bulker Bulker, options ...StreamOption) *Loader {
 	return bulkLoader
 }
 
-// NewWholePartitionLoader helper method that creates Loader for bulker stream in ReplacePartition mode
+// NewReplacePartitionLoader helper method that creates Loader for bulker stream in ReplacePartition mode
 //
-// partitionProperty - name of object property used as a partition index
-//
-// partitionValue - value of that property for current BulkerStream e.g. id of current partition
-func NewWholePartitionLoader(bulker Bulker, partitionColumn string, partitionValue interface{}, options ...StreamOption) *Loader {
+// partitionId - value of partitionId property for current BulkerStream e.g. id of current partition
+func NewReplacePartitionLoader(bulker Bulker, partitionId string, options ...StreamOption) *Loader {
 	bulkLoader := &Loader{
 		bulker:  bulker,
-		options: append(options, WithPartition(partitionColumn, partitionValue)),
+		options: append(options, WithPartition(partitionId)),
 		mode:    ReplacePartition,
 	}
 	return bulkLoader

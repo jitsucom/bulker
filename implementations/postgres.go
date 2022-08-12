@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/jitsucom/bulker/bulker"
-	"github.com/jitsucom/bulker/errorj"
 	"github.com/jitsucom/bulker/types"
 	"math"
 	"sort"
@@ -589,31 +589,30 @@ func (p *Postgres) renameTableInTransaction(wrappedTx types.TxOrDatasource, ifEx
 	return nil
 }
 
-func (p *Postgres) deleteInTransaction(wrappedTx *types.Transaction, table *types.Table, deleteConditions *types.DeleteConditions) error {
-	deleteCondition, values := p.toDeleteQuery(table, deleteConditions)
-	query := fmt.Sprintf(deleteQueryTemplate, p.config.Schema, table.Name, deleteCondition)
+func (p *Postgres) Delete(wrappedTx types.TxOrDatasource, tableName string, deleteConditions *types.DeleteConditions) error {
+	deleteCondition, values := p.toDeleteQuery(deleteConditions)
+	query := fmt.Sprintf(deleteQueryTemplate, p.config.Schema, tableName, deleteCondition)
 	p.queryLogger.LogQueryWithValues(query, values)
 
 	if _, err := wrappedTx.ExecContext(p.ctx, query, values...); err != nil {
 		err = types.CheckErr(err)
 		return errorj.DeleteFromTableError.Wrap(err, "failed to delete data").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Schema:      p.config.Schema,
-				Table:       table.Name,
-				PrimaryKeys: table.GetPKFields(),
-				Statement:   query,
+				Schema:    p.config.Schema,
+				Table:     tableName,
+				Statement: query,
 			})
 	}
 
 	return nil
 }
 
-func (p *Postgres) toDeleteQuery(table *types.Table, conditions *types.DeleteConditions) (string, []interface{}) {
+func (p *Postgres) toDeleteQuery(conditions *types.DeleteConditions) (string, []interface{}) {
 	var queryConditions []string
 	var values []interface{}
 
 	for i, condition := range conditions.Conditions {
-		conditionString := condition.Field + " " + condition.Clause + " $" + strconv.Itoa(i+1) + p.getCastClause(condition.Field, table.Columns[condition.Field])
+		conditionString := condition.Field + " " + condition.Clause + " $" + strconv.Itoa(i+1)
 		queryConditions = append(queryConditions, conditionString)
 		values = append(values, types.ReformatValue(condition.Value))
 	}

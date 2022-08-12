@@ -5,11 +5,12 @@ import (
 	"io"
 )
 
-//Service is a coordination service which is responsible for all distributed operations like:
+// Service is a coordination service which is responsible for all distributed operations like:
 // - distributed locks
 // - obtain cluster information
 type Service interface {
 	io.Closer
+	//TODO: remove?
 	GetJitsuInstancesInCluster() ([]string, error)
 	CreateLock(name string) locks.Lock
 }

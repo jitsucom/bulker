@@ -19,6 +19,7 @@ type SQLAdapter interface {
 	PatchTableSchema(wrappedTx types.TxOrDatasource, schemaToAdd *types.Table) error
 	//Truncate(tableName string) error
 	Update(wrappedTx types.TxOrDatasource, table *types.Table, object map[string]interface{}, whereKey string, whereValue interface{}) error
+	Delete(wrappedTx types.TxOrDatasource, tableName string, deleteConditions *types.DeleteConditions) error
 	DropTable(wrappedTx types.TxOrDatasource, table *types.Table, ifExists bool) error
 	ReplaceTable(wrappedTx types.TxOrDatasource, originalTable, replacementTable string, dropOldTable bool) error
 }
