@@ -1,9 +1,8 @@
-package implementations
+package sql
 
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jitsucom/bulker/types"
 	"reflect"
 	"strings"
 )
@@ -24,9 +23,9 @@ func NewFlattener() Flattener {
 	}
 }
 
-//FlattenObject flatten object e.g. from {"key1":{"key2":123}} to {"key1_key2":123}
-//from {"$key1":1} to {"_key1":1}
-//from {"(key1)":1} to {"_key1_":1}
+// FlattenObject flatten object e.g. from {"key1":{"key2":123}} to {"key1_key2":123}
+// from {"$key1":1} to {"_key1":1}
+// from {"(key1)":1} to {"_key1_":1}
 func (f *FlattenerImpl) FlattenObject(json map[string]interface{}) (map[string]interface{}, error) {
 	flattenMap := make(map[string]interface{})
 
@@ -42,14 +41,14 @@ func (f *FlattenerImpl) FlattenObject(json map[string]interface{}) (map[string]i
 	return flattenMap, nil
 }
 
-//recursive function for flatten key (if value is inner object -> recursion call)
-//Reformat key
+// recursive function for flatten key (if value is inner object -> recursion call)
+// Reformat key
 func (f *FlattenerImpl) flatten(key string, value interface{}, destination map[string]interface{}) error {
 	key = Reformat(key)
 	t := reflect.ValueOf(value)
 	switch t.Kind() {
 	case reflect.Slice:
-		if strings.Contains(key, types.SqlTypeKeyword) {
+		if strings.Contains(key, SqlTypeKeyword) {
 			//meta field. value must be left untouched.
 			destination[key] = value
 			return nil
@@ -89,7 +88,7 @@ func (f *FlattenerImpl) flatten(key string, value interface{}, destination map[s
 	return nil
 }
 
-//Reformat makes all keys to lower case and replaces all special symbols with '_'
+// Reformat makes all keys to lower case and replaces all special symbols with '_'
 func Reformat(key string) string {
 	key = strings.ToLower(key)
 	var result strings.Builder
@@ -103,9 +102,10 @@ func Reformat(key string) string {
 	return result.String()
 }
 
-//IsLetterOrNumber returns true if input symbol is:
-//  A - Z: 65-90
-//  a - z: 97-122
+// IsLetterOrNumber returns true if input symbol is:
+//
+//	A - Z: 65-90
+//	a - z: 97-122
 func IsLetterOrNumber(symbol int32) bool {
 	return ('a' <= symbol && symbol <= 'z') ||
 		('A' <= symbol && symbol <= 'Z') ||
@@ -119,7 +119,7 @@ func NewDummyFlattener() *DummyFlattener {
 	return &DummyFlattener{}
 }
 
-//FlattenObject return the same json object
+// FlattenObject return the same json object
 func (df *DummyFlattener) FlattenObject(json map[string]interface{}) (map[string]interface{}, error) {
 	return json, nil
 }

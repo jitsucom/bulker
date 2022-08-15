@@ -1,6 +1,15 @@
 package bulker
 
-import "github.com/jitsucom/bulker/types"
+import (
+	"context"
+	"fmt"
+	"github.com/jitsucom/bulker/types"
+)
+
+type InitFunction func(Config) (Bulker, error)
+
+// BulkerRegistry registry of init functions for bulker implementations. Used By CreateBulker factory method
+var BulkerRegistry = make(map[string]InitFunction)
 
 type BulkMode int
 
@@ -44,13 +53,37 @@ type Bulker interface {
 type BulkerStream interface {
 	//Consume - put object to the stream. If stream is in AutoCommit mode it will be immediately committed to the database.
 	//Otherwise, it will be buffered and committed on Complete call.
-	Consume(object types.Object) error
+	Consume(ctx context.Context, object types.Object) error
 	//Abort - abort stream and rollback all uncommitted objects. For stream in AutoCommit mode does nothing.
 	//Returns stream statistics. BulkerStream cannot be used after Abort call.
-	Abort() (State, error)
+	Abort(ctx context.Context) (State, error)
 	//Complete - commit all uncommitted objects to the database. For stream in AutoCommit mode does nothing.
 	//Returns stream statistics. BulkerStream cannot be used after Complete call.
-	Complete() (State, error)
+	Complete(ctx context.Context) (State, error)
+}
+
+type Config struct {
+	//id of Bulker instance for logging and metrics
+	Id string
+	//bulkerType - type of bulker implementation will stream data to
+	BulkerType string
+	//destinationConfig - config of destination - may be struct type supported by destination implementation of map[string]interface{}
+	DestinationConfig interface{}
+	//TODO: think about logging approach for library
+	LogLevel LogLevel
+}
+
+// RegisterBulker registers function to create new bulker instance
+func RegisterBulker(bulkerType string, initFunc InitFunction) {
+	BulkerRegistry[bulkerType] = initFunc
+}
+
+func CreateBulker(config Config) (Bulker, error) {
+	initFunc, ok := BulkerRegistry[config.BulkerType]
+	if !ok {
+		return nil, fmt.Errorf("unknown bulker implementation type: %s", config.BulkerType)
+	}
+	return initFunc(config)
 }
 
 type Status string
@@ -74,3 +107,12 @@ type State struct {
 	SuccessfulRows int
 	RowsErrors     map[int]error
 }
+
+type LogLevel int
+
+const (
+	Off LogLevel = iota
+	Default
+	Verbose
+	Full
+)

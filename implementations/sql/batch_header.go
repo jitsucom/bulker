@@ -1,25 +1,26 @@
-package types
+package sql
 
 import (
 	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/types"
 	"sort"
 )
 
 type Fields map[string]Field
 
-//BatchHeader is the schema result of parsing JSON objects
+// BatchHeader is the schema result of parsing JSON objects
 type BatchHeader struct {
 	TableName string
 	Fields    Fields
 	Partition DatePartition
 }
 
-//Exists returns true if there is at least one field
+// Exists returns true if there is at least one field
 func (bh *BatchHeader) Exists() bool {
 	return bh != nil && len(bh.Fields) > 0
 }
 
-//Merge adds all fields from other to current instance or merge if exists
+// Merge adds all fields from other to current instance or merge if exists
 func (f Fields) Merge(other Fields) {
 	for otherName, otherField := range other {
 		if currentField, ok := f[otherName]; ok {
@@ -31,12 +32,12 @@ func (f Fields) Merge(other Fields) {
 	}
 }
 
-//Clone copies fields into a new Fields object
+// Clone copies fields into a new Fields object
 func (f Fields) Clone() Fields {
 	clone := Fields{}
 
 	for fieldName, fieldPayload := range f {
-		clonedTypeOccurence := map[DataType]bool{}
+		clonedTypeOccurence := map[types.DataType]bool{}
 		for typeName, occurrence := range fieldPayload.typeOccurrence {
 			clonedTypeOccurence[typeName] = occurrence
 		}
@@ -50,7 +51,7 @@ func (f Fields) Clone() Fields {
 	return clone
 }
 
-//OverrideTypes check if field exists in other then put its type
+// OverrideTypes check if field exists in other then put its type
 func (f Fields) OverrideTypes(other Fields) {
 	for otherName, otherField := range other {
 		if currentField, ok := f[otherName]; ok {
@@ -62,8 +63,8 @@ func (f Fields) OverrideTypes(other Fields) {
 	}
 }
 
-//Add all new fields from other to current instance
-//if field exists - skip it
+// Add all new fields from other to current instance
+// if field exists - skip it
 func (f Fields) Add(other Fields) {
 	for otherName, otherField := range other {
 		if _, ok := f[otherName]; !ok {
@@ -72,7 +73,7 @@ func (f Fields) Add(other Fields) {
 	}
 }
 
-//Header return fields names as a string slice
+// Header return fields names as a string slice
 func (f Fields) Header() (header []string) {
 	for fieldName := range f {
 		header = append(header, fieldName)
@@ -81,13 +82,13 @@ func (f Fields) Header() (header []string) {
 	return
 }
 
-//SQLTypeSuggestion is a struct which keeps certain SQL types per certain destination type
+// SQLTypeSuggestion is a struct which keeps certain SQL types per certain destination type
 type SQLTypeSuggestion struct {
 	sqlType               SQLColumn
 	sqlTypePerDestination map[string]SQLColumn
 }
 
-//NewSQLTypeSuggestion returns configured SQLTypeSuggestion instance
+// NewSQLTypeSuggestion returns configured SQLTypeSuggestion instance
 func NewSQLTypeSuggestion(sqlType SQLColumn, sqlTypePerDestination map[string]SQLColumn) *SQLTypeSuggestion {
 	return &SQLTypeSuggestion{
 		sqlType:               sqlType,
@@ -95,32 +96,32 @@ func NewSQLTypeSuggestion(sqlType SQLColumn, sqlTypePerDestination map[string]SQ
 	}
 }
 
-//Field is a data type holder with occurrences
+// Field is a data type holder with occurrences
 type Field struct {
-	dataType          *DataType
+	dataType          *types.DataType
 	sqlTypeSuggestion *SQLTypeSuggestion
-	typeOccurrence    map[DataType]bool
+	typeOccurrence    map[types.DataType]bool
 }
 
-//NewField returns Field instance
-func NewField(t DataType) Field {
+// NewField returns Field instance
+func NewField(t types.DataType) Field {
 	return Field{
 		dataType:       &t,
-		typeOccurrence: map[DataType]bool{t: true},
+		typeOccurrence: map[types.DataType]bool{t: true},
 	}
 }
 
-//NewFieldWithSQLType returns Field instance with configured suggested sql types
-func NewFieldWithSQLType(t DataType, sqlTypeSuggestion *SQLTypeSuggestion) Field {
+// NewFieldWithSQLType returns Field instance with configured suggested sql types
+func NewFieldWithSQLType(t types.DataType, sqlTypeSuggestion *SQLTypeSuggestion) Field {
 	return Field{
 		dataType:          &t,
 		sqlTypeSuggestion: sqlTypeSuggestion,
-		typeOccurrence:    map[DataType]bool{t: true},
+		typeOccurrence:    map[types.DataType]bool{t: true},
 	}
 }
 
-//GetSuggestedSQLType returns suggested SQL type if configured
-//is used in case when source overrides destination type
+// GetSuggestedSQLType returns suggested SQL type if configured
+// is used in case when source overrides destination type
 func (f Field) GetSuggestedSQLType(destinationType string) (SQLColumn, bool) {
 	if f.sqlTypeSuggestion != nil {
 		sqlType, ok := f.sqlTypeSuggestion.sqlTypePerDestination[destinationType]
@@ -129,33 +130,33 @@ func (f Field) GetSuggestedSQLType(destinationType string) (SQLColumn, bool) {
 			ok = true
 		}
 		if ok {
-			return SQLColumn{Type: sqlType.Type, ColumnType: sqlType.ColumnType, Override: true}, ok
+			return SQLColumn{Type: sqlType.Type, ddlType: sqlType.ddlType, Override: true}, ok
 		}
 	}
 
 	return SQLColumn{}, false
 }
 
-//GetType get field type based on occurrence in one file
-//lazily get common ancestor type (typing.GetCommonAncestorType)
-func (f Field) GetType() DataType {
+// GetType get field type based on occurrence in one file
+// lazily get common ancestor type (typing.GetCommonAncestorType)
+func (f Field) GetType() types.DataType {
 	if f.dataType != nil {
 		return *f.dataType
 	}
 
-	var types []DataType
+	var dataTypes []types.DataType
 	for t := range f.typeOccurrence {
-		types = append(types, t)
+		dataTypes = append(dataTypes, t)
 	}
 
-	if len(types) == 0 {
+	if len(dataTypes) == 0 {
 		logging.SystemError("Field typeOccurrence can't be empty")
-		return UNKNOWN
+		return types.UNKNOWN
 	}
 
-	common := types[0]
-	for i := 1; i < len(types); i++ {
-		common = GetCommonAncestorType(common, types[i])
+	common := dataTypes[0]
+	for i := 1; i < len(dataTypes); i++ {
+		common = types.GetCommonAncestorType(common, dataTypes[i])
 	}
 
 	//put result to dataType (it will be wiped(in Merge) if a new type is added)
@@ -163,8 +164,8 @@ func (f Field) GetType() DataType {
 	return common
 }
 
-//Merge adds new type occurrences
-//wipes field.type if new type was added
+// Merge adds new type occurrences
+// wipes field.type if new type was added
 func (f *Field) Merge(anotherField *Field) {
 	//add new type occurrences
 	//wipe field.type if new type was added

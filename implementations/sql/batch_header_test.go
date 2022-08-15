@@ -1,6 +1,7 @@
-package types
+package sql
 
 import (
+	"github.com/jitsucom/bulker/types"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -20,26 +21,26 @@ func TestFieldMerge(t *testing.T) {
 		},
 		{
 			"Empty input",
-			Fields{"col1": NewField(STRING)},
+			Fields{"col1": NewField(types.STRING)},
 			Fields{},
-			Fields{"col1": NewField(STRING)},
+			Fields{"col1": NewField(types.STRING)},
 		},
 		{
 			"Merged ok",
-			Fields{"col1": NewField(STRING), "col2": NewField(FLOAT64), "col3": NewField(TIMESTAMP), "col4": NewField(INT64)},
-			Fields{"col1": NewField(INT64), "col2": NewField(STRING), "col3": NewField(TIMESTAMP), "col5": NewField(TIMESTAMP)},
+			Fields{"col1": NewField(types.STRING), "col2": NewField(types.FLOAT64), "col3": NewField(types.TIMESTAMP), "col4": NewField(types.INT64)},
+			Fields{"col1": NewField(types.INT64), "col2": NewField(types.STRING), "col3": NewField(types.TIMESTAMP), "col5": NewField(types.TIMESTAMP)},
 			Fields{
 				"col1": Field{
 					dataType:       nil,
-					typeOccurrence: map[DataType]bool{STRING: true, INT64: true},
+					typeOccurrence: map[types.DataType]bool{types.STRING: true, types.INT64: true},
 				},
 				"col2": Field{
 					dataType:       nil,
-					typeOccurrence: map[DataType]bool{STRING: true, FLOAT64: true},
+					typeOccurrence: map[types.DataType]bool{types.STRING: true, types.FLOAT64: true},
 				},
-				"col3": NewField(TIMESTAMP),
-				"col4": NewField(INT64),
-				"col5": NewField(TIMESTAMP),
+				"col3": NewField(types.TIMESTAMP),
+				"col4": NewField(types.INT64),
+				"col5": NewField(types.TIMESTAMP),
 			},
 		},
 	}
@@ -52,59 +53,59 @@ func TestFieldMerge(t *testing.T) {
 }
 
 func TestColumnGetType(t *testing.T) {
-	ts := TIMESTAMP
+	ts := types.TIMESTAMP
 	tests := []struct {
 		name     string
 		input    Field
-		expected DataType
+		expected types.DataType
 	}{
 		{
 			"int64+float64=float64",
 			Field{
 				dataType:       nil,
-				typeOccurrence: map[DataType]bool{INT64: true, FLOAT64: true},
+				typeOccurrence: map[types.DataType]bool{types.INT64: true, types.FLOAT64: true},
 			},
-			FLOAT64,
+			types.FLOAT64,
 		},
 		{
 			"int64+string=string",
 			Field{
 				dataType:       nil,
-				typeOccurrence: map[DataType]bool{INT64: true, STRING: true},
+				typeOccurrence: map[types.DataType]bool{types.INT64: true, types.STRING: true},
 			},
-			STRING,
+			types.STRING,
 		},
 		{
 			"int64+timestamp=string",
 			Field{
 				dataType:       nil,
-				typeOccurrence: map[DataType]bool{INT64: true, TIMESTAMP: true},
+				typeOccurrence: map[types.DataType]bool{types.INT64: true, types.TIMESTAMP: true},
 			},
-			STRING,
+			types.STRING,
 		},
 		{
 			"int64+timestamp+float64=string",
 			Field{
 				dataType:       nil,
-				typeOccurrence: map[DataType]bool{INT64: true, TIMESTAMP: true, FLOAT64: true},
+				typeOccurrence: map[types.DataType]bool{types.INT64: true, types.TIMESTAMP: true, types.FLOAT64: true},
 			},
-			STRING,
+			types.STRING,
 		},
 		{
 			"timestamp=timestamp",
 			Field{
 				dataType:       nil,
-				typeOccurrence: map[DataType]bool{TIMESTAMP: true},
+				typeOccurrence: map[types.DataType]bool{types.TIMESTAMP: true},
 			},
-			TIMESTAMP,
+			types.TIMESTAMP,
 		},
 		{
 			"non-existent case: dataType:timestamp, map[int64] = timestamp",
 			Field{
 				dataType:       &ts,
-				typeOccurrence: map[DataType]bool{INT64: true},
+				typeOccurrence: map[types.DataType]bool{types.INT64: true},
 			},
-			TIMESTAMP,
+			types.TIMESTAMP,
 		},
 	}
 	for _, tt := range tests {
@@ -116,9 +117,9 @@ func TestColumnGetType(t *testing.T) {
 }
 
 func TestOverrideTypes(t *testing.T) {
-	i := INT64
-	s := STRING
-	ts := TIMESTAMP
+	i := types.INT64
+	s := types.STRING
+	ts := types.TIMESTAMP
 	tests := []struct {
 		name       string
 		initial    Fields
@@ -130,31 +131,31 @@ func TestOverrideTypes(t *testing.T) {
 			Fields{
 				"field1": Field{
 					dataType:       &s,
-					typeOccurrence: map[DataType]bool{STRING: true},
+					typeOccurrence: map[types.DataType]bool{types.STRING: true},
 				},
 				"field2": Field{
 					dataType:       &i,
-					typeOccurrence: map[DataType]bool{INT64: true},
+					typeOccurrence: map[types.DataType]bool{types.INT64: true},
 				},
 			},
 			Fields{
 				"field2": Field{
 					dataType:       &s,
-					typeOccurrence: map[DataType]bool{STRING: true},
+					typeOccurrence: map[types.DataType]bool{types.STRING: true},
 				},
 				"field3": Field{
 					dataType:       &ts,
-					typeOccurrence: map[DataType]bool{TIMESTAMP: true},
+					typeOccurrence: map[types.DataType]bool{types.TIMESTAMP: true},
 				},
 			},
 			Fields{
 				"field1": Field{
 					dataType:       &s,
-					typeOccurrence: map[DataType]bool{STRING: true},
+					typeOccurrence: map[types.DataType]bool{types.STRING: true},
 				},
 				"field2": Field{
 					dataType:       &s,
-					typeOccurrence: map[DataType]bool{STRING: true},
+					typeOccurrence: map[types.DataType]bool{types.STRING: true},
 				},
 			},
 		},

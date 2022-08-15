@@ -1,4 +1,4 @@
-package types
+package sql
 
 import (
 	"github.com/jitsucom/bulker/base/utils"

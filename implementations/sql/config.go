@@ -1,4 +1,4 @@
-package types
+package sql
 
 import "errors"
 
@@ -11,8 +11,6 @@ type DataSourceConfig struct {
 	Username   string            `mapstructure:"username,omitempty" json:"username,omitempty" yaml:"username,omitempty"`
 	Password   string            `mapstructure:"password,omitempty" json:"password,omitempty" yaml:"password,omitempty"`
 	Parameters map[string]string `mapstructure:"parameters,omitempty" json:"parameters,omitempty" yaml:"parameters,omitempty"`
-	//SSLConfiguration *SSLConfig        `mapstructure:"ssl,omitempty" json:"ssl,omitempty" yaml:"ssl,omitempty"`
-	//S3               *S3Config         `mapstructure:"s3,omitempty" json:"s3,omitempty" yaml:"s3,omitempty"`
 }
 
 // Validate required fields in DataSourceConfig
@@ -34,10 +32,5 @@ func (dsc *DataSourceConfig) Validate() error {
 		dsc.Parameters = map[string]string{}
 	}
 
-	//if dsc.SSLConfiguration != nil {
-	//	if err := dsc.SSLConfiguration.Validate(); err != nil {
-	//		return err
-	//	}
-	//}
 	return nil
 }

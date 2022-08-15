@@ -2,17 +2,9 @@ package bulker
 
 import (
 	"github.com/jitsucom/bulker/base/utils"
-	"github.com/jitsucom/bulker/types"
 )
 
 type StreamOption func(*StreamOptions)
-
-// WithCustomTypes provides overrides for types of current BulkerStream object fields
-func WithCustomTypes(fields types.Fields) StreamOption {
-	return func(options *StreamOptions) {
-		options.CustomTypes = fields
-	}
-}
 
 func WithPrimaryKey(pkField string) StreamOption {
 	return func(options *StreamOptions) {
@@ -58,12 +50,9 @@ func WithPartition(partitionId string) StreamOption {
 }
 
 type StreamOptions struct {
-	CustomTypes      types.Fields
+	//CustomTypes      sql.Fields
 	PrimaryKeyFields utils.Set
 	MergeRows        bool
 	PartitionId      string
 	//MultiRowInserts  bool
 }
-
-// TODO: default options depending on destination implementation
-var DefaultStreamOptions = StreamOptions{MergeRows: true}

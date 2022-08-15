@@ -1,9 +1,10 @@
-package types
+package sql
 
 import (
 	"context"
 	"database/sql"
 	"github.com/jitsucom/bulker/base/errorj"
+	"github.com/jitsucom/bulker/types"
 )
 
 // Transaction is sql transaction wrapper. Used for handling and log errors with db type (postgres, mySQL, redshift or snowflake)
@@ -21,10 +22,6 @@ type TxOrDatasource interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	QueryRow(query string, args ...any) *sql.Row
-}
-
-func NewAutoCommitTx(dataSource *sql.DB) *Transaction {
-	return &Transaction{dataSource: dataSource}
 }
 
 func NewTransaction(dbType string, tx *sql.Tx) *Transaction {
@@ -124,7 +121,7 @@ func (t *Transaction) QueryRow(query string, args ...any) *sql.Row {
 func (t *Transaction) Commit() error {
 	if t.tx != nil {
 		if err := t.tx.Commit(); err != nil {
-			err = CheckErr(err)
+			err = types.CheckErr(err)
 			return errorj.CommitTransactionError.Wrap(err, "failed to commit transaction")
 		}
 	}
@@ -141,7 +138,7 @@ func (t *Transaction) Rollback() error {
 			//	return errorj.RollbackTransactionError.Wrap(err, "failed to rollback transaction").
 			//		WithProperty(errorj.SystemErrorFlag, true)
 			//} else {
-			err = CheckErr(err)
+			err = types.CheckErr(err)
 			return errorj.RollbackTransactionError.Wrap(err, "failed to rollback transaction")
 			//}
 		}
