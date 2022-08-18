@@ -16,13 +16,15 @@ type TransactionalStream struct {
 	AbstractSQLStream
 	dstTable *Table
 	tmpTable *Table
+	merge    bool
 }
 
 func newTransactionalStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	ps := TransactionalStream{}
 
 	ps.AbstractSQLStream = NewAbstractStream(id, p, dataSource, tableName, bulker.Transactional, streamOptions...)
-	if ps.options.MergeRows && len(ps.options.PrimaryKeyFields) == 0 {
+	ps.merge = mergeRowsOption.Get(&ps.options)
+	if ps.merge && len(primaryKeyOption.Get(&ps.options)) == 0 {
 		return nil, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	return &ps, nil
@@ -52,7 +54,7 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 		ps.dstTable = tableForObject
 		ps.tmpTable = &Table{
 			Name:    fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:5]),
-			Columns: ps.dstTable.Columns,
+			Columns: tableForObject.Columns,
 		}
 	} else {
 		ps.tmpTable.Columns = tableForObject.Columns
@@ -87,7 +89,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 			return ps.state, errorj.Decorate(err, "failed to ensure destination table")
 		}
 		//copy data from tmp table to destination table
-		err = ps.p.CopyTables(ctx, ps.tx, ps.dstTable, ps.tmpTable, ps.options.MergeRows)
+		err = ps.p.CopyTables(ctx, ps.tx, ps.dstTable, ps.tmpTable, ps.merge)
 		if err != nil {
 			return ps.state, err
 		}

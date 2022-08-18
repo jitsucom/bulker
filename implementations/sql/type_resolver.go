@@ -49,7 +49,7 @@ func (tr *TypeResolverImpl) Resolve(object map[string]interface{}) (Fields, erro
 			switch val := v.(type) {
 			case []interface{}:
 				if len(val) > 1 {
-					mappedTypes[key] = SQLColumn{Type: fmt.Sprint(val[0]), ddlType: fmt.Sprint(val[1])}
+					mappedTypes[key] = SQLColumn{Type: fmt.Sprint(val[0]), DdlType: fmt.Sprint(val[1])}
 				} else {
 					mappedTypes[key] = SQLColumn{Type: fmt.Sprint(val[0])}
 				}

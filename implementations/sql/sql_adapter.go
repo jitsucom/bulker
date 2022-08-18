@@ -13,6 +13,7 @@ type SQLAdapter interface {
 	GetTypesMapping() map[types.DataType]string
 	OpenTx(ctx context.Context) (*Transaction, error)
 	Insert(ctx context.Context, wrappedTx TxOrDatasource, table *Table, merge bool, objects []types.Object) error
+	//TODO transaction?
 	CreateDbSchema(ctx context.Context, dbSchemaName string) error
 	GetTableSchema(ctx context.Context, wrappedTx TxOrDatasource, tableName string) (*Table, error)
 	CreateTable(ctx context.Context, wrappedTx TxOrDatasource, schemaToCreate *Table) error

@@ -12,12 +12,14 @@ import (
 type AutoCommitStream struct {
 	AbstractSQLStream
 	datasource *sql.DB
+	merge      bool
 }
 
 func newAutoCommitStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	ps := AutoCommitStream{datasource: dataSource}
 	ps.AbstractSQLStream = NewAbstractStream(id, p, dataSource, tableName, bulker.AutoCommit, streamOptions...)
-	if ps.options.MergeRows && len(ps.options.PrimaryKeyFields) == 0 {
+	ps.merge = mergeRowsOption.Get(&ps.options)
+	if ps.merge && len(primaryKeyOption.Get(&ps.options)) == 0 {
 		return nil, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	return &ps, nil
@@ -35,7 +37,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (e
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure table")
 	}
-	return ps.p.Insert(ctx, ps.datasource, table, ps.options.MergeRows, processedObjects)
+	return ps.p.Insert(ctx, ps.datasource, table, ps.merge, processedObjects)
 }
 
 func (ps *AutoCommitStream) Complete(ctx context.Context) (state bulker.State, err error) {

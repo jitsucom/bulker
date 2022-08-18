@@ -27,12 +27,12 @@ type AbstractSQLStream struct {
 
 func NewAbstractStream(id string, p SQLAdapter, tx TxOrDatasource, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) AbstractSQLStream {
 	ps := AbstractSQLStream{id: id, p: p, tableName: tableName, mode: mode}
-	ps.options = DefaultStreamOptions
+	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {
 		option(&ps.options)
 	}
 	//TODO: max column?
-	ps.tableHelper = NewTableHelper(p, tx, coordination.DummyCoordinationService{}, ps.options.PrimaryKeyFields, 1000)
+	ps.tableHelper = NewTableHelper(p, tx, coordination.DummyCoordinationService{}, primaryKeyOption.Get(&ps.options), 1000)
 	ps.state = bulker.State{RowsErrors: map[int]error{}, Status: bulker.Active}
 	return ps
 }
@@ -45,11 +45,11 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, []types.Ob
 	if err != nil {
 		return nil, nil, err
 	}
-	//TODO: restore types override
-	//if len(ps.options.CustomTypes) > 0 {
-	//	// enrich overridden schema types
-	//	batchHeader.Fields.OverrideTypes(ps.options.CustomTypes)
-	//}
+	var customFields = columnTypesOption.Get(&ps.options)
+	if len(customFields) > 0 {
+		// enrich overridden schema types
+		batchHeader.Fields.OverrideTypes(customFields)
+	}
 	table := ps.tableHelper.MapTableSchema(batchHeader)
 	ps.state.ProcessedRows++
 	return table, processedObjects, nil

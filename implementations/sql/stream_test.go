@@ -26,13 +26,13 @@ func TestBulker(t *testing.T) {
 			tableName: "autocommit_test"},
 		{mode: bulker.Transactional, name: "postgres_transactional",
 			config:    bulker.Config{Id: "postgres", BulkerType: "postgres", DestinationConfig: os.Getenv("BULKER_TEST_POSTGRES")},
-			tableName: "transactional_test", streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithMergeRows()}},
+			tableName: "transactional_test", streamOptions: []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()}},
 		{mode: bulker.ReplaceTable, name: "postgres_replacetable",
 			config:    bulker.Config{Id: "postgres", BulkerType: "postgres", DestinationConfig: os.Getenv("BULKER_TEST_POSTGRES")},
-			tableName: "replacetable_test", streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id")}},
+			tableName: "replacetable_test", streamOptions: []bulker.StreamOption{WithPrimaryKey("id"), WithColumnType("id", "text")}},
 		{mode: bulker.ReplacePartition, name: "postgres_replacepartition",
 			config:    bulker.Config{Id: "postgres", BulkerType: "postgres", DestinationConfig: os.Getenv("BULKER_TEST_POSTGRES")},
-			tableName: "replacepartition_test", streamOptions: []bulker.StreamOption{bulker.WithPartition("partition_id")}},
+			tableName: "replacepartition_test", streamOptions: []bulker.StreamOption{WithPartition("partition_id")}},
 	}
 	logging.Infof("BULKER_TEST_POSTGRES: %s", os.Getenv("BULKER_TEST_POSTGRES"))
 	for _, td := range bulkerTestData {

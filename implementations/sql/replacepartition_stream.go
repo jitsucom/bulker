@@ -12,7 +12,8 @@ import (
 
 type ReplacePartitionStream struct {
 	AbstractSQLStream
-	cleared bool
+	cleared     bool
+	partitionId string
 }
 
 func newReplacePartitionStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (stream bulker.BulkerStream, err error) {
@@ -21,10 +22,12 @@ func newReplacePartitionStream(id string, p SQLAdapter, dataSource *sql.DB, tabl
 	for _, opt := range streamOptions {
 		opt(&so)
 	}
-	if so.PartitionId == "" {
+	partitionId := partitionIdOption.Get(&so)
+	if partitionId == "" {
 		return nil, errors.New("WithPartition is required option for ReplacePartitionStream")
 	}
 	ps.AbstractSQLStream = NewAbstractStream(id, p, dataSource, tableName, bulker.ReplacePartition, streamOptions...)
+	ps.partitionId = partitionId
 	return &ps, nil
 }
 
@@ -41,7 +44,7 @@ func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Obje
 		}
 	}
 	//mark rows by setting __partition_id column with value of partitionId option
-	object[PartitonIdKeyword] = ps.options.PartitionId
+	object[PartitonIdKeyword] = ps.partitionId
 
 	//type mapping, flattening => table schema
 	tableForObject, processedObjects, err := ps.preprocess(object)
@@ -108,9 +111,9 @@ func (ps *ReplacePartitionStream) clearPartition(ctx context.Context) error {
 			return fmt.Errorf("couldn't start ReplacePartitionStream: destination table [%s] exist but it is not managed by ReplacePartitionStream: %s column is missing", ps.tableName, PartitonIdKeyword)
 		}
 		//delete previous data by provided partition id
-		err = ps.p.Delete(ctx, ps.tx, ps.tableName, DeleteByPartitionId(ps.options.PartitionId))
+		err = ps.p.Delete(ctx, ps.tx, ps.tableName, DeleteByPartitionId(ps.partitionId))
 		if err != nil {
-			return fmt.Errorf("couldn't start ReplacePartitionStream: failed to delete data for partitionId: %s error: %s", ps.options.PartitionId, err)
+			return fmt.Errorf("couldn't start ReplacePartitionStream: failed to delete data for partitionId: %s error: %s", ps.partitionId, err)
 		}
 	}
 	ps.cleared = true

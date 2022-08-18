@@ -1,7 +1,6 @@
 package sql
 
 import (
-	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/types"
 	"sort"
 )
@@ -23,12 +22,7 @@ func (bh *BatchHeader) Exists() bool {
 // Merge adds all fields from other to current instance or merge if exists
 func (f Fields) Merge(other Fields) {
 	for otherName, otherField := range other {
-		if currentField, ok := f[otherName]; ok {
-			currentField.Merge(&otherField)
-			f[otherName] = currentField
-		} else {
-			f[otherName] = otherField
-		}
+		f[otherName] = otherField
 	}
 }
 
@@ -37,14 +31,9 @@ func (f Fields) Clone() Fields {
 	clone := Fields{}
 
 	for fieldName, fieldPayload := range f {
-		clonedTypeOccurence := map[types.DataType]bool{}
-		for typeName, occurrence := range fieldPayload.typeOccurrence {
-			clonedTypeOccurence[typeName] = occurrence
-		}
 
 		clone[fieldName] = Field{
-			dataType:       fieldPayload.dataType,
-			typeOccurrence: clonedTypeOccurence,
+			dataType: fieldPayload.dataType,
 		}
 	}
 
@@ -52,12 +41,11 @@ func (f Fields) Clone() Fields {
 }
 
 // OverrideTypes check if field exists in other then put its type
-func (f Fields) OverrideTypes(other Fields) {
+func (f Fields) OverrideTypes(other SQLTypes) {
 	for otherName, otherField := range other {
 		if currentField, ok := f[otherName]; ok {
 			//override type occurrences
-			currentField.typeOccurrence = otherField.typeOccurrence
-			currentField.dataType = otherField.dataType
+			currentField.sqlTypeSuggestion = NewSQLTypeSuggestion(otherField, map[string]SQLColumn{})
 			f[otherName] = currentField
 		}
 	}
@@ -100,14 +88,12 @@ func NewSQLTypeSuggestion(sqlType SQLColumn, sqlTypePerDestination map[string]SQ
 type Field struct {
 	dataType          *types.DataType
 	sqlTypeSuggestion *SQLTypeSuggestion
-	typeOccurrence    map[types.DataType]bool
 }
 
 // NewField returns Field instance
 func NewField(t types.DataType) Field {
 	return Field{
-		dataType:       &t,
-		typeOccurrence: map[types.DataType]bool{t: true},
+		dataType: &t,
 	}
 }
 
@@ -116,7 +102,6 @@ func NewFieldWithSQLType(t types.DataType, sqlTypeSuggestion *SQLTypeSuggestion)
 	return Field{
 		dataType:          &t,
 		sqlTypeSuggestion: sqlTypeSuggestion,
-		typeOccurrence:    map[types.DataType]bool{t: true},
 	}
 }
 
@@ -130,7 +115,7 @@ func (f Field) GetSuggestedSQLType(destinationType string) (SQLColumn, bool) {
 			ok = true
 		}
 		if ok {
-			return SQLColumn{Type: sqlType.Type, ddlType: sqlType.ddlType, Override: true}, ok
+			return SQLColumn{Type: sqlType.Type, DdlType: sqlType.DdlType, Override: true}, ok
 		}
 	}
 
@@ -140,39 +125,5 @@ func (f Field) GetSuggestedSQLType(destinationType string) (SQLColumn, bool) {
 // GetType get field type based on occurrence in one file
 // lazily get common ancestor type (typing.GetCommonAncestorType)
 func (f Field) GetType() types.DataType {
-	if f.dataType != nil {
-		return *f.dataType
-	}
-
-	var dataTypes []types.DataType
-	for t := range f.typeOccurrence {
-		dataTypes = append(dataTypes, t)
-	}
-
-	if len(dataTypes) == 0 {
-		logging.SystemError("Field typeOccurrence can't be empty")
-		return types.UNKNOWN
-	}
-
-	common := dataTypes[0]
-	for i := 1; i < len(dataTypes); i++ {
-		common = types.GetCommonAncestorType(common, dataTypes[i])
-	}
-
-	//put result to dataType (it will be wiped(in Merge) if a new type is added)
-	f.dataType = &common
-	return common
-}
-
-// Merge adds new type occurrences
-// wipes field.type if new type was added
-func (f *Field) Merge(anotherField *Field) {
-	//add new type occurrences
-	//wipe field.type if new type was added
-	for t := range anotherField.typeOccurrence {
-		if _, ok := f.typeOccurrence[t]; !ok {
-			f.typeOccurrence[t] = true
-			f.dataType = nil
-		}
-	}
+	return *f.dataType
 }

@@ -637,7 +637,7 @@ func (p *Postgres) executeInsertInTransaction(ctx context.Context, wrappedTx TxO
 // columnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
 func (p *Postgres) columnDDL(name string, column SQLColumn, pkFields utils.Set) string {
 	var notNullClause string
-	sqlType := column.DDLType()
+	sqlType := column.GetDDLType()
 
 	//not null
 	if _, ok := pkFields[name]; ok {
