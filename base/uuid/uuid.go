@@ -35,7 +35,7 @@ func NewLettersNumbers() string {
 }
 
 //GetHash returns GetKeysHash result with keys from m
-func GetHash(m map[string]interface{}) string {
+func GetHash(m map[string]any) string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -45,7 +45,7 @@ func GetHash(m map[string]interface{}) string {
 }
 
 //GetKeysHash returns md5 hashsum of concatenated map values (sort keys before)
-func GetKeysHash(m map[string]interface{}, keys []string) string {
+func GetKeysHash(m map[string]any, keys []string) string {
 	sort.Strings(keys)
 
 	var str strings.Builder
@@ -58,7 +58,7 @@ func GetKeysHash(m map[string]interface{}, keys []string) string {
 }
 
 //GetKeysUnhashed returns keys values joined by '_'
-func GetKeysUnhashed(m map[string]interface{}, keys []string) string {
+func GetKeysUnhashed(m map[string]any, keys []string) string {
 	sort.Strings(keys)
 
 	var str strings.Builder

@@ -10,7 +10,7 @@ var DefaultTypeResolver = NewTypeResolver()
 
 // TypeResolver resolves types.Fields from input object
 type TypeResolver interface {
-	Resolve(map[string]interface{}) (Fields, error)
+	Resolve(map[string]any) (Fields, error)
 }
 
 // DummyTypeResolver doesn't do anything
@@ -23,7 +23,7 @@ func NewDummyTypeResolver() *DummyTypeResolver {
 }
 
 // Resolve return one dummy field and types.Fields becomes not empty. (it is used in Facebook destination)
-func (dtr *DummyTypeResolver) Resolve(object map[string]interface{}) (Fields, error) {
+func (dtr *DummyTypeResolver) Resolve(object map[string]any) (Fields, error) {
 	return Fields{"dummy": NewField(types.UNKNOWN)}, nil
 }
 
@@ -40,14 +40,14 @@ func NewTypeResolver() *TypeResolverImpl {
 // apply default typecast and define column types
 // reformat from json.Number into int64 or float64 and put back
 // reformat from string with timestamp into time.Time and put back
-func (tr *TypeResolverImpl) Resolve(object map[string]interface{}) (Fields, error) {
+func (tr *TypeResolverImpl) Resolve(object map[string]any) (Fields, error) {
 	mappedTypes := make(map[string]SQLColumn)
 	for k, v := range object {
 		if strings.Contains(k, SqlTypeKeyword) {
 			delete(object, k)
 			key := strings.ReplaceAll(k, SqlTypeKeyword, "")
 			switch val := v.(type) {
-			case []interface{}:
+			case []any:
 				if len(val) > 1 {
 					mappedTypes[key] = SQLColumn{Type: fmt.Sprint(val[0]), DdlType: fmt.Sprint(val[1])}
 				} else {

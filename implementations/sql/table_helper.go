@@ -22,7 +22,7 @@ type TableHelper struct {
 	sync.RWMutex
 
 	sqlAdapter          SQLAdapter
-	tx                  TxOrDatasource
+	tx                  TxOrDB
 	coordinationService coordination.Service
 	tables              map[string]*Table
 
@@ -37,7 +37,7 @@ type TableHelper struct {
 
 // NewTableHelper returns configured TableHelper instance
 // Note: columnTypesMapping must be not empty (or fields will be ignored)
-func NewTableHelper(sqlAdapter SQLAdapter, tx TxOrDatasource, coordinationService coordination.Service, pkFields utils.Set,
+func NewTableHelper(sqlAdapter SQLAdapter, tx TxOrDB, coordinationService coordination.Service, pkFields utils.Set,
 	maxColumns int) *TableHelper {
 
 	return &TableHelper{
@@ -297,6 +297,6 @@ func (th *TableHelper) getTableIdentifier(destinationID, tableName string) strin
 	return destinationID + "_" + tableName
 }
 
-func (th *TableHelper) SetTx(tx TxOrDatasource) {
+func (th *TableHelper) SetTx(tx TxOrDB) {
 	th.tx = tx
 }

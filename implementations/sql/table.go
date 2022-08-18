@@ -10,9 +10,9 @@ type Columns map[string]SQLColumn
 
 // TableField is a table column representation
 type TableField struct {
-	Field string      `json:"field,omitempty"`
-	Type  string      `json:"type,omitempty"`
-	Value interface{} `json:"value,omitempty"`
+	Field string `json:"field,omitempty"`
+	Type  string `json:"type,omitempty"`
+	Value any    `json:"value,omitempty"`
 }
 
 // Table is a dto for DWH Table representation

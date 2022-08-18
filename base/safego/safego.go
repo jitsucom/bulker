@@ -6,7 +6,7 @@ import (
 
 const defaultRestartTimeout = 2 * time.Second
 
-type RecoverHandler func(value interface{})
+type RecoverHandler func(value any)
 
 var GlobalRecoverHandler RecoverHandler
 

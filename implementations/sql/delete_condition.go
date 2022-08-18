@@ -11,10 +11,10 @@ const PartitonIdKeyword = "__partition_id_"
 
 var BigQueryPartitonIdRegex = regexp.MustCompile("(\\w+)/(\\d\\d\\d\\d-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\dZ)")
 
-// DeleteCondition is a representation of SQL delete condition
-type DeleteCondition struct {
+// WhenCondition is a representation of SQL delete condition
+type WhenCondition struct {
 	Field  string
-	Value  interface{}
+	Value  any
 	Clause string
 }
 
@@ -24,27 +24,27 @@ type DatePartition struct {
 	Granularity Granularity
 }
 
-// DeleteConditions is a dto for multiple DeleteCondition instances with Joiner
-type DeleteConditions struct {
-	Conditions    []DeleteCondition
+// WhenConditions is a dto for multiple WhenCondition instances with Joiner
+type WhenConditions struct {
+	Conditions    []WhenCondition
 	JoinCondition string
 }
 
 // IsEmpty returns true if there is no conditions
-func (dc *DeleteConditions) IsEmpty() bool {
+func (dc *WhenConditions) IsEmpty() bool {
 	return dc == nil || len(dc.Conditions) == 0
 }
 
-// DeleteByPartitionId return delete condition that removes objects based on __partition_id value
+// ByPartitionId return delete condition that removes objects based on __partition_id value
 // or empty condition if partitonId is empty
-func DeleteByPartitionId(partitonId string) *DeleteConditions {
+func ByPartitionId(partitonId string) *WhenConditions {
 	if partitonId == "" {
-		return &DeleteConditions{}
+		return &WhenConditions{}
 	}
 
-	return &DeleteConditions{
+	return &WhenConditions{
 		JoinCondition: "AND",
-		Conditions:    []DeleteCondition{{Field: PartitonIdKeyword, Clause: "=", Value: partitonId}},
+		Conditions:    []WhenCondition{{Field: PartitonIdKeyword, Clause: "=", Value: partitonId}},
 	}
 }
 

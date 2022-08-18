@@ -1,10 +1,8 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 	"github.com/jitsucom/bulker/base/utils"
-	"github.com/lib/pq"
 	"strings"
 )
 
@@ -19,7 +17,7 @@ type ErrorPayload struct {
 	Partition       string
 	PrimaryKeys     []string
 	Statement       string
-	Values          []interface{}
+	Values          []any
 	ValuesMapString string
 	TotalObjects    int
 }
@@ -72,7 +70,7 @@ func (ep *ErrorPayload) String() string {
 	}
 }
 
-func ObjectValuesToString(header []string, valueArgs []interface{}) string {
+func ObjectValuesToString(header []string, valueArgs []any) string {
 	var firstObjectValues strings.Builder
 	firstObjectValues.WriteString("{")
 	for i, name := range header {
@@ -83,42 +81,4 @@ func ObjectValuesToString(header []string, valueArgs []interface{}) string {
 	}
 	firstObjectValues.WriteString("}")
 	return firstObjectValues.String()
-}
-
-// CheckErr checks and extracts parsed pg.Error and extract code,message,details
-func CheckErr(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	if pgErr, ok := err.(*pq.Error); ok {
-		msgParts := []string{"pq:"}
-		if pgErr.Code != "" {
-			msgParts = append(msgParts, string(pgErr.Code))
-		}
-		if pgErr.Message != "" {
-			msgParts = append(msgParts, pgErr.Message)
-		}
-		if pgErr.Detail != "" {
-			msgParts = append(msgParts, pgErr.Detail)
-		}
-		if pgErr.Schema != "" {
-			msgParts = append(msgParts, "schema:"+pgErr.Schema)
-		}
-		if pgErr.Table != "" {
-			msgParts = append(msgParts, "table:"+pgErr.Table)
-		}
-		if pgErr.Column != "" {
-			msgParts = append(msgParts, "column:"+pgErr.Column)
-		}
-		if pgErr.DataTypeName != "" {
-			msgParts = append(msgParts, "data_type:"+pgErr.DataTypeName)
-		}
-		if pgErr.Constraint != "" {
-			msgParts = append(msgParts, "constraint:"+pgErr.Constraint)
-		}
-		return errors.New(strings.Join(msgParts, " "))
-	}
-
-	return err
 }

@@ -2,10 +2,10 @@ package utils
 
 type RichError struct {
 	error   string
-	payload interface{}
+	payload any
 }
 
-func NewRichError(error string, payload interface{}) *RichError {
+func NewRichError(error string, payload any) *RichError {
 	return &RichError{error: error, payload: payload}
 }
 
@@ -13,6 +13,6 @@ func (r *RichError) Error() string {
 	return r.error
 }
 
-func (r *RichError) Payload() interface{} {
+func (r *RichError) Payload() any {
 	return r.payload
 }

@@ -65,71 +65,71 @@ func InitGlobalLogger(writer io.Writer, levelStr string) error {
 	return nil
 }
 
-func SystemErrorf(format string, v ...interface{}) {
+func SystemErrorf(format string, v ...any) {
 	SystemError(fmt.Sprintf(format, v...))
 }
 
-func SystemError(v ...interface{}) {
-	msg := []interface{}{"System error:"}
+func SystemError(v ...any) {
+	msg := []any{"System error:"}
 	msg = append(msg, v...)
 	Error(msg...)
 	//TODO: implement system error notification
 	//notifications.SystemError(msg...)
 }
 
-func Errorf(format string, v ...interface{}) {
+func Errorf(format string, v ...any) {
 	Error(fmt.Sprintf(format, v...))
 }
 
-func Error(v ...interface{}) {
+func Error(v ...any) {
 	if LogLevel <= ERROR {
 		log.Println(errMsg(v...))
 	}
 }
 
-func Infof(format string, v ...interface{}) {
+func Infof(format string, v ...any) {
 	Info(fmt.Sprintf(format, v...))
 }
 
-func Info(v ...interface{}) {
+func Info(v ...any) {
 	if LogLevel <= INFO {
-		log.Println(append([]interface{}{infoPrefix}, v...)...)
+		log.Println(append([]any{infoPrefix}, v...)...)
 	}
 }
 
-func Debugf(format string, v ...interface{}) {
+func Debugf(format string, v ...any) {
 	Debug(fmt.Sprintf(format, v...))
 }
 
-func Debug(v ...interface{}) {
+func Debug(v ...any) {
 	if LogLevel <= DEBUG {
-		log.Println(append([]interface{}{debugPrefix}, v...)...)
+		log.Println(append([]any{debugPrefix}, v...)...)
 	}
 }
 
-func Warnf(format string, v ...interface{}) {
+func Warnf(format string, v ...any) {
 	Warn(fmt.Sprintf(format, v...))
 }
 
-func Warn(v ...interface{}) {
+func Warn(v ...any) {
 	if LogLevel <= WARN {
-		log.Println(append([]interface{}{warnPrefix}, v...)...)
+		log.Println(append([]any{warnPrefix}, v...)...)
 	}
 }
 
-func Fatal(v ...interface{}) {
+func Fatal(v ...any) {
 	if LogLevel <= FATAL {
 		log.Fatal(errMsg(v...))
 	}
 }
 
-func Fatalf(format string, v ...interface{}) {
+func Fatalf(format string, v ...any) {
 	if LogLevel <= FATAL {
 		log.Fatalf(errMsg(fmt.Sprintf(format, v...)))
 	}
 }
 
-func errMsg(values ...interface{}) string {
+func errMsg(values ...any) string {
 	valuesStr := []string{errPrefix}
 	for _, v := range values {
 		valuesStr = append(valuesStr, fmt.Sprint(v))

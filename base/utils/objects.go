@@ -12,7 +12,7 @@ import (
 // map, json string or yaml string,
 //
 // already struct of provided type or pointer to it
-func ParseObject[K any](inputObject interface{}, result *K) error {
+func ParseObject[K any](inputObject any, result *K) error {
 	if result == nil {
 		return fmt.Errorf("result variable must be an empty struct of desired type, got nil")
 	}
@@ -21,7 +21,7 @@ func ParseObject[K any](inputObject interface{}, result *K) error {
 		*result = *cfg
 	case K:
 		*result = cfg
-	case map[string]interface{}:
+	case map[string]any:
 		if err := mapstructure.Decode(cfg, result); err != nil {
 			return fmt.Errorf("failed to parse map as %T : %w", result, err)
 		}
@@ -44,10 +44,10 @@ func ParseObject[K any](inputObject interface{}, result *K) error {
 	return nil
 }
 
-func ExtractObject(object interface{}, path ...string) (interface{}, error) {
-	mp, ok := object.(map[string]interface{})
+func ExtractObject(object any, path ...string) (any, error) {
+	mp, ok := object.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("Expected object of type map[string]interface{} got: %T", object)
+		return nil, fmt.Errorf("Expected object of type map[string]any got: %T", object)
 	}
 	last := len(path) == 1
 	val, ok := mp[path[0]]
@@ -63,7 +63,7 @@ func ExtractObject(object interface{}, path ...string) (interface{}, error) {
 // Nvl returns first not null object or pointer from varargs
 //
 // return nil if all passed arguments are nil
-func Nvl(args ...interface{}) interface{} {
+func Nvl(args ...any) any {
 	for _, str := range args {
 		if str != nil {
 			return str
@@ -75,7 +75,7 @@ func Nvl(args ...interface{}) interface{} {
 // NvlMap returns first not empty map from varargs
 //
 // return nil if all passed maps are empty
-func NvlMap(args ...map[string]interface{}) map[string]interface{} {
+func NvlMap(args ...map[string]any) map[string]any {
 	for _, str := range args {
 		if len(str) > 0 {
 			return str

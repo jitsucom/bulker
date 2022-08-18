@@ -92,7 +92,7 @@ func StringFromType(dataType DataType) (string, error) {
 //note: json.Unmarshal returns json.Number type that can be int or float
 //      we have to check does json number have dot in string representation
 // if have -> return float64 otherwise int64
-func ReformatValue(v interface{}) interface{} {
+func ReformatValue(v any) any {
 	v = ReformatNumberValue(v)
 	return ReformatTimeValue(v)
 }
@@ -101,7 +101,7 @@ func ReformatValue(v interface{}) interface{} {
 //note: json.Unmarshal returns json.Number type that can be int or float
 //      we have to check does json number have dot in string representation
 // if have -> return float64 otherwise int64
-func ReformatNumberValue(v interface{}) interface{} {
+func ReformatNumberValue(v any) any {
 	jsonNumber, ok := v.(json.Number)
 	if !ok {
 		return v
@@ -113,7 +113,7 @@ func ReformatNumberValue(v interface{}) interface{} {
 			logging.Errorf("Error parsing %s into float64: %v", jsonNumber.String(), err)
 			return v
 		}
-		return interface{}(floatValue)
+		return any(floatValue)
 	}
 
 	intValue, err := jsonNumber.Int64()
@@ -121,11 +121,11 @@ func ReformatNumberValue(v interface{}) interface{} {
 		logging.Errorf("Error parsing %s into int64: %v", jsonNumber.String(), err)
 		return v
 	}
-	return interface{}(intValue)
+	return any(intValue)
 }
 
 // ReformatTimeValue processes string with ISO DateTime or Golang layout into time.Time
-func ReformatTimeValue(value interface{}) interface{} {
+func ReformatTimeValue(value any) any {
 	stringValue, ok := value.(string)
 	if !ok {
 		return value
@@ -145,7 +145,7 @@ func ReformatTimeValue(value interface{}) interface{} {
 }
 
 //TypeFromValue return DataType from v type
-func TypeFromValue(v interface{}) (DataType, error) {
+func TypeFromValue(v any) (DataType, error) {
 	switch v.(type) {
 	case string:
 		return STRING, nil
@@ -166,7 +166,7 @@ func DataTypePtr(dt DataType) *DataType {
 	return &dt
 }
 
-func ParseTimestamp(rawTimestamp interface{}) (time.Time, error) {
+func ParseTimestamp(rawTimestamp any) (time.Time, error) {
 	switch t := rawTimestamp.(type) {
 	case time.Time:
 		return t, nil

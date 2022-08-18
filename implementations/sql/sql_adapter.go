@@ -11,17 +11,20 @@ type SQLAdapter interface {
 	GetConfig() *DataSourceConfig
 	//GetTypesMapping return mapping from generic types to SQL types specific for this database
 	GetTypesMapping() map[types.DataType]string
-	OpenTx(ctx context.Context) (*Transaction, error)
-	Insert(ctx context.Context, wrappedTx TxOrDatasource, table *Table, merge bool, objects []types.Object) error
-	//TODO transaction?
-	CreateDbSchema(ctx context.Context, dbSchemaName string) error
-	GetTableSchema(ctx context.Context, wrappedTx TxOrDatasource, tableName string) (*Table, error)
-	CreateTable(ctx context.Context, wrappedTx TxOrDatasource, schemaToCreate *Table) error
-	CopyTables(ctx context.Context, wrappedTx TxOrDatasource, targetTable *Table, sourceTable *Table, merge bool) error
-	PatchTableSchema(ctx context.Context, wrappedTx TxOrDatasource, schemaToAdd *Table) error
+	OpenTx(ctx context.Context) (*TxOrDBWrapper, error)
+	Insert(ctx context.Context, txOrDb TxOrDB, table *Table, merge bool, objects []types.Object) error
+	CreateDbSchema(ctx context.Context, txOrDb TxOrDB, dbSchemaName string) error
+	GetTableSchema(ctx context.Context, txOrDb TxOrDB, tableName string) (*Table, error)
+	CreateTable(ctx context.Context, txOrDb TxOrDB, schemaToCreate *Table) error
+	CopyTables(ctx context.Context, txOrDb TxOrDB, targetTable *Table, sourceTable *Table, merge bool) error
+	PatchTableSchema(ctx context.Context, txOrDb TxOrDB, schemaToAdd *Table) error
 	//Truncate(tableName string) error
-	Update(ctx context.Context, wrappedTx TxOrDatasource, table *Table, object map[string]interface{}, whereKey string, whereValue interface{}) error
-	Delete(ctx context.Context, wrappedTx TxOrDatasource, tableName string, deleteConditions *DeleteConditions) error
-	DropTable(ctx context.Context, wrappedTx TxOrDatasource, table *Table, ifExists bool) error
-	ReplaceTable(ctx context.Context, wrappedTx TxOrDatasource, originalTable, replacementTable string, dropOldTable bool) error
+	Update(ctx context.Context, txOrDb TxOrDB, table *Table, object map[string]any, whereKey string, whereValue any) error
+	Delete(ctx context.Context, txOrDb TxOrDB, tableName string, deleteConditions *WhenConditions) error
+	Select(ctx context.Context, tableName string, deleteConditions *WhenConditions) ([]map[string]any, error)
+	DropTable(ctx context.Context, txOrDb TxOrDB, table *Table, ifExists bool) error
+	ReplaceTable(ctx context.Context, txOrDb TxOrDB, originalTable, replacementTable string, dropOldTable bool) error
+
+	//private
+	dbWrapper() *TxOrDBWrapper
 }

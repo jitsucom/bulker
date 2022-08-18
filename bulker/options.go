@@ -3,7 +3,7 @@ package bulker
 type StreamOption func(*StreamOptions)
 
 type StreamOptions struct {
-	ImplementationOptions map[string]interface{}
+	ImplementationOptions map[string]any
 }
 
 type ImplementationOption[V any] struct {
@@ -21,7 +21,7 @@ func (io ImplementationOption[V]) Get(so *StreamOptions) V {
 
 func (io ImplementationOption[V]) Set(so *StreamOptions, value V) {
 	if so.ImplementationOptions == nil {
-		so.ImplementationOptions = map[string]interface{}{io.Key: value}
+		so.ImplementationOptions = map[string]any{io.Key: value}
 	} else {
 		so.ImplementationOptions[io.Key] = value
 	}

@@ -68,7 +68,7 @@ type typeNode struct {
 }
 
 //ConvertFunc is a function for a certain DataType conversion
-type ConvertFunc func(v interface{}) (interface{}, error)
+type ConvertFunc func(v any) (any, error)
 
 type rule struct {
 	from DataType
@@ -90,7 +90,7 @@ func IsConvertible(from DataType, to DataType) bool {
 
 //Convert returns converted into toType value
 //or error if occurred
-func Convert(toType DataType, v interface{}) (interface{}, error) {
+func Convert(toType DataType, v any) (any, error) {
 	currentType, err := TypeFromValue(v)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func lowestCommonAncestor(root *typeNode, t1, t2 DataType) DataType {
 }
 
 //assume that input v can't be nil
-func numberToString(v interface{}) (interface{}, error) {
+func numberToString(v any) (any, error) {
 	switch v.(type) {
 	case int64:
 		int64Value, _ := v.(int64)
@@ -167,7 +167,7 @@ func numberToString(v interface{}) (interface{}, error) {
 }
 
 //assume that input v can't be nil
-func timestampToString(v interface{}) (interface{}, error) {
+func timestampToString(v any) (any, error) {
 	switch v.(type) {
 	case time.Time:
 		timeValue, _ := v.(time.Time)
@@ -180,7 +180,7 @@ func timestampToString(v interface{}) (interface{}, error) {
 	}
 }
 
-func numberToFloat(v interface{}) (interface{}, error) {
+func numberToFloat(v any) (any, error) {
 	switch v.(type) {
 	case int:
 		return float64(v.(int)), nil
@@ -201,7 +201,7 @@ func numberToFloat(v interface{}) (interface{}, error) {
 	}
 }
 
-func boolToString(v interface{}) (interface{}, error) {
+func boolToString(v any) (any, error) {
 	switch v.(type) {
 	case bool:
 		boolValue, _ := v.(bool)
@@ -211,7 +211,7 @@ func boolToString(v interface{}) (interface{}, error) {
 	}
 }
 
-func boolToNumber(v interface{}) (interface{}, error) {
+func boolToNumber(v any) (any, error) {
 	switch v.(type) {
 	case bool:
 		boolValue, _ := v.(bool)
@@ -225,7 +225,7 @@ func boolToNumber(v interface{}) (interface{}, error) {
 	}
 }
 
-func boolToFloat(v interface{}) (interface{}, error) {
+func boolToFloat(v any) (any, error) {
 	switch v.(type) {
 	case bool:
 		boolValue, _ := v.(bool)
@@ -241,7 +241,7 @@ func boolToFloat(v interface{}) (interface{}, error) {
 
 //StringToInt returns int representation of input string
 //or error if unconvertable
-func StringToInt(v interface{}) (interface{}, error) {
+func StringToInt(v any) (any, error) {
 	intValue, err := strconv.Atoi(v.(string))
 	if err != nil {
 		return nil, fmt.Errorf("Error stringToInt() for value: %v: %v", v, err)
@@ -252,7 +252,7 @@ func StringToInt(v interface{}) (interface{}, error) {
 
 //StringToFloat return float64 value from string
 //or error if unconvertable
-func StringToFloat(v interface{}) (interface{}, error) {
+func StringToFloat(v any) (any, error) {
 	floatValue, err := strconv.ParseFloat(v.(string), 64)
 	if err != nil {
 		return nil, fmt.Errorf("Error stringToFloat() for value: %v: %v", v, err)
@@ -261,7 +261,7 @@ func StringToFloat(v interface{}) (interface{}, error) {
 	return floatValue, nil
 }
 
-func stringToTimestamp(v interface{}) (interface{}, error) {
+func stringToTimestamp(v any) (any, error) {
 	t, err := time.Parse(time.RFC3339Nano, v.(string))
 	if err != nil {
 		return nil, fmt.Errorf("Error stringToTimestamp() for value: %v: %v", v, err)
@@ -271,11 +271,11 @@ func stringToTimestamp(v interface{}) (interface{}, error) {
 }
 
 //StringWithCommasToFloat return float64 value from string (1,200.50)
-func StringWithCommasToFloat(v interface{}) (interface{}, error) {
+func StringWithCommasToFloat(v any) (any, error) {
 	return StringToFloat(charsInNumberStringReplacer.Replace(v.(string)))
 }
 
-func floatToInt(v interface{}) (interface{}, error) {
+func floatToInt(v any) (any, error) {
 	switch v.(type) {
 	case float32:
 		return int64(v.(float32)), nil

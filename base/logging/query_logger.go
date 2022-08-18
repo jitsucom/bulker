@@ -41,24 +41,57 @@ func NewQueryLogger(identifier string, ddlWriter io.Writer, queryWriter io.Write
 	return &QueryLogger{identifier: identifier, queryLogger: queryLogger, ddlLogger: ddlLogger}
 }
 
-func (l *QueryLogger) LogDDL(query string) {
-	if l.ddlLogger != nil {
-		l.ddlLogger.Printf("%s [%s] %s\n", debugPrefix, l.identifier, query)
-	}
-}
+//func (l *QueryLogger) LogDDL(query string) {
+//	if l.ddlLogger != nil {
+//		l.ddlLogger.Printf("%s [%s] %s\n", debugPrefix, l.identifier, query)
+//	}
+//}
+//
+//func (l *QueryLogger) LogQuery(query string) {
+//	if l.queryLogger != nil {
+//		l.queryLogger.Printf("%s [%s] %s\n", debugPrefix, l.identifier, query)
+//	}
+//}
 
-func (l *QueryLogger) LogQuery(query string) {
-	if l.queryLogger != nil {
-		l.queryLogger.Printf("%s [%s] %s\n", debugPrefix, l.identifier, query)
-	}
-}
+func (l *QueryLogger) LogQuery(query string, err error, values ...any) {
+	var logger *log.Logger
+	if strings.HasPrefix(query, "CREATE") ||
+		strings.HasPrefix(query, "DROP") ||
+		strings.HasPrefix(query, "ALTER") ||
+		strings.HasPrefix(query, "RENAME") {
+		logger = l.ddlLogger
+	} else {
+		logger = l.queryLogger
 
-func (l *QueryLogger) LogQueryWithValues(query string, values []interface{}) {
-	if l.queryLogger != nil {
-		var stringValues []string
-		for _, value := range values {
-			stringValues = append(stringValues, fmt.Sprint(value))
+	}
+	if logger != nil {
+		valuesString := ""
+		var stringBuilder strings.Builder
+		for i, value := range values {
+			if i > 0 {
+				stringBuilder.WriteString(", ")
+			}
+			stringBuilder.WriteString(fmt.Sprint(value))
 		}
-		l.queryLogger.Printf("%s [%s] %s; values: [%s]\n", debugPrefix, l.identifier, query, strings.Join(stringValues, ", "))
+		if stringBuilder.Len() > 0 {
+			valuesString = "; values: [" + stringBuilder.String() + "]"
+		}
+		levelPrefix := debugPrefix
+		errorString := ""
+		if err != nil {
+			levelPrefix = errPrefix
+			errorString = "; error: " + err.Error()
+		}
+		logger.Printf("%s [%s] %s%s%s\n", levelPrefix, l.identifier, query, errorString, valuesString)
 	}
 }
+
+//func (l *QueryLogger) LogQueryWithValues(query string, values []any) {
+//	if l.queryLogger != nil {
+//		var stringValues []string
+//		for _, value := range values {
+//			stringValues = append(stringValues, fmt.Sprint(value))
+//		}
+//		l.queryLogger.Printf("%s [%s] %s; values: [%s]\n", debugPrefix, l.identifier, query, strings.Join(stringValues, ", "))
+//	}
+//}

@@ -16,7 +16,7 @@ import (
 type AbstractSQLStream struct {
 	id        string
 	p         SQLAdapter
-	tx        *Transaction
+	tx        *TxOrDBWrapper
 	mode      bulker.BulkMode
 	options   bulker.StreamOptions
 	tableName string
@@ -25,7 +25,7 @@ type AbstractSQLStream struct {
 	tableHelper *TableHelper
 }
 
-func NewAbstractStream(id string, p SQLAdapter, tx TxOrDatasource, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) AbstractSQLStream {
+func NewAbstractStream(id string, p SQLAdapter, tx TxOrDB, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) AbstractSQLStream {
 	ps := AbstractSQLStream{id: id, p: p, tableName: tableName, mode: mode}
 	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {

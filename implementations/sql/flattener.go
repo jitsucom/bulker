@@ -10,7 +10,7 @@ import (
 var DefaultFlattener = NewFlattener()
 
 type Flattener interface {
-	FlattenObject(map[string]interface{}) (map[string]interface{}, error)
+	FlattenObject(map[string]any) (map[string]any, error)
 }
 
 type FlattenerImpl struct {
@@ -26,8 +26,8 @@ func NewFlattener() Flattener {
 // FlattenObject flatten object e.g. from {"key1":{"key2":123}} to {"key1_key2":123}
 // from {"$key1":1} to {"_key1":1}
 // from {"(key1)":1} to {"_key1_":1}
-func (f *FlattenerImpl) FlattenObject(json map[string]interface{}) (map[string]interface{}, error) {
-	flattenMap := make(map[string]interface{})
+func (f *FlattenerImpl) FlattenObject(json map[string]any) (map[string]any, error) {
+	flattenMap := make(map[string]any)
 
 	err := f.flatten("", json, flattenMap)
 	if err != nil {
@@ -43,7 +43,7 @@ func (f *FlattenerImpl) FlattenObject(json map[string]interface{}) (map[string]i
 
 // recursive function for flatten key (if value is inner object -> recursion call)
 // Reformat key
-func (f *FlattenerImpl) flatten(key string, value interface{}, destination map[string]interface{}) error {
+func (f *FlattenerImpl) flatten(key string, value any, destination map[string]any) error {
 	key = Reformat(key)
 	t := reflect.ValueOf(value)
 	switch t.Kind() {
@@ -59,7 +59,7 @@ func (f *FlattenerImpl) flatten(key string, value interface{}, destination map[s
 		}
 		destination[key] = string(b)
 	case reflect.Map:
-		unboxed := value.(map[string]interface{})
+		unboxed := value.(map[string]any)
 		for k, v := range unboxed {
 			newKey := k
 			if key != "" {
@@ -120,6 +120,6 @@ func NewDummyFlattener() *DummyFlattener {
 }
 
 // FlattenObject return the same json object
-func (df *DummyFlattener) FlattenObject(json map[string]interface{}) (map[string]interface{}, error) {
+func (df *DummyFlattener) FlattenObject(json map[string]any) (map[string]any, error) {
 	return json, nil
 }

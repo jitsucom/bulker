@@ -4,6 +4,6 @@ import "io"
 
 type ObjectLogger interface {
 	io.Closer
-	Consume(event map[string]interface{}, tokenID string)
-	ConsumeAny(obj interface{})
+	Consume(event map[string]any, tokenID string)
+	ConsumeAny(obj any)
 }

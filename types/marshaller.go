@@ -14,7 +14,7 @@ var (
 )
 
 type Marshaller interface {
-	Marshal([]string, map[string]interface{}, *bytes.Buffer) error
+	Marshal([]string, map[string]any, *bytes.Buffer) error
 	NeedHeader() bool
 }
 
@@ -22,7 +22,7 @@ type JSONMarshaller struct {
 }
 
 //Marshal object as json
-func (jm JSONMarshaller) Marshal(fields []string, object map[string]interface{}, buf *bytes.Buffer) error {
+func (jm JSONMarshaller) Marshal(fields []string, object map[string]any, buf *bytes.Buffer) error {
 	bytes, err := json.Marshal(object)
 	if err != nil {
 		return err
@@ -43,7 +43,7 @@ type CSVMarshaller struct {
 }
 
 //Marshal marshals input object as csv values string with delimiter
-func (cm CSVMarshaller) Marshal(fields []string, object map[string]interface{}, buf *bytes.Buffer) error {
+func (cm CSVMarshaller) Marshal(fields []string, object map[string]any, buf *bytes.Buffer) error {
 	csvWriter := csv.NewWriter(buf)
 	valuesArr := make([]string, 0, len(fields))
 	for _, field := range fields {

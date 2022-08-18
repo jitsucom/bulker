@@ -13,7 +13,7 @@ func TestHandlePanicAndRestart(t *testing.T) {
 		}
 	}()
 
-	GlobalRecoverHandler = func(value interface{}) {
+	GlobalRecoverHandler = func(value any) {
 	}
 
 	counter := 0

@@ -22,6 +22,7 @@ var (
 	DeletePrimaryKeysError    = sqlError.NewSubtype("delete_primary_keys")
 	GetPrimaryKeysError       = sqlError.NewSubtype("get_primary_keys")
 	DeleteFromTableError      = sqlError.NewSubtype("delete_from_table")
+	SelectFromTableError      = sqlError.NewSubtype("select_from_table")
 	ExecuteInsertInBatchError = sqlError.NewSubtype("execute_insert_in_batch")
 	ExecuteInsertError        = sqlError.NewSubtype("execute_insert")
 	UpdateError               = sqlError.NewSubtype("update")
@@ -45,16 +46,16 @@ var (
 )
 
 /*
-func Wrap(err error, errorType *errorx.Type, message, propertyKey string, property interface{}) *errorx.Error{
+func Wrap(err error, errorType *errorx.Type, message, propertyKey string, property any) *errorx.Error{
 	return errorType.Wrap(err, message).
 		WithProperty(propertyKey, property)
 }*/
 
-func Decorate(err error, msg string, args ...interface{}) *errorx.Error {
+func Decorate(err error, msg string, args ...any) *errorx.Error {
 	return errorx.Decorate(err, msg, args...)
 }
 
-//Group multiple errors where first one is a main error
+// Group multiple errors where first one is a main error
 func Group(errs ...error) error {
 	if len(errs) == 0 {
 		return nil

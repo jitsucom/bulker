@@ -111,7 +111,7 @@ func (ps *ReplacePartitionStream) clearPartition(ctx context.Context) error {
 			return fmt.Errorf("couldn't start ReplacePartitionStream: destination table [%s] exist but it is not managed by ReplacePartitionStream: %s column is missing", ps.tableName, PartitonIdKeyword)
 		}
 		//delete previous data by provided partition id
-		err = ps.p.Delete(ctx, ps.tx, ps.tableName, DeleteByPartitionId(ps.partitionId))
+		err = ps.p.Delete(ctx, ps.tx, ps.tableName, ByPartitionId(ps.partitionId))
 		if err != nil {
 			return fmt.Errorf("couldn't start ReplacePartitionStream: failed to delete data for partitionId: %s error: %s", ps.partitionId, err)
 		}

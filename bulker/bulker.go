@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/jitsucom/bulker/types"
+	"io"
 )
 
 type InitFunction func(Config) (Bulker, error)
@@ -42,6 +43,7 @@ const (
 // Bulker interface allows streaming object to data warehouses using different modes.
 // See BulkMode for more details.
 type Bulker interface {
+	io.Closer
 	//CreateStream create a BulkerStream instance that will store objects to the target table in a data warehouse.
 	//bulker BulkerStream creates a new table with provided tableName if it does not exist.
 	//Table schema is based on flattened object structure but may be overridden by providing WithTable option.
@@ -67,8 +69,8 @@ type Config struct {
 	Id string
 	//bulkerType - type of bulker implementation will stream data to
 	BulkerType string
-	//destinationConfig - config of destination - may be struct type supported by destination implementation of map[string]interface{}
-	DestinationConfig interface{}
+	//destinationConfig - config of destination - may be struct type supported by destination implementation of map[string]any
+	DestinationConfig any
 	//TODO: think about logging approach for library
 	LogLevel LogLevel
 }
