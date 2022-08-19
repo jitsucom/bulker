@@ -62,6 +62,7 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 		if err != nil {
 			ps.state.SuccessfulRows = 0
 			if ps.tx != nil {
+				_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable.Name, true)
 				_ = ps.tx.Rollback()
 			}
 		}
@@ -91,7 +92,7 @@ func (ps *ReplaceTableStream) Abort(ctx context.Context) (state bulker.State, er
 		return ps.state, errors.New("stream is not active")
 	}
 	if ps.tx != nil {
-		_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable, true)
+		_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable.Name, true)
 		_ = ps.tx.Rollback()
 	}
 	ps.state.Status = bulker.Aborted

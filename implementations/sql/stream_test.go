@@ -1,8 +1,14 @@
 package sql
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/timestamp"
+	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 	"github.com/stretchr/testify/require"
@@ -11,66 +17,207 @@ import (
 	"time"
 )
 
+var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.841182Z")
+
+const forceLeaveResultingTables = false
+
+var configRegistry = map[string]any{
+	"postgres": os.Getenv("BULKER_TEST_POSTGRES"),
+}
+
 type bulkerTestConfig struct {
-	name          string
-	config        bulker.Config
-	tableName     string
-	mode          bulker.BulkMode
+	//name of the test
+	name string
+	//bulker config
+	config *bulker.Config
+	//for which bulker types (destination types) to run test
+	bulkerTypes []string
+	//create table with provided schema before running the test
+	//TODO: implement stream_test preExistingTable
+	preExistingTable *Table
+	//schema of the table expected as result of complete test run
+	expectedTable *Table
+	//continue test run even after Consume() returned error
+	ignoreConsumeErrors bool
+	//rows count expected in resulting table
+	expectedRowsCount int
+	//rows data expected in resulting table
+	expectedRows []map[string]any
+	//map of expected errors by step name. May be error type or string. String is used for error message partial matching.
+	expectedErrors map[string]any
+	//don't clean up resulting table before and after test run. See also forceLeaveResultingTables
+	leaveResultingTable bool
+	//file with objects to consume in ngjson format
+	dataFile string
+	//bulker stream mode
+	mode bulker.BulkMode
+	//bulker stream options
 	streamOptions []bulker.StreamOption
 }
 
-func TestBulker(t *testing.T) {
-	var bulkerTestData = []bulkerTestConfig{
-		{mode: bulker.AutoCommit, name: "postgres_autocommit",
-			config:    bulker.Config{Id: "postgres", BulkerType: "postgres", DestinationConfig: os.Getenv("BULKER_TEST_POSTGRES")},
-			tableName: "autocommit_test"},
-		{mode: bulker.Transactional, name: "postgres_transactional",
-			config:    bulker.Config{Id: "postgres", BulkerType: "postgres", DestinationConfig: os.Getenv("BULKER_TEST_POSTGRES")},
-			tableName: "transactional_test", streamOptions: []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()}},
-		{mode: bulker.ReplaceTable, name: "postgres_replacetable",
-			config:    bulker.Config{Id: "postgres", BulkerType: "postgres", DestinationConfig: os.Getenv("BULKER_TEST_POSTGRES")},
-			tableName: "replacetable_test", streamOptions: []bulker.StreamOption{WithPrimaryKey("id"), WithColumnType("id", "text")}},
-		{mode: bulker.ReplacePartition, name: "postgres_replacepartition",
-			config:    bulker.Config{Id: "postgres", BulkerType: "postgres", DestinationConfig: os.Getenv("BULKER_TEST_POSTGRES")},
-			tableName: "replacepartition_test", streamOptions: []bulker.StreamOption{WithPartition("partition_id")}},
+func TestSimple(t *testing.T) {
+	tests := []bulkerTestConfig{
+		{
+			name:              "autocommit",
+			mode:              bulker.AutoCommit,
+			dataFile:          "test_data/simple.ndjson",
+			expectedRowsCount: 2,
+			expectedTable: &Table{
+				Name:     "postgres_autocommit_test",
+				Schema:   "bulker",
+				PKFields: utils.Set[string]{},
+				Columns: Columns{
+					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
+					"extra":      SQLColumn{Type: "text"},
+					"id":         SQLColumn{Type: "bigint"},
+					"name":       SQLColumn{Type: "text"},
+				},
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "test", "extra": nil},
+				{"_timestamp": constantTime, "id": 2, "name": "test2", "extra": "extra"},
+			},
+			bulkerTypes: []string{"postgres"},
+		},
+		{
+			name:              "transactional",
+			mode:              bulker.Transactional,
+			dataFile:          "test_data/simple.ndjson",
+			expectedRowsCount: 2,
+			bulkerTypes:       []string{"postgres"},
+			streamOptions:     []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
+		},
+		{
+			name:              "replacetable",
+			mode:              bulker.ReplaceTable,
+			dataFile:          "test_data/simple.ndjson",
+			expectedRowsCount: 2,
+			bulkerTypes:       []string{"postgres"},
+			streamOptions:     []bulker.StreamOption{WithPrimaryKey("id"), WithColumnType("id", "text")},
+		},
+		{
+			name:              "replacepartition",
+			mode:              bulker.ReplacePartition,
+			dataFile:          "test_data/simple.ndjson",
+			expectedRowsCount: 2,
+			bulkerTypes:       []string{"postgres"},
+			streamOptions:     []bulker.StreamOption{WithPartition("partition_id")},
+		},
 	}
-	logging.Infof("BULKER_TEST_POSTGRES: %s", os.Getenv("BULKER_TEST_POSTGRES"))
-	for _, td := range bulkerTestData {
-		t.Run(td.name, func(t *testing.T) {
-			testStreamSimple(t, td)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runTestConfig(t, tt, testStream)
 		})
 	}
 }
 
-func testStreamSimple(t *testing.T, testConfig bulkerTestConfig) {
+func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, bulkerTestConfig)) {
+	if tt.config != nil {
+		t.Run(tt.config.Id+"_"+tt.name, func(t *testing.T) {
+			testFunc(t, tt)
+		})
+	} else {
+		for _, bulkerType := range tt.bulkerTypes {
+			newTd := tt
+			newTd.config = &bulker.Config{Id: bulkerType, BulkerType: bulkerType, DestinationConfig: configRegistry[bulkerType]}
+			t.Run(bulkerType+"_"+newTd.name, func(t *testing.T) {
+				testFunc(t, newTd)
+			})
+		}
+	}
+}
+
+func testStream(t *testing.T, testConfig bulkerTestConfig) {
 	require := require.New(t)
 
-	blk, err := bulker.CreateBulker(testConfig.config)
-	require.NoError(err)
-
-	stream, err := blk.CreateStream(t.Name(), testConfig.tableName, testConfig.mode, testConfig.streamOptions...)
-	require.NoError(err)
-
-	objects := []types.Object{
-		{"_timestamp": time.Now(), "id": 1, "name": "test"},
-		{"_timestamp": time.Now(), "id": 2, "name": "test2", "extra": "extra"},
-	}
-	ctx := context.Background()
-	for _, obj := range objects {
-		err = stream.Consume(ctx, obj)
-		require.NoError(err)
-	}
-
-	state, err := stream.Complete(ctx)
-	require.NoError(err)
-	require.Equal(bulker.Completed, state.Status)
-	require.Equal(2, state.SuccessfulRows)
-	require.Equal(2, state.ProcessedRows)
-	require.NoError(state.LastError)
-
+	blk, err := bulker.CreateBulker(*testConfig.config)
+	CheckError("create_bulker", require, testConfig.expectedErrors, err)
+	defer func() {
+		err = blk.Close()
+		CheckError("bulker_close", require, testConfig.expectedErrors, err)
+	}()
 	sqlAdapter, ok := blk.(SQLAdapter)
 	require.True(ok)
-	rows, err := sqlAdapter.Select(ctx, testConfig.tableName, nil)
-	require.NoError(err)
-	require.Equal(2, len(rows))
+	ctx := context.Background()
+	tableName := testConfig.config.Id + "_" + testConfig.name + "_test"
+	//clean up in case of previous test failure
+	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
+		err = sqlAdapter.DropTable(ctx, sqlAdapter.dbWrapper(), tableName, true)
+		CheckError("pre_cleanup", require, testConfig.expectedErrors, err)
+	}
+	//clean up after test run
+	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
+		defer func() {
+			sqlAdapter.DropTable(ctx, sqlAdapter.dbWrapper(), tableName, true)
+		}()
+	}
+	stream, err := blk.CreateStream(t.Name(), tableName, testConfig.mode, testConfig.streamOptions...)
+	CheckError("create_stream", require, testConfig.expectedErrors, err)
+
+	//Abort stream if error occurred
+	defer func() {
+		if err != nil {
+			_, err = stream.Abort(ctx)
+			CheckError("stream_abort", require, testConfig.expectedErrors, err)
+		}
+	}()
+
+	file, err := os.Open(testConfig.dataFile)
+	CheckError("open_file", require, testConfig.expectedErrors, err)
+
+	scanner := bufio.NewScanner(file)
+	i := 0
+	for scanner.Scan() {
+		obj := types.Object{}
+		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		decoder.UseNumber()
+		err = decoder.Decode(&obj)
+		CheckError("decode_json", require, testConfig.expectedErrors, err)
+		err = stream.Consume(ctx, obj)
+		CheckError(fmt.Sprintf("consume_object_%d", i), require, testConfig.expectedErrors, err)
+		if err != nil && !testConfig.ignoreConsumeErrors {
+			return
+		}
+		i++
+	}
+	//Commit stream
+	state, err := stream.Complete(ctx)
+	CheckError("stream_complete", require, testConfig.expectedErrors, err)
+
+	require.Equal(bulker.Completed, state.Status)
+	require.Equal(testConfig.expectedRowsCount, state.SuccessfulRows)
+	require.Equal(testConfig.expectedRowsCount, state.ProcessedRows)
+	CheckError("state_lasterror", require, testConfig.expectedErrors, state.LastError)
+
+	if testConfig.expectedTable != nil {
+		//Check table schema
+		table, err := sqlAdapter.GetTableSchema(ctx, sqlAdapter.dbWrapper(), tableName)
+		CheckError("get_table", require, testConfig.expectedErrors, err)
+		logging.Infof("table: %+v", table)
+		require.Equal(testConfig.expectedTable, table)
+	}
+	if testConfig.expectedRowsCount >= 0 || len(testConfig.expectedRows) > 0 {
+		//Check rows count and rows data when provided
+		rows, err := sqlAdapter.Select(ctx, tableName, nil)
+		CheckError("select_result", require, testConfig.expectedErrors, err)
+		if testConfig.expectedRowsCount >= 0 {
+			require.Equal(testConfig.expectedRowsCount, len(rows))
+		}
+		if len(testConfig.expectedRows) > 0 {
+			require.Equal(testConfig.expectedRows, rows)
+		}
+	}
+}
+
+func CheckError(step string, require *require.Assertions, expectedErrors map[string]any, err error) {
+	switch target := expectedErrors[step].(type) {
+	case string:
+		require.Contains(err.Error(), target)
+	case error:
+		require.ErrorIs(err, target)
+	case nil:
+		require.NoError(err)
+	default:
+		panic(fmt.Sprintf("unexpected type of expected error %T", target))
+	}
 }

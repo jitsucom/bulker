@@ -148,7 +148,6 @@ func (g Granularity) String() string {
 	case ALL:
 		return string(ALL)
 	default:
-		logging.SystemError("Unknown granularity:", g)
 		return ""
 	}
 }

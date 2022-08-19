@@ -22,7 +22,7 @@ type Table struct {
 	Name   string
 
 	Columns        Columns
-	PKFields       utils.Set
+	PKFields       utils.Set[string]
 	PrimaryKeyName string
 	Partition      DatePartition
 
@@ -73,7 +73,7 @@ func (t *Table) GetPKFields() []string {
 }
 
 // GetPKFieldsSet returns primary keys set
-func (t *Table) GetPKFieldsSet() utils.Set {
+func (t *Table) GetPKFieldsSet() utils.Set[string] {
 	return t.PKFields
 }
 
@@ -83,7 +83,7 @@ func (t *Table) GetPKFieldsSet() utils.Set {
 // 2) all fields from another schema exist in current schema
 // NOTE: Diff method doesn't take types into account
 func (t *Table) Diff(another *Table) *Table {
-	diff := &Table{Schema: t.Schema, Name: t.Name, Columns: map[string]SQLColumn{}, PKFields: utils.Set{}}
+	diff := &Table{Schema: t.Schema, Name: t.Name, Columns: map[string]SQLColumn{}, PKFields: utils.Set[string]{}}
 
 	if !another.Exists() {
 		return diff

@@ -26,7 +26,7 @@ type TableHelper struct {
 	coordinationService coordination.Service
 	tables              map[string]*Table
 
-	pkFields           utils.Set
+	pkFields           utils.Set[string]
 	columnTypesMapping map[types.DataType]string
 
 	dbSchema        string
@@ -37,7 +37,7 @@ type TableHelper struct {
 
 // NewTableHelper returns configured TableHelper instance
 // Note: columnTypesMapping must be not empty (or fields will be ignored)
-func NewTableHelper(sqlAdapter SQLAdapter, tx TxOrDB, coordinationService coordination.Service, pkFields utils.Set,
+func NewTableHelper(sqlAdapter SQLAdapter, tx TxOrDB, coordinationService coordination.Service, pkFields utils.Set[string],
 	maxColumns int) *TableHelper {
 
 	return &TableHelper{
@@ -174,7 +174,7 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, destinationID str
 	}
 	//remove pk fields if a deletion was
 	if diff.DeletePkFields {
-		dbSchema.PKFields = utils.Set{}
+		dbSchema.PKFields = utils.Set[string]{}
 	}
 
 	// Save data schema to local cache

@@ -40,6 +40,9 @@ const (
 	ReplaceTable
 )
 
+// TODO: Automatically create schema: on first consume.
+// TODO: Recommend to use JSON Number! or let all column be float?
+
 // Bulker interface allows streaming object to data warehouses using different modes.
 // See BulkMode for more details.
 type Bulker interface {
@@ -48,6 +51,7 @@ type Bulker interface {
 	//bulker BulkerStream creates a new table with provided tableName if it does not exist.
 	//Table schema is based on flattened object structure but may be overridden by providing WithTable option.
 	//bulker BulkerStream will add new column to a table on the fly if new properties appear in object and table schema is not overridden.
+	//TODO: escape special symbols in table names
 	CreateStream(id, tableName string, mode BulkMode, streamOptions ...StreamOption) (BulkerStream, error)
 }
 

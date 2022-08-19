@@ -36,3 +36,11 @@ func UnfreezeTime() {
 	timeFrozen.Store(false)
 	currentFrozenTime = frozenTime
 }
+
+func MustParseTime(layout, value string) time.Time {
+	t, err := time.Parse(layout, value)
+	if err != nil {
+		panic(err)
+	}
+	return t
+}

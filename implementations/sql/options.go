@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	primaryKeyOption  = bulker.ImplementationOption[utils.Set]{Key: "BULKER_OPTION_PK", DefaultValue: utils.Set{}}
+	primaryKeyOption  = bulker.ImplementationOption[utils.Set[string]]{Key: "BULKER_OPTION_PK", DefaultValue: utils.Set[string]{}}
 	mergeRowsOption   = bulker.ImplementationOption[bool]{Key: "BULKER_OPTION_MERGE_ROWS"}
 	columnTypesOption = bulker.ImplementationOption[SQLTypes]{Key: "BULKER_OPTION_COLUMN_TYPES", DefaultValue: SQLTypes{}}
 	partitionIdOption = bulker.ImplementationOption[string]{Key: "BULKER_OPTION_PARTITION_ID"}

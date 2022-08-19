@@ -214,7 +214,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, txOrDb TxOrDB, tableName 
 }
 
 func (p *Postgres) getTable(ctx context.Context, txOrDb TxOrDB, tableName string) (*Table, error) {
-	table := &Table{Schema: p.config.Schema, Name: tableName, Columns: map[string]SQLColumn{}, PKFields: utils.Set{}}
+	table := &Table{Schema: p.config.Schema, Name: tableName, Columns: map[string]SQLColumn{}, PKFields: utils.Set[string]{}}
 	rows, err := txOrDb.QueryContext(ctx, tableSchemaQuery, p.config.Schema, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -382,7 +382,7 @@ func (p *Postgres) ReplaceTable(ctx context.Context, txOrDb TxOrDB, originalTabl
 	err1 := p.renameTableInTransaction(ctx, txOrDb, true, originalTable, tmpTable)
 	err = p.renameTableInTransaction(ctx, txOrDb, false, replacementTable, originalTable)
 	if dropOldTable && err1 == nil && err == nil {
-		return p.DropTable(ctx, txOrDb, &Table{Name: tmpTable}, true)
+		return p.DropTable(ctx, txOrDb, tmpTable, true)
 	}
 	return
 }
@@ -509,21 +509,20 @@ func (p *Postgres) CopyTables(ctx context.Context, txOrDb TxOrDB, targetTable *T
 	return nil
 }
 
-func (p *Postgres) DropTable(ctx context.Context, txOrDb TxOrDB, table *Table, ifExists bool) error {
+func (p *Postgres) DropTable(ctx context.Context, txOrDb TxOrDB, tableName string, ifExists bool) error {
 	ifExs := ""
 	if ifExists {
 		ifExs = "IF EXISTS "
 	}
-	query := fmt.Sprintf(dropTableTemplate, ifExs, p.config.Schema, table.Name)
+	query := fmt.Sprintf(dropTableTemplate, ifExs, p.config.Schema, tableName)
 
 	if _, err := txOrDb.ExecContext(ctx, query); err != nil {
 
 		return errorj.DropError.Wrap(err, "failed to drop table").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Schema:      p.config.Schema,
-				Table:       table.Name,
-				PrimaryKeys: table.GetPKFields(),
-				Statement:   query,
+				Schema:    p.config.Schema,
+				Table:     tableName,
+				Statement: query,
 			})
 	}
 
@@ -676,7 +675,7 @@ func (p *Postgres) executeInsertInTransaction(ctx context.Context, txOrDb TxOrDB
 }
 
 // columnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func (p *Postgres) columnDDL(name string, column SQLColumn, pkFields utils.Set) string {
+func (p *Postgres) columnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
 	var notNullClause string
 	sqlType := column.GetDDLType()
 
@@ -713,8 +712,8 @@ func (p *Postgres) Close() error {
 }
 
 // getPrimaryKey returns primary key name and fields
-func (p *Postgres) getPrimaryKey(ctx context.Context, txOrDb TxOrDB, tableName string) (string, utils.Set, error) {
-	primaryKeys := utils.Set{}
+func (p *Postgres) getPrimaryKey(ctx context.Context, txOrDb TxOrDB, tableName string) (string, utils.Set[string], error) {
+	primaryKeys := utils.Set[string]{}
 	pkFieldsRows, err := txOrDb.QueryContext(ctx, primaryKeyFieldsQuery, p.config.Schema, tableName)
 	if err != nil {
 		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").

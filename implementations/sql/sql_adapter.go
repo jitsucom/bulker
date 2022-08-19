@@ -22,7 +22,7 @@ type SQLAdapter interface {
 	Update(ctx context.Context, txOrDb TxOrDB, table *Table, object map[string]any, whereKey string, whereValue any) error
 	Delete(ctx context.Context, txOrDb TxOrDB, tableName string, deleteConditions *WhenConditions) error
 	Select(ctx context.Context, tableName string, deleteConditions *WhenConditions) ([]map[string]any, error)
-	DropTable(ctx context.Context, txOrDb TxOrDB, table *Table, ifExists bool) error
+	DropTable(ctx context.Context, txOrDb TxOrDB, tableName string, ifExists bool) error
 	ReplaceTable(ctx context.Context, txOrDb TxOrDB, originalTable, replacementTable string, dropOldTable bool) error
 
 	//private

@@ -47,6 +47,7 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 		//if destination table already exist and cached
 		//init tmp table with columns=union(table.columns, cachedTable.columns)
 		//to avoid unnecessary alters of tmp table during transaction
+		//TODO: consider getting actual table schema from database
 		cachedTable, ok := ps.tableHelper.GetCached(ps.tableName)
 		if ok {
 			utils.MapPutAll(tableForObject.Columns, cachedTable.Columns)
@@ -75,6 +76,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 		if err != nil {
 			ps.state.SuccessfulRows = 0
 			if ps.tx != nil {
+				_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable.Name, true)
 				_ = ps.tx.Rollback()
 			}
 		}
@@ -94,7 +96,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 			return ps.state, err
 		}
 		//drop tmp table if exists
-		_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable, true)
+		_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable.Name, true)
 		err = ps.tx.Commit()
 		return
 	} else {
@@ -109,7 +111,7 @@ func (ps *TransactionalStream) Abort(ctx context.Context) (state bulker.State, e
 		return ps.state, errors.New("stream is not active")
 	}
 	if ps.tx != nil {
-		_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable, true)
+		_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable.Name, true)
 		_ = ps.tx.Rollback()
 	}
 	ps.state.Status = bulker.Aborted
