@@ -32,7 +32,7 @@ type bulkerTestConfig struct {
 	config *bulker.Config
 	//for which bulker types (destination types) to run test
 	bulkerTypes []string
-	//create table with provided schema before running the test
+	//create table with provided schema before running the test. name and schema of table are ignored
 	//TODO: implement stream_test preExistingTable
 	preExistingTable *Table
 	//schema of the table expected as result of complete test run
@@ -142,13 +142,20 @@ func testStream(t *testing.T, testConfig bulkerTestConfig) {
 	tableName := testConfig.config.Id + "_" + testConfig.name + "_test"
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
-		err = sqlAdapter.DropTable(ctx, sqlAdapter.dbWrapper(), tableName, true)
+		err = sqlAdapter.DropTable(ctx, sqlAdapter.DbWrapper(), tableName, true)
 		CheckError("pre_cleanup", require, testConfig.expectedErrors, err)
+	}
+	//create destination table with predefined schema before running stream
+	if testConfig.preExistingTable != nil {
+		testConfig.preExistingTable.Name = tableName
+		testConfig.preExistingTable.Schema = sqlAdapter.GetConfig().Schema
+		err = sqlAdapter.CreateTable(ctx, sqlAdapter.DbWrapper(), testConfig.preExistingTable)
+		CheckError("pre_existingtable", require, testConfig.expectedErrors, err)
 	}
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		defer func() {
-			sqlAdapter.DropTable(ctx, sqlAdapter.dbWrapper(), tableName, true)
+			sqlAdapter.DropTable(ctx, sqlAdapter.DbWrapper(), tableName, true)
 		}()
 	}
 	stream, err := blk.CreateStream(t.Name(), tableName, testConfig.mode, testConfig.streamOptions...)
@@ -191,7 +198,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig) {
 
 	if testConfig.expectedTable != nil {
 		//Check table schema
-		table, err := sqlAdapter.GetTableSchema(ctx, sqlAdapter.dbWrapper(), tableName)
+		table, err := sqlAdapter.GetTableSchema(ctx, sqlAdapter.DbWrapper(), tableName)
 		CheckError("get_table", require, testConfig.expectedErrors, err)
 		logging.Infof("table: %+v", table)
 		require.Equal(testConfig.expectedTable, table)
@@ -212,7 +219,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig) {
 func CheckError(step string, require *require.Assertions, expectedErrors map[string]any, err error) {
 	switch target := expectedErrors[step].(type) {
 	case string:
-		require.Contains(err.Error(), target)
+		require.Containsf(err.Error(), target, "Error text expected to contain: %s\nGot: %s", target, err)
 	case error:
 		require.ErrorIs(err, target)
 	case nil:

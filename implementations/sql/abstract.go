@@ -8,8 +8,7 @@ import (
 	"github.com/jitsucom/bulker/types"
 )
 
-// TODO: use real temporary tables: YES
-// TODO: prebuffer table ?
+// TODO: tableHelper not sure that using cache is always applicable. Transaction rollback may lead to inconsistency.
 // TODO: check whether COPY is transactional ?
 // TODO: pk conflict on Redshift file storage ?
 
@@ -57,7 +56,6 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, []types.Ob
 
 func (ps *AbstractSQLStream) postConsume(err error) error {
 	if err != nil {
-		ps.tableHelper.ClearCache(ps.tableName)
 		ps.state.RowsErrors[ps.state.ProcessedRows] = err
 		ps.state.LastError = err
 		return err

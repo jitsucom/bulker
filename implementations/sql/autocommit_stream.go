@@ -16,7 +16,7 @@ type AutoCommitStream struct {
 }
 
 func newAutoCommitStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
-	ps := AutoCommitStream{db: p.dbWrapper()}
+	ps := AutoCommitStream{db: p.DbWrapper()}
 	ps.AbstractSQLStream = NewAbstractStream(id, p, dataSource, tableName, bulker.AutoCommit, streamOptions...)
 	ps.merge = mergeRowsOption.Get(&ps.options)
 	if ps.merge && len(primaryKeyOption.Get(&ps.options)) == 0 {

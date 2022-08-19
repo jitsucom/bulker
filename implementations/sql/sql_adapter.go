@@ -5,6 +5,7 @@ import (
 	"github.com/jitsucom/bulker/types"
 )
 
+// TODO Use prepared statements?
 // SQLAdapter is a manager for DWH tables
 type SQLAdapter interface {
 	Type() string
@@ -25,6 +26,6 @@ type SQLAdapter interface {
 	DropTable(ctx context.Context, txOrDb TxOrDB, tableName string, ifExists bool) error
 	ReplaceTable(ctx context.Context, txOrDb TxOrDB, originalTable, replacementTable string, dropOldTable bool) error
 
-	//private
-	dbWrapper() *TxOrDBWrapper
+	//DbWrapper returns *TxOrDBWrapper that wraps sql.DB instance to run queries outside transactions
+	DbWrapper() *TxOrDBWrapper
 }

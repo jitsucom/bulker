@@ -12,6 +12,10 @@ import (
 	"github.com/jitsucom/bulker/types"
 )
 
+// TODO: Use real temporary tables
+// TODO: Prebuffer inserts
+// TODO: User prepared statements for insert
+// TODO: Use driver specific bulk/batch approaches
 type TransactionalStream struct {
 	AbstractSQLStream
 	dstTable *Table
@@ -44,13 +48,15 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 	}
 	//first object
 	if ps.tmpTable == nil {
-		//if destination table already exist and cached
+		//if destination table already exist
 		//init tmp table with columns=union(table.columns, cachedTable.columns)
 		//to avoid unnecessary alters of tmp table during transaction
-		//TODO: consider getting actual table schema from database
-		cachedTable, ok := ps.tableHelper.GetCached(ps.tableName)
-		if ok {
-			utils.MapPutAll(tableForObject.Columns, cachedTable.Columns)
+		dstTable, err := ps.p.GetTableSchema(ctx, ps.tx, ps.tableName)
+		if err != nil {
+			return errorj.Decorate(err, "failed to check for existing destination table schema")
+		}
+		if dstTable.Exists() {
+			utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
 		}
 		ps.dstTable = tableForObject
 		ps.tmpTable = &Table{

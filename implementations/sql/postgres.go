@@ -154,7 +154,7 @@ func (p *Postgres) GetTypesMapping() map[types.DataType]string {
 	return SchemaToPostgres
 }
 
-func (p *Postgres) dbWrapper() *TxOrDBWrapper {
+func (p *Postgres) DbWrapper() *TxOrDBWrapper {
 	return NewDbWrapper(p.Type(), p.dataSource, p.queryLogger, checkErr)
 }
 
@@ -563,7 +563,7 @@ func (p *Postgres) Select(ctx context.Context, tableName string, deleteCondition
 	}
 	query := fmt.Sprintf(selectQueryTemplate, p.config.Schema, tableName, whenCondition)
 
-	rows, err := p.dbWrapper().QueryContext(ctx, query, values...)
+	rows, err := p.DbWrapper().QueryContext(ctx, query, values...)
 	if err != nil {
 		return nil, errorj.SelectFromTableError.Wrap(err, "failed execute select").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{

@@ -75,6 +75,61 @@ func TestTransactionalStream(t *testing.T) {
 			expectedErrors: map[string]any{"consume_object_1": "cause: pq: 22P02 invalid input syntax for type bigint: \"1.1\""},
 			bulkerTypes:    []string{"postgres"},
 		},
+		{
+			name:     "existing_table1",
+			mode:     bulker.Transactional,
+			dataFile: "test_data/existing_table1.ndjson",
+			preExistingTable: &Table{
+				Columns: Columns{
+					"a": SQLColumn{Type: "text"},
+				},
+			},
+			expectedRows: []map[string]any{
+				{"a": "2022-08-18T14:17:22.841182Z"},
+			},
+			expectedRowsCount: 1,
+			bulkerTypes:       []string{"postgres"},
+		},
+		{
+			name:     "existing_table2",
+			mode:     bulker.Transactional,
+			dataFile: "test_data/existing_table2.ndjson",
+			preExistingTable: &Table{
+				Columns: Columns{
+					"a": SQLColumn{Type: "text"},
+				},
+			},
+			expectedRows: []map[string]any{
+				{"a": "2022-08-18 14:17:22.841182Z"},
+				{"a": "1"},
+			},
+			expectedRowsCount: 2,
+			bulkerTypes:       []string{"postgres"},
+		},
+		{
+			name:     "existing_table3",
+			mode:     bulker.Transactional,
+			dataFile: "test_data/existing_table3.ndjson",
+			preExistingTable: &Table{
+				Columns: Columns{
+					"a": SQLColumn{Type: "timestamp"},
+				},
+			},
+			expectedErrors: map[string]any{"consume_object_0": "cause: pq: 22007 invalid input syntax for type timestamp: \"1\""},
+			bulkerTypes:    []string{"postgres"},
+		},
+		{
+			name:     "existing_table4",
+			mode:     bulker.Transactional,
+			dataFile: "test_data/existing_table4.ndjson",
+			preExistingTable: &Table{
+				Columns: Columns{
+					"a": SQLColumn{Type: "numeric"},
+				},
+			},
+			expectedErrors: map[string]any{"consume_object_0": "cause: pq: 22P02 invalid input syntax for type numeric: \"2022-08-18 14:17:22.841182Z\""},
+			bulkerTypes:    []string{"postgres"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
