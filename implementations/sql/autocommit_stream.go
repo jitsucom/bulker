@@ -3,7 +3,6 @@ package sql
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
@@ -11,17 +10,17 @@ import (
 
 type AutoCommitStream struct {
 	AbstractSQLStream
-	db    *TxOrDBWrapper
-	merge bool
+	db *TxOrDBWrapper
 }
 
 func newAutoCommitStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	ps := AutoCommitStream{db: p.DbWrapper()}
-	ps.AbstractSQLStream = NewAbstractStream(id, p, dataSource, tableName, bulker.AutoCommit, streamOptions...)
-	ps.merge = mergeRowsOption.Get(&ps.options)
-	if ps.merge && len(primaryKeyOption.Get(&ps.options)) == 0 {
-		return nil, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
+	var err error
+	ps.AbstractSQLStream, err = newAbstractStream(id, p, dataSource, tableName, bulker.AutoCommit, streamOptions...)
+	if err != nil {
+		return nil, err
 	}
+
 	return &ps, nil
 }
 
@@ -29,6 +28,9 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (e
 	defer func() {
 		err = ps.postConsume(err)
 	}()
+	if err = ps.init(ctx); err != nil {
+		return err
+	}
 	table, processedObjects, err := ps.preprocess(object)
 	if err != nil {
 		return err

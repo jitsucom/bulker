@@ -1,139 +1,113 @@
 package sql
 
 import (
-	"github.com/jitsucom/bulker/base/timestamp"
+	"context"
+	"fmt"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
+	"github.com/jitsucom/bulker/types"
+	"github.com/stretchr/testify/require"
 	"testing"
-	"time"
 )
 
-func TestTransactionalStream(t *testing.T) {
+func TestMillionRows(t *testing.T) {
+	t.Skip("This test is too slow")
 	tests := []bulkerTestConfig{
 		{
-			name:              "added_columns",
-			mode:              bulker.Transactional,
-			dataFile:          "test_data/columns_added.ndjson",
-			expectedRowsCount: 6,
+			name:  "one_million_rows",
+			modes: []bulker.BulkMode{bulker.Transactional},
 			expectedTable: &Table{
-				Name:     "postgres_added_columns_test",
+				Name:     "one_million_rows_test",
 				Schema:   "bulker",
 				PKFields: utils.Set[string]{},
 				Columns: Columns{
 					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
-					"column1":    SQLColumn{Type: "text"},
-					"column2":    SQLColumn{Type: "text"},
-					"column3":    SQLColumn{Type: "text"},
 					"id":         SQLColumn{Type: "bigint"},
 					"name":       SQLColumn{Type: "text"},
 				},
 			},
-			expectedRows: []map[string]any{
-				{"_timestamp": constantTime, "id": 1, "name": "test", "column1": nil, "column2": nil, "column3": nil},
-				{"_timestamp": constantTime, "id": 2, "name": "test2", "column1": "data", "column2": nil, "column3": nil},
-				{"_timestamp": constantTime, "id": 3, "name": "test3", "column1": "data", "column2": "data", "column3": nil},
-				{"_timestamp": constantTime, "id": 4, "name": "test2", "column1": "data", "column2": nil, "column3": nil},
-				{"_timestamp": constantTime, "id": 5, "name": "test", "column1": nil, "column2": nil, "column3": nil},
-				{"_timestamp": constantTime, "id": 6, "name": "test4", "column1": "data", "column2": "data", "column3": "data"},
+			expectedState: &bulker.State{
+				Status:         bulker.Completed,
+				ProcessedRows:  1_000_000,
+				SuccessfulRows: 1_000_000,
 			},
-			bulkerTypes: []string{"postgres"},
-		},
-		{
-			name:              "types",
-			mode:              bulker.Transactional,
-			dataFile:          "test_data/types.ndjson",
-			expectedRowsCount: 2,
-			expectedTable: &Table{
-				Name:     "postgres_types_test",
-				Schema:   "bulker",
-				PKFields: utils.Set[string]{},
-				Columns: Columns{
-					"bool1":            SQLColumn{Type: "boolean"},
-					"bool2":            SQLColumn{Type: "boolean"},
-					"float1":           SQLColumn{Type: "double precision"},
-					"floatstring":      SQLColumn{Type: "text"},
-					"int1":             SQLColumn{Type: "bigint"},
-					"intstring":        SQLColumn{Type: "text"},
-					"roundfloat":       SQLColumn{Type: "double precision"},
-					"roundfloatstring": SQLColumn{Type: "text"},
-					"string1":          SQLColumn{Type: "text"},
-					"time1":            SQLColumn{Type: "timestamp without time zone"},
-					"time2":            SQLColumn{Type: "timestamp without time zone"},
-					"date1":            SQLColumn{Type: "text"},
-				},
-			},
-			expectedRows: []map[string]any{
-				{"bool1": false, "bool2": true, "float1": 1.2, "floatstring": "1.1", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "string1": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-				{"bool1": false, "bool2": true, "float1": 1.0, "floatstring": "1.0", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "string1": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-			},
-			bulkerTypes: []string{"postgres"},
-		},
-		{
-			name:           "types_collision",
-			mode:           bulker.Transactional,
-			dataFile:       "test_data/types_collision.ndjson",
-			expectedErrors: map[string]any{"consume_object_1": "cause: pq: 22P02 invalid input syntax for type bigint: \"1.1\""},
-			bulkerTypes:    []string{"postgres"},
-		},
-		{
-			name:     "existing_table1",
-			mode:     bulker.Transactional,
-			dataFile: "test_data/existing_table1.ndjson",
-			preExistingTable: &Table{
-				Columns: Columns{
-					"a": SQLColumn{Type: "text"},
-				},
-			},
-			expectedRows: []map[string]any{
-				{"a": "2022-08-18T14:17:22.841182Z"},
-			},
-			expectedRowsCount: 1,
+			expectedRowsCount: 1_000_000,
 			bulkerTypes:       []string{"postgres"},
-		},
-		{
-			name:     "existing_table2",
-			mode:     bulker.Transactional,
-			dataFile: "test_data/existing_table2.ndjson",
-			preExistingTable: &Table{
-				Columns: Columns{
-					"a": SQLColumn{Type: "text"},
-				},
-			},
-			expectedRows: []map[string]any{
-				{"a": "2022-08-18 14:17:22.841182Z"},
-				{"a": "1"},
-			},
-			expectedRowsCount: 2,
-			bulkerTypes:       []string{"postgres"},
-		},
-		{
-			name:     "existing_table3",
-			mode:     bulker.Transactional,
-			dataFile: "test_data/existing_table3.ndjson",
-			preExistingTable: &Table{
-				Columns: Columns{
-					"a": SQLColumn{Type: "timestamp"},
-				},
-			},
-			expectedErrors: map[string]any{"consume_object_0": "cause: pq: 22007 invalid input syntax for type timestamp: \"1\""},
-			bulkerTypes:    []string{"postgres"},
-		},
-		{
-			name:     "existing_table4",
-			mode:     bulker.Transactional,
-			dataFile: "test_data/existing_table4.ndjson",
-			preExistingTable: &Table{
-				Columns: Columns{
-					"a": SQLColumn{Type: "numeric"},
-				},
-			},
-			expectedErrors: map[string]any{"consume_object_0": "cause: pq: 22P02 invalid input syntax for type numeric: \"2022-08-18 14:17:22.841182Z\""},
-			bulkerTypes:    []string{"postgres"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runTestConfig(t, tt, testStream)
+			runTestConfig(t, tt, testOneMillion)
 		})
+	}
+}
+
+func testOneMillion(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode) {
+	require := require.New(t)
+
+	blk, err := bulker.CreateBulker(*testConfig.config)
+	CheckError("create_bulker", require, testConfig.expectedErrors, err)
+	defer func() {
+		err = blk.Close()
+		CheckError("bulker_close", require, testConfig.expectedErrors, err)
+	}()
+	sqlAdapter, ok := blk.(SQLAdapter)
+	require.True(ok)
+	ctx := context.Background()
+	tableName := testConfig.tableName
+	if tableName == "" {
+		tableName = testConfig.name + "_test"
+	}
+	//clean up in case of previous test failure
+	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
+		err = sqlAdapter.DropTable(ctx, sqlAdapter.DbWrapper(), tableName, true)
+		CheckError("pre_cleanup", require, testConfig.expectedErrors, err)
+	}
+	//clean up after test run
+	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
+		defer func() {
+			sqlAdapter.DropTable(ctx, sqlAdapter.DbWrapper(), tableName, true)
+		}()
+	}
+	stream, err := blk.CreateStream(t.Name(), tableName, mode, testConfig.streamOptions...)
+	CheckError("create_stream", require, testConfig.expectedErrors, err)
+
+	//Abort stream if error occurred
+	defer func() {
+		if err != nil {
+			_, err = stream.Abort(ctx)
+			CheckError("stream_abort", require, testConfig.expectedErrors, err)
+		}
+	}()
+
+	for i := 0; i < 1_000_000; i++ {
+		obj := types.Object{"_timestamp": constantTime, "id": i, "name": "test"}
+		err = stream.Consume(ctx, obj)
+		CheckError(fmt.Sprintf("consume_object_%d", i), require, testConfig.expectedErrors, err)
+		if err != nil && !testConfig.ignoreConsumeErrors {
+			return
+		}
+	}
+	//Commit stream
+	state, err := stream.Complete(ctx)
+	CheckError("stream_complete", require, testConfig.expectedErrors, err)
+
+	if testConfig.expectedState != nil {
+		require.Equal(bulker.Completed, state.Status)
+		require.Equal(*testConfig.expectedState, state)
+	}
+	CheckError("state_lasterror", require, testConfig.expectedErrors, state.LastError)
+
+	if testConfig.expectedTable != nil {
+		//Check table schema
+		table, err := sqlAdapter.GetTableSchema(ctx, sqlAdapter.DbWrapper(), tableName)
+		CheckError("get_table", require, testConfig.expectedErrors, err)
+		require.Equal(testConfig.expectedTable, table)
+	}
+	if testConfig.expectedRowsCount != nil {
+		//Check rows count and rows data when provided
+		count, err := sqlAdapter.Count(ctx, tableName, nil)
+		CheckError("select_count", require, testConfig.expectedErrors, err)
+		require.Equal(testConfig.expectedRowsCount, count)
 	}
 }

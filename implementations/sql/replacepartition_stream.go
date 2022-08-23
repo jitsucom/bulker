@@ -11,7 +11,7 @@ import (
 )
 
 type ReplacePartitionStream struct {
-	AbstractSQLStream
+	AbstractTransactionalSQLStream
 	cleared     bool
 	partitionId string
 }
@@ -26,7 +26,10 @@ func newReplacePartitionStream(id string, p SQLAdapter, dataSource *sql.DB, tabl
 	if partitionId == "" {
 		return nil, errors.New("WithPartition is required option for ReplacePartitionStream")
 	}
-	ps.AbstractSQLStream = NewAbstractStream(id, p, dataSource, tableName, bulker.ReplacePartition, streamOptions...)
+	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, dataSource, tableName, bulker.ReplacePartition, streamOptions...)
+	if err != nil {
+		return nil, err
+	}
 	ps.partitionId = partitionId
 	return &ps, nil
 }
@@ -35,11 +38,11 @@ func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Obje
 	defer func() {
 		err = ps.postConsume(err)
 	}()
-	if err = ps.initTx(ctx); err != nil {
+	if err = ps.init(ctx); err != nil {
 		return err
 	}
 	if !ps.cleared {
-		if err = ps.clearPartition(ctx); err != nil {
+		if err = ps.clearPartition(ctx, ps.tx); err != nil {
 			return err
 		}
 	}
@@ -74,12 +77,10 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 	if ps.state.LastError == nil {
 		if !ps.cleared {
 			//we still have to clear all previous data even if no objects was consumed
-			err = ps.clearPartition(ctx)
-			if err != nil {
-				return
-			}
+			err = ps.clearPartition(ctx, ps.p.DbWrapper())
+		} else {
+			err = ps.tx.Commit()
 		}
-		err = ps.tx.Commit()
 		return
 	} else {
 		//if was any error - it will trigger transaction rollback in defer func
@@ -97,9 +98,9 @@ func (ps *ReplacePartitionStream) Abort(ctx context.Context) (state bulker.State
 	return ps.state, err
 }
 
-func (ps *ReplacePartitionStream) clearPartition(ctx context.Context) error {
+func (ps *ReplacePartitionStream) clearPartition(ctx context.Context, tx TxOrDB) error {
 	//check if destination table already exists
-	table, err := ps.p.GetTableSchema(ctx, ps.tx, ps.tableName)
+	table, err := ps.p.GetTableSchema(ctx, tx, ps.tableName)
 	if err != nil {
 		return fmt.Errorf("couldn't start ReplacePartitionStream: failed to check existence of table: %s error: %s", ps.tableName, err)
 	}
@@ -111,7 +112,7 @@ func (ps *ReplacePartitionStream) clearPartition(ctx context.Context) error {
 			return fmt.Errorf("couldn't start ReplacePartitionStream: destination table [%s] exist but it is not managed by ReplacePartitionStream: %s column is missing", ps.tableName, PartitonIdKeyword)
 		}
 		//delete previous data by provided partition id
-		err = ps.p.Delete(ctx, ps.tx, ps.tableName, ByPartitionId(ps.partitionId))
+		err = ps.p.Delete(ctx, tx, ps.tableName, ByPartitionId(ps.partitionId))
 		if err != nil {
 			return fmt.Errorf("couldn't start ReplacePartitionStream: failed to delete data for partitionId: %s error: %s", ps.partitionId, err)
 		}

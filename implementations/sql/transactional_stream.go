@@ -17,19 +17,18 @@ import (
 // TODO: User prepared statements for insert
 // TODO: Use driver specific bulk/batch approaches
 type TransactionalStream struct {
-	AbstractSQLStream
+	AbstractTransactionalSQLStream
 	dstTable *Table
 	tmpTable *Table
-	merge    bool
 }
 
 func newTransactionalStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	ps := TransactionalStream{}
 
-	ps.AbstractSQLStream = NewAbstractStream(id, p, dataSource, tableName, bulker.Transactional, streamOptions...)
-	ps.merge = mergeRowsOption.Get(&ps.options)
-	if ps.merge && len(primaryKeyOption.Get(&ps.options)) == 0 {
-		return nil, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
+	var err error
+	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, dataSource, tableName, bulker.Transactional, streamOptions...)
+	if err != nil {
+		return nil, err
 	}
 	return &ps, nil
 }
@@ -38,7 +37,7 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 	defer func() {
 		err = ps.postConsume(err)
 	}()
-	if err = ps.initTx(ctx); err != nil {
+	if err = ps.init(ctx); err != nil {
 		return err
 	}
 	//type mapping, flattening => table schema
@@ -60,8 +59,10 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 		}
 		ps.dstTable = tableForObject
 		ps.tmpTable = &Table{
-			Name:    fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:5]),
-			Columns: tableForObject.Columns,
+			Name:           fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8]),
+			PrimaryKeyName: fmt.Sprintf("jitsu_tmp_pk_%s", uuid.NewLettersNumbers()[:8]),
+			PKFields:       tableForObject.PKFields,
+			Columns:        tableForObject.Columns,
 		}
 	} else {
 		ps.tmpTable.Columns = tableForObject.Columns
@@ -71,7 +72,7 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure temporary table")
 	}
-	return ps.p.Insert(ctx, ps.tx, ps.tmpTable, false, processedObjects)
+	return ps.p.Insert(ctx, ps.tx, ps.tmpTable, ps.merge, processedObjects)
 }
 
 func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State, err error) {

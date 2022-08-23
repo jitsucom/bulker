@@ -19,10 +19,11 @@ type SQLAdapter interface {
 	CreateTable(ctx context.Context, txOrDb TxOrDB, schemaToCreate *Table) error
 	CopyTables(ctx context.Context, txOrDb TxOrDB, targetTable *Table, sourceTable *Table, merge bool) error
 	PatchTableSchema(ctx context.Context, txOrDb TxOrDB, schemaToAdd *Table) error
-	//Truncate(tableName string) error
+	TruncateTable(ctx context.Context, txOrDb TxOrDB, tableName string) error
 	Update(ctx context.Context, txOrDb TxOrDB, table *Table, object map[string]any, whereKey string, whereValue any) error
 	Delete(ctx context.Context, txOrDb TxOrDB, tableName string, deleteConditions *WhenConditions) error
 	Select(ctx context.Context, tableName string, deleteConditions *WhenConditions) ([]map[string]any, error)
+	Count(ctx context.Context, tableName string, deleteConditions *WhenConditions) (int, error)
 	DropTable(ctx context.Context, txOrDb TxOrDB, tableName string, ifExists bool) error
 	ReplaceTable(ctx context.Context, txOrDb TxOrDB, originalTable, replacementTable string, dropOldTable bool) error
 

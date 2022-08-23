@@ -15,25 +15,30 @@ import (
 type AbstractSQLStream struct {
 	id        string
 	p         SQLAdapter
-	tx        *TxOrDBWrapper
 	mode      bulker.BulkMode
 	options   bulker.StreamOptions
 	tableName string
+	merge     bool
 
 	state       bulker.State
 	tableHelper *TableHelper
+	inited      bool
 }
 
-func NewAbstractStream(id string, p SQLAdapter, tx TxOrDB, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) AbstractSQLStream {
+func newAbstractStream(id string, p SQLAdapter, tx TxOrDB, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractSQLStream, error) {
 	ps := AbstractSQLStream{id: id, p: p, tableName: tableName, mode: mode}
 	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {
 		option(&ps.options)
 	}
+	ps.merge = mergeRowsOption.Get(&ps.options)
+	if ps.merge && len(primaryKeyOption.Get(&ps.options)) == 0 {
+		return AbstractSQLStream{}, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
+	}
 	//TODO: max column?
 	ps.tableHelper = NewTableHelper(p, tx, coordination.DummyCoordinationService{}, primaryKeyOption.Get(&ps.options), 1000)
-	ps.state = bulker.State{RowsErrors: map[int]error{}, Status: bulker.Active}
-	return ps
+	ps.state = bulker.State{Status: bulker.Active}
+	return ps, nil
 }
 
 func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, []types.Object, error) {
@@ -56,7 +61,7 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, []types.Ob
 
 func (ps *AbstractSQLStream) postConsume(err error) error {
 	if err != nil {
-		ps.state.RowsErrors[ps.state.ProcessedRows] = err
+		ps.state.ErrorRowIndex = ps.state.ProcessedRows
 		ps.state.LastError = err
 		return err
 	} else {
@@ -75,15 +80,15 @@ func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 	return ps.state, err
 }
 
-func (ps *AbstractSQLStream) initTx(ctx context.Context) error {
-	if ps.tx == nil {
-		tx, err := ps.p.OpenTx(ctx)
+func (ps *AbstractSQLStream) init(ctx context.Context) error {
+	if !ps.inited {
+		//create db schema if doesn't exist
+		err := ps.p.CreateDbSchema(ctx, ps.p.DbWrapper(), ps.p.GetConfig().Schema)
 		if err != nil {
 			return err
 		}
-		ps.tableHelper.SetTx(tx)
-		ps.tx = tx
-		return nil
+		ps.tableHelper.SetTx(ps.p.DbWrapper())
+		ps.inited = true
 	}
 	return nil
 }

@@ -24,7 +24,8 @@ type Table struct {
 	Columns        Columns
 	PKFields       utils.Set[string]
 	PrimaryKeyName string
-	Partition      DatePartition
+
+	Partition DatePartition
 
 	DeletePkFields bool
 }

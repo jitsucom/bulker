@@ -62,12 +62,14 @@ WHERE tco.constraint_type = 'PRIMARY KEY' AND
 	bulkMergeTemplate                 = `INSERT INTO "%s"."%s"(%s) SELECT %s FROM "%s"."%s" ON CONFLICT ON CONSTRAINT %s DO UPDATE SET %s`
 	bulkMergePrefix                   = `excluded`
 	deleteQueryTemplate               = `DELETE FROM "%s"."%s" WHERE %s`
-	selectQueryTemplate               = `SELECT * FROM "%s"."%s"%s`
+	selectQueryTemplate               = `SELECT %s FROM "%s"."%s"%s`
 
 	updateStatement   = `UPDATE "%s"."%s" SET %s WHERE %s=$%d`
 	dropTableTemplate = `DROP TABLE %s"%s"."%s"`
 
-	renameTableTemplate = `ALTER TABLE "%s"."%s" RENAME TO "%s"`
+	renameTableTemplate           = `ALTER TABLE "%s"."%s" RENAME TO "%s"`
+	postgresTruncateTableTemplate = `TRUNCATE "%s"."%s"`
+
 	//TODO: replace values limit
 	PostgresValuesLimit = 65535 // this is a limitation of parameters one can pass as query values. If more parameters are passed, error is returned
 )
@@ -118,12 +120,6 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	dataSource.SetConnMaxLifetime(10 * time.Minute)
 
 	p := &Postgres{config: config, dataSource: dataSource, queryLogger: logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)}
-	////create db schema if doesn't exist
-	//err = p.CreateDbSchema(ctx, config.Schema)
-	//if err != nil {
-	//	_ = p.Close()
-	//	return nil, err
-	//}
 	return p, nil
 }
 
@@ -138,7 +134,7 @@ func (p *Postgres) CreateStream(id, tableName string, mode bulker.BulkMode, stre
 	case bulker.ReplacePartition:
 		return newReplacePartitionStream(id, p, p.dataSource, tableName, streamOptions...)
 	}
-	return nil, fmt.Errorf("unsupported bulk mode: %d", mode)
+	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
 }
 
 // Type returns Postgres type
@@ -557,11 +553,14 @@ func (p *Postgres) renameTableInTransaction(ctx context.Context, txOrDb TxOrDB, 
 }
 
 func (p *Postgres) Select(ctx context.Context, tableName string, deleteConditions *WhenConditions) ([]map[string]any, error) {
+	return p.selectFrom(ctx, tableName, "*", deleteConditions)
+}
+func (p *Postgres) selectFrom(ctx context.Context, tableName string, selectExpression string, deleteConditions *WhenConditions) ([]map[string]any, error) {
 	whenCondition, values := p.toWhenConditions(deleteConditions)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
 	}
-	query := fmt.Sprintf(selectQueryTemplate, p.config.Schema, tableName, whenCondition)
+	query := fmt.Sprintf(selectQueryTemplate, selectExpression, p.config.Schema, tableName, whenCondition)
 
 	rows, err := p.DbWrapper().QueryContext(ctx, query, values...)
 	if err != nil {
@@ -614,6 +613,17 @@ func (p *Postgres) Select(ctx context.Context, tableName string, deleteCondition
 	return result, nil
 }
 
+func (p *Postgres) Count(ctx context.Context, tableName string, deleteConditions *WhenConditions) (int, error) {
+	res, err := p.selectFrom(ctx, tableName, "count(*) as jitsu_count", deleteConditions)
+	if err != nil {
+		return -1, err
+	}
+	if len(res) == 0 {
+		return -1, fmt.Errorf("select count * gave no result")
+	}
+	return res[0]["jitsu_count"].(int), nil
+}
+
 func (p *Postgres) Delete(ctx context.Context, txOrDb TxOrDB, tableName string, deleteConditions *WhenConditions) error {
 	deleteCondition, values := p.toWhenConditions(deleteConditions)
 	query := fmt.Sprintf(deleteQueryTemplate, p.config.Schema, tableName, deleteCondition)
@@ -624,6 +634,21 @@ func (p *Postgres) Delete(ctx context.Context, txOrDb TxOrDB, tableName string, 
 				Schema:    p.config.Schema,
 				Table:     tableName,
 				Statement: query,
+			})
+	}
+
+	return nil
+}
+
+// TruncateTable deletes all records in tableName table
+func (p *Postgres) TruncateTable(ctx context.Context, txOrDb TxOrDB, tableName string) error {
+	statement := fmt.Sprintf(postgresTruncateTableTemplate, p.config.Schema, tableName)
+	if _, err := txOrDb.ExecContext(ctx, statement); err != nil {
+		return errorj.TruncateError.Wrap(err, "failed to truncate table").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Schema:    p.config.Schema,
+				Table:     tableName,
+				Statement: statement,
 			})
 	}
 

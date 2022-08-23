@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const PartitonIdKeyword = "__partition_id_"
+const PartitonIdKeyword = "__partition_id"
 
 var BigQueryPartitonIdRegex = regexp.MustCompile("(\\w+)/(\\d\\d\\d\\d-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\dZ)")
 
