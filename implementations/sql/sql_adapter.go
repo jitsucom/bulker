@@ -6,6 +6,7 @@ import (
 )
 
 // TODO Use prepared statements?
+// TODO: Avoid SQL injection - use own method instead of printf
 // SQLAdapter is a manager for DWH tables
 type SQLAdapter interface {
 	Type() string

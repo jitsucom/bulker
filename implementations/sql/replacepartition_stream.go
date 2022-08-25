@@ -59,7 +59,7 @@ func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Obje
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure destination table")
 	}
-	return ps.p.Insert(ctx, ps.tx, tableForObject, false, processedObjects)
+	return ps.p.Insert(ctx, ps.tx, tableForObject, ps.merge, processedObjects)
 }
 
 func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.State, err error) {

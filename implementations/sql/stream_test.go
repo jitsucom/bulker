@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
+	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/implementations/sql/testcontainers"
 	"github.com/jitsucom/bulker/types"
@@ -53,12 +54,14 @@ type bulkerTestConfig struct {
 	//create table with provided schema before running the test. name and schema of table are ignored
 	//TODO: implement stream_test preExistingTable
 	preExistingTable *Table
-	//schema of the table expected as result of complete test run
-	expectedTable *Table
 	//continue test run even after Consume() returned error
 	ignoreConsumeErrors bool
 	//expected state of stream Complete() call
 	expectedState *bulker.State
+	//schema of the table expected as result of complete test run
+	expectedTable *Table
+	//for configs that runs for multiple modes including bulker.ReplacePartition automatically adds WithPartition to streamOptions and partition id column to expectedTable and expectedRows for that particular mode
+	expectPartitionId bool
 	//rows count expected in resulting table. don't use with expectedRows. any type to allow nil value meaning not set
 	expectedRowsCount any
 	//rows data expected in resulting table
@@ -78,9 +81,10 @@ type bulkerTestConfig struct {
 func TestStreams(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
-			name:     "added_columns",
-			modes:    []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable},
-			dataFile: "test_data/columns_added.ndjson",
+			name:              "added_columns",
+			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/columns_added.ndjson",
 			expectedTable: &Table{
 				Name:     "added_columns_test",
 				Schema:   "bulker",
@@ -105,9 +109,10 @@ func TestStreams(t *testing.T) {
 			bulkerTypes: []string{"postgres"},
 		},
 		{
-			name:     "types",
-			modes:    []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable},
-			dataFile: "test_data/types.ndjson",
+			name:              "types",
+			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/types.ndjson",
 			expectedTable: &Table{
 				Name:     "types_test",
 				Schema:   "bulker",
@@ -121,24 +126,25 @@ func TestStreams(t *testing.T) {
 					"intstring":        SQLColumn{Type: "text"},
 					"roundfloat":       SQLColumn{Type: "double precision"},
 					"roundfloatstring": SQLColumn{Type: "text"},
-					"string1":          SQLColumn{Type: "text"},
+					"name":             SQLColumn{Type: "text"},
 					"time1":            SQLColumn{Type: "timestamp without time zone"},
 					"time2":            SQLColumn{Type: "timestamp without time zone"},
 					"date1":            SQLColumn{Type: "text"},
 				},
 			},
 			expectedRows: []map[string]any{
-				{"bool1": false, "bool2": true, "float1": 1.2, "floatstring": "1.1", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "string1": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-				{"bool1": false, "bool2": true, "float1": 1.0, "floatstring": "1.0", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "string1": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"bool1": false, "bool2": true, "float1": 1.2, "floatstring": "1.1", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"bool1": false, "bool2": true, "float1": 1.0, "floatstring": "1.0", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
 			},
 			bulkerTypes: []string{"postgres"},
 		},
 		{
-			name:           "types_collision",
-			modes:          []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable},
-			dataFile:       "test_data/types_collision.ndjson",
-			expectedErrors: map[string]any{"consume_object_1": "cause: pq: 22P02 invalid input syntax for type bigint: \"1.1\""},
-			bulkerTypes:    []string{"postgres"},
+			name:              "types_collision",
+			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/types_collision.ndjson",
+			expectedErrors:    map[string]any{"consume_object_1": "cause: pq: 22P02 invalid input syntax for type bigint: \"1.1\""},
+			bulkerTypes:       []string{"postgres"},
 		},
 		{
 			name:     "existing_table1",
@@ -194,9 +200,10 @@ func TestStreams(t *testing.T) {
 			bulkerTypes:    []string{"postgres"},
 		},
 		{
-			name:     "repeated_ids_no_pk",
-			modes:    []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable},
-			dataFile: "test_data/repeated_ids.ndjson",
+			name:              "repeated_ids_no_pk",
+			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/repeated_ids.ndjson",
 			expectedTable: &Table{
 				Name:     "repeated_ids_no_pk_test",
 				Schema:   "bulker",
@@ -220,9 +227,10 @@ func TestStreams(t *testing.T) {
 			bulkerTypes: []string{"postgres"},
 		},
 		{
-			name:     "repeated_ids_pk",
-			modes:    []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable},
-			dataFile: "test_data/repeated_ids.ndjson",
+			name:              "repeated_ids_pk",
+			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/repeated_ids.ndjson",
 			expectedState: &bulker.State{
 				Status:         bulker.Completed,
 				ProcessedRows:  8,
@@ -334,7 +342,7 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 
 func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode) {
 	require := require.New(t)
-
+	adaptConfig(t, &testConfig, mode)
 	blk, err := bulker.CreateBulker(*testConfig.config)
 	CheckError("create_bulker", require, testConfig.expectedErrors, err)
 	defer func() {
@@ -418,6 +426,42 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			require.Equal(testConfig.expectedRowsCount, len(rows))
 		} else {
 			require.Equal(testConfig.expectedRows, rows)
+		}
+	}
+}
+
+// adaptConfig since we can use a single config for many modes and db types we may need to
+// apply changes for specific modes of dbs
+func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMode) {
+	switch mode {
+	case bulker.ReplacePartition:
+		if testConfig.expectPartitionId {
+			partitionId := uuid.New()
+			newOptions := make([]bulker.StreamOption, len(testConfig.streamOptions))
+			copy(newOptions, testConfig.streamOptions)
+			newOptions = append(newOptions, WithPartition(partitionId))
+			testConfig.streamOptions = newOptions
+			//add partition id column to expectedTable
+			if testConfig.expectedTable != nil {
+				textColumn, ok := testConfig.expectedTable.Columns["name"]
+				if !ok {
+					t.Fatalf("test config error: expected table must have a 'name' column of string type to guess what type to expect for %s column", PartitonIdKeyword)
+				}
+				newExpectedTable := testConfig.expectedTable.Clone()
+				newExpectedTable.Columns[PartitonIdKeyword] = textColumn
+				testConfig.expectedTable = newExpectedTable
+			}
+			//add partition id value to all expected rows
+			if testConfig.expectedRows != nil {
+				newExpectedRows := make([]map[string]any, len(testConfig.expectedRows))
+				for i, row := range testConfig.expectedRows {
+					newRow := make(map[string]any, len(row)+1)
+					utils.MapPutAll(newRow, row)
+					newRow[PartitonIdKeyword] = partitionId
+					newExpectedRows[i] = newRow
+				}
+				testConfig.expectedRows = newExpectedRows
+			}
 		}
 	}
 }
