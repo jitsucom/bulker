@@ -3,6 +3,7 @@ package sql
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jitsucom/bulker/base/utils"
 	"reflect"
 	"strings"
 )
@@ -93,23 +94,13 @@ func Reformat(key string) string {
 	key = strings.ToLower(key)
 	var result strings.Builder
 	for _, symbol := range key {
-		if IsLetterOrNumber(symbol) {
+		if utils.IsLetterOrNumber(symbol) {
 			result.WriteByte(byte(symbol))
 		} else {
 			result.WriteRune('_')
 		}
 	}
 	return result.String()
-}
-
-// IsLetterOrNumber returns true if input symbol is:
-//
-//	A - Z: 65-90
-//	a - z: 97-122
-func IsLetterOrNumber(symbol int32) bool {
-	return ('a' <= symbol && symbol <= 'z') ||
-		('A' <= symbol && symbol <= 'Z') ||
-		('0' <= symbol && symbol <= '9')
 }
 
 type DummyFlattener struct {

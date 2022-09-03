@@ -57,6 +57,7 @@ func (l *QueryLogger) LogQuery(query string, err error, values ...any) {
 	var logger *log.Logger
 	if strings.HasPrefix(query, "CREATE") ||
 		strings.HasPrefix(query, "DROP") ||
+		strings.HasPrefix(query, "PATCH") ||
 		strings.HasPrefix(query, "ALTER") ||
 		strings.HasPrefix(query, "RENAME") {
 		logger = l.ddlLogger

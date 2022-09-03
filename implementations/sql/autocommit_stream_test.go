@@ -7,13 +7,14 @@ import (
 	"testing"
 )
 
-// TestTransactionalStream sequentially runs  transactional stream without dropping table in between
-func TestTransactionalStream(t *testing.T) {
+// TestAutocommitStream sequentially runs autocommit stream without dropping table in between.
+// just to make sure that Complete() logic works fine
+func TestAutocommitStream(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
 			name:                "added_columns_first_run",
-			tableName:           "transactional_test",
-			modes:               []bulker.BulkMode{bulker.Transactional},
+			tableName:           "autocommit_test",
+			modes:               []bulker.BulkMode{bulker.AutoCommit},
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added.ndjson",
 			expectedRowsCount:   6,
@@ -21,12 +22,12 @@ func TestTransactionalStream(t *testing.T) {
 		},
 		{
 			name:                "added_columns_second_run",
-			tableName:           "transactional_test",
-			modes:               []bulker.BulkMode{bulker.Transactional},
+			tableName:           "autocommit_test",
+			modes:               []bulker.BulkMode{bulker.AutoCommit},
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added2.ndjson",
 			expectedTable: &Table{
-				Name:     "transactional_test",
+				Name:     "autocommit_test",
 				PKFields: utils.Set[string]{},
 				Columns: Columns{
 					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
@@ -53,8 +54,8 @@ func TestTransactionalStream(t *testing.T) {
 		},
 		{
 			name:        "dummy_test_table_cleanup",
-			tableName:   "transactional_test",
-			modes:       []bulker.BulkMode{bulker.Transactional},
+			tableName:   "autocommit_test",
+			modes:       []bulker.BulkMode{bulker.AutoCommit},
 			dataFile:    "test_data/empty.ndjson",
 			bulkerTypes: []string{"postgres"},
 		},

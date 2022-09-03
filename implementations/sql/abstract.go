@@ -82,8 +82,8 @@ func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 
 func (ps *AbstractSQLStream) init(ctx context.Context) error {
 	if !ps.inited {
-		//create db schema if doesn't exist
-		err := ps.p.CreateDbSchema(ctx, ps.p.DbWrapper(), ps.p.GetConfig().Schema)
+		//setup required db object like 'schema' or 'dataset' if doesn't exist
+		err := ps.p.InitDatabase(ctx, ps.p.DbWrapper())
 		if err != nil {
 			return err
 		}

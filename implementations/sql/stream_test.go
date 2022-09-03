@@ -87,7 +87,6 @@ func TestStreams(t *testing.T) {
 			dataFile:          "test_data/columns_added.ndjson",
 			expectedTable: &Table{
 				Name:     "added_columns_test",
-				Schema:   "bulker",
 				PKFields: utils.Set[string]{},
 				Columns: Columns{
 					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
@@ -115,7 +114,6 @@ func TestStreams(t *testing.T) {
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: &Table{
 				Name:     "types_test",
-				Schema:   "bulker",
 				PKFields: utils.Set[string]{},
 				Columns: Columns{
 					"bool1":            SQLColumn{Type: "boolean"},
@@ -156,7 +154,7 @@ func TestStreams(t *testing.T) {
 				},
 			},
 			expectedRows: []map[string]any{
-				{"a": "2022-08-18T14:17:22.841182Z"},
+				{"a": "2022-08-18 14:17:22.841182Z"},
 			},
 			bulkerTypes: []string{"postgres"},
 		},
@@ -206,7 +204,6 @@ func TestStreams(t *testing.T) {
 			dataFile:          "test_data/repeated_ids.ndjson",
 			expectedTable: &Table{
 				Name:     "repeated_ids_no_pk_test",
-				Schema:   "bulker",
 				PKFields: utils.Set[string]{},
 				Columns: Columns{
 					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
@@ -238,8 +235,7 @@ func TestStreams(t *testing.T) {
 			},
 			expectedTable: &Table{
 				Name:           "repeated_ids_pk_test",
-				Schema:         "bulker",
-				PrimaryKeyName: "bulker_repeated_ids_pk_test_pk",
+				PrimaryKeyName: "repeated_ids_pk_test_pk",
 				PKFields:       utils.NewSet("id"),
 				Columns: Columns{
 					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
@@ -255,62 +251,6 @@ func TestStreams(t *testing.T) {
 			},
 			bulkerTypes:   []string{"postgres"},
 			streamOptions: []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runTestConfig(t, tt, testStream)
-		})
-	}
-}
-
-func TestSimple(t *testing.T) {
-	tests := []bulkerTestConfig{
-		{
-			name:     "autocommit",
-			modes:    []bulker.BulkMode{bulker.AutoCommit},
-			dataFile: "test_data/simple.ndjson",
-			expectedTable: &Table{
-				Name:     "autocommit_test",
-				Schema:   "bulker",
-				PKFields: utils.Set[string]{},
-				Columns: Columns{
-					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
-					"extra":      SQLColumn{Type: "text"},
-					"id":         SQLColumn{Type: "bigint"},
-					"name":       SQLColumn{Type: "text"},
-				},
-			},
-			expectedRows: []map[string]any{
-				{"_timestamp": constantTime, "id": 1, "name": "test", "extra": nil},
-				{"_timestamp": constantTime, "id": 2, "name": "test", "extra": nil},
-				{"_timestamp": constantTime, "id": 3, "name": "test2", "extra": "extra"},
-			},
-			bulkerTypes: []string{"postgres"},
-		},
-		{
-			name:              "transactional",
-			modes:             []bulker.BulkMode{bulker.Transactional},
-			dataFile:          "test_data/simple.ndjson",
-			expectedRowsCount: 3,
-			bulkerTypes:       []string{"postgres"},
-			streamOptions:     []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
-		},
-		{
-			name:              "replacetable",
-			modes:             []bulker.BulkMode{bulker.ReplaceTable},
-			dataFile:          "test_data/simple.ndjson",
-			expectedRowsCount: 3,
-			bulkerTypes:       []string{"postgres"},
-			streamOptions:     []bulker.StreamOption{WithPrimaryKey("id"), WithColumnType("id", "text")},
-		},
-		{
-			name:              "replacepartition",
-			modes:             []bulker.BulkMode{bulker.ReplacePartition},
-			dataFile:          "test_data/simple.ndjson",
-			expectedRowsCount: 3,
-			bulkerTypes:       []string{"postgres"},
-			streamOptions:     []bulker.StreamOption{WithPartition("partition_id")},
 		},
 	}
 	for _, tt := range tests {

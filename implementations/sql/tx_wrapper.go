@@ -37,6 +37,10 @@ func NewDbWrapper(dbType string, db *sql.DB, queryLogger *logging.QueryLogger, e
 	return &TxOrDBWrapper{dbType: dbType, db: db, queryLogger: queryLogger, errorAdapter: errorAdapter}
 }
 
+func NewDummyTxWrapper(dbType string) *TxOrDBWrapper {
+	return &TxOrDBWrapper{dbType: dbType}
+}
+
 func wrap[R any](ctx context.Context,
 	t *TxOrDBWrapper, queryFunction func(tx TxOrDB, query string, args ...any) (R, error),
 	query string, args ...any,

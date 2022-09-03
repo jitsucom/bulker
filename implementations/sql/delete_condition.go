@@ -35,6 +35,17 @@ func (dc *WhenConditions) IsEmpty() bool {
 	return dc == nil || len(dc.Conditions) == 0
 }
 
+func (dc *WhenConditions) Add(field string, clause string, value any) {
+	dc.Conditions = append(dc.Conditions, WhenCondition{Field: field, Clause: clause, Value: value})
+	if dc.JoinCondition == "" {
+		dc.JoinCondition = "AND"
+	}
+}
+
+func NewWhenConditions(field string, clause string, value any) *WhenConditions {
+	return &WhenConditions{Conditions: []WhenCondition{{Field: field, Clause: clause, Value: value}}, JoinCondition: "AND"}
+}
+
 // ByPartitionId return delete condition that removes objects based on __partition_id value
 // or empty condition if partitonId is empty
 func ByPartitionId(partitonId string) *WhenConditions {

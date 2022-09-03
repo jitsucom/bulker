@@ -17,9 +17,7 @@ type TableField struct {
 
 // Table is a dto for DWH Table representation
 type Table struct {
-	//Optional name of the schema. Not all databases
-	Schema string
-	Name   string
+	Name string
 
 	Columns        Columns
 	PKFields       utils.Set[string]
@@ -59,7 +57,6 @@ func (t *Table) Clone() *Table {
 	clonedPkFields := t.PKFields.Clone()
 
 	return &Table{
-		Schema:         t.Schema,
 		Name:           t.Name,
 		Columns:        clonedColumns,
 		PKFields:       clonedPkFields,
@@ -84,7 +81,7 @@ func (t *Table) GetPKFieldsSet() utils.Set[string] {
 // 2) all fields from another schema exist in current schema
 // NOTE: Diff method doesn't take types into account
 func (t *Table) Diff(another *Table) *Table {
-	diff := &Table{Schema: t.Schema, Name: t.Name, Columns: map[string]SQLColumn{}, PKFields: utils.Set[string]{}}
+	diff := &Table{Name: t.Name, Columns: map[string]SQLColumn{}, PKFields: utils.Set[string]{}}
 
 	if !another.Exists() {
 		return diff
@@ -97,7 +94,7 @@ func (t *Table) Diff(another *Table) *Table {
 		}
 	}
 
-	jitsuPrimaryKeyName := BuildConstraintName(t.Schema, t.Name)
+	jitsuPrimaryKeyName := BuildConstraintName(t.Name)
 	//check if primary key is maintained by Jitsu (for Postgres and Redshift)
 	if t.PrimaryKeyName != "" && t.PrimaryKeyName != jitsuPrimaryKeyName {
 		//primary key isn't maintained by Jitsu: do nothing
@@ -121,6 +118,6 @@ func (t *Table) Diff(another *Table) *Table {
 	return diff
 }
 
-func BuildConstraintName(schemaName string, tableName string) string {
-	return schemaName + "_" + tableName + "_pk"
+func BuildConstraintName(tableName string) string {
+	return tableName + "_pk"
 }

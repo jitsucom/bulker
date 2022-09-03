@@ -29,7 +29,6 @@ type TableHelper struct {
 	pkFields           utils.Set[string]
 	columnTypesMapping map[types.DataType]string
 
-	dbSchema        string
 	destinationType string
 	streamMode      bool
 	maxColumns      int
@@ -49,7 +48,6 @@ func NewTableHelper(sqlAdapter SQLAdapter, tx TxOrDB, coordinationService coordi
 		pkFields:           pkFields,
 		columnTypesMapping: sqlAdapter.GetTypesMapping(),
 
-		dbSchema:        sqlAdapter.GetConfig().Schema,
 		destinationType: sqlAdapter.Type(),
 		maxColumns:      maxColumns,
 	}
@@ -59,7 +57,6 @@ func NewTableHelper(sqlAdapter SQLAdapter, tx TxOrDB, coordinationService coordi
 // applies column types mapping
 func (th *TableHelper) MapTableSchema(batchHeader *BatchHeader) *Table {
 	table := &Table{
-		Schema:    th.dbSchema,
 		Name:      batchHeader.TableName,
 		Columns:   Columns{},
 		Partition: batchHeader.Partition,
@@ -68,7 +65,7 @@ func (th *TableHelper) MapTableSchema(batchHeader *BatchHeader) *Table {
 
 	//pk fields from the configuration
 	if len(th.pkFields) > 0 {
-		table.PrimaryKeyName = BuildConstraintName(table.Schema, table.Name)
+		table.PrimaryKeyName = BuildConstraintName(table.Name)
 	}
 
 	for fieldName, field := range batchHeader.Fields {
@@ -266,7 +263,6 @@ func (th *TableHelper) getOrCreate(ctx context.Context, dataSchema *Table) (*Tab
 			return nil, err
 		}
 
-		dbTableSchema.Schema = dataSchema.Schema
 		dbTableSchema.Name = dataSchema.Name
 		dbTableSchema.Columns = dataSchema.Columns
 		dbTableSchema.PKFields = dataSchema.PKFields

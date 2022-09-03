@@ -64,7 +64,7 @@ WHERE tco.constraint_type = 'PRIMARY KEY' AND
 	deleteQueryTemplate               = `DELETE FROM "%s"."%s" WHERE %s`
 	selectQueryTemplate               = `SELECT %s FROM "%s"."%s"%s`
 
-	updateStatement   = `UPDATE "%s"."%s" SET %s WHERE %s=$%d`
+	updateStatement   = `UPDATE "%s"."%s" SET %s WHERE %s`
 	dropTableTemplate = `DROP TABLE %s"%s"."%s"`
 
 	renameTableTemplate           = `ALTER TABLE "%s"."%s" RENAME TO "%s"`
@@ -92,7 +92,7 @@ type Postgres struct {
 	queryLogger *logging.QueryLogger
 }
 
-// NewPostgres return configured Postgres adapter instance
+// NewPostgres return configured Postgres bulker.Bulker instance
 func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &DataSourceConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
@@ -167,14 +167,14 @@ func (p *Postgres) OpenTx(ctx context.Context) (*TxOrDBWrapper, error) {
 	return NewTxWrapper(p.Type(), tx, p.queryLogger, checkErr), nil
 }
 
-// CreateDbSchema creates database schema instance if doesn't exist
-func (p *Postgres) CreateDbSchema(ctx context.Context, txOrDb TxOrDB, dbSchemaName string) error {
-	query := fmt.Sprintf(createDbSchemaIfNotExistsTemplate, dbSchemaName)
+// InitDatabase creates database schema instance if doesn't exist
+func (p *Postgres) InitDatabase(ctx context.Context, txOrDb TxOrDB) error {
+	query := fmt.Sprintf(createDbSchemaIfNotExistsTemplate, p.config.Schema)
 
 	if _, err := txOrDb.ExecContext(ctx, query); err != nil {
 		return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Schema:    dbSchemaName,
+				Schema:    p.config.Schema,
 				Statement: query,
 			})
 	}
@@ -202,15 +202,15 @@ func (p *Postgres) GetTableSchema(ctx context.Context, txOrDb TxOrDB, tableName 
 	table.PKFields = pkFields
 	table.PrimaryKeyName = primaryKeyName
 
-	jitsuPrimaryKeyName := BuildConstraintName(table.Schema, table.Name)
+	jitsuPrimaryKeyName := BuildConstraintName(table.Name)
 	if primaryKeyName != "" && primaryKeyName != jitsuPrimaryKeyName {
-		logging.Warnf("table: %s.%s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Schema, table.Name, primaryKeyName)
+		logging.Warnf("table: %s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
 	}
 	return table, nil
 }
 
 func (p *Postgres) getTable(ctx context.Context, txOrDb TxOrDB, tableName string) (*Table, error) {
-	table := &Table{Schema: p.config.Schema, Name: tableName, Columns: map[string]SQLColumn{}, PKFields: utils.Set[string]{}}
+	table := &Table{Name: tableName, Columns: map[string]SQLColumn{}, PKFields: utils.Set[string]{}}
 	rows, err := txOrDb.QueryContext(ctx, tableSchemaQuery, p.config.Schema, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -384,28 +384,31 @@ func (p *Postgres) ReplaceTable(ctx context.Context, txOrDb TxOrDB, originalTabl
 }
 
 // Update one record in Postgres
-func (p *Postgres) Update(ctx context.Context, txOrDb TxOrDB, table *Table, object map[string]any, whereKey string, whereValue any) error {
+func (p *Postgres) Update(ctx context.Context, txOrDb TxOrDB, tableName string, object types.Object, whenConditions *WhenConditions) error {
+	updateCondition, updateValues := p.toWhenConditions(whenConditions)
+
 	columns := make([]string, len(object), len(object))
-	values := make([]any, len(object)+1, len(object)+1)
+	values := make([]any, len(object)+len(updateValues), len(object)+len(updateValues))
 	i := 0
 	for name, value := range object {
 		columns[i] = name + "= $" + strconv.Itoa(i+1) //$0 - wrong
 		values[i] = value
 		i++
 	}
-	values[i] = whereValue
+	for a := 0; a < len(updateValues); a++ {
+		values[i+a] = updateValues[a]
+	}
 
-	statement := fmt.Sprintf(updateStatement, p.config.Schema, table.Name, strings.Join(columns, ", "), whereKey, i+1)
+	statement := fmt.Sprintf(updateStatement, p.config.Schema, tableName, strings.Join(columns, ", "), updateCondition)
 
 	if _, err := txOrDb.ExecContext(ctx, statement, values...); err != nil {
 
 		return errorj.UpdateError.Wrap(err, "failed to update").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Schema:      p.config.Schema,
-				Table:       table.Name,
-				PrimaryKeys: table.GetPKFields(),
-				Statement:   statement,
-				Values:      values,
+				Schema:    p.config.Schema,
+				Table:     tableName,
+				Statement: statement,
+				Values:    values,
 			})
 	}
 
@@ -552,8 +555,8 @@ func (p *Postgres) renameTableInTransaction(ctx context.Context, txOrDb TxOrDB, 
 	return nil
 }
 
-func (p *Postgres) Select(ctx context.Context, tableName string, deleteConditions *WhenConditions) ([]map[string]any, error) {
-	return p.selectFrom(ctx, tableName, "*", deleteConditions)
+func (p *Postgres) Select(ctx context.Context, tableName string, whenConditions *WhenConditions) ([]map[string]any, error) {
+	return p.selectFrom(ctx, tableName, "*", whenConditions)
 }
 func (p *Postgres) selectFrom(ctx context.Context, tableName string, selectExpression string, deleteConditions *WhenConditions) ([]map[string]any, error) {
 	whenCondition, values := p.toWhenConditions(deleteConditions)
@@ -613,8 +616,8 @@ func (p *Postgres) selectFrom(ctx context.Context, tableName string, selectExpre
 	return result, nil
 }
 
-func (p *Postgres) Count(ctx context.Context, tableName string, deleteConditions *WhenConditions) (int, error) {
-	res, err := p.selectFrom(ctx, tableName, "count(*) as jitsu_count", deleteConditions)
+func (p *Postgres) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
+	res, err := p.selectFrom(ctx, tableName, "count(*) as jitsu_count", whenConditions)
 	if err != nil {
 		return -1, err
 	}

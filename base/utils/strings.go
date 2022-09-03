@@ -1,8 +1,8 @@
 package utils
 
-//NvlString returns first not empty string value from varargs
+// NvlString returns first not empty string value from varargs
 //
-//return "" if all strings are empty
+// return "" if all strings are empty
 func NvlString(args ...string) string {
 	for _, str := range args {
 		if str != "" {
@@ -26,4 +26,14 @@ func ShortenStringWithEllipsis(str string, n int) string {
 		return str
 	}
 	return str[:n] + "..."
+}
+
+// IsLetterOrNumber returns true if input symbol is:
+//
+//	A - Z: 65-90
+//	a - z: 97-122
+func IsLetterOrNumber(symbol int32) bool {
+	return ('a' <= symbol && symbol <= 'z') ||
+		('A' <= symbol && symbol <= 'Z') ||
+		('0' <= symbol && symbol <= '9')
 }
