@@ -13,12 +13,12 @@ import (
 // TODO: pk conflict on Redshift file storage ?
 
 type AbstractSQLStream struct {
-	id        string
-	p         SQLAdapter
-	mode      bulker.BulkMode
-	options   bulker.StreamOptions
-	tableName string
-	merge     bool
+	id         string
+	sqlAdapter SQLAdapter
+	mode       bulker.BulkMode
+	options    bulker.StreamOptions
+	tableName  string
+	merge      bool
 
 	state       bulker.State
 	tableHelper *TableHelper
@@ -26,7 +26,7 @@ type AbstractSQLStream struct {
 }
 
 func newAbstractStream(id string, p SQLAdapter, tx TxOrDB, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractSQLStream, error) {
-	ps := AbstractSQLStream{id: id, p: p, tableName: tableName, mode: mode}
+	ps := AbstractSQLStream{id: id, sqlAdapter: p, tableName: tableName, mode: mode}
 	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {
 		option(&ps.options)
@@ -83,11 +83,10 @@ func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 func (ps *AbstractSQLStream) init(ctx context.Context) error {
 	if !ps.inited {
 		//setup required db object like 'schema' or 'dataset' if doesn't exist
-		err := ps.p.InitDatabase(ctx, ps.p.DbWrapper())
+		err := ps.sqlAdapter.InitDatabase(ctx)
 		if err != nil {
 			return err
 		}
-		ps.tableHelper.SetTx(ps.p.DbWrapper())
 		ps.inited = true
 	}
 	return nil

@@ -7,7 +7,7 @@ import (
 
 type AbstractTransactionalSQLStream struct {
 	AbstractSQLStream
-	tx *TxOrDBWrapper
+	tx *TxSQLAdapter
 }
 
 func newAbstractTransactionalStream(id string, p SQLAdapter, tx TxOrDB, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractTransactionalSQLStream, error) {
@@ -26,11 +26,12 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) error {
 		return err
 	}
 	if ps.tx == nil {
-		ps.tx, err = ps.p.OpenTx(ctx)
+		ps.tx, err = ps.sqlAdapter.OpenTx(ctx)
 		if err != nil {
 			return err
 		}
-		ps.tableHelper.SetTx(ps.tx)
+		//set transactional adapter so all table modification will be performed inside transaction
+		ps.tableHelper.SetSQLAdapter(ps.tx)
 	}
 	return nil
 }

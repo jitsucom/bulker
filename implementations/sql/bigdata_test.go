@@ -59,13 +59,13 @@ func testOneMillion(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkM
 	}
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
-		err = sqlAdapter.DropTable(ctx, sqlAdapter.DbWrapper(), tableName, true)
+		err = sqlAdapter.DropTable(ctx, tableName, true)
 		CheckError("pre_cleanup", require, testConfig.expectedErrors, err)
 	}
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		defer func() {
-			sqlAdapter.DropTable(ctx, sqlAdapter.DbWrapper(), tableName, true)
+			sqlAdapter.DropTable(ctx, tableName, true)
 		}()
 	}
 	stream, err := blk.CreateStream(t.Name(), tableName, mode, testConfig.streamOptions...)
@@ -99,7 +99,7 @@ func testOneMillion(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkM
 
 	if testConfig.expectedTable != nil {
 		//Check table schema
-		table, err := sqlAdapter.GetTableSchema(ctx, sqlAdapter.DbWrapper(), tableName)
+		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
 		CheckError("get_table", require, testConfig.expectedErrors, err)
 		require.Equal(testConfig.expectedTable, table)
 	}

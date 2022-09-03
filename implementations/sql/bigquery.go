@@ -93,7 +93,7 @@ func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, str
 	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
 }
 
-func (bq *BigQuery) CopyTables(ctx context.Context, txOrDb TxOrDB, targetTable *Table, sourceTable *Table, merge bool) (err error) {
+func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) (err error) {
 	defer func() {
 		if err != nil {
 			err = errorj.CopyError.Wrap(err, "failed to run BQ copier").
@@ -180,7 +180,7 @@ func (bq *BigQuery) GetTypesMapping() map[types.DataType]string {
 }
 
 // GetTableSchema return google BigQuery table (name,columns) representation wrapped in Table struct
-func (bq *BigQuery) GetTableSchema(ctx context.Context, txOrDb TxOrDB, tableName string) (*Table, error) {
+func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
 	table := &Table{Name: tableName, Columns: Columns{}}
 
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
@@ -208,7 +208,7 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, txOrDb TxOrDB, tableName
 }
 
 // CreateTable creates google BigQuery table from Table
-func (bq *BigQuery) CreateTable(ctx context.Context, txOrDb TxOrDB, table *Table) error {
+func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) error {
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(table.Name)
 
 	_, err := bqTable.Metadata(ctx)
@@ -265,7 +265,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, txOrDb TxOrDB, table *Table
 }
 
 // InitDatabase creates google BigQuery Dataset if doesn't exist
-func (bq *BigQuery) InitDatabase(ctx context.Context, txOrDb TxOrDB) error {
+func (bq *BigQuery) InitDatabase(ctx context.Context) error {
 	dataset := bq.config.Dataset
 	bqDataset := bq.client.Dataset(dataset)
 	if _, err := bqDataset.Metadata(ctx); err != nil {
@@ -290,7 +290,7 @@ func (bq *BigQuery) InitDatabase(ctx context.Context, txOrDb TxOrDB) error {
 }
 
 // PatchTableSchema adds Table columns to google BigQuery table
-func (bq *BigQuery) PatchTableSchema(ctx context.Context, txOrDb TxOrDB, patchSchema *Table) error {
+func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) error {
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(patchSchema.Name)
 	metadata, err := bqTable.Metadata(ctx)
 	if err != nil {
@@ -381,7 +381,7 @@ func GranularityToPartitionIds(g Granularity, t time.Time) []string {
 
 // insertBatch streams data into BQ using stream API
 // 1 insert = max 500 rows
-func (bq *BigQuery) Insert(ctx context.Context, txOrDb TxOrDB, table *Table, merge bool, objects []types.Object) error {
+func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error {
 	inserter := bq.client.Dataset(bq.config.Dataset).Table(table.Name).Inserter()
 	bq.logQuery(fmt.Sprintf("Inserting [%d] values to table %s using BigQuery Streaming API with chunks [%d]: ", len(objects), table.Name, rowsLimitPerInsertOperation), objects)
 
@@ -424,7 +424,7 @@ func (bq *BigQuery) Insert(ctx context.Context, txOrDb TxOrDB, table *Table, mer
 }
 
 // DropTable drops table from BigQuery
-func (bq *BigQuery) DropTable(ctx context.Context, txOrDb TxOrDB, tableName string, ifExists bool) error {
+func (bq *BigQuery) DropTable(ctx context.Context, tableName string, ifExists bool) error {
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
 
 	if err := bqTable.Delete(ctx); err != nil {
@@ -440,48 +440,42 @@ func (bq *BigQuery) DropTable(ctx context.Context, txOrDb TxOrDB, tableName stri
 	return nil
 }
 
-func (bq *BigQuery) ReplaceTable(ctx context.Context, txOrDb TxOrDB, originalTable, replacementTable string, dropOldTable bool) error {
+func (bq *BigQuery) ReplaceTable(ctx context.Context, originalTable, replacementTable string, dropOldTable bool) (err error) {
+	defer func() {
+		if err != nil {
+			err = errorj.CopyError.Wrap(err, "failed to replace table").
+				WithProperty(errorj.DBInfo, &types.ErrorPayload{
+					Dataset: bq.config.Dataset,
+					Bucket:  bq.config.Bucket,
+					Project: bq.config.Project,
+					Table:   originalTable,
+				})
+		}
+	}()
 	dataset := bq.client.Dataset(bq.config.Dataset)
 	copier := dataset.Table(originalTable).CopierFrom(dataset.Table(replacementTable))
 	copier.WriteDisposition = bigquery.WriteTruncate
 	job, err := copier.Run(ctx)
 	if err != nil {
-		return errorj.CopyError.Wrap(err, "failed to replace table").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Dataset: bq.config.Dataset,
-				Bucket:  bq.config.Bucket,
-				Project: bq.config.Project,
-				Table:   originalTable,
-			})
+		return err
 	}
 	status, err := job.Wait(ctx)
 	if err != nil {
-		return errorj.CopyError.Wrap(err, "failed to replace table").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Dataset: bq.config.Dataset,
-				Bucket:  bq.config.Bucket,
-				Project: bq.config.Project,
-				Table:   originalTable,
-			})
+		return err
+
 	}
-	if err := status.Err(); err != nil {
-		return errorj.CopyError.Wrap(err, "failed to replace table").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Dataset: bq.config.Dataset,
-				Bucket:  bq.config.Bucket,
-				Project: bq.config.Project,
-				Table:   originalTable,
-			})
+	if err = status.Err(); err != nil {
+		return err
 	}
 	if dropOldTable {
-		return bq.DropTable(ctx, txOrDb, replacementTable, false)
+		return bq.DropTable(ctx, replacementTable, false)
 	} else {
 		return nil
 	}
 }
 
 // TruncateTable deletes all records in tableName table
-func (bq *BigQuery) TruncateTable(ctx context.Context, txOrDb TxOrDB, tableName string) error {
+func (bq *BigQuery) TruncateTable(ctx context.Context, tableName string) error {
 	query := fmt.Sprintf(truncateBigQueryTemplate, bq.config.Project, bq.config.Dataset, tableName)
 	bq.logQuery(query, nil)
 	if _, err := bq.client.Query(query).Read(ctx); err != nil {
@@ -564,7 +558,7 @@ func (bqi *BQItem) Save() (row map[string]bigquery.Value, insertID string, err e
 	return
 }
 
-func (bq *BigQuery) Update(ctx context.Context, txOrDb TxOrDB, tableName string, object types.Object, whenConditions *WhenConditions) (err error) {
+func (bq *BigQuery) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) (err error) {
 	updateCondition, updateValues := bq.toWhenConditions(whenConditions)
 
 	columns := make([]string, len(object), len(object))
@@ -695,7 +689,7 @@ func (bq *BigQuery) toWhenConditions(conditions *WhenConditions) (string, []bigq
 
 	return strings.Join(queryConditions, " "+conditions.JoinCondition+" "), values
 }
-func (bq *BigQuery) Delete(ctx context.Context, txOrDb TxOrDB, tableName string, deleteConditions *WhenConditions) (err error) {
+func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) (err error) {
 	whenCondition, values := bq.toWhenConditions(deleteConditions)
 	if len(whenCondition) == 0 {
 		return errors.New("delete conditions are empty")
@@ -733,10 +727,6 @@ func (bq *BigQuery) Type() string {
 	return "bigquery"
 }
 
-func (bq *BigQuery) OpenTx(ctx context.Context) (*TxOrDBWrapper, error) {
-	return NewDummyTxWrapper(bq.Type()), nil
-}
-
-func (bq *BigQuery) DbWrapper() *TxOrDBWrapper {
-	return NewDummyTxWrapper(bq.Type())
+func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
+	return &TxSQLAdapter{sqlAdapter: bq, tx: NewDummyTxWrapper(bq.Type())}, nil
 }

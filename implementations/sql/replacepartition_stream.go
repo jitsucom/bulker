@@ -59,7 +59,7 @@ func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Obje
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure destination table")
 	}
-	return ps.p.Insert(ctx, ps.tx, tableForObject, ps.merge, processedObjects)
+	return ps.tx.Insert(ctx, tableForObject, ps.merge, processedObjects)
 }
 
 func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -77,7 +77,8 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 	if ps.state.LastError == nil {
 		if !ps.cleared {
 			//we still have to clear all previous data even if no objects was consumed
-			err = ps.clearPartition(ctx, ps.p.DbWrapper())
+			//no transaction was opened yet and not needed that is  why we pass ps.sqlAdapter
+			err = ps.clearPartition(ctx, ps.sqlAdapter)
 		} else {
 			err = ps.tx.Commit()
 		}
@@ -93,14 +94,16 @@ func (ps *ReplacePartitionStream) Abort(ctx context.Context) (state bulker.State
 	if ps.state.Status != bulker.Active {
 		return ps.state, errors.New("stream is not active")
 	}
-	_ = ps.tx.Rollback()
+	if ps.tx != nil {
+		_ = ps.tx.Rollback()
+	}
 	ps.state.Status = bulker.Aborted
 	return ps.state, err
 }
 
-func (ps *ReplacePartitionStream) clearPartition(ctx context.Context, tx TxOrDB) error {
+func (ps *ReplacePartitionStream) clearPartition(ctx context.Context, sqlAdapter SQLAdapter) error {
 	//check if destination table already exists
-	table, err := ps.p.GetTableSchema(ctx, tx, ps.tableName)
+	table, err := sqlAdapter.GetTableSchema(ctx, ps.tableName)
 	if err != nil {
 		return fmt.Errorf("couldn't start ReplacePartitionStream: failed to check existence of table: %s error: %s", ps.tableName, err)
 	}
@@ -112,7 +115,7 @@ func (ps *ReplacePartitionStream) clearPartition(ctx context.Context, tx TxOrDB)
 			return fmt.Errorf("couldn't start ReplacePartitionStream: destination table [%s] exist but it is not managed by ReplacePartitionStream: %s column is missing", ps.tableName, PartitonIdKeyword)
 		}
 		//delete previous data by provided partition id
-		err = ps.p.Delete(ctx, tx, ps.tableName, ByPartitionId(ps.partitionId))
+		err = sqlAdapter.Delete(ctx, ps.tableName, ByPartitionId(ps.partitionId))
 		if err != nil {
 			return fmt.Errorf("couldn't start ReplacePartitionStream: failed to delete data for partitionId: %s error: %s", ps.partitionId, err)
 		}

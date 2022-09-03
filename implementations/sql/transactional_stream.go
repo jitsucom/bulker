@@ -50,7 +50,7 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 		//if destination table already exist
 		//init tmp table with columns=union(table.columns, cachedTable.columns)
 		//to avoid unnecessary alters of tmp table during transaction
-		dstTable, err := ps.p.GetTableSchema(ctx, ps.tx, ps.tableName)
+		dstTable, err := ps.tx.GetTableSchema(ctx, ps.tableName)
 		if err != nil {
 			return errorj.Decorate(err, "failed to check for existing destination table schema")
 		}
@@ -72,7 +72,7 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure temporary table")
 	}
-	return ps.p.Insert(ctx, ps.tx, ps.tmpTable, ps.merge, processedObjects)
+	return ps.tx.Insert(ctx, ps.tmpTable, ps.merge, processedObjects)
 }
 
 func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -83,7 +83,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 		if err != nil {
 			ps.state.SuccessfulRows = 0
 			if ps.tx != nil {
-				_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable.Name, true)
+				_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
 				_ = ps.tx.Rollback()
 			}
 		}
@@ -98,12 +98,12 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 			return ps.state, errorj.Decorate(err, "failed to ensure destination table")
 		}
 		//copy data from tmp table to destination table
-		err = ps.p.CopyTables(ctx, ps.tx, ps.dstTable, ps.tmpTable, ps.merge)
+		err = ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.merge)
 		if err != nil {
 			return ps.state, err
 		}
 		//drop tmp table if exists
-		_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable.Name, true)
+		_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
 		err = ps.tx.Commit()
 		return
 	} else {
@@ -118,7 +118,7 @@ func (ps *TransactionalStream) Abort(ctx context.Context) (state bulker.State, e
 		return ps.state, errors.New("stream is not active")
 	}
 	if ps.tx != nil {
-		_ = ps.p.DropTable(ctx, ps.tx, ps.tmpTable.Name, true)
+		_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
 		_ = ps.tx.Rollback()
 	}
 	ps.state.Status = bulker.Aborted

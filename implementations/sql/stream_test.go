@@ -298,19 +298,19 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	}
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
-		err = sqlAdapter.DropTable(ctx, sqlAdapter.DbWrapper(), tableName, true)
+		err = sqlAdapter.DropTable(ctx, tableName, true)
 		CheckError("pre_cleanup", require, testConfig.expectedErrors, err)
 	}
 	//create destination table with predefined schema before running stream
 	if testConfig.preExistingTable != nil {
 		testConfig.preExistingTable.Name = tableName
-		err = sqlAdapter.CreateTable(ctx, sqlAdapter.DbWrapper(), testConfig.preExistingTable)
+		err = sqlAdapter.CreateTable(ctx, testConfig.preExistingTable)
 		CheckError("pre_existingtable", require, testConfig.expectedErrors, err)
 	}
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		defer func() {
-			sqlAdapter.DropTable(ctx, sqlAdapter.DbWrapper(), tableName, true)
+			sqlAdapter.DropTable(ctx, tableName, true)
 		}()
 	}
 	stream, err := blk.CreateStream(t.Name(), tableName, mode, testConfig.streamOptions...)
@@ -354,7 +354,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 
 	if testConfig.expectedTable != nil {
 		//Check table schema
-		table, err := sqlAdapter.GetTableSchema(ctx, sqlAdapter.DbWrapper(), tableName)
+		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
 		CheckError("get_table", require, testConfig.expectedErrors, err)
 		require.Equal(testConfig.expectedTable, table)
 	}
@@ -409,7 +409,7 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 func CheckError(step string, require *require.Assertions, expectedErrors map[string]any, err error) {
 	switch target := expectedErrors[step].(type) {
 	case string:
-		require.Contains(fmt.Sprintf("%v", err), target)
+		require.Containsf(fmt.Sprintf("%v", err), target, "error in step %s doesn't contain expected value: %s", step, target)
 	case error:
 		require.ErrorIs(err, target)
 	case nil:

@@ -10,11 +10,10 @@ import (
 
 type AutoCommitStream struct {
 	AbstractSQLStream
-	db *TxOrDBWrapper
 }
 
 func newAutoCommitStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
-	ps := AutoCommitStream{db: p.DbWrapper()}
+	ps := AutoCommitStream{}
 	var err error
 	ps.AbstractSQLStream, err = newAbstractStream(id, p, dataSource, tableName, bulker.AutoCommit, streamOptions...)
 	if err != nil {
@@ -39,7 +38,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (e
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure table")
 	}
-	return ps.p.Insert(ctx, ps.db, table, ps.merge, processedObjects)
+	return ps.sqlAdapter.Insert(ctx, table, ps.merge, processedObjects)
 }
 
 func (ps *AutoCommitStream) Complete(ctx context.Context) (state bulker.State, err error) {

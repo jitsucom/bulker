@@ -7,9 +7,9 @@ import (
 	"github.com/jitsucom/bulker/base/logging"
 )
 
-// TxOrDBWrapper is sql transaction wrapper. Used for handling and log errors with db type (postgres, mySQL, redshift or snowflake)
+// TxWrapper is sql transaction wrapper. Used for handling and log errors with db type (postgres, mySQL, redshift or snowflake)
 // on Commit() and Rollback() calls
-type TxOrDBWrapper struct {
+type TxWrapper struct {
 	dbType       string
 	db           *sql.DB
 	tx           *sql.Tx
@@ -29,20 +29,20 @@ type TxOrDB interface {
 	QueryRow(query string, args ...any) *sql.Row
 }
 
-func NewTxWrapper(dbType string, tx *sql.Tx, queryLogger *logging.QueryLogger, errorAdapter ErrorAdapter) *TxOrDBWrapper {
-	return &TxOrDBWrapper{dbType: dbType, tx: tx, queryLogger: queryLogger, errorAdapter: errorAdapter}
+func NewTxWrapper(dbType string, tx *sql.Tx, queryLogger *logging.QueryLogger, errorAdapter ErrorAdapter) *TxWrapper {
+	return &TxWrapper{dbType: dbType, tx: tx, queryLogger: queryLogger, errorAdapter: errorAdapter}
 }
 
-func NewDbWrapper(dbType string, db *sql.DB, queryLogger *logging.QueryLogger, errorAdapter ErrorAdapter) *TxOrDBWrapper {
-	return &TxOrDBWrapper{dbType: dbType, db: db, queryLogger: queryLogger, errorAdapter: errorAdapter}
+func NewDbWrapper(dbType string, db *sql.DB, queryLogger *logging.QueryLogger, errorAdapter ErrorAdapter) *TxWrapper {
+	return &TxWrapper{dbType: dbType, db: db, queryLogger: queryLogger, errorAdapter: errorAdapter}
 }
 
-func NewDummyTxWrapper(dbType string) *TxOrDBWrapper {
-	return &TxOrDBWrapper{dbType: dbType}
+func NewDummyTxWrapper(dbType string) *TxWrapper {
+	return &TxWrapper{dbType: dbType}
 }
 
 func wrap[R any](ctx context.Context,
-	t *TxOrDBWrapper, queryFunction func(tx TxOrDB, query string, args ...any) (R, error),
+	t *TxWrapper, queryFunction func(tx TxOrDB, query string, args ...any) (R, error),
 	query string, args ...any,
 ) (res R, err error) {
 	tx := t.tx
@@ -62,7 +62,7 @@ func wrap[R any](ctx context.Context,
 
 // ExecContext executes a query that doesn't return rows.
 // For example: an INSERT and UPDATE.
-func (t *TxOrDBWrapper) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+func (t *TxWrapper) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return wrap(ctx, t, func(tx TxOrDB, query string, args ...any) (sql.Result, error) {
 		return tx.ExecContext(ctx, query, args...)
 	}, query, args...)
@@ -73,14 +73,14 @@ func (t *TxOrDBWrapper) ExecContext(ctx context.Context, query string, args ...a
 //
 // Exec uses context.Background internally; to specify the context, use
 // ExecContext.
-func (t *TxOrDBWrapper) Exec(query string, args ...any) (sql.Result, error) {
+func (t *TxWrapper) Exec(query string, args ...any) (sql.Result, error) {
 	return wrap(context.Background(), t, func(tx TxOrDB, query string, args ...any) (sql.Result, error) {
 		return tx.Exec(query, args...)
 	}, query, args...)
 }
 
 // QueryContext executes a query that returns rows, typically a SELECT.
-func (t *TxOrDBWrapper) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+func (t *TxWrapper) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return wrap(ctx, t, func(tx TxOrDB, query string, args ...any) (*sql.Rows, error) {
 		return tx.QueryContext(ctx, query, args...)
 	}, query, args...)
@@ -90,7 +90,7 @@ func (t *TxOrDBWrapper) QueryContext(ctx context.Context, query string, args ...
 //
 // Query uses context.Background internally; to specify the context, use
 // QueryContext.
-func (t *TxOrDBWrapper) Query(query string, args ...any) (*sql.Rows, error) {
+func (t *TxWrapper) Query(query string, args ...any) (*sql.Rows, error) {
 	return wrap(context.Background(), t, func(tx TxOrDB, query string, args ...any) (*sql.Rows, error) {
 		return tx.Query(query, args...)
 	}, query, args...)
@@ -102,7 +102,7 @@ func (t *TxOrDBWrapper) Query(query string, args ...any) (*sql.Rows, error) {
 // If the query selects no rows, the *Row's Scan will return ErrNoRows.
 // Otherwise, the *Row's Scan scans the first selected row and discards
 // the rest.
-func (t *TxOrDBWrapper) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+func (t *TxWrapper) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	row, _ := wrap(ctx, t, func(tx TxOrDB, query string, args ...any) (*sql.Row, error) {
 		return tx.QueryRowContext(ctx, query, args...), nil
 	}, query, args...)
@@ -118,7 +118,7 @@ func (t *TxOrDBWrapper) QueryRowContext(ctx context.Context, query string, args 
 //
 // QueryRow uses context.Background internally; to specify the context, use
 // QueryRowContext.
-func (t *TxOrDBWrapper) QueryRow(query string, args ...any) *sql.Row {
+func (t *TxWrapper) QueryRow(query string, args ...any) *sql.Row {
 	row, _ := wrap(context.Background(), t, func(tx TxOrDB, query string, args ...any) (*sql.Row, error) {
 		return tx.QueryRow(query, args...), nil
 	}, query, args...)
@@ -126,7 +126,7 @@ func (t *TxOrDBWrapper) QueryRow(query string, args ...any) *sql.Row {
 }
 
 // Commit commits underlying transaction and returns err if occurred
-func (t *TxOrDBWrapper) Commit() error {
+func (t *TxWrapper) Commit() error {
 	if t.tx != nil {
 		if err := t.tx.Commit(); err != nil {
 			if t.errorAdapter != nil {
@@ -139,7 +139,7 @@ func (t *TxOrDBWrapper) Commit() error {
 }
 
 // Rollback cancels underlying transaction and logs system err if occurred
-func (t *TxOrDBWrapper) Rollback() error {
+func (t *TxWrapper) Rollback() error {
 	if t.tx != nil {
 		if err := t.tx.Rollback(); err != nil {
 			//TODO: uncomment?

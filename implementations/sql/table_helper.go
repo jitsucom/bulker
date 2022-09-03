@@ -22,7 +22,6 @@ type TableHelper struct {
 	sync.RWMutex
 
 	sqlAdapter          SQLAdapter
-	tx                  TxOrDB
 	coordinationService coordination.Service
 	tables              map[string]*Table
 
@@ -41,7 +40,6 @@ func NewTableHelper(sqlAdapter SQLAdapter, tx TxOrDB, coordinationService coordi
 
 	return &TableHelper{
 		sqlAdapter:          sqlAdapter,
-		tx:                  tx,
 		coordinationService: coordinationService,
 		tables:              map[string]*Table{},
 
@@ -156,7 +154,7 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, destinationID str
 		return dbSchema, nil
 	}
 
-	if err := th.sqlAdapter.PatchTableSchema(ctx, th.tx, diff); err != nil {
+	if err := th.sqlAdapter.PatchTableSchema(ctx, diff); err != nil {
 		return nil, err
 	}
 
@@ -252,14 +250,14 @@ func (th *TableHelper) getOrCreateWithLock(ctx context.Context, destinationID st
 
 func (th *TableHelper) getOrCreate(ctx context.Context, dataSchema *Table) (*Table, error) {
 	//Get schema
-	dbTableSchema, err := th.sqlAdapter.GetTableSchema(ctx, th.tx, dataSchema.Name)
+	dbTableSchema, err := th.sqlAdapter.GetTableSchema(ctx, dataSchema.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	//create new
 	if !dbTableSchema.Exists() {
-		if err := th.sqlAdapter.CreateTable(context.Background(), th.tx, dataSchema); err != nil {
+		if err := th.sqlAdapter.CreateTable(context.Background(), dataSchema); err != nil {
 			return nil, err
 		}
 
@@ -293,6 +291,6 @@ func (th *TableHelper) getTableIdentifier(destinationID, tableName string) strin
 	return destinationID + "_" + tableName
 }
 
-func (th *TableHelper) SetTx(tx TxOrDB) {
-	th.tx = tx
+func (th *TableHelper) SetSQLAdapter(adapter SQLAdapter) {
+	th.sqlAdapter = adapter
 }
