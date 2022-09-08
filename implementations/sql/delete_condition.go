@@ -35,11 +35,12 @@ func (dc *WhenConditions) IsEmpty() bool {
 	return dc == nil || len(dc.Conditions) == 0
 }
 
-func (dc *WhenConditions) Add(field string, clause string, value any) {
+func (dc *WhenConditions) Add(field string, clause string, value any) *WhenConditions {
 	dc.Conditions = append(dc.Conditions, WhenCondition{Field: field, Clause: clause, Value: value})
 	if dc.JoinCondition == "" {
 		dc.JoinCondition = "AND"
 	}
+	return dc
 }
 
 func NewWhenConditions(field string, clause string, value any) *WhenConditions {

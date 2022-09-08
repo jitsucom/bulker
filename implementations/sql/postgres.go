@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
@@ -12,6 +13,7 @@ import (
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 	"github.com/lib/pq"
+	"io"
 	"math"
 	"os"
 	"sort"
@@ -58,11 +60,12 @@ WHERE tco.constraint_type = 'PRIMARY KEY' AND
 	createTableTemplate               = `CREATE TABLE "%s"."%s" (%s)`
 	insertTemplate                    = `INSERT INTO "%s"."%s" (%s) VALUES %s`
 	mergeTemplate                     = `INSERT INTO "%s"."%s"(%s) VALUES %s ON CONFLICT ON CONSTRAINT %s DO UPDATE set %s;`
+	postgresCopyTemplate              = `COPY "%s"."%s"(%s) FROM STDIN`
 	bulkCopyTemplate                  = `INSERT INTO "%s"."%s"(%s) SELECT %s FROM "%s"."%s" `
 	bulkMergeTemplate                 = `INSERT INTO "%s"."%s"(%s) SELECT %s FROM "%s"."%s" ON CONFLICT ON CONSTRAINT %s DO UPDATE SET %s`
 	bulkMergePrefix                   = `excluded`
 	deleteQueryTemplate               = `DELETE FROM "%s"."%s" WHERE %s`
-	selectQueryTemplate               = `SELECT %s FROM "%s"."%s"%s`
+	selectQueryTemplate               = `SELECT %s FROM "%s"."%s"%s%s`
 
 	updateStatement   = `UPDATE "%s"."%s" SET %s WHERE %s`
 	dropTableTemplate = `DROP TABLE %s"%s"."%s"`
@@ -127,28 +130,36 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 }
 
 func (p *Postgres) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
+	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s_stream_%s_%s", mode, tableName, utils.SanitizeString(id))))
+
+	if err := p.validateOptions(streamOptions); err != nil {
+		return nil, err
+	}
 	switch mode {
 	case bulker.AutoCommit:
-		return newAutoCommitStream(id, p, p.dataSource, tableName, streamOptions...)
+		return newAutoCommitStream(id, p, tableName, streamOptions...)
 	case bulker.Transactional:
-		return newTransactionalStream(id, p, p.dataSource, tableName, streamOptions...)
+		return newTransactionalStream(id, p, tableName, streamOptions...)
 	case bulker.ReplaceTable:
-		return newReplaceTableStream(id, p, p.dataSource, tableName, streamOptions...)
+		return newReplaceTableStream(id, p, tableName, streamOptions...)
 	case bulker.ReplacePartition:
-		return newReplacePartitionStream(id, p, p.dataSource, tableName, streamOptions...)
+		return newReplacePartitionStream(id, p, tableName, streamOptions...)
 	}
 	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
+}
+
+func (p *Postgres) validateOptions(streamOptions []bulker.StreamOption) error {
+	options := &bulker.StreamOptions{}
+	for _, option := range streamOptions {
+		option(options)
+	}
+	return nil
 }
 
 // Type returns Postgres type
 func (p *Postgres) Type() string {
 	return PostgresBulkerTypeId
 }
-
-func (p *Postgres) GetConfig() *DataSourceConfig {
-	return p.config
-}
-
 func (p *Postgres) GetTypesMapping() map[types.DataType]string {
 	return SchemaToPostgres
 }
@@ -384,7 +395,7 @@ func (p *Postgres) ReplaceTable(ctx context.Context, originalTable, replacementT
 
 // Update one record in Postgres
 func (p *Postgres) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error {
-	updateCondition, updateValues := p.toWhenConditions(whenConditions)
+	updateCondition, updateValues := p.toWhenConditions(whenConditions, len(object))
 
 	columns := make([]string, len(object), len(object))
 	values := make([]any, len(object)+len(updateValues), len(object)+len(updateValues))
@@ -416,10 +427,7 @@ func (p *Postgres) Update(ctx context.Context, tableName string, object types.Ob
 
 func (p *Postgres) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error {
 	var placeholdersBuilder strings.Builder
-	var headerWithoutQuotes []string
-	for _, name := range table.SortedColumnNames() {
-		headerWithoutQuotes = append(headerWithoutQuotes, name)
-	}
+	headerWithoutQuotes := table.SortedColumnNames()
 	valuesAmount := len(objects) * len(table.Columns)
 	maxValues := valuesAmount
 	if maxValues > PostgresValuesLimit {
@@ -507,6 +515,71 @@ func (p *Postgres) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 	return nil
 }
 
+func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+	if loadSource.Type != LocalFile {
+		return fmt.Errorf("LoadTable: only local file is supported")
+	}
+	if loadSource.Format != CSV {
+		return fmt.Errorf("LoadTable: only CSV format is supported")
+	}
+	var headerWithQuotes []string
+	for _, name := range targetTable.SortedColumnNames() {
+		headerWithQuotes = append(headerWithQuotes, fmt.Sprintf(`"%s"`, name))
+	}
+	copyStatement := fmt.Sprintf(postgresCopyTemplate, p.config.Schema, targetTable.Name, strings.Join(headerWithQuotes, ", "))
+	defer func() {
+		if err != nil {
+			err = errorj.LoadError.Wrap(err, "failed to load table").
+				WithProperty(errorj.DBInfo, &types.ErrorPayload{
+					Schema:      p.config.Schema,
+					Table:       targetTable.Name,
+					PrimaryKeys: targetTable.GetPKFields(),
+					Statement:   copyStatement,
+				})
+		}
+	}()
+
+	stmt, err := p.txOrDb(ctx).PrepareContext(ctx, copyStatement)
+	if err != nil {
+		return err
+	}
+	//f, err := os.ReadFile(loadSource.Path)
+	//logging.Infof("FILE: %s", f)
+
+	file, err := os.Open(loadSource.Path)
+	if err != nil {
+		return err
+	}
+	reader := csv.NewReader(file)
+	_, _ = reader.Read() //skip header
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		args := make([]any, len(record))
+		for i, v := range record {
+			if v == "\\N" {
+				args[i] = nil
+			} else {
+				args[i] = v
+			}
+		}
+		if _, err := stmt.ExecContext(ctx, args...); err != nil {
+			return checkErr(err)
+		}
+	}
+	_, err = stmt.ExecContext(ctx)
+	if err != nil {
+		return checkErr(err)
+	}
+
+	return checkErr(stmt.Close())
+}
+
 func (p *Postgres) DropTable(ctx context.Context, tableName string, ifExists bool) error {
 	ifExs := ""
 	if ifExists {
@@ -554,15 +627,18 @@ func (p *Postgres) renameTableInTransaction(ctx context.Context, ifExists bool, 
 	return nil
 }
 
-func (p *Postgres) Select(ctx context.Context, tableName string, whenConditions *WhenConditions) ([]map[string]any, error) {
-	return p.selectFrom(ctx, tableName, "*", whenConditions)
+func (p *Postgres) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+	return p.selectFrom(ctx, tableName, "*", whenConditions, orderBy)
 }
-func (p *Postgres) selectFrom(ctx context.Context, tableName string, selectExpression string, deleteConditions *WhenConditions) ([]map[string]any, error) {
-	whenCondition, values := p.toWhenConditions(deleteConditions)
+func (p *Postgres) selectFrom(ctx context.Context, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+	whenCondition, values := p.toWhenConditions(whenConditions, 0)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
 	}
-	query := fmt.Sprintf(selectQueryTemplate, selectExpression, p.config.Schema, tableName, whenCondition)
+	if orderBy != "" {
+		orderBy = " ORDER BY " + orderBy
+	}
+	query := fmt.Sprintf(selectQueryTemplate, selectExpression, p.config.Schema, tableName, whenCondition, orderBy)
 
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, query, values...)
 	if err != nil {
@@ -616,7 +692,7 @@ func (p *Postgres) selectFrom(ctx context.Context, tableName string, selectExpre
 }
 
 func (p *Postgres) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
-	res, err := p.selectFrom(ctx, tableName, "count(*) as jitsu_count", whenConditions)
+	res, err := p.selectFrom(ctx, tableName, "count(*) as jitsu_count", whenConditions, "")
 	if err != nil {
 		return -1, err
 	}
@@ -627,7 +703,7 @@ func (p *Postgres) Count(ctx context.Context, tableName string, whenConditions *
 }
 
 func (p *Postgres) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {
-	deleteCondition, values := p.toWhenConditions(deleteConditions)
+	deleteCondition, values := p.toWhenConditions(deleteConditions, 0)
 	query := fmt.Sprintf(deleteQueryTemplate, p.config.Schema, tableName, deleteCondition)
 
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, query, values...); err != nil {
@@ -657,7 +733,7 @@ func (p *Postgres) TruncateTable(ctx context.Context, tableName string) error {
 	return nil
 }
 
-func (p *Postgres) toWhenConditions(conditions *WhenConditions) (string, []any) {
+func (p *Postgres) toWhenConditions(conditions *WhenConditions, valuesShift int) (string, []any) {
 	if conditions == nil {
 		return "", []any{}
 	}
@@ -665,9 +741,14 @@ func (p *Postgres) toWhenConditions(conditions *WhenConditions) (string, []any) 
 	var values []any
 
 	for i, condition := range conditions.Conditions {
-		conditionString := condition.Field + " " + condition.Clause + " $" + strconv.Itoa(i+1)
-		queryConditions = append(queryConditions, conditionString)
-		values = append(values, types.ReformatValue(condition.Value))
+		switch strings.ToLower(condition.Clause) {
+		case "is null":
+		case "is not null":
+			queryConditions = append(queryConditions, condition.Field+" "+condition.Clause)
+		default:
+			queryConditions = append(queryConditions, condition.Field+" "+condition.Clause+" $"+strconv.Itoa(i+valuesShift+1))
+			values = append(values, types.ReformatValue(condition.Value))
+		}
 	}
 
 	return strings.Join(queryConditions, " "+conditions.JoinCondition+" "), values

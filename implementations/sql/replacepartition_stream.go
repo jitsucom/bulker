@@ -2,10 +2,8 @@ package sql
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 )
@@ -16,7 +14,7 @@ type ReplacePartitionStream struct {
 	partitionId string
 }
 
-func newReplacePartitionStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (stream bulker.BulkerStream, err error) {
+func newReplacePartitionStream(id string, p SQLAdapter, tableName string, streamOptions ...bulker.StreamOption) (stream bulker.BulkerStream, err error) {
 	ps := ReplacePartitionStream{}
 	so := bulker.StreamOptions{}
 	for _, opt := range streamOptions {
@@ -26,7 +24,7 @@ func newReplacePartitionStream(id string, p SQLAdapter, dataSource *sql.DB, tabl
 	if partitionId == "" {
 		return nil, errors.New("WithPartition is required option for ReplacePartitionStream")
 	}
-	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, dataSource, tableName, bulker.ReplacePartition, streamOptions...)
+	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, tableName, bulker.ReplacePartition, streamOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -48,18 +46,17 @@ func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Obje
 	}
 	//mark rows by setting __partition_id column with value of partitionId option
 	object[PartitonIdKeyword] = ps.partitionId
-
 	//type mapping, flattening => table schema
 	tableForObject, processedObjects, err := ps.preprocess(object)
 	if err != nil {
 		return err
 	}
-	//ensure destination table schema
-	tableForObject, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, tableForObject)
-	if err != nil {
-		return errorj.Decorate(err, "failed to ensure destination table")
-	}
-	return ps.tx.Insert(ctx, tableForObject, ps.merge, processedObjects)
+
+	ps.ensureSchema(ctx, &ps.dstTable, tableForObject, func(ctx context.Context) (*Table, error) {
+		return tableForObject, nil
+	})
+
+	return ps.insert(ctx, ps.dstTable, processedObjects)
 }
 
 func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -71,7 +68,7 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 			ps.state.SuccessfulRows = 0
 			_ = ps.tx.Rollback()
 		}
-		state, err = ps.postComplete(err)
+		state, err = ps.postComplete(ctx, err)
 	}()
 	//if no error happened during inserts. empty stream is valid - means no data for sync period
 	if ps.state.LastError == nil {
@@ -80,7 +77,11 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 			//no transaction was opened yet and not needed that is  why we pass ps.sqlAdapter
 			err = ps.clearPartition(ctx, ps.sqlAdapter)
 		} else {
-			err = ps.tx.Commit()
+			if ps.tmpFile != nil {
+				if err = ps.flushTmpFile(ctx, ps.dstTable, true); err != nil {
+					return ps.state, err
+				}
+			}
 		}
 		return
 	} else {
@@ -88,17 +89,6 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 		err = ps.state.LastError
 		return
 	}
-}
-
-func (ps *ReplacePartitionStream) Abort(ctx context.Context) (state bulker.State, err error) {
-	if ps.state.Status != bulker.Active {
-		return ps.state, errors.New("stream is not active")
-	}
-	if ps.tx != nil {
-		_ = ps.tx.Rollback()
-	}
-	ps.state.Status = bulker.Aborted
-	return ps.state, err
 }
 
 func (ps *ReplacePartitionStream) clearPartition(ctx context.Context, sqlAdapter SQLAdapter) error {

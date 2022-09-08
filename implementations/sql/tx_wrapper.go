@@ -27,6 +27,8 @@ type TxOrDB interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	QueryRow(query string, args ...any) *sql.Row
+	PrepareContext(ctx context.Context, query string) (*sql.Stmt, error)
+	Prepare(query string) (*sql.Stmt, error)
 }
 
 func NewTxWrapper(dbType string, tx *sql.Tx, queryLogger *logging.QueryLogger, errorAdapter ErrorAdapter) *TxWrapper {
@@ -123,6 +125,37 @@ func (t *TxWrapper) QueryRow(query string, args ...any) *sql.Row {
 		return tx.QueryRow(query, args...), nil
 	}, query, args...)
 	return row
+}
+
+// PrepareContext creates a prepared statement for use within a transaction.
+//
+// The returned statement operates within the transaction and will be closed
+// when the transaction has been committed or rolled back.
+//
+// To use an existing prepared statement on this transaction, see Tx.Stmt.
+//
+// The provided context will be used for the preparation of the context, not
+// for the execution of the returned statement. The returned statement
+// will run in the transaction context.
+func (t *TxWrapper) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
+	return wrap(ctx, t, func(tx TxOrDB, query string, args ...any) (*sql.Stmt, error) {
+		return tx.PrepareContext(ctx, query)
+	}, query)
+}
+
+// Prepare creates a prepared statement for use within a transaction.
+//
+// The returned statement operates within the transaction and will be closed
+// when the transaction has been committed or rolled back.
+//
+// To use an existing prepared statement on this transaction, see Tx.Stmt.
+//
+// Prepare uses context.Background internally; to specify the context, use
+// PrepareContext.
+func (t *TxWrapper) Prepare(query string) (*sql.Stmt, error) {
+	return wrap(context.Background(), t, func(tx TxOrDB, query string, args ...any) (*sql.Stmt, error) {
+		return tx.Prepare(query)
+	}, query)
 }
 
 // Commit commits underlying transaction and returns err if occurred

@@ -2,7 +2,6 @@ package sql
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
@@ -18,19 +17,30 @@ import (
 // TODO: Use driver specific bulk/batch approaches
 type TransactionalStream struct {
 	AbstractTransactionalSQLStream
-	dstTable *Table
-	tmpTable *Table
 }
 
-func newTransactionalStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
+func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	ps := TransactionalStream{}
-
 	var err error
-	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, dataSource, tableName, bulker.Transactional, streamOptions...)
+	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, tableName, bulker.Transactional, streamOptions...)
 	if err != nil {
 		return nil, err
 	}
 	return &ps, nil
+}
+
+func (ps *TransactionalStream) init(ctx context.Context) (err error) {
+	if ps.inited {
+		return nil
+	}
+	//localBatchFile := localBatchFileOption.Get(&ps.options)
+	//if localBatchFile != "" && ps.tmpFile == nil {
+	//	ps.tmpFile, err = os.CreateTemp("", localBatchFile)
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
+	return ps.AbstractTransactionalSQLStream.init(ctx)
 }
 
 func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object) (err error) {
@@ -40,39 +50,33 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 	if err = ps.init(ctx); err != nil {
 		return err
 	}
+
 	//type mapping, flattening => table schema
 	tableForObject, processedObjects, err := ps.preprocess(object)
 	if err != nil {
 		return err
 	}
-	//first object
-	if ps.tmpTable == nil {
+	ps.ensureSchema(ctx, &ps.tmpTable, tableForObject, func(ctx context.Context) (*Table, error) {
 		//if destination table already exist
 		//init tmp table with columns=union(table.columns, cachedTable.columns)
 		//to avoid unnecessary alters of tmp table during transaction
 		dstTable, err := ps.tx.GetTableSchema(ctx, ps.tableName)
 		if err != nil {
-			return errorj.Decorate(err, "failed to check for existing destination table schema")
+			return nil, errorj.Decorate(err, "failed to check for existing destination table schema")
 		}
 		if dstTable.Exists() {
 			utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
 		}
 		ps.dstTable = tableForObject
-		ps.tmpTable = &Table{
+		return &Table{
 			Name:           fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8]),
 			PrimaryKeyName: fmt.Sprintf("jitsu_tmp_pk_%s", uuid.NewLettersNumbers()[:8]),
 			PKFields:       tableForObject.PKFields,
 			Columns:        tableForObject.Columns,
-		}
-	} else {
-		ps.tmpTable.Columns = tableForObject.Columns
-	}
-	//adapt tmp table for new object columns if any
-	ps.tmpTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.tmpTable)
-	if err != nil {
-		return errorj.Decorate(err, "failed to ensure temporary table")
-	}
-	return ps.tx.Insert(ctx, ps.tmpTable, ps.merge, processedObjects)
+		}, nil
+	})
+
+	return ps.insert(ctx, ps.tmpTable, processedObjects)
 }
 
 func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -80,17 +84,15 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 		return ps.state, errors.New("stream is not active")
 	}
 	defer func() {
-		if err != nil {
-			ps.state.SuccessfulRows = 0
-			if ps.tx != nil {
-				_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
-				_ = ps.tx.Rollback()
-			}
-		}
-		state, err = ps.postComplete(err)
+		state, err = ps.postComplete(ctx, err)
 	}()
 	//if at least one object was inserted
 	if ps.state.SuccessfulRows > 0 {
+		if ps.tmpFile != nil {
+			if err = ps.flushTmpFile(ctx, ps.tmpTable, true); err != nil {
+				return ps.state, err
+			}
+		}
 		//tmp table accumulates all schema changes happened during transaction
 		ps.dstTable.Columns = ps.tmpTable.Columns
 		ps.dstTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.dstTable)
@@ -102,25 +104,10 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 		if err != nil {
 			return ps.state, err
 		}
-		//drop tmp table if exists
-		_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
-		err = ps.tx.Commit()
 		return
 	} else {
 		//if was any error - it will trigger transaction rollback in defer func
 		err = ps.state.LastError
 		return
 	}
-}
-
-func (ps *TransactionalStream) Abort(ctx context.Context) (state bulker.State, err error) {
-	if ps.state.Status != bulker.Active {
-		return ps.state, errors.New("stream is not active")
-	}
-	if ps.tx != nil {
-		_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
-		_ = ps.tx.Rollback()
-	}
-	ps.state.Status = bulker.Aborted
-	return ps.state, err
 }

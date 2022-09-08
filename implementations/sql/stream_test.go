@@ -14,6 +14,7 @@ import (
 	"github.com/jitsucom/bulker/types"
 	"github.com/stretchr/testify/require"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -22,8 +23,12 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 
 const forceLeaveResultingTables = false
 
+var allBulkerTypes = []string{"postgres", "redshift", "bigquery"}
+var exceptBigquery = []string{"postgres", "redshift"}
+
 var configRegistry = map[string]any{
-	//"postgres": os.Getenv("BULKER_TEST_POSTGRES"),
+	"bigquery": os.Getenv("BULKER_TEST_BIGQUERY"),
+	"redshift": os.Getenv("BULKER_TEST_REDSHIFT"),
 }
 
 func init() {
@@ -60,8 +65,12 @@ type bulkerTestConfig struct {
 	expectedState *bulker.State
 	//schema of the table expected as result of complete test run
 	expectedTable *Table
+	//control whether to check types of columns fow expectedTable. For test that run against multiple bulker types is required to leave 'false'
+	expectedTableTypeChecking bool
 	//for configs that runs for multiple modes including bulker.ReplacePartition automatically adds WithPartition to streamOptions and partition id column to expectedTable and expectedRows for that particular mode
 	expectPartitionId bool
+	//orderBy clause for select query to check expectedTable (default: id asc)
+	orderBy string
 	//rows count expected in resulting table. don't use with expectedRows. any type to allow nil value meaning not set
 	expectedRowsCount any
 	//rows data expected in resulting table
@@ -88,14 +97,7 @@ func TestStreams(t *testing.T) {
 			expectedTable: &Table{
 				Name:     "added_columns_test",
 				PKFields: utils.Set[string]{},
-				Columns: Columns{
-					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
-					"column1":    SQLColumn{Type: "text"},
-					"column2":    SQLColumn{Type: "text"},
-					"column3":    SQLColumn{Type: "text"},
-					"id":         SQLColumn{Type: "bigint"},
-					"name":       SQLColumn{Type: "text"},
-				},
+				Columns:  justColumns("_timestamp", "column1", "column2", "column3", "id", "name"),
 			},
 			expectedRows: []map[string]any{
 				{"_timestamp": constantTime, "id": 1, "name": "test", "column1": nil, "column2": nil, "column3": nil},
@@ -105,7 +107,8 @@ func TestStreams(t *testing.T) {
 				{"_timestamp": constantTime, "id": 5, "name": "test", "column1": nil, "column2": nil, "column3": nil},
 				{"_timestamp": constantTime, "id": 6, "name": "test4", "column1": "data", "column2": "data", "column3": "data"},
 			},
-			bulkerTypes: []string{"postgres"},
+			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
+			bulkerTypes:    allBulkerTypes,
 		},
 		{
 			name:              "types",
@@ -115,87 +118,38 @@ func TestStreams(t *testing.T) {
 			expectedTable: &Table{
 				Name:     "types_test",
 				PKFields: utils.Set[string]{},
-				Columns: Columns{
-					"bool1":            SQLColumn{Type: "boolean"},
-					"bool2":            SQLColumn{Type: "boolean"},
-					"float1":           SQLColumn{Type: "double precision"},
-					"floatstring":      SQLColumn{Type: "text"},
-					"int1":             SQLColumn{Type: "bigint"},
-					"intstring":        SQLColumn{Type: "text"},
-					"roundfloat":       SQLColumn{Type: "double precision"},
-					"roundfloatstring": SQLColumn{Type: "text"},
-					"name":             SQLColumn{Type: "text"},
-					"time1":            SQLColumn{Type: "timestamp without time zone"},
-					"time2":            SQLColumn{Type: "timestamp without time zone"},
-					"date1":            SQLColumn{Type: "text"},
-				},
+				Columns:  justColumns("id", "bool1", "bool2", "float1", "floatstring", "int1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 			},
 			expectedRows: []map[string]any{
-				{"bool1": false, "bool2": true, "float1": 1.2, "floatstring": "1.1", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-				{"bool1": false, "bool2": true, "float1": 1.0, "floatstring": "1.0", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 1, "bool1": false, "bool2": true, "float1": 1.2, "floatstring": "1.1", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 2, "bool1": false, "bool2": true, "float1": 1.0, "floatstring": "1.0", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
 			},
-			bulkerTypes: []string{"postgres"},
+			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
+			bulkerTypes:    allBulkerTypes,
 		},
 		{
-			name:              "types_collision",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			name:              "types_collision_autocommit",
+			modes:             []bulker.BulkMode{bulker.AutoCommit},
 			expectPartitionId: true,
 			dataFile:          "test_data/types_collision.ndjson",
-			expectedErrors:    map[string]any{"consume_object_1": "cause: pq: 22P02 invalid input syntax for type bigint: \"1.1\""},
-			bulkerTypes:       []string{"postgres"},
+			expectedErrors: map[string]any{
+				"consume_object_1_postgres":         "cause: pq: 22P02 invalid input syntax for type bigint: \"1.1\"",
+				"consume_object_1_redshift":         "cause: pq: 22P02 invalid input syntax for integer: \"1.1\"",
+				"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported,
+			},
+			bulkerTypes: allBulkerTypes,
 		},
 		{
-			name:     "existing_table1",
-			modes:    []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
-			dataFile: "test_data/existing_table1.ndjson",
-			preExistingTable: &Table{
-				Columns: Columns{
-					"a": SQLColumn{Type: "text"},
-				},
+			name:              "types_collision_other",
+			modes:             []bulker.BulkMode{bulker.Transactional, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/types_collision.ndjson",
+			expectedErrors: map[string]any{
+				"stream_complete_postgres": "cause: pq: 22P02 invalid input syntax for type bigint: \"1.1\"",
+				"stream_complete_redshift": "failed.  Check 'stl_load_errors' system table for details.",
+				"stream_complete_bigquery": "Could not parse '1.1' as INT64 for field int1",
 			},
-			expectedRows: []map[string]any{
-				{"a": "2022-08-18 14:17:22.841182Z"},
-			},
-			bulkerTypes: []string{"postgres"},
-		},
-		{
-			name:     "existing_table2",
-			modes:    []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
-			dataFile: "test_data/existing_table2.ndjson",
-			preExistingTable: &Table{
-				Columns: Columns{
-					"a": SQLColumn{Type: "text"},
-				},
-			},
-			expectedRows: []map[string]any{
-				{"a": "2022-08-18 14:17:22.841182Z"},
-				{"a": "1"},
-			},
-			bulkerTypes: []string{"postgres"},
-		},
-		{
-			name:     "existing_table3",
-			modes:    []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
-			dataFile: "test_data/existing_table3.ndjson",
-			preExistingTable: &Table{
-				Columns: Columns{
-					"a": SQLColumn{Type: "timestamp"},
-				},
-			},
-			expectedErrors: map[string]any{"consume_object_0": "cause: pq: 22007 invalid input syntax for type timestamp: \"1\""},
-			bulkerTypes:    []string{"postgres"},
-		},
-		{
-			name:     "existing_table4",
-			modes:    []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
-			dataFile: "test_data/existing_table4.ndjson",
-			preExistingTable: &Table{
-				Columns: Columns{
-					"a": SQLColumn{Type: "numeric"},
-				},
-			},
-			expectedErrors: map[string]any{"consume_object_0": "cause: pq: 22P02 invalid input syntax for type numeric: \"2022-08-18 14:17:22.841182Z\""},
-			bulkerTypes:    []string{"postgres"},
+			bulkerTypes: allBulkerTypes,
 		},
 		{
 			name:              "repeated_ids_no_pk",
@@ -205,23 +159,21 @@ func TestStreams(t *testing.T) {
 			expectedTable: &Table{
 				Name:     "repeated_ids_no_pk_test",
 				PKFields: utils.Set[string]{},
-				Columns: Columns{
-					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
-					"id":         SQLColumn{Type: "bigint"},
-					"name":       SQLColumn{Type: "text"},
-				},
+				Columns:  justColumns("_timestamp", "id", "name"),
 			},
 			expectedRows: []map[string]any{
 				{"_timestamp": constantTime, "id": 1, "name": "test"},
+				{"_timestamp": constantTime, "id": 1, "name": "test7"},
 				{"_timestamp": constantTime, "id": 2, "name": "test1"},
 				{"_timestamp": constantTime, "id": 3, "name": "test2"},
 				{"_timestamp": constantTime, "id": 3, "name": "test3"},
+				{"_timestamp": constantTime, "id": 3, "name": "test6"},
 				{"_timestamp": constantTime, "id": 4, "name": "test4"},
 				{"_timestamp": constantTime, "id": 4, "name": "test5"},
-				{"_timestamp": constantTime, "id": 3, "name": "test6"},
-				{"_timestamp": constantTime, "id": 1, "name": "test7"},
 			},
-			bulkerTypes: []string{"postgres"},
+			orderBy:        "id asc, name asc",
+			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
+			bulkerTypes:    allBulkerTypes,
 		},
 		{
 			name:              "repeated_ids_pk",
@@ -237,20 +189,41 @@ func TestStreams(t *testing.T) {
 				Name:           "repeated_ids_pk_test",
 				PrimaryKeyName: "repeated_ids_pk_test_pk",
 				PKFields:       utils.NewSet("id"),
-				Columns: Columns{
-					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
-					"id":         SQLColumn{Type: "bigint"},
-					"name":       SQLColumn{Type: "text"},
-				},
+				Columns:        justColumns("_timestamp", "id", "name"),
 			},
 			expectedRows: []map[string]any{
-				{"_timestamp": constantTime, "id": 2, "name": "test1"},
-				{"_timestamp": constantTime, "id": 4, "name": "test5"},
-				{"_timestamp": constantTime, "id": 3, "name": "test6"},
 				{"_timestamp": constantTime, "id": 1, "name": "test7"},
+				{"_timestamp": constantTime, "id": 2, "name": "test1"},
+				{"_timestamp": constantTime, "id": 3, "name": "test6"},
+				{"_timestamp": constantTime, "id": 4, "name": "test5"},
 			},
-			bulkerTypes:   []string{"postgres"},
+			bulkerTypes:   exceptBigquery,
 			streamOptions: []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
+		},
+		{
+			name:              "repeated_ids_bigquery",
+			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/repeated_ids.ndjson",
+			expectedState: &bulker.State{
+				Status:         bulker.Completed,
+				ProcessedRows:  8,
+				SuccessfulRows: 8,
+			},
+			expectedTable: &Table{
+				Name:     "repeated_ids_bigquery_test",
+				PKFields: utils.Set[string]{},
+				Columns:  justColumns("_timestamp", "id", "name"),
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "test7"},
+				{"_timestamp": constantTime, "id": 2, "name": "test1"},
+				{"_timestamp": constantTime, "id": 3, "name": "test6"},
+				{"_timestamp": constantTime, "id": 4, "name": "test5"},
+			},
+			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
+			bulkerTypes:    []string{BigqueryBulkerTypeId},
+			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 		},
 	}
 	for _, tt := range tests {
@@ -281,31 +254,33 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 }
 
 func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode) {
-	require := require.New(t)
+	reqr := require.New(t)
 	adaptConfig(t, &testConfig, mode)
 	blk, err := bulker.CreateBulker(*testConfig.config)
-	CheckError("create_bulker", require, testConfig.expectedErrors, err)
+	CheckError("create_bulker", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 	defer func() {
 		err = blk.Close()
-		CheckError("bulker_close", require, testConfig.expectedErrors, err)
+		CheckError("bulker_close", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 	}()
 	sqlAdapter, ok := blk.(SQLAdapter)
-	require.True(ok)
+	reqr.True(ok)
 	ctx := context.Background()
 	tableName := testConfig.tableName
 	if tableName == "" {
 		tableName = testConfig.name + "_test"
 	}
+	err = sqlAdapter.InitDatabase(ctx)
+	CheckError("init_database", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		err = sqlAdapter.DropTable(ctx, tableName, true)
-		CheckError("pre_cleanup", require, testConfig.expectedErrors, err)
+		CheckError("pre_cleanup", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 	}
 	//create destination table with predefined schema before running stream
 	if testConfig.preExistingTable != nil {
 		testConfig.preExistingTable.Name = tableName
 		err = sqlAdapter.CreateTable(ctx, testConfig.preExistingTable)
-		CheckError("pre_existingtable", require, testConfig.expectedErrors, err)
+		CheckError("pre_existingtable", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 	}
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
@@ -314,18 +289,20 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		}()
 	}
 	stream, err := blk.CreateStream(t.Name(), tableName, mode, testConfig.streamOptions...)
-	CheckError("create_stream", require, testConfig.expectedErrors, err)
-
+	CheckError("create_stream", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	if err != nil {
+		return
+	}
 	//Abort stream if error occurred
 	defer func() {
 		if err != nil {
-			_, err = stream.Abort(ctx)
-			CheckError("stream_abort", require, testConfig.expectedErrors, err)
+			_, _ = stream.Abort(ctx)
+			//CheckError("stream_abort", testConfig.config.BulkerType, reqr, testConfig.expectedErrors, err)
 		}
 	}()
 
 	file, err := os.Open(testConfig.dataFile)
-	CheckError("open_file", require, testConfig.expectedErrors, err)
+	CheckError("open_file", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 
 	scanner := bufio.NewScanner(file)
 	i := 0
@@ -334,9 +311,9 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
 		decoder.UseNumber()
 		err = decoder.Decode(&obj)
-		CheckError("decode_json", require, testConfig.expectedErrors, err)
+		CheckError("decode_json", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 		err = stream.Consume(ctx, obj)
-		CheckError(fmt.Sprintf("consume_object_%d", i), require, testConfig.expectedErrors, err)
+		CheckError(fmt.Sprintf("consume_object_%d", i), testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 		if err != nil && !testConfig.ignoreConsumeErrors {
 			return
 		}
@@ -344,28 +321,39 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	}
 	//Commit stream
 	state, err := stream.Complete(ctx)
-	CheckError("stream_complete", require, testConfig.expectedErrors, err)
+	CheckError("stream_complete", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 
 	if testConfig.expectedState != nil {
-		require.Equal(bulker.Completed, state.Status)
-		require.Equal(*testConfig.expectedState, state)
+		reqr.Equal(bulker.Completed, state.Status)
+		reqr.Equal(*testConfig.expectedState, state)
 	}
-	CheckError("state_lasterror", require, testConfig.expectedErrors, state.LastError)
+	if err != nil {
+		return
+	}
+	CheckError("state_lasterror", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, state.LastError)
 
 	if testConfig.expectedTable != nil {
 		//Check table schema
 		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
-		CheckError("get_table", require, testConfig.expectedErrors, err)
-		require.Equal(testConfig.expectedTable, table)
+		if !testConfig.expectedTableTypeChecking {
+			for k := range testConfig.expectedTable.Columns {
+				testConfig.expectedTable.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
+			}
+			for k := range table.Columns {
+				table.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
+			}
+		}
+		CheckError("get_table", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		reqr.Equal(testConfig.expectedTable, table)
 	}
 	if testConfig.expectedRowsCount != nil || testConfig.expectedRows != nil {
 		//Check rows count and rows data when provided
-		rows, err := sqlAdapter.Select(ctx, tableName, nil)
-		CheckError("select_result", require, testConfig.expectedErrors, err)
+		rows, err := sqlAdapter.Select(ctx, tableName, nil, testConfig.orderBy)
+		CheckError("select_result", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 		if testConfig.expectedRows == nil {
-			require.Equal(testConfig.expectedRowsCount, len(rows))
+			reqr.Equal(testConfig.expectedRowsCount, len(rows))
 		} else {
-			require.Equal(testConfig.expectedRows, rows)
+			reqr.Equal(testConfig.expectedRows, rows)
 		}
 	}
 }
@@ -373,6 +361,9 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 // adaptConfig since we can use a single config for many modes and db types we may need to
 // apply changes for specific modes of dbs
 func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMode) {
+	if testConfig.orderBy == "" {
+		testConfig.orderBy = "id asc"
+	}
 	switch mode {
 	case bulker.ReplacePartition:
 		if testConfig.expectPartitionId {
@@ -406,15 +397,31 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 	}
 }
 
-func CheckError(step string, require *require.Assertions, expectedErrors map[string]any, err error) {
-	switch target := expectedErrors[step].(type) {
-	case string:
-		require.Containsf(fmt.Sprintf("%v", err), target, "error in step %s doesn't contain expected value: %s", step, target)
-	case error:
-		require.ErrorIs(err, target)
-	case nil:
-		require.NoError(err)
-	default:
-		panic(fmt.Sprintf("unexpected type of expected error %T", target))
+func CheckError(step string, bulkerType string, mode bulker.BulkMode, reqr *require.Assertions, expectedErrors map[string]any, err error) {
+	expectedError, ok := expectedErrors[step+"_"+bulkerType+"_"+strings.ToLower(string(mode))]
+	if !ok {
+		expectedError, ok = expectedErrors[step+"_"+bulkerType]
+		if !ok {
+			expectedError = expectedErrors[step]
+		}
 	}
+	switch target := expectedError.(type) {
+	case string:
+		reqr.Containsf(fmt.Sprintf("%v", err), target, "error in step %s doesn't contain expected value: %s", step, target)
+	case error:
+		reqr.ErrorIs(err, target, "error in step %s doesn't match expected error: %s", step, target)
+	case nil:
+		reqr.NoError(err, "unexpected error in step %s", step)
+	default:
+		panic(fmt.Sprintf("unexpected type of expected error: %T for step: %s", target, step))
+	}
+}
+
+// Returns Columns map with no type information
+func justColumns(columns ...string) Columns {
+	colsMap := make(Columns, len(columns))
+	for _, col := range columns {
+		colsMap[col] = SQLColumn{}
+	}
+	return colsMap
 }

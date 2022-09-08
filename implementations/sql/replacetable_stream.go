@@ -2,7 +2,6 @@ package sql
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
@@ -14,14 +13,13 @@ import (
 
 type ReplaceTableStream struct {
 	AbstractTransactionalSQLStream
-	tmpTable *Table
 }
 
-func newReplaceTableStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
+func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	ps := ReplaceTableStream{}
 
 	var err error
-	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, dataSource, tableName, bulker.ReplaceTable, streamOptions...)
+	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, tableName, bulker.ReplaceTable, streamOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -40,24 +38,17 @@ func (ps *ReplaceTableStream) Consume(ctx context.Context, object types.Object) 
 	if err != nil {
 		return err
 	}
-	//first object
-	if ps.tmpTable == nil {
-		ps.tmpTable = &Table{
+	ps.ensureSchema(ctx, &ps.tmpTable, tableForObject, func(ctx context.Context) (*Table, error) {
+		return &Table{
 			Name:           fmt.Sprintf("%s_tmp_%s", ps.tableName, timestamp.Now().Format("060102_150405")),
 			PrimaryKeyName: tableForObject.PrimaryKeyName,
 			//PrimaryKeyName: fmt.Sprintf("%s_%s", tableForObject.PrimaryKeyName, timestamp.Now().Format("060102_150405")),
 			PKFields: tableForObject.PKFields,
 			Columns:  tableForObject.Columns,
-		}
-	} else {
-		ps.tmpTable.Columns = tableForObject.Columns
-	}
-	//adapt tmp table for new object columns if any
-	ps.tmpTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.tmpTable)
-	if err != nil {
-		return errorj.Decorate(err, "failed to ensure temporary table")
-	}
-	return ps.tx.Insert(ctx, ps.tmpTable, ps.merge, processedObjects)
+		}, nil
+	})
+
+	return ps.insert(ctx, ps.tmpTable, processedObjects)
 }
 
 func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -65,18 +56,16 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 		return ps.state, errors.New("stream is not active")
 	}
 	defer func() {
-		if err != nil {
-			ps.state.SuccessfulRows = 0
-			if ps.tx != nil {
-				_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
-				_ = ps.tx.Rollback()
-			}
-		}
-		state, err = ps.postComplete(err)
+		state, err = ps.postComplete(ctx, err)
 	}()
 	if ps.state.LastError == nil {
 		//if at least one object was inserted
 		if ps.state.SuccessfulRows > 0 {
+			if ps.tmpFile != nil {
+				if err = ps.flushTmpFile(ctx, ps.tmpTable, true); err != nil {
+					return ps.state, err
+				}
+			}
 			err = ps.tx.ReplaceTable(ctx, ps.tableName, ps.tmpTable.Name, true)
 			if errorx.IsOfType(err, errorj.DropError) {
 				err = ps.tx.ReplaceTable(ctx, ps.tableName, ps.tmpTable.Name, false)
@@ -84,7 +73,6 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 			if err != nil {
 				return ps.state, err
 			}
-			err = ps.tx.Commit()
 		} else {
 			//when no objects were consumed. we need to replace table with empty one.
 			//truncation seems like a more straightforward approach.
@@ -101,16 +89,4 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 		err = ps.state.LastError
 		return
 	}
-}
-
-func (ps *ReplaceTableStream) Abort(ctx context.Context) (state bulker.State, err error) {
-	if ps.state.Status != bulker.Active {
-		return ps.state, errors.New("stream is not active")
-	}
-	if ps.tx != nil {
-		_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
-		_ = ps.tx.Rollback()
-	}
-	ps.state.Status = bulker.Aborted
-	return ps.state, err
 }

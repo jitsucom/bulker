@@ -28,6 +28,7 @@ var (
 	UpdateError               = sqlError.NewSubtype("update")
 	TruncateError             = sqlError.NewSubtype("truncate")
 	BulkMergeError            = sqlError.NewSubtype("bulk_merge")
+	LoadError                 = sqlError.NewSubtype("load")
 	CopyError                 = sqlError.NewSubtype("copy")
 
 	stageErr             = reportedErrors.NewType("stage")

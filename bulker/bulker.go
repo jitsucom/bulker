@@ -22,7 +22,7 @@ const (
 	//Transactional - bulker stream commits all consumed object on Complete call
 	//Useful when working with large number of objects or to optimize performance or costs using batch processing
 	//Any error with just one object will fail the whole transaction and no objects will be written to the database
-	Transactional = "Transactional"
+	Transactional BulkMode = "Transactional"
 
 	//ReplacePartition stream replaces all rows associated with the chosen partition column value in a single transaction (where applicable).
 	//It is useful when it is required to reprocess all objects associates with specific partition id.
@@ -30,14 +30,14 @@ const (
 	//If data of your stream may be reprocessed in some point in time it is recommended to always use ReplacePartition mode for that stream
 	//
 	//ReplacePartition implies Transactional, meaning that the new data will be available only after BulkerStream.complete() call
-	ReplacePartition = "ReplacePartition"
+	ReplacePartition BulkMode = "ReplacePartition"
 
 	//ReplaceTable - atomically replaces target table with a new one filled with the object injected to current stream.
 	//To sync entire collection of object at once without leaving target table in unfinished state
 	//Useful when collection contains finite number of object, and when it is required that target table always represent complete state for some point of time.
 	//
 	//ReplaceTable implies Transactional, meaning that the new data will be available only after BulkerStream.complete() call
-	ReplaceTable = "ReplaceTable"
+	ReplaceTable BulkMode = "ReplaceTable"
 )
 
 // TODO: Recommend to use JSON Number! or let all column be float?
@@ -97,11 +97,11 @@ const (
 	//Completed - stream was completed successfully
 	Completed Status = "Completed"
 	//Aborted - stream was aborted by user
-	Aborted = "Aborted"
+	Aborted Status = "Aborted"
 	//Failed - failed to complete stream
-	Failed = "Failed"
+	Failed Status = "Failed"
 	//Active - stream is active
-	Active = "Active"
+	Active Status = "Active"
 )
 
 // State is used as a Batch storing result

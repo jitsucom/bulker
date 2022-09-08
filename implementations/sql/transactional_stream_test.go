@@ -17,7 +17,7 @@ func TestTransactionalStream(t *testing.T) {
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added.ndjson",
 			expectedRowsCount:   6,
-			bulkerTypes:         []string{"postgres"},
+			bulkerTypes:         allBulkerTypes,
 		},
 		{
 			name:                "added_columns_second_run",
@@ -28,16 +28,7 @@ func TestTransactionalStream(t *testing.T) {
 			expectedTable: &Table{
 				Name:     "transactional_test",
 				PKFields: utils.Set[string]{},
-				Columns: Columns{
-					"_timestamp": SQLColumn{Type: "timestamp without time zone"},
-					"column1":    SQLColumn{Type: "text"},
-					"column2":    SQLColumn{Type: "text"},
-					"column3":    SQLColumn{Type: "text"},
-					"column4":    SQLColumn{Type: "text"},
-					"column5":    SQLColumn{Type: "text"},
-					"id":         SQLColumn{Type: "bigint"},
-					"name":       SQLColumn{Type: "text"},
-				},
+				Columns:  justColumns("_timestamp", "column1", "column2", "column3", "column4", "column5", "id", "name"),
 			},
 			expectedRows: []map[string]any{
 				{"_timestamp": constantTime, "id": 1, "name": "test", "column1": nil, "column2": nil, "column3": nil, "column4": nil, "column5": nil},
@@ -49,14 +40,14 @@ func TestTransactionalStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 7, "name": "test", "column1": nil, "column2": nil, "column3": nil, "column4": "data", "column5": nil},
 				{"_timestamp": constantTime, "id": 8, "name": "test2", "column1": nil, "column2": nil, "column3": nil, "column4": nil, "column5": "data"},
 			},
-			bulkerTypes: []string{"postgres"},
+			bulkerTypes: allBulkerTypes,
 		},
 		{
 			name:        "dummy_test_table_cleanup",
 			tableName:   "transactional_test",
 			modes:       []bulker.BulkMode{bulker.Transactional},
 			dataFile:    "test_data/empty.ndjson",
-			bulkerTypes: []string{"postgres"},
+			bulkerTypes: allBulkerTypes,
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}

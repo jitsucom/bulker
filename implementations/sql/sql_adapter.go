@@ -27,6 +27,7 @@ type SQLAdapter interface {
 	GetTableSchema(ctx context.Context, tableName string) (*Table, error)
 	CreateTable(ctx context.Context, schemaToCreate *Table) error
 	CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) error
+	LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) error
 	PatchTableSchema(ctx context.Context, patchTable *Table) error
 	TruncateTable(ctx context.Context, tableName string) error
 	//TODO tests for Update
@@ -35,8 +36,30 @@ type SQLAdapter interface {
 	DropTable(ctx context.Context, tableName string, ifExists bool) error
 	ReplaceTable(ctx context.Context, originalTable, replacementTable string, dropOldTable bool) error
 
-	Select(ctx context.Context, tableName string, whenConditions *WhenConditions) ([]map[string]any, error)
+	Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error)
 	Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error)
+}
+
+type LoadSourceType string
+
+const (
+	LocalFile        LoadSourceType = "local_file"
+	GoogleCloudStore LoadSourceType = "google_cloud_store"
+	AmazonS3         LoadSourceType = "amazon_s3"
+)
+
+type LoadSourceFormat string
+
+const (
+	CSV  LoadSourceFormat = "csv"
+	JSON LoadSourceFormat = "json"
+)
+
+type LoadSource struct {
+	Type     LoadSourceType
+	Format   LoadSourceFormat
+	Path     string
+	S3Config *S3OptionConfig
 }
 
 type TxSQLAdapter struct {
@@ -75,6 +98,10 @@ func (tx *TxSQLAdapter) CopyTables(ctx context.Context, targetTable *Table, sour
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.CopyTables(ctx, targetTable, sourceTable, merge)
 }
+func (tx *TxSQLAdapter) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) error {
+	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	return tx.sqlAdapter.LoadTable(ctx, targetTable, loadSource)
+}
 func (tx *TxSQLAdapter) PatchTableSchema(ctx context.Context, patchTable *Table) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.PatchTableSchema(ctx, patchTable)
@@ -101,9 +128,9 @@ func (tx *TxSQLAdapter) ReplaceTable(ctx context.Context, originalTable, replace
 	return tx.sqlAdapter.ReplaceTable(ctx, originalTable, replacementTable, dropOldTable)
 }
 
-func (tx *TxSQLAdapter) Select(ctx context.Context, tableName string, whenConditions *WhenConditions) ([]map[string]any, error) {
+func (tx *TxSQLAdapter) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.Select(ctx, tableName, whenConditions)
+	return tx.sqlAdapter.Select(ctx, tableName, whenConditions, "")
 }
 func (tx *TxSQLAdapter) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)

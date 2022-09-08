@@ -118,6 +118,17 @@ func (t *Table) Diff(another *Table) *Table {
 	return diff
 }
 
+// FitsToTable checks that current table fits to the destination table column-wise (doesn't have new columns)
+func (t *Table) FitsToTable(destination *Table) bool {
+	for name := range t.Columns {
+		_, ok := destination.Columns[name]
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func BuildConstraintName(tableName string) string {
 	return tableName + "_pk"
 }

@@ -24,12 +24,21 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
+//TODO: no primary key support
+
+func init() {
+	bulker.RegisterBulker(BigqueryBulkerTypeId, NewBigquery)
+}
+
 const (
+	BigQueryAutocommitUnsupported = "BigQuery bulker doesn't support auto commit mode as not efficient"
+	BigqueryBulkerTypeId          = "bigquery"
+
 	deleteBigQueryTemplate = "DELETE FROM `%s.%s.%s` WHERE %s"
 	updateBigQueryTemplate = "UPDATE `%s.%s.%s` SET %s WHERE %s"
 
 	truncateBigQueryTemplate = "TRUNCATE TABLE `%s.%s.%s`"
-	selectBigQueryTemplate   = "SELECT %s FROM `%s.%s.%s`%s"
+	selectBigQueryTemplate   = "SELECT %s FROM `%s.%s.%s`%s%s"
 
 	rowsLimitPerInsertOperation = 500
 )
@@ -80,17 +89,28 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 }
 
 func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
+	bq.validateOptions(streamOptions)
+	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s_stream_%s_%s", mode, tableName, utils.SanitizeString(id))))
 	switch mode {
 	case bulker.AutoCommit:
-		return newAutoCommitStream(id, bq, nil, tableName, streamOptions...)
+		return nil, errors.New(BigQueryAutocommitUnsupported)
+		//return newAutoCommitStream(id, bq, tableName, streamOptions...)
 	case bulker.Transactional:
-		return newTransactionalStream(id, bq, nil, tableName, streamOptions...)
+		return newTransactionalStream(id, bq, tableName, streamOptions...)
 	case bulker.ReplaceTable:
-		return newReplaceTableStream(id, bq, nil, tableName, streamOptions...)
+		return newReplaceTableStream(id, bq, tableName, streamOptions...)
 	case bulker.ReplacePartition:
-		return newReplacePartitionStream(id, bq, nil, tableName, streamOptions...)
+		return newReplacePartitionStream(id, bq, tableName, streamOptions...)
 	}
 	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
+}
+
+func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
+	options := &bulker.StreamOptions{}
+	for _, option := range streamOptions {
+		option(options)
+	}
+	return nil
 }
 
 func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) (err error) {
@@ -110,6 +130,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 	copier := dataset.Table(targetTable.Name).CopierFrom(dataset.Table(sourceTable.Name))
 	copier.WriteDisposition = bigquery.WriteAppend
 	copier.CreateDisposition = bigquery.CreateIfNeeded
+	bq.logQuery(fmt.Sprintf("Copy tables values to table %s from: %s ", targetTable.Name, sourceTable.Name), nil)
 
 	job, err := copier.Run(ctx)
 	if err != nil {
@@ -181,7 +202,7 @@ func (bq *BigQuery) GetTypesMapping() map[types.DataType]string {
 
 // GetTableSchema return google BigQuery table (name,columns) representation wrapped in Table struct
 func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
-	table := &Table{Name: tableName, Columns: Columns{}}
+	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.Set[string]{}}
 
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
 
@@ -381,7 +402,7 @@ func GranularityToPartitionIds(g Granularity, t time.Time) []string {
 
 // insertBatch streams data into BQ using stream API
 // 1 insert = max 500 rows
-func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error {
+func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) (err error) {
 	inserter := bq.client.Dataset(bq.config.Dataset).Table(table.Name).Inserter()
 	bq.logQuery(fmt.Sprintf("Inserting [%d] values to table %s using BigQuery Streaming API with chunks [%d]: ", len(objects), table.Name, rowsLimitPerInsertOperation), objects)
 
@@ -410,7 +431,7 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 	if len(items) > 0 {
 		operation++
 		if err := bq.insertItems(ctx, inserter, items); err != nil {
-			return errorj.DeleteFromTableError.Wrap(err, "failed to execute last insert %d of %d in batch", operation, operations).
+			return errorj.ExecuteInsertInBatchError.Wrap(err, "failed to execute last insert %d of %d in batch", operation, operations).
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Dataset: bq.config.Dataset,
 					Bucket:  bq.config.Bucket,
@@ -423,10 +444,79 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 	return nil
 }
 
+func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+	defer func() {
+		if err != nil {
+			err = errorj.ExecuteInsertInBatchError.Wrap(err, "failed to execute middle insert batch").
+				WithProperty(errorj.DBInfo, &types.ErrorPayload{
+					Dataset: bq.config.Dataset,
+					Bucket:  bq.config.Bucket,
+					Project: bq.config.Project,
+					Table:   targetTable.Name,
+				})
+		}
+	}()
+	bq.logQuery(fmt.Sprintf("Loading values to table %s from: %s ", targetTable.Name, loadSource.Path), nil)
+	//f, err := os.ReadFile(loadSource.Path)
+	//logging.Infof("FILE: %s", f)
+
+	file, err := os.Open(loadSource.Path)
+	if err != nil {
+		return err
+	}
+	bqTable := bq.client.Dataset(bq.config.Dataset).Table(targetTable.Name)
+	meta, err := bqTable.Metadata(ctx)
+
+	mp := make(map[string]*bigquery.FieldSchema, len(meta.Schema))
+	for _, field := range meta.Schema {
+		mp[field.Name] = field
+	}
+	for i, field := range targetTable.SortedColumnNames() {
+		if _, ok := mp[field]; !ok {
+			return fmt.Errorf("field %s is not in table schema", field)
+		}
+		meta.Schema[i] = mp[field]
+	}
+	//for _, field := range meta.Schema {
+	//	logging.Infof("FIELD: %s", field.Name)
+	//}
+	source := bigquery.NewReaderSource(file)
+	source.Schema = meta.Schema
+
+	if loadSource.Format == CSV {
+		source.SourceFormat = bigquery.CSV
+		source.SkipLeadingRows = 1
+		source.CSVOptions.NullMarker = "\\N"
+	} else if loadSource.Format == JSON {
+		source.SourceFormat = bigquery.JSON
+	}
+	loader := bq.client.Dataset(bq.config.Dataset).Table(targetTable.Name).LoaderFrom(source)
+	loader.CreateDisposition = bigquery.CreateIfNeeded
+	loader.WriteDisposition = bigquery.WriteAppend
+	job, err := loader.Run(ctx)
+	if err != nil {
+		return err
+	}
+	status, err := job.Wait(ctx)
+	if err != nil {
+		return err
+	}
+	if err := status.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // DropTable drops table from BigQuery
 func (bq *BigQuery) DropTable(ctx context.Context, tableName string, ifExists bool) error {
-	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
+	bq.logQuery(fmt.Sprintf("DROP table '%s' if exists: %t", tableName, ifExists), nil)
 
+	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
+	_, err := bqTable.Metadata(ctx)
+	gerr, ok := err.(*googleapi.Error)
+	if ok && gerr.Code == 404 && ifExists {
+		return nil
+	}
 	if err := bqTable.Delete(ctx); err != nil {
 		return errorj.DropError.Wrap(err, "failed to drop table").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
@@ -455,6 +545,9 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, originalTable, replacement
 	dataset := bq.client.Dataset(bq.config.Dataset)
 	copier := dataset.Table(originalTable).CopierFrom(dataset.Table(replacementTable))
 	copier.WriteDisposition = bigquery.WriteTruncate
+	copier.CreateDisposition = bigquery.CreateIfNeeded
+	bq.logQuery(fmt.Sprintf("COPY table '%s' to '%s'", replacementTable, originalTable), copier)
+
 	job, err := copier.Run(ctx)
 	if err != nil {
 		return err
@@ -602,15 +695,20 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types.O
 	return status.Err()
 }
 
-func (bq *BigQuery) Select(ctx context.Context, tableName string, whenConditions *WhenConditions) ([]map[string]any, error) {
-	return bq.selectFrom(ctx, tableName, "*", whenConditions)
+func (bq *BigQuery) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+	return bq.selectFrom(ctx, tableName, "*", whenConditions, orderBy)
 }
-func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpression string, deleteConditions *WhenConditions) (res []map[string]any, err error) {
+func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpression string, deleteConditions *WhenConditions, orderBy string) (res []map[string]any, err error) {
 	whenCondition, values := bq.toWhenConditions(deleteConditions)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
 	}
-	selectQuery := fmt.Sprintf(selectBigQueryTemplate, selectExpression, bq.config.Project, bq.config.Dataset, tableName, whenCondition)
+	if orderBy != "" {
+		orderBy = " ORDER BY " + orderBy
+	}
+	selectQuery := fmt.Sprintf(selectBigQueryTemplate, selectExpression, bq.config.Project, bq.config.Dataset, tableName, whenCondition, orderBy)
+	bq.queryLogger.LogQuery(selectQuery, nil)
+
 	defer func() {
 		v := make([]any, len(values))
 		for i, value := range values {
@@ -656,6 +754,10 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 		}
 		var resRow = map[string]any{}
 		for k, v := range row {
+			switch i := v.(type) {
+			case int64:
+				v = int(i)
+			}
 			resRow[k] = v
 		}
 		result = append(result, resRow)
@@ -664,7 +766,7 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 }
 
 func (bq *BigQuery) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
-	res, err := bq.selectFrom(ctx, tableName, "count(*) as jitsu_count", whenConditions)
+	res, err := bq.selectFrom(ctx, tableName, "count(*) as jitsu_count", whenConditions, "")
 	if err != nil {
 		return -1, err
 	}
@@ -710,7 +812,6 @@ func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditio
 				})
 		}
 	}()
-
 	query := bq.client.Query(deleteQuery)
 	query.Parameters = values
 	job, err := query.Run(ctx)
@@ -724,7 +825,7 @@ func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditio
 	return status.Err()
 }
 func (bq *BigQuery) Type() string {
-	return "bigquery"
+	return BigqueryBulkerTypeId
 }
 
 func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {

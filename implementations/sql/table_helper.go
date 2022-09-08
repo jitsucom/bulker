@@ -35,7 +35,7 @@ type TableHelper struct {
 
 // NewTableHelper returns configured TableHelper instance
 // Note: columnTypesMapping must be not empty (or fields will be ignored)
-func NewTableHelper(sqlAdapter SQLAdapter, tx TxOrDB, coordinationService coordination.Service, pkFields utils.Set[string],
+func NewTableHelper(sqlAdapter SQLAdapter, coordinationService coordination.Service, pkFields utils.Set[string],
 	maxColumns int) *TableHelper {
 
 	return &TableHelper{

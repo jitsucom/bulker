@@ -1,5 +1,9 @@
 package utils
 
+import "regexp"
+
+var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
+
 // NvlString returns first not empty string value from varargs
 //
 // return "" if all strings are empty
@@ -36,4 +40,9 @@ func IsLetterOrNumber(symbol int32) bool {
 	return ('a' <= symbol && symbol <= 'z') ||
 		('A' <= symbol && symbol <= 'Z') ||
 		('0' <= symbol && symbol <= '9')
+}
+
+// SanitizeString returns string with only alphanumeric characters and underscores
+func SanitizeString(str string) string {
+	return nonAlphanumericRegex.ReplaceAllString(str, "_")
 }

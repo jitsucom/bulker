@@ -2,7 +2,6 @@ package sql
 
 import (
 	"context"
-	"database/sql"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
@@ -12,10 +11,10 @@ type AutoCommitStream struct {
 	AbstractSQLStream
 }
 
-func newAutoCommitStream(id string, p SQLAdapter, dataSource *sql.DB, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
+func newAutoCommitStream(id string, p SQLAdapter, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	ps := AutoCommitStream{}
 	var err error
-	ps.AbstractSQLStream, err = newAbstractStream(id, p, dataSource, tableName, bulker.AutoCommit, streamOptions...)
+	ps.AbstractSQLStream, err = newAbstractStream(id, p, tableName, bulker.AutoCommit, streamOptions...)
 	if err != nil {
 		return nil, err
 	}

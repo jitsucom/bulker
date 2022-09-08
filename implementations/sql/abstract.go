@@ -25,7 +25,7 @@ type AbstractSQLStream struct {
 	inited      bool
 }
 
-func newAbstractStream(id string, p SQLAdapter, tx TxOrDB, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractSQLStream, error) {
+func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractSQLStream, error) {
 	ps := AbstractSQLStream{id: id, sqlAdapter: p, tableName: tableName, mode: mode}
 	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {
@@ -36,7 +36,7 @@ func newAbstractStream(id string, p SQLAdapter, tx TxOrDB, tableName string, mod
 		return AbstractSQLStream{}, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	//TODO: max column?
-	ps.tableHelper = NewTableHelper(p, tx, coordination.DummyCoordinationService{}, primaryKeyOption.Get(&ps.options), 1000)
+	ps.tableHelper = NewTableHelper(p, coordination.DummyCoordinationService{}, primaryKeyOption.Get(&ps.options), 1000)
 	ps.state = bulker.State{Status: bulker.Active}
 	return ps, nil
 }
@@ -81,13 +81,14 @@ func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 }
 
 func (ps *AbstractSQLStream) init(ctx context.Context) error {
-	if !ps.inited {
-		//setup required db object like 'schema' or 'dataset' if doesn't exist
-		err := ps.sqlAdapter.InitDatabase(ctx)
-		if err != nil {
-			return err
-		}
-		ps.inited = true
+	if ps.inited {
+		return nil
 	}
+	//setup required db object like 'schema' or 'dataset' if doesn't exist
+	err := ps.sqlAdapter.InitDatabase(ctx)
+	if err != nil {
+		return err
+	}
+	ps.inited = true
 	return nil
 }

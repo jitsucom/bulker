@@ -1,6 +1,7 @@
 package implementations
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/types"
+	"io"
 	"strings"
 
 	"go.uber.org/atomic"
@@ -21,22 +23,14 @@ import (
 var ErrMalformedBQDataset = errors.New("bq_dataset must be alphanumeric (plus underscores) and must be at most 1024 characters long")
 
 type GoogleConfig struct {
-	Bucket     string      `mapstructure:"gcs_bucket,omitempty" json:"gcs_bucket,omitempty" yaml:"gcs_bucket,omitempty"`
-	Project    string      `mapstructure:"bq_project,omitempty" json:"bq_project,omitempty" yaml:"bq_project,omitempty"`
-	Dataset    string      `mapstructure:"bq_dataset,omitempty" json:"bq_dataset,omitempty" yaml:"bq_dataset,omitempty"`
-	KeyFile    interface{} `mapstructure:"key_file,omitempty" json:"key_file,omitempty" yaml:"key_file,omitempty"`
-	FileConfig `mapstructure:",squash" yaml:"-,inline"`
+	Bucket  string             `mapstructure:"gcs_bucket,omitempty" json:"gcs_bucket,omitempty" yaml:"gcs_bucket,omitempty"`
+	Project string             `mapstructure:"bq_project,omitempty" json:"bq_project,omitempty" yaml:"bq_project,omitempty"`
+	Dataset string             `mapstructure:"bq_dataset,omitempty" json:"bq_dataset,omitempty" yaml:"bq_dataset,omitempty"`
+	KeyFile interface{}        `mapstructure:"key_file,omitempty" json:"key_file,omitempty" yaml:"key_file,omitempty"`
+	Format  FileEncodingFormat `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
 
 	//will be set on validation
 	Credentials option.ClientOption
-}
-
-// ValidateBatchMode checks that google cloud storage is set
-func (gc *GoogleConfig) ValidateBatchMode() error {
-	if gc.Bucket == "" {
-		return errors.New("Google cloud storage bucket(gcs_bucket) is required parameter")
-	}
-	return nil
 }
 
 func (gc *GoogleConfig) Validate() error {
@@ -118,12 +112,12 @@ func (gcs *GoogleCloudStorage) Format() FileEncodingFormat {
 	return gcs.config.Format
 }
 
-func (gcs *GoogleCloudStorage) Compression() FileCompression {
-	return gcs.config.Compression
+func (gcs *GoogleCloudStorage) UploadBytes(fileName string, fileBytes []byte) error {
+	return gcs.Upload(fileName, bytes.NewReader(fileBytes))
 }
 
 // UploadBytes creates named file on google cloud storage with payload
-func (gcs *GoogleCloudStorage) UploadBytes(fileName string, fileBytes []byte) (err error) {
+func (gcs *GoogleCloudStorage) Upload(fileName string, fileReader io.ReadSeeker) (err error) {
 	//panic handler
 	defer func() {
 		if r := recover(); r != nil {
@@ -134,15 +128,12 @@ func (gcs *GoogleCloudStorage) UploadBytes(fileName string, fileBytes []byte) (e
 	if gcs.closed.Load() {
 		return fmt.Errorf("attempt to use closed GoogleCloudStorage instance")
 	}
-	if err := gcs.config.PrepareFile(&fileName, &fileBytes); err != nil {
-		return err
-	}
 
 	bucket := gcs.client.Bucket(gcs.config.Bucket)
 	object := bucket.Object(fileName)
 	w := object.NewWriter(gcs.ctx)
 
-	if _, err := w.Write(fileBytes); err != nil {
+	if _, err := io.Copy(w, fileReader); err != nil {
 		return errorj.SaveOnStageError.Wrap(err, "failed to write file to google cloud storage").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Bucket:    gcs.config.Bucket,
@@ -174,7 +165,6 @@ func (gcs *GoogleCloudStorage) DeleteObject(key string) (err error) {
 		return fmt.Errorf("attempt to use closed GoogleCloudStorage instance")
 	}
 	bucket := gcs.client.Bucket(gcs.config.Bucket)
-	_ = gcs.config.PrepareFile(&key, nil)
 	obj := bucket.Object(key)
 
 	if err := obj.Delete(gcs.ctx); err != nil {
