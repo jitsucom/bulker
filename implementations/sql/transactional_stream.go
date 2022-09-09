@@ -56,7 +56,7 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 	if err != nil {
 		return err
 	}
-	ps.ensureSchema(ctx, &ps.tmpTable, tableForObject, func(ctx context.Context) (*Table, error) {
+	err = ps.ensureSchema(ctx, &ps.tmpTable, tableForObject, func(ctx context.Context) (*Table, error) {
 		//if destination table already exist
 		//init tmp table with columns=union(table.columns, cachedTable.columns)
 		//to avoid unnecessary alters of tmp table during transaction
@@ -68,14 +68,15 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 			utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
 		}
 		ps.dstTable = tableForObject
+		tmpTableName := fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8])
 		return &Table{
-			Name:           fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8]),
-			PrimaryKeyName: fmt.Sprintf("jitsu_tmp_pk_%s", uuid.NewLettersNumbers()[:8]),
-			PKFields:       tableForObject.PKFields,
-			Columns:        tableForObject.Columns,
+			Name:    tmpTableName,
+			Columns: tableForObject.Columns,
 		}, nil
 	})
-
+	if err != nil {
+		return err
+	}
 	return ps.insert(ctx, ps.tmpTable, processedObjects)
 }
 

@@ -38,7 +38,7 @@ func (ps *ReplaceTableStream) Consume(ctx context.Context, object types.Object) 
 	if err != nil {
 		return err
 	}
-	ps.ensureSchema(ctx, &ps.tmpTable, tableForObject, func(ctx context.Context) (*Table, error) {
+	err = ps.ensureSchema(ctx, &ps.tmpTable, tableForObject, func(ctx context.Context) (*Table, error) {
 		return &Table{
 			Name:           fmt.Sprintf("%s_tmp_%s", ps.tableName, timestamp.Now().Format("060102_150405")),
 			PrimaryKeyName: tableForObject.PrimaryKeyName,
@@ -47,6 +47,9 @@ func (ps *ReplaceTableStream) Consume(ctx context.Context, object types.Object) 
 			Columns:  tableForObject.Columns,
 		}, nil
 	})
+	if err != nil {
+		return err
+	}
 
 	return ps.insert(ctx, ps.tmpTable, processedObjects)
 }

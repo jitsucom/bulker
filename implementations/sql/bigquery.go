@@ -34,11 +34,15 @@ const (
 	BigQueryAutocommitUnsupported = "BigQuery bulker doesn't support auto commit mode as not efficient"
 	BigqueryBulkerTypeId          = "bigquery"
 
-	deleteBigQueryTemplate = "DELETE FROM `%s.%s.%s` WHERE %s"
-	updateBigQueryTemplate = "UPDATE `%s.%s.%s` SET %s WHERE %s"
+	mergeBigQueryTemplate  = "MERGE INTO `%s` T USING `%s` S ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)"
+	deleteBigQueryTemplate = "DELETE FROM `%s` WHERE %s"
+	updateBigQueryTemplate = "UPDATE `%s` SET %s WHERE %s"
 
-	truncateBigQueryTemplate = "TRUNCATE TABLE `%s.%s.%s`"
-	selectBigQueryTemplate   = "SELECT %s FROM `%s.%s.%s`%s%s"
+	truncateBigQueryTemplate = "TRUNCATE TABLE `%s`"
+	selectBigQueryTemplate   = "SELECT %s FROM `%s`%s%s"
+
+	//createIndexBigQueryTemplate = "CREATE SEARCH INDEX %s ON `%s`(%s) OPTIONS (analyzer = 'NO_OP_ANALYZER')"
+	//dropIndexBigQueryTemplate   = "DROP SEARCH INDEX %s ON `%s`"
 
 	rowsLimitPerInsertOperation = 500
 )
@@ -114,38 +118,74 @@ func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
 }
 
 func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) (err error) {
-	defer func() {
+	if !merge {
+		defer func() {
+			if err != nil {
+				err = errorj.CopyError.Wrap(err, "failed to run BQ copier").
+					WithProperty(errorj.DBInfo, &types.ErrorPayload{
+						Dataset: bq.config.Dataset,
+						Bucket:  bq.config.Bucket,
+						Project: bq.config.Project,
+						Table:   targetTable.Name,
+					})
+			}
+		}()
+		dataset := bq.client.Dataset(bq.config.Dataset)
+		copier := dataset.Table(targetTable.Name).CopierFrom(dataset.Table(sourceTable.Name))
+		copier.WriteDisposition = bigquery.WriteAppend
+		copier.CreateDisposition = bigquery.CreateIfNeeded
+		bq.logQuery(fmt.Sprintf("Copy tables values to table %s from: %s ", targetTable.Name, sourceTable.Name), nil, err)
+		job, err := copier.Run(ctx)
 		if err != nil {
-			err = errorj.CopyError.Wrap(err, "failed to run BQ copier").
-				WithProperty(errorj.DBInfo, &types.ErrorPayload{
-					Dataset: bq.config.Dataset,
-					Bucket:  bq.config.Bucket,
-					Project: bq.config.Project,
-					Table:   targetTable.Name,
-				})
+			return err
 		}
-	}()
-	dataset := bq.client.Dataset(bq.config.Dataset)
+		jobStatus, err := job.Wait(ctx)
+		if err != nil {
+			return err
+		}
+		if jobStatus.Err() != nil {
+			return jobStatus.Err()
+		}
 
-	copier := dataset.Table(targetTable.Name).CopierFrom(dataset.Table(sourceTable.Name))
-	copier.WriteDisposition = bigquery.WriteAppend
-	copier.CreateDisposition = bigquery.CreateIfNeeded
-	bq.logQuery(fmt.Sprintf("Copy tables values to table %s from: %s ", targetTable.Name, sourceTable.Name), nil)
+		return nil
+	} else {
+		defer func() {
+			if err != nil {
+				err = errorj.BulkMergeError.Wrap(err, "failed to run merge").
+					WithProperty(errorj.DBInfo, &types.ErrorPayload{
+						Dataset: bq.config.Dataset,
+						Bucket:  bq.config.Bucket,
+						Project: bq.config.Project,
+						Table:   targetTable.Name,
+					})
+			}
+		}()
 
-	job, err := copier.Run(ctx)
-	if err != nil {
-		return err
+		columns := sourceTable.SortedColumnNames()
+		var updateSet []string
+		for _, name := range columns {
+			updateSet = append(updateSet, fmt.Sprintf("T.%s = S.%s", name, name))
+		}
+		var joinConditions []string
+		for pkField := range targetTable.PKFields {
+			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = S.%s", pkField, pkField))
+		}
+		columnsString := strings.Join(columns, ",")
+		insertFromSelectStatement := fmt.Sprintf(mergeBigQueryTemplate, bq.fullTableName(targetTable.Name), bq.fullTableName(sourceTable.Name),
+			strings.Join(joinConditions, " AND "), strings.Join(updateSet, ", "), columnsString, columnsString)
+
+		query := bq.client.Query(insertFromSelectStatement)
+		job, err := query.Run(ctx)
+		bq.logQuery(insertFromSelectStatement, nil, err)
+		if err != nil {
+			return err
+		}
+		status, err := job.Wait(ctx)
+		if err != nil {
+			return err
+		}
+		return status.Err()
 	}
-	jobStatus, err := job.Wait(ctx)
-	if err != nil {
-		return err
-	}
-
-	if jobStatus.Err() != nil {
-		return jobStatus.Err()
-	}
-
-	return nil
 }
 
 // Copy transfers data from google cloud storage file to google BigQuery table as one batch
@@ -220,19 +260,52 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 				Table:   tableName,
 			})
 	}
-
 	for _, field := range meta.Schema {
 		table.Columns[field.Name] = SQLColumn{Type: string(field.Type)}
 	}
-
+	pkFieldName := BuildConstraintName(table.Name)
+	pkFieldsString, ok := meta.Labels[pkFieldName]
+	if ok {
+		pkFields := strings.Split(pkFieldsString, ",")
+		for _, pkField := range pkFields {
+			table.PKFields.Put(pkField)
+		}
+		table.PrimaryKeyName = pkFieldName
+	}
+	////Load managed indexes
+	//indexName := BuildConstraintName(table.Name)
+	//searchIndexTable := "INFORMATION_SCHEMA.SEARCH_INDEX_COLUMNS"
+	//whenConditions := (&WhenConditions{}).Add("index_catalog", "=", bq.config.Project).
+	//	Add("index_schema", "=", bq.config.Dataset).
+	//	Add("table_name", "=", table.Name).
+	//	Add("index_name", "=", indexName)
+	//data, err := bq.selectFrom(ctx, searchIndexTable, "index_column_name", whenConditions, "")
+	//if err != nil {
+	//	return nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get indexes information").
+	//		WithProperty(errorj.DBInfo, &types.ErrorPayload{
+	//			Dataset: bq.config.Dataset,
+	//			Bucket:  bq.config.Bucket,
+	//			Project: bq.config.Project,
+	//			Table:   tableName,
+	//		})
+	//}
+	//if len(data) >= 0 {
+	//	table.PrimaryKeyName = indexName
+	//	pkFields := utils.NewSet[string]()
+	//	for _, row := range data {
+	//		col := row["index_column_name"]
+	//		pkFields.Put(fmt.Sprint(col))
+	//	}
+	//	table.PKFields = pkFields
+	//}
 	return table, nil
 }
 
 // CreateTable creates google BigQuery table from Table
-func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) error {
+func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(table.Name)
 
-	_, err := bqTable.Metadata(ctx)
+	_, err = bqTable.Metadata(ctx)
 	if err == nil {
 		logging.Info("BigQuery table", table.Name, "already exists")
 		return nil
@@ -254,8 +327,12 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) error {
 		bigQueryType := bigquery.FieldType(strings.ToUpper(column.GetDDLType()))
 		bqSchema = append(bqSchema, &bigquery.FieldSchema{Name: columnName, Type: bigQueryType})
 	}
-	bq.logQuery("CREATE table for schema: ", bqSchema)
-	tableMetaData := bigquery.TableMetadata{Name: table.Name, Schema: bqSchema}
+	var labels map[string]string
+	if len(table.PKFields) > 0 && table.PrimaryKeyName != "" {
+		labels = map[string]string{table.PrimaryKeyName: strings.Join(table.PKFields.ToSlice(), ",")}
+	}
+	tableMetaData := bigquery.TableMetadata{Name: table.Name, Schema: bqSchema, Labels: labels}
+	bq.logQuery("CREATE table for schema: ", tableMetaData, nil)
 	if table.Partition.Field != "" && table.Partition.Granularity != ALL {
 		var partitioningType bigquery.TimePartitioningType
 		switch table.Partition.Granularity {
@@ -292,7 +369,7 @@ func (bq *BigQuery) InitDatabase(ctx context.Context) error {
 	if _, err := bqDataset.Metadata(ctx); err != nil {
 		if isNotFoundErr(err) {
 			datasetMetadata := &bigquery.DatasetMetadata{Name: dataset}
-			bq.logQuery("CREATE dataset: ", datasetMetadata)
+			bq.logQuery("CREATE dataset: ", datasetMetadata, nil)
 			if err := bqDataset.Create(ctx, datasetMetadata); err != nil {
 				return errorj.CreateSchemaError.Wrap(err, "failed to create dataset").
 					WithProperty(errorj.DBInfo, &types.ErrorPayload{
@@ -323,14 +400,22 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 				Table:   patchSchema.Name,
 			})
 	}
+	//patch primary keys - delete old
+	if patchSchema.DeletePkFields {
+		metadata.Labels = map[string]string{}
+	}
 
+	//patch primary keys - create new
+	if len(patchSchema.PKFields) > 0 && patchSchema.PrimaryKeyName != "" {
+		metadata.Labels = map[string]string{patchSchema.PrimaryKeyName: strings.Join(patchSchema.PKFields.ToSlice(), ",")}
+	}
 	for _, columnName := range patchSchema.SortedColumnNames() {
 		column := patchSchema.Columns[columnName]
 		bigQueryType := bigquery.FieldType(strings.ToUpper(column.GetDDLType()))
 		metadata.Schema = append(metadata.Schema, &bigquery.FieldSchema{Name: columnName, Type: bigQueryType})
 	}
 	updateReq := bigquery.TableMetadataToUpdate{Schema: metadata.Schema}
-	bq.logQuery("PATCH update request: ", updateReq)
+	bq.logQuery("PATCH update request: ", updateReq, nil)
 	if _, err := bqTable.Update(ctx, updateReq, metadata.ETag); err != nil {
 		schemaJson, _ := metadata.Schema.ToJSONFields()
 		return errorj.PatchTableError.Wrap(err, "failed to patch table").
@@ -349,7 +434,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 func (bq *BigQuery) DeletePartition(ctx context.Context, tableName string, datePartiton *DatePartition) error {
 	partitions := GranularityToPartitionIds(datePartiton.Granularity, datePartiton.Value)
 	for _, partition := range partitions {
-		bq.logQuery("DELETE partition "+partition+" in table"+tableName, "")
+		bq.logQuery("DELETE partition "+partition+" in table"+tableName, "", nil)
 		logging.Infof("Deletion partition %s in table %s", partition, tableName)
 		if err := bq.client.Dataset(bq.config.Dataset).Table(tableName + "$" + partition).Delete(ctx); err != nil {
 			gerr, ok := err.(*googleapi.Error)
@@ -404,7 +489,7 @@ func GranularityToPartitionIds(g Granularity, t time.Time) []string {
 // 1 insert = max 500 rows
 func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) (err error) {
 	inserter := bq.client.Dataset(bq.config.Dataset).Table(table.Name).Inserter()
-	bq.logQuery(fmt.Sprintf("Inserting [%d] values to table %s using BigQuery Streaming API with chunks [%d]: ", len(objects), table.Name, rowsLimitPerInsertOperation), objects)
+	bq.logQuery(fmt.Sprintf("Inserting [%d] values to table %s using BigQuery Streaming API with chunks [%d]: ", len(objects), table.Name, rowsLimitPerInsertOperation), objects, nil)
 
 	items := make([]*BQItem, 0, rowsLimitPerInsertOperation)
 	operation := 0
@@ -456,7 +541,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 				})
 		}
 	}()
-	bq.logQuery(fmt.Sprintf("Loading values to table %s from: %s ", targetTable.Name, loadSource.Path), nil)
+	bq.logQuery(fmt.Sprintf("Loading values to table %s from: %s ", targetTable.Name, loadSource.Path), nil, nil)
 	//f, err := os.ReadFile(loadSource.Path)
 	//logging.Infof("FILE: %s", f)
 
@@ -509,7 +594,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 
 // DropTable drops table from BigQuery
 func (bq *BigQuery) DropTable(ctx context.Context, tableName string, ifExists bool) error {
-	bq.logQuery(fmt.Sprintf("DROP table '%s' if exists: %t", tableName, ifExists), nil)
+	bq.logQuery(fmt.Sprintf("DROP table '%s' if exists: %t", tableName, ifExists), nil, nil)
 
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
 	_, err := bqTable.Metadata(ctx)
@@ -546,7 +631,7 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, originalTable, replacement
 	copier := dataset.Table(originalTable).CopierFrom(dataset.Table(replacementTable))
 	copier.WriteDisposition = bigquery.WriteTruncate
 	copier.CreateDisposition = bigquery.CreateIfNeeded
-	bq.logQuery(fmt.Sprintf("COPY table '%s' to '%s'", replacementTable, originalTable), copier)
+	bq.logQuery(fmt.Sprintf("COPY table '%s' to '%s'", replacementTable, originalTable), copier, nil)
 
 	job, err := copier.Run(ctx)
 	if err != nil {
@@ -569,8 +654,8 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, originalTable, replacement
 
 // TruncateTable deletes all records in tableName table
 func (bq *BigQuery) TruncateTable(ctx context.Context, tableName string) error {
-	query := fmt.Sprintf(truncateBigQueryTemplate, bq.config.Project, bq.config.Dataset, tableName)
-	bq.logQuery(query, nil)
+	query := fmt.Sprintf(truncateBigQueryTemplate, bq.fullTableName(tableName))
+	bq.logQuery(query, nil, nil)
 	if _, err := bq.client.Query(query).Read(ctx); err != nil {
 		extraText := ""
 		if strings.Contains(err.Error(), "Not found") {
@@ -617,13 +702,18 @@ func (bq *BigQuery) toDeleteQuery(conditions *WhenConditions) string {
 	return strings.Join(queryConditions, " "+conditions.JoinCondition+" ")
 }
 
-func (bq *BigQuery) logQuery(messageTemplate string, entity interface{}) {
-	entityJSON, err := json.Marshal(entity)
-	if err != nil {
-		logging.Warnf("Failed to serialize entity for logging: %s", fmt.Sprint(entity))
-	} else {
-		bq.queryLogger.LogQuery(messageTemplate+string(entityJSON), nil)
+func (bq *BigQuery) logQuery(messageTemplate string, entity interface{}, err error) {
+	entityString := ""
+	if entity != nil {
+		entityJSON, err := json.Marshal(entity)
+		if err != nil {
+			entityString = fmt.Sprintf("[failed to marshal query entity: %v]", err)
+			logging.Warnf("Failed to serialize entity for logging: %s", fmt.Sprint(entity))
+		} else {
+			entityString = string(entityJSON)
+		}
 	}
+	bq.queryLogger.LogQuery(messageTemplate+entityString, err)
 }
 
 func (bq *BigQuery) Close() error {
@@ -665,7 +755,7 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types.O
 	for a := 0; a < len(updateValues); a++ {
 		values[i+a] = updateValues[a]
 	}
-	updateQuery := fmt.Sprintf(updateBigQueryTemplate, bq.config.Project, bq.config.Dataset, tableName, strings.Join(columns, ", "), updateCondition)
+	updateQuery := fmt.Sprintf(updateBigQueryTemplate, bq.fullTableName(tableName), strings.Join(columns, ", "), updateCondition)
 	defer func() {
 		v := make([]any, len(values))
 		for i, value := range values {
@@ -698,15 +788,15 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types.O
 func (bq *BigQuery) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
 	return bq.selectFrom(ctx, tableName, "*", whenConditions, orderBy)
 }
-func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpression string, deleteConditions *WhenConditions, orderBy string) (res []map[string]any, err error) {
-	whenCondition, values := bq.toWhenConditions(deleteConditions)
+func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy string) (res []map[string]any, err error) {
+	whenCondition, values := bq.toWhenConditions(whenConditions)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
 	}
 	if orderBy != "" {
 		orderBy = " ORDER BY " + orderBy
 	}
-	selectQuery := fmt.Sprintf(selectBigQueryTemplate, selectExpression, bq.config.Project, bq.config.Dataset, tableName, whenCondition, orderBy)
+	selectQuery := fmt.Sprintf(selectBigQueryTemplate, selectExpression, bq.fullTableName(tableName), whenCondition, orderBy)
 	bq.queryLogger.LogQuery(selectQuery, nil)
 
 	defer func() {
@@ -784,9 +874,14 @@ func (bq *BigQuery) toWhenConditions(conditions *WhenConditions) (string, []bigq
 	var values []bigquery.QueryParameter
 
 	for _, condition := range conditions.Conditions {
-		conditionString := condition.Field + " " + condition.Clause + " @when_" + condition.Field
-		queryConditions = append(queryConditions, conditionString)
-		values = append(values, bigquery.QueryParameter{Name: "when_" + condition.Field, Value: types.ReformatValue(condition.Value)})
+		switch strings.ToLower(condition.Clause) {
+		case "is null":
+		case "is not null":
+			queryConditions = append(queryConditions, condition.Field+" "+condition.Clause)
+		default:
+			queryConditions = append(queryConditions, condition.Field+" "+condition.Clause+" @when_"+condition.Field)
+			values = append(values, bigquery.QueryParameter{Name: "when_" + condition.Field, Value: types.ReformatValue(condition.Value)})
+		}
 	}
 
 	return strings.Join(queryConditions, " "+conditions.JoinCondition+" "), values
@@ -796,7 +891,7 @@ func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditio
 	if len(whenCondition) == 0 {
 		return errors.New("delete conditions are empty")
 	}
-	deleteQuery := fmt.Sprintf(deleteBigQueryTemplate, bq.config.Project, bq.config.Dataset, tableName, whenCondition)
+	deleteQuery := fmt.Sprintf(deleteBigQueryTemplate, bq.fullTableName(tableName), whenCondition)
 	defer func() {
 		v := make([]any, len(values))
 		for i, value := range values {
@@ -831,3 +926,59 @@ func (bq *BigQuery) Type() string {
 func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	return &TxSQLAdapter{sqlAdapter: bq, tx: NewDummyTxWrapper(bq.Type())}, nil
 }
+
+func (bq *BigQuery) fullTableName(tableName string) string {
+	return bq.config.Project + "." + bq.config.Dataset + "." + tableName
+}
+
+//func (bq *BigQuery) createIndex(ctx context.Context, table *Table) (err error) {
+//	createIndexQuery := fmt.Sprintf(createIndexBigQueryTemplate, table.PrimaryKeyName, bq.config.Project, bq.config.Dataset, table.Name, strings.Join(table.PKFields.ToSlice(), ","))
+//	defer func() {
+//		if err != nil {
+//			err = errorj.CreatePrimaryKeysError.Wrap(err, "failed to create index").
+//				WithProperty(errorj.DBInfo, &types.ErrorPayload{
+//					Dataset:     bq.config.Dataset,
+//					Table:       table.Name,
+//					PrimaryKeys: table.PKFields.ToSlice(),
+//					Statement:   createIndexQuery,
+//				})
+//		}
+//	}()
+//	query := bq.client.Query(createIndexQuery)
+//	job, err := query.Run(ctx)
+//	bq.logQuery(createIndexQuery, nil, err)
+//	if err != nil {
+//		return err
+//	}
+//	status, err := job.Wait(ctx)
+//	if err != nil {
+//		return err
+//	}
+//	return status.Err()
+//}
+//
+//func (bq *BigQuery) dropIndex(ctx context.Context, table *Table) (err error) {
+//	dropIndexQuery := fmt.Sprintf(dropIndexBigQueryTemplate, table.PrimaryKeyName, bq.config.Project, bq.config.Dataset, table.Name)
+//	defer func() {
+//		if err != nil {
+//			err = errorj.DeletePrimaryKeysError.Wrap(err, "failed to drop index").
+//				WithProperty(errorj.DBInfo, &types.ErrorPayload{
+//					Dataset:     bq.config.Dataset,
+//					Table:       table.Name,
+//					PrimaryKeys: table.PKFields.ToSlice(),
+//					Statement:   dropIndexQuery,
+//				})
+//		}
+//	}()
+//	query := bq.client.Query(dropIndexQuery)
+//	job, err := query.Run(ctx)
+//	bq.logQuery(dropIndexQuery, nil, err)
+//	if err != nil {
+//		return err
+//	}
+//	status, err := job.Wait(ctx)
+//	if err != nil {
+//		return err
+//	}
+//	return status.Err()
+//}

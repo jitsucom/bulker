@@ -1,7 +1,6 @@
 package sql
 
 import (
-	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"sync"
 	"testing"
@@ -26,10 +25,8 @@ func TestAutocommitStream(t *testing.T) {
 			modes:               []bulker.BulkMode{bulker.AutoCommit},
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added2.ndjson",
-			expectedTable: &Table{
-				Name:     "autocommit_test",
-				PKFields: utils.Set[string]{},
-				Columns:  justColumns("_timestamp", "column1", "column2", "column3", "column4", "column5", "id", "name"),
+			expectedTable: &ExpectedTable{
+				Columns: justColumns("_timestamp", "column1", "column2", "column3", "column4", "column5", "id", "name"),
 			},
 			expectedRows: []map[string]any{
 				{"_timestamp": constantTime, "id": 1, "name": "test", "column1": nil, "column2": nil, "column3": nil, "column4": nil, "column5": nil},

@@ -105,7 +105,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 
 	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s ",
 		config.Host, config.Port, config.Db, config.Username, config.Password)
-	logging.Info("connecting to postgres: %s", connectionString)
+	logging.Infof("connecting: %s", connectionString)
 	//concat provided connection parameters
 	for k, v := range config.Parameters {
 		connectionString += k + "=" + v + " "
@@ -395,7 +395,7 @@ func (p *Postgres) ReplaceTable(ctx context.Context, originalTable, replacementT
 
 // Update one record in Postgres
 func (p *Postgres) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error {
-	updateCondition, updateValues := p.toWhenConditions(whenConditions, len(object))
+	updateCondition, updateValues := ToWhenConditions(whenConditions, IndexParameterPlaceholder, len(object))
 
 	columns := make([]string, len(object), len(object))
 	values := make([]any, len(object)+len(updateValues), len(object)+len(updateValues))
@@ -631,7 +631,7 @@ func (p *Postgres) Select(ctx context.Context, tableName string, whenConditions 
 	return p.selectFrom(ctx, tableName, "*", whenConditions, orderBy)
 }
 func (p *Postgres) selectFrom(ctx context.Context, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
-	whenCondition, values := p.toWhenConditions(whenConditions, 0)
+	whenCondition, values := ToWhenConditions(whenConditions, IndexParameterPlaceholder, 0)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
 	}
@@ -703,7 +703,7 @@ func (p *Postgres) Count(ctx context.Context, tableName string, whenConditions *
 }
 
 func (p *Postgres) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {
-	deleteCondition, values := p.toWhenConditions(deleteConditions, 0)
+	deleteCondition, values := ToWhenConditions(deleteConditions, IndexParameterPlaceholder, 0)
 	query := fmt.Sprintf(deleteQueryTemplate, p.config.Schema, tableName, deleteCondition)
 
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, query, values...); err != nil {
@@ -731,27 +731,6 @@ func (p *Postgres) TruncateTable(ctx context.Context, tableName string) error {
 	}
 
 	return nil
-}
-
-func (p *Postgres) toWhenConditions(conditions *WhenConditions, valuesShift int) (string, []any) {
-	if conditions == nil {
-		return "", []any{}
-	}
-	var queryConditions []string
-	var values []any
-
-	for i, condition := range conditions.Conditions {
-		switch strings.ToLower(condition.Clause) {
-		case "is null":
-		case "is not null":
-			queryConditions = append(queryConditions, condition.Field+" "+condition.Clause)
-		default:
-			queryConditions = append(queryConditions, condition.Field+" "+condition.Clause+" $"+strconv.Itoa(i+valuesShift+1))
-			values = append(values, types.ReformatValue(condition.Value))
-		}
-	}
-
-	return strings.Join(queryConditions, " "+conditions.JoinCondition+" "), values
 }
 
 // executeInsert execute insert with insertTemplate

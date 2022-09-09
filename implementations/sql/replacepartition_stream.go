@@ -52,10 +52,12 @@ func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Obje
 		return err
 	}
 
-	ps.ensureSchema(ctx, &ps.dstTable, tableForObject, func(ctx context.Context) (*Table, error) {
+	err = ps.ensureSchema(ctx, &ps.dstTable, tableForObject, func(ctx context.Context) (*Table, error) {
 		return tableForObject, nil
 	})
-
+	if err != nil {
+		return err
+	}
 	return ps.insert(ctx, ps.dstTable, processedObjects)
 }
 

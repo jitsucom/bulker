@@ -5,6 +5,8 @@ import (
 	"sort"
 )
 
+const BulkerManagedPkConstraintPrefix = "bulker_managed_"
+
 // Columns is a list of columns representation
 type Columns map[string]SQLColumn
 
@@ -130,5 +132,14 @@ func (t *Table) FitsToTable(destination *Table) bool {
 }
 
 func BuildConstraintName(tableName string) string {
-	return tableName + "_pk"
+	return BulkerManagedPkConstraintPrefix + tableName + "_pk"
+}
+
+func (c Columns) Clone() Columns {
+	cloned := Columns{}
+	for k, v := range c {
+		cloned[k] = v
+	}
+
+	return cloned
 }
