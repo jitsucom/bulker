@@ -1,6 +1,7 @@
 package sql
 
 import (
+	"cloud.google.com/go/civil"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,8 +25,6 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
-//TODO: no primary key support
-
 func init() {
 	bulker.RegisterBulker(BigqueryBulkerTypeId, NewBigquery)
 }
@@ -34,17 +33,14 @@ const (
 	BigQueryAutocommitUnsupported = "BigQuery bulker doesn't support auto commit mode as not efficient"
 	BigqueryBulkerTypeId          = "bigquery"
 
-	mergeBigQueryTemplate  = "MERGE INTO `%s` T USING `%s` S ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)"
-	deleteBigQueryTemplate = "DELETE FROM `%s` WHERE %s"
-	updateBigQueryTemplate = "UPDATE `%s` SET %s WHERE %s"
+	bigqueryMergeTemplate  = "MERGE INTO `%s` T USING `%s` S ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)"
+	bigqueryDeleteTemplate = "DELETE FROM `%s` WHERE %s"
+	bigqueryUpdateTemplate = "UPDATE `%s` SET %s WHERE %s"
 
-	truncateBigQueryTemplate = "TRUNCATE TABLE `%s`"
-	selectBigQueryTemplate   = "SELECT %s FROM `%s`%s%s"
+	bigqueryTruncateTemplate = "TRUNCATE TABLE `%s`"
+	bigquerySelectTemplate   = "SELECT %s FROM `%s`%s%s"
 
-	//createIndexBigQueryTemplate = "CREATE SEARCH INDEX %s ON `%s`(%s) OPTIONS (analyzer = 'NO_OP_ANALYZER')"
-	//dropIndexBigQueryTemplate   = "DROP SEARCH INDEX %s ON `%s`"
-
-	rowsLimitPerInsertOperation = 500
+	bigqueryRowsLimitPerInsertOperation = 500
 )
 
 var (
@@ -171,7 +167,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = S.%s", pkField, pkField))
 		}
 		columnsString := strings.Join(columns, ",")
-		insertFromSelectStatement := fmt.Sprintf(mergeBigQueryTemplate, bq.fullTableName(targetTable.Name), bq.fullTableName(sourceTable.Name),
+		insertFromSelectStatement := fmt.Sprintf(bigqueryMergeTemplate, bq.fullTableName(targetTable.Name), bq.fullTableName(sourceTable.Name),
 			strings.Join(joinConditions, " AND "), strings.Join(updateSet, ", "), columnsString, columnsString)
 
 		query := bq.client.Query(insertFromSelectStatement)
@@ -186,49 +182,6 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 		}
 		return status.Err()
 	}
-}
-
-// Copy transfers data from google cloud storage file to google BigQuery table as one batch
-func (bq *BigQuery) Copy(ctx context.Context, fileKey, tableName string) error {
-	table := bq.client.Dataset(bq.config.Dataset).Table(tableName)
-
-	gcsRef := bigquery.NewGCSReference(fmt.Sprintf("gs://%s/%s", bq.config.Bucket, fileKey))
-	gcsRef.SourceFormat = bigquery.JSON
-	loader := table.LoaderFrom(gcsRef)
-	loader.CreateDisposition = bigquery.CreateNever
-
-	job, err := loader.Run(ctx)
-	if err != nil {
-		return errorj.CopyError.Wrap(err, "failed to run BQ loader").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Dataset: bq.config.Dataset,
-				Bucket:  bq.config.Bucket,
-				Project: bq.config.Project,
-				Table:   tableName,
-			})
-	}
-	jobStatus, err := job.Wait(ctx)
-	if err != nil {
-		return errorj.CopyError.Wrap(err, "failed to wait BQ job").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Dataset: bq.config.Dataset,
-				Bucket:  bq.config.Bucket,
-				Project: bq.config.Project,
-				Table:   tableName,
-			})
-	}
-
-	if jobStatus.Err() != nil {
-		return errorj.CopyError.Wrap(jobStatus.Err(), "failed due to BQ job status").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Dataset: bq.config.Dataset,
-				Bucket:  bq.config.Bucket,
-				Project: bq.config.Project,
-				Table:   tableName,
-			})
-	}
-
-	return nil
 }
 
 func (bq *BigQuery) Test() error {
@@ -272,32 +225,7 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 		}
 		table.PrimaryKeyName = pkFieldName
 	}
-	////Load managed indexes
-	//indexName := BuildConstraintName(table.Name)
-	//searchIndexTable := "INFORMATION_SCHEMA.SEARCH_INDEX_COLUMNS"
-	//whenConditions := (&WhenConditions{}).Add("index_catalog", "=", bq.config.Project).
-	//	Add("index_schema", "=", bq.config.Dataset).
-	//	Add("table_name", "=", table.Name).
-	//	Add("index_name", "=", indexName)
-	//data, err := bq.selectFrom(ctx, searchIndexTable, "index_column_name", whenConditions, "")
-	//if err != nil {
-	//	return nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get indexes information").
-	//		WithProperty(errorj.DBInfo, &types.ErrorPayload{
-	//			Dataset: bq.config.Dataset,
-	//			Bucket:  bq.config.Bucket,
-	//			Project: bq.config.Project,
-	//			Table:   tableName,
-	//		})
-	//}
-	//if len(data) >= 0 {
-	//	table.PrimaryKeyName = indexName
-	//	pkFields := utils.NewSet[string]()
-	//	for _, row := range data {
-	//		col := row["index_column_name"]
-	//		pkFields.Put(fmt.Sprint(col))
-	//	}
-	//	table.PKFields = pkFields
-	//}
+
 	return table, nil
 }
 
@@ -489,13 +417,13 @@ func GranularityToPartitionIds(g Granularity, t time.Time) []string {
 // 1 insert = max 500 rows
 func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) (err error) {
 	inserter := bq.client.Dataset(bq.config.Dataset).Table(table.Name).Inserter()
-	bq.logQuery(fmt.Sprintf("Inserting [%d] values to table %s using BigQuery Streaming API with chunks [%d]: ", len(objects), table.Name, rowsLimitPerInsertOperation), objects, nil)
+	bq.logQuery(fmt.Sprintf("Inserting [%d] values to table %s using BigQuery Streaming API with chunks [%d]: ", len(objects), table.Name, bigqueryRowsLimitPerInsertOperation), objects, nil)
 
-	items := make([]*BQItem, 0, rowsLimitPerInsertOperation)
+	items := make([]*BQItem, 0, bigqueryRowsLimitPerInsertOperation)
 	operation := 0
-	operations := int(math.Max(1, float64(len(objects))/float64(rowsLimitPerInsertOperation)))
+	operations := int(math.Max(1, float64(len(objects))/float64(bigqueryRowsLimitPerInsertOperation)))
 	for _, object := range objects {
-		if len(items) > rowsLimitPerInsertOperation {
+		if len(items) > bigqueryRowsLimitPerInsertOperation {
 			operation++
 			if err := bq.insertItems(ctx, inserter, items); err != nil {
 				return errorj.ExecuteInsertInBatchError.Wrap(err, "failed to execute middle insert %d of %d in batch", operation, operations).
@@ -507,7 +435,7 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 					})
 			}
 
-			items = make([]*BQItem, 0, rowsLimitPerInsertOperation)
+			items = make([]*BQItem, 0, bigqueryRowsLimitPerInsertOperation)
 		}
 
 		items = append(items, &BQItem{values: object})
@@ -654,7 +582,7 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, originalTable, replacement
 
 // TruncateTable deletes all records in tableName table
 func (bq *BigQuery) TruncateTable(ctx context.Context, tableName string) error {
-	query := fmt.Sprintf(truncateBigQueryTemplate, bq.fullTableName(tableName))
+	query := fmt.Sprintf(bigqueryTruncateTemplate, bq.fullTableName(tableName))
 	bq.logQuery(query, nil, nil)
 	if _, err := bq.client.Query(query).Read(ctx); err != nil {
 		extraText := ""
@@ -755,7 +683,7 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types.O
 	for a := 0; a < len(updateValues); a++ {
 		values[i+a] = updateValues[a]
 	}
-	updateQuery := fmt.Sprintf(updateBigQueryTemplate, bq.fullTableName(tableName), strings.Join(columns, ", "), updateCondition)
+	updateQuery := fmt.Sprintf(bigqueryUpdateTemplate, bq.fullTableName(tableName), strings.Join(columns, ", "), updateCondition)
 	defer func() {
 		v := make([]any, len(values))
 		for i, value := range values {
@@ -796,7 +724,7 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 	if orderBy != "" {
 		orderBy = " ORDER BY " + orderBy
 	}
-	selectQuery := fmt.Sprintf(selectBigQueryTemplate, selectExpression, bq.fullTableName(tableName), whenCondition, orderBy)
+	selectQuery := fmt.Sprintf(bigquerySelectTemplate, selectExpression, bq.fullTableName(tableName), whenCondition, orderBy)
 	bq.queryLogger.LogQuery(selectQuery, nil)
 
 	defer func() {
@@ -845,6 +773,8 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 		var resRow = map[string]any{}
 		for k, v := range row {
 			switch i := v.(type) {
+			case civil.Date:
+				v = i.In(time.UTC)
 			case int64:
 				v = int(i)
 			}
@@ -891,7 +821,7 @@ func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditio
 	if len(whenCondition) == 0 {
 		return errors.New("delete conditions are empty")
 	}
-	deleteQuery := fmt.Sprintf(deleteBigQueryTemplate, bq.fullTableName(tableName), whenCondition)
+	deleteQuery := fmt.Sprintf(bigqueryDeleteTemplate, bq.fullTableName(tableName), whenCondition)
 	defer func() {
 		v := make([]any, len(values))
 		for i, value := range values {
@@ -930,55 +860,3 @@ func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 func (bq *BigQuery) fullTableName(tableName string) string {
 	return bq.config.Project + "." + bq.config.Dataset + "." + tableName
 }
-
-//func (bq *BigQuery) createIndex(ctx context.Context, table *Table) (err error) {
-//	createIndexQuery := fmt.Sprintf(createIndexBigQueryTemplate, table.PrimaryKeyName, bq.config.Project, bq.config.Dataset, table.Name, strings.Join(table.PKFields.ToSlice(), ","))
-//	defer func() {
-//		if err != nil {
-//			err = errorj.CreatePrimaryKeysError.Wrap(err, "failed to create index").
-//				WithProperty(errorj.DBInfo, &types.ErrorPayload{
-//					Dataset:     bq.config.Dataset,
-//					Table:       table.Name,
-//					PrimaryKeys: table.PKFields.ToSlice(),
-//					Statement:   createIndexQuery,
-//				})
-//		}
-//	}()
-//	query := bq.client.Query(createIndexQuery)
-//	job, err := query.Run(ctx)
-//	bq.logQuery(createIndexQuery, nil, err)
-//	if err != nil {
-//		return err
-//	}
-//	status, err := job.Wait(ctx)
-//	if err != nil {
-//		return err
-//	}
-//	return status.Err()
-//}
-//
-//func (bq *BigQuery) dropIndex(ctx context.Context, table *Table) (err error) {
-//	dropIndexQuery := fmt.Sprintf(dropIndexBigQueryTemplate, table.PrimaryKeyName, bq.config.Project, bq.config.Dataset, table.Name)
-//	defer func() {
-//		if err != nil {
-//			err = errorj.DeletePrimaryKeysError.Wrap(err, "failed to drop index").
-//				WithProperty(errorj.DBInfo, &types.ErrorPayload{
-//					Dataset:     bq.config.Dataset,
-//					Table:       table.Name,
-//					PrimaryKeys: table.PKFields.ToSlice(),
-//					Statement:   dropIndexQuery,
-//				})
-//		}
-//	}()
-//	query := bq.client.Query(dropIndexQuery)
-//	job, err := query.Run(ctx)
-//	bq.logQuery(dropIndexQuery, nil, err)
-//	if err != nil {
-//		return err
-//	}
-//	status, err := job.Wait(ctx)
-//	if err != nil {
-//		return err
-//	}
-//	return status.Err()
-//}

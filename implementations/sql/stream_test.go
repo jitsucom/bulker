@@ -23,12 +23,13 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 
 const forceLeaveResultingTables = false
 
-var allBulkerTypes = []string{"postgres", "redshift", "bigquery"}
+var allBulkerTypes = []string{"postgres", "redshift", "snowflake", "bigquery"}
 var exceptBigquery = []string{"postgres", "redshift"}
 
 var configRegistry = map[string]any{
-	"bigquery": os.Getenv("BULKER_TEST_BIGQUERY"),
-	"redshift": os.Getenv("BULKER_TEST_REDSHIFT"),
+	"bigquery":  os.Getenv("BULKER_TEST_BIGQUERY"),
+	"redshift":  os.Getenv("BULKER_TEST_REDSHIFT"),
+	"snowflake": os.Getenv("BULKER_TEST_SNOWFLAKE"),
 }
 
 type ExpectedTable struct {
@@ -121,11 +122,11 @@ func TestStreams(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: &ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "float1", "floatstring", "int1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 			},
 			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "float1": 1.2, "floatstring": "1.1", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-				{"id": 2, "bool1": false, "bool2": true, "float1": 1.0, "floatstring": "1.0", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
 			bulkerTypes:    allBulkerTypes,

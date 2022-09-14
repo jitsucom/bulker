@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
@@ -19,7 +20,7 @@ func init() {
 const (
 	RedshiftBulkerTypeId = "redshift"
 
-	copyTemplate = `copy "%s"."%s" (%s)
+	redshiftCopyTemplate = `copy %s (%s)
 					from 's3://%s/%s'
     				ACCESS_KEY_ID '%s'
     				SECRET_ACCESS_KEY '%s'
@@ -29,11 +30,9 @@ const (
                     dateformat 'auto'
                     timeformat 'auto'`
 
-	deleteBeforeBulkMergeUsing = `DELETE FROM "%s"."%s" using "%s"."%s" where %s`
-	primaryKeysMatchConditions = `"%s"."%s".%s = "%s"."%s".%s`
-	redshiftBulkMergeInsert    = `INSERT INTO "%s"."%s" (%s) select %s from "%s"."%s"`
+	redshiftDeleteBeforeBulkMergeUsing = `DELETE FROM %s using %s where %s`
 
-	primaryKeyFieldsRedshiftQuery = `select tco.constraint_name as constraint_name, kcu.column_name as key_column
+	redshiftPrimaryKeyFieldsQuery = `select tco.constraint_name as constraint_name, kcu.column_name as key_column
 									 from information_schema.table_constraints tco
          							   join information_schema.key_column_usage kcu
              						   on kcu.constraint_name = tco.constraint_name
@@ -42,8 +41,7 @@ const (
 				                     where tco.table_schema = $1 and tco.table_name = $2 and tco.constraint_type = 'PRIMARY KEY'
                                      order by kcu.ordinal_position`
 
-	RedshiftValuesLimit = 32767 // this is a limitation of parameters one can pass as query values. If more parameters are passed, error is returned
-	credentialsMask     = "*****"
+	credentialsMask = "*****"
 )
 
 var (
@@ -139,25 +137,9 @@ func (p *Redshift) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 
 func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error {
 	if !merge || len(table.GetPKFields()) == 0 {
-		return p.Postgres.Insert(ctx, table, false, objects)
+		return p.insert(ctx, table, objects)
 	}
-	headerWithoutQuotes := table.SortedColumnNames()
-	quotedHeader := make([]string, len(headerWithoutQuotes))
-	placeholders := make([]string, len(headerWithoutQuotes))
-	for i, columnName := range headerWithoutQuotes {
-		quotedHeader[i] = fmt.Sprintf(`"%s"`, columnName)
-	}
-	for i, name := range table.SortedColumnNames() {
-		//$1::type, $2::type, $3, etc ($0 - wrong)
-		placeholders[i] = fmt.Sprintf("$%d%s", i+1, p.getCastClause(name, table.Columns[name]))
-	}
-	statement := fmt.Sprintf(insertTemplate, p.config.Schema, table.Name, strings.Join(quotedHeader, ", "), "("+strings.Join(placeholders, ", ")+")")
-
 	for _, object := range objects {
-		valueArgs := make([]any, len(headerWithoutQuotes))
-		for i, column := range headerWithoutQuotes {
-			valueArgs[i] = object[column]
-		}
 		pkMatchConditions := &WhenConditions{}
 		for _, pkColumn := range table.GetPKFields() {
 			value := object[pkColumn]
@@ -174,22 +156,12 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 					Schema:      p.config.Schema,
 					Table:       table.Name,
 					PrimaryKeys: table.GetPKFields(),
-					Statement:   statement,
-					Values:      valueArgs,
 				})
 		}
 		if len(res) > 0 {
 			return p.Update(ctx, table.Name, object, pkMatchConditions)
-		}
-		if _, err := p.txOrDb(ctx).ExecContext(ctx, statement, valueArgs...); err != nil {
-			return errorj.ExecuteInsertError.Wrap(err, "failed to execute single insert").
-				WithProperty(errorj.DBInfo, &types.ErrorPayload{
-					Schema:      p.config.Schema,
-					Table:       table.Name,
-					PrimaryKeys: table.GetPKFields(),
-					Statement:   statement,
-					Values:      valueArgs,
-				})
+		} else {
+			return p.insert(ctx, table, []types.Object{object})
 		}
 	}
 	return nil
@@ -214,13 +186,13 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if s3Config.Folder != "" {
 		fileKey = s3Config.Folder + "/" + fileKey
 	}
-	statement := fmt.Sprintf(copyTemplate, p.config.Schema, tableName, strings.Join(headerWithQuotes, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
+	statement := fmt.Sprintf(redshiftCopyTemplate, p.fullTableName(tableName), strings.Join(headerWithQuotes, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.CopyError.Wrap(err, "failed to copy data from s3").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
-				Statement: fmt.Sprintf(copyTemplate, p.config.Schema, tableName, headerWithQuotes, s3Config.Bucket, fileKey, credentialsMask, credentialsMask, s3Config.Region),
+				Statement: fmt.Sprintf(redshiftCopyTemplate, p.fullTableName(tableName), headerWithQuotes, s3Config.Bucket, fileKey, credentialsMask, credentialsMask, s3Config.Region),
 			})
 	}
 
@@ -235,9 +207,9 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 			if i > 0 {
 				pkMatchConditions += " AND "
 			}
-			pkMatchConditions += fmt.Sprintf(primaryKeysMatchConditions, p.config.Schema, targetTable.Name, pkColumn, p.config.Schema, sourceTable.Name, pkColumn)
+			pkMatchConditions += fmt.Sprintf(`%s.%s = %s.%s`, p.fullTableName(targetTable.Name), pkColumn, p.fullTableName(sourceTable.Name), pkColumn)
 		}
-		deleteStatement := fmt.Sprintf(deleteBeforeBulkMergeUsing, p.config.Schema, targetTable.Name, p.config.Schema, sourceTable.Name, pkMatchConditions)
+		deleteStatement := fmt.Sprintf(redshiftDeleteBeforeBulkMergeUsing, p.fullTableName(targetTable.Name), p.fullTableName(sourceTable.Name), pkMatchConditions)
 
 		if _, err = p.txOrDb(ctx).ExecContext(ctx, deleteStatement); err != nil {
 
@@ -250,26 +222,32 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 				})
 		}
 	}
-	//insert from select
-	var quotedColumnNames []string
-	for _, columnName := range sourceTable.SortedColumnNames() {
-		quotedColumnNames = append(quotedColumnNames, fmt.Sprintf(`"%s"`, columnName))
-	}
-	quotedHeader := strings.Join(quotedColumnNames, ", ")
-	insertFromSelectStatement := fmt.Sprintf(redshiftBulkMergeInsert, p.config.Schema, targetTable.Name, quotedHeader, quotedHeader, p.config.Schema, sourceTable.Name)
+	return p.copy(ctx, targetTable, sourceTable)
+}
 
-	if _, err = p.txOrDb(ctx).ExecContext(ctx, insertFromSelectStatement); err != nil {
-		err = checkErr(err)
-
-		return errorj.BulkMergeError.Wrap(err, "failed to merge rows").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Schema:      p.config.Schema,
-				Table:       targetTable.Name,
-				PrimaryKeys: targetTable.GetPKFields(),
-				Statement:   insertFromSelectStatement,
-			})
+func (p *Redshift) ReplaceTable(ctx context.Context, originalTable, replacementTable string, dropOldTable bool) (err error) {
+	tmpTable := "deprecated_" + originalTable + timestamp.Now().Format("_20060102_150405")
+	err1 := p.renameTable(ctx, true, originalTable, tmpTable)
+	err = p.renameTable(ctx, false, replacementTable, originalTable)
+	if dropOldTable && err1 == nil && err == nil {
+		return p.DropTable(ctx, tmpTable, true)
 	}
-	return nil
+	return
+}
+
+func (p *Redshift) renameTable(ctx context.Context, ifExists bool, tableName, newTableName string) error {
+	if ifExists {
+		row := p.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s')`, p.config.Schema, tableName))
+		exists := false
+		err := row.Scan(&exists)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+	}
+	return p.SQLAdapterBase.renameTable(ctx, false, tableName, newTableName)
 }
 
 // GetTableSchema return table (name,columns, primary key) representation wrapped in Table struct
@@ -301,13 +279,13 @@ func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table
 
 func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string, utils.Set[string], error) {
 	primaryKeys := utils.NewSet[string]()
-	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, primaryKeyFieldsRedshiftQuery, p.config.Schema, tableName)
+	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftPrimaryKeyFieldsQuery, p.config.Schema, tableName)
 	if err != nil {
 		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
-				Statement: primaryKeyFieldsRedshiftQuery,
+				Statement: redshiftPrimaryKeyFieldsQuery,
 				Values:    []interface{}{p.config.Schema, tableName},
 			})
 	}
@@ -322,7 +300,7 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:    p.config.Schema,
 					Table:     tableName,
-					Statement: primaryKeyFieldsRedshiftQuery,
+					Statement: redshiftPrimaryKeyFieldsQuery,
 					Values:    []interface{}{p.config.Schema, tableName},
 				})
 		}
@@ -336,7 +314,7 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
-				Statement: primaryKeyFieldsRedshiftQuery,
+				Statement: redshiftPrimaryKeyFieldsQuery,
 				Values:    []interface{}{p.config.Schema, tableName},
 			})
 	}

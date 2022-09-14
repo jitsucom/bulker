@@ -17,9 +17,6 @@ type TxWrapper struct {
 	errorAdapter ErrorAdapter
 }
 
-// ErrorAdapter is used to extract implementation specific payload and adapt to standard error
-type ErrorAdapter func(error) error
-
 type TxOrDB interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	Exec(query string, args ...any) (sql.Result, error)
