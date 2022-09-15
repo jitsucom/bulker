@@ -203,7 +203,7 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 				Schema:    s.config.Schema,
 				Table:     table.Name,
 				Statement: sfTableExistenceQuery,
-				Values:    []interface{}{reformatToParam(s.config.Schema), reformatToParam(reformatIdentifier(tableName))},
+				Values:    []any{reformatToParam(s.config.Schema), reformatToParam(reformatIdentifier(tableName))},
 			})
 	}
 	defer countReqRows.Close()
@@ -215,7 +215,7 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 				Schema:    s.config.Schema,
 				Table:     table.Name,
 				Statement: sfTableExistenceQuery,
-				Values:    []interface{}{reformatToParam(s.config.Schema), reformatToParam(reformatIdentifier(tableName))},
+				Values:    []any{reformatToParam(s.config.Schema), reformatToParam(reformatIdentifier(tableName))},
 			})
 	}
 
@@ -361,12 +361,13 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 				})
 		}
 	}()
-	var reformattedHeader []string
-	for _, v := range targetTable.SortedColumnNames() {
-		reformattedHeader = append(reformattedHeader, s.columnNameFunc(v))
+	columns := targetTable.SortedColumnNames()
+	columnNames := make([]string, len(columns))
+	for i, name := range columns {
+		columnNames[i] = s.columnName(name)
 	}
 
-	statement := fmt.Sprintf(sfCopyStatement, s.fullTableName(tableName), strings.Join(reformattedHeader, ","), path.Base(loadSource.Path))
+	statement := fmt.Sprintf(sfCopyStatement, s.fullTableName(tableName), strings.Join(columnNames, ","), path.Base(loadSource.Path))
 
 	if _, err := s.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.CopyError.Wrap(err, "failed to copy data from stage").

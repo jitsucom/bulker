@@ -9,7 +9,6 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/types"
-	"sort"
 	"strings"
 	"text/template"
 )
@@ -70,9 +69,9 @@ type SQLAdapterBase[T any] struct {
 
 	parameterPlaceholder ParameterPlaceholder
 	typecastFunc         TypeCastFunction
-	tableNameFunc        TableNameFunction[T]
-	columnNameFunc       ColumnNameFunction
-	columnDDLFunc        ColumnDDLFunction
+	_tableNameFunc       TableNameFunction[T]
+	_columnNameFunc      ColumnNameFunction
+	_columnDDLFunc       ColumnDDLFunction
 	valueMappingFunction ValueMappingFunction
 	checkErrFunc         ErrorAdapter
 }
@@ -85,9 +84,9 @@ func newSQLAdapterBase[T any](typeId string, config *T, dataSource *sql.DB, quer
 		queryLogger:          queryLogger,
 		parameterPlaceholder: parameterPlaceholder,
 		typecastFunc:         typecastFunc,
-		tableNameFunc:        tableNameFunc,
-		columnNameFunc:       columnNameFunc,
-		columnDDLFunc:        columnDDLFunc,
+		_tableNameFunc:       tableNameFunc,
+		_columnNameFunc:      columnNameFunc,
+		_columnDDLFunc:       columnDDLFunc,
 		valueMappingFunction: valueMappingFunction,
 		checkErrFunc:         checkErrFunc,
 	}
@@ -115,10 +114,6 @@ func (b *SQLAdapterBase[T]) openTx(ctx context.Context, sqlAdapter SQLAdapter) (
 	return &TxSQLAdapter{sqlAdapter: sqlAdapter, tx: NewTxWrapper(b.Type(), tx, b.queryLogger, b.checkErrFunc)}, nil
 }
 
-func (b *SQLAdapterBase[T]) fullTableName(tableName string) string {
-	return b.tableNameFunc(b.config, tableName)
-}
-
 func (b *SQLAdapterBase[T]) txOrDb(ctx context.Context) TxOrDB {
 	txOrDb, ok := ctx.Value(ContextTransactionKey).(TxOrDB)
 	if !ok {
@@ -139,8 +134,15 @@ func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, tableName string, se
 		orderBy = " ORDER BY " + orderBy
 	}
 	query := fmt.Sprintf(selectQueryTemplate, selectExpression, b.fullTableName(tableName), whenCondition, orderBy)
-
-	rows, err := b.txOrDb(ctx).QueryContext(ctx, query, values...)
+	//For MySQL using Prepared statement switches mySQL to use Binary protocol that preserves types information
+	stmt, err := b.txOrDb(ctx).PrepareContext(ctx, query)
+	var rows *sql.Rows
+	if err == nil {
+		defer func() {
+			_ = stmt.Close()
+		}()
+		rows, err = stmt.QueryContext(ctx, values...)
+	}
 	if err != nil {
 		return nil, errorj.SelectFromTableError.Wrap(err, "failed execute select").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
@@ -293,9 +295,9 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 
 	for i, name := range columns {
 		if mergeQuery != nil {
-			updateColumns[i] = fmt.Sprintf(`%s=%s`, b.columnNameFunc(name), b.typecastFunc(b.parameterPlaceholder(i+1, name), table.Columns[name]))
+			updateColumns[i] = fmt.Sprintf(`%s=%s`, b.columnName(name), b.typecastFunc(b.parameterPlaceholder(i+1, name), table.Columns[name]))
 		}
-		columnNames[i] = b.columnNameFunc(name)
+		columnNames[i] = b.columnName(name)
 		placeholders[i] = b.typecastFunc(b.parameterPlaceholder(i+1, name), table.Columns[name])
 	}
 
@@ -322,6 +324,10 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 			value, valuePresent := object[name]
 			values[i] = b.valueMappingFunction(value, valuePresent, sqlColumn)
 		}
+		if mergeQuery != nil && b.parameterPlaceholder(1, "dummy") == "?" {
+			// Without positional parameters we need to duplicate values for placeholders in UPDATE part
+			values = append(values, values...)
+		}
 		_, err := b.txOrDb(ctx).ExecContext(ctx, statement, values...)
 		if err != nil {
 			return errorj.ExecuteInsertError.Wrap(err, "failed to execute single insert").
@@ -344,23 +350,26 @@ func (b *SQLAdapterBase[T]) copy(ctx context.Context, targetTable *Table, source
 func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table, sourceTable *Table, mergeQuery *template.Template, sourceAlias string) error {
 	//insert from select
 	columns := targetTable.SortedColumnNames()
+	columnNames := make([]string, len(columns))
+	for i, name := range columns {
+		columnNames[i] = b.columnName(name)
+	}
 	updateColumns := make([]string, len(columns))
 	insertColumns := make([]string, len(columns))
 	var joinConditions []string
 	if mergeQuery != nil {
 		for i, name := range columns {
-			updateColumns[i] = fmt.Sprintf(`%s=%s.%s`, b.columnNameFunc(name), sourceAlias, b.columnNameFunc(name))
-			insertColumns[i] = b.typecastFunc(fmt.Sprintf(`%s.%s`, sourceAlias, b.columnNameFunc(name)), targetTable.Columns[name])
-
+			updateColumns[i] = fmt.Sprintf(`%s=%s.%s`, b.columnName(name), sourceAlias, b.columnName(name))
+			insertColumns[i] = b.typecastFunc(fmt.Sprintf(`%s.%s`, sourceAlias, b.columnName(name)), targetTable.Columns[name])
 		}
 		for pkField := range targetTable.PKFields {
-			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = %s.%s", b.columnNameFunc(pkField), sourceAlias, b.columnNameFunc(pkField)))
+			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = %s.%s", b.columnName(pkField), sourceAlias, b.columnName(pkField)))
 		}
 	}
 	insertPayload := QueryPayload{
 		TableTo:        b.fullTableName(targetTable.Name),
 		TableFrom:      b.fullTableName(sourceTable.Name),
-		Columns:        strings.Join(columns, ","),
+		Columns:        strings.Join(columnNames, ","),
 		PrimaryKeyName: targetTable.PrimaryKeyName,
 		JoinConditions: strings.Join(joinConditions, " AND "),
 		SourceColumns:  strings.Join(insertColumns, ", "),
@@ -393,15 +402,14 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 // override input table sql type with configured cast type
 // make fields from Table PkFields - 'not null'
 func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Table) error {
-	var columnsDDL []string
 	pkFields := schemaToCreate.GetPKFieldsSet()
-	for _, columnName := range schemaToCreate.SortedColumnNames() {
+	columns := schemaToCreate.SortedColumnNames()
+	columnsDDL := make([]string, len(columns))
+	for i, columnName := range columns {
 		column := schemaToCreate.Columns[columnName]
-		columnsDDL = append(columnsDDL, b.columnDDLFunc(columnName, column, pkFields))
+		columnsDDL[i] = b.columnDDL(columnName, column, pkFields)
 	}
 
-	//sorting columns asc
-	sort.Strings(columnsDDL)
 	query := fmt.Sprintf(createTableTemplate, b.fullTableName(schemaToCreate.Name), strings.Join(columnsDDL, ", "))
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
@@ -424,10 +432,12 @@ func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Tab
 // recreate primary key (if not empty) or delete primary key if Table.DeletePkFields is true
 func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Table) error {
 	pkFields := patchTable.GetPKFieldsSet()
+	columns := patchTable.SortedColumnNames()
+
 	//patch columns
-	for _, columnName := range patchTable.SortedColumnNames() {
+	for _, columnName := range columns {
 		column := patchTable.Columns[columnName]
-		columnDDL := b.columnDDLFunc(columnName, column, pkFields)
+		columnDDL := b.columnDDL(columnName, column, pkFields)
 		query := fmt.Sprintf(addColumnTemplate, b.fullTableName(patchTable.Name), columnDDL)
 
 		if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
@@ -467,7 +477,7 @@ func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) 
 
 	columnNames := make([]string, len(table.PKFields))
 	for i, column := range table.GetPKFields() {
-		columnNames[i] = b.columnNameFunc(column)
+		columnNames[i] = b.columnName(column)
 	}
 
 	statement := fmt.Sprintf(alterPrimaryKeyTemplate,
@@ -527,4 +537,16 @@ func (b *SQLAdapterBase[T]) ReplaceTable(ctx context.Context, originalTable, rep
 		return b.DropTable(ctx, tmpTable, true)
 	}
 	return
+}
+
+func (b *SQLAdapterBase[T]) fullTableName(tableName string) string {
+	return b._tableNameFunc(b.config, tableName)
+}
+
+func (b *SQLAdapterBase[T]) columnName(columnName string) string {
+	return b._columnNameFunc(columnName)
+}
+
+func (b *SQLAdapterBase[T]) columnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
+	return b._columnDDLFunc(name, column, pkFields)
 }

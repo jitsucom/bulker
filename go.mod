@@ -7,6 +7,7 @@ require (
 	cloud.google.com/go/storage v1.26.0
 	github.com/aws/aws-sdk-go v1.44.91
 	github.com/docker/go-connections v0.4.0
+	github.com/go-sql-driver/mysql v1.6.0
 	github.com/google/martian v2.1.0+incompatible
 	github.com/google/uuid v1.3.0
 	github.com/gookit/color v1.5.1

@@ -61,10 +61,16 @@ func (cm CSVMarshaller) Marshal(fields []string, writer io.Writer, object ...Obj
 			if v == nil {
 				strValue = "\\N"
 			} else {
-				str, ok := v.(string)
-				if ok {
-					strValue = str
-				} else {
+				switch v := v.(type) {
+				case string:
+					strValue = v
+				case bool:
+					if v {
+						strValue = "1"
+					} else {
+						strValue = "0"
+					}
+				default:
 					//use json marshaller to marshal types like arrays and time in unified way
 					b, err := json.Marshal(v)
 					if err != nil {

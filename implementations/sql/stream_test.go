@@ -23,8 +23,11 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 
 const forceLeaveResultingTables = false
 
-var allBulkerTypes = []string{"postgres", "redshift", "snowflake", "bigquery"}
-var exceptBigquery = []string{"postgres", "redshift"}
+var allBulkerTypes = []string{"postgres", "redshift", "snowflake", "bigquery", "mysql"}
+var exceptBigquery = []string{"postgres", "redshift", "snowflake", "mysql"}
+
+//var allBulkerTypes = []string{"mysql"}
+//var exceptBigquery = []string{"mysql"}
 
 var configRegistry = map[string]any{
 	"bigquery":  os.Getenv("BULKER_TEST_BIGQUERY"),
@@ -50,6 +53,18 @@ func init() {
 		Db:         postgresContainer.Database,
 		Schema:     postgresContainer.Schema,
 		Parameters: map[string]string{"sslmode": "disable"},
+	}
+	mysqlContainer, err := testcontainers.NewMySQLContainer(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	configRegistry["mysql"] = DataSourceConfig{
+		Host:       mysqlContainer.Host,
+		Port:       mysqlContainer.Port,
+		Username:   mysqlContainer.Username,
+		Password:   mysqlContainer.Password,
+		Db:         mysqlContainer.Database,
+		Parameters: map[string]string{"tls": "false", "parseTime": "true"},
 	}
 }
 

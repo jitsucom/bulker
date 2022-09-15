@@ -12,15 +12,21 @@ import (
 )
 
 type ColumnScanner struct {
-	value any
+	ColumnType *sql.ColumnType
+	value      any
 }
 
 func (s *ColumnScanner) Scan(src any) error {
 	switch v := src.(type) {
 	case []byte:
-		s.value = append([]byte{}, v...)
+		s.value = string(v)
 	case int64:
-		s.value = int(v)
+		if s.ColumnType.DatabaseTypeName() == "TINYINT" && (v == 1 || v == 0) {
+			//hack for mysql where boolean is represented as tinyint(1)
+			s.value = v == 1
+		} else {
+			s.value = int(v)
+		}
 	case big.Int:
 		s.value = int(v.Int64())
 	case big.Float:
@@ -88,9 +94,13 @@ func rowToMap(rows *sql.Rows) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	columnTypes, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
 	data := make([]any, len(columns))
 	for i := range columns {
-		data[i] = &ColumnScanner{}
+		data[i] = &ColumnScanner{ColumnType: columnTypes[i]}
 	}
 	if err = rows.Scan(data...); err != nil {
 		return nil, err

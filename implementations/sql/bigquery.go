@@ -158,13 +158,13 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 		}()
 
 		columns := sourceTable.SortedColumnNames()
-		var updateSet []string
-		for _, name := range columns {
-			updateSet = append(updateSet, fmt.Sprintf("T.%s = S.%s", name, name))
+		updateSet := make([]string, len(columns))
+		for i, name := range columns {
+			updateSet[i] = fmt.Sprintf("T.%s = S.%s", bq.columnName(name), bq.columnName(name))
 		}
 		var joinConditions []string
 		for pkField := range targetTable.PKFields {
-			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = S.%s", pkField, pkField))
+			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = S.%s", bq.columnName(pkField), bq.columnName(pkField)))
 		}
 		columnsString := strings.Join(columns, ",")
 		insertFromSelectStatement := fmt.Sprintf(bigqueryMergeTemplate, bq.fullTableName(targetTable.Name), bq.fullTableName(sourceTable.Name),
@@ -253,7 +253,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	for _, columnName := range table.SortedColumnNames() {
 		column := table.Columns[columnName]
 		bigQueryType := bigquery.FieldType(strings.ToUpper(column.GetDDLType()))
-		bqSchema = append(bqSchema, &bigquery.FieldSchema{Name: columnName, Type: bigQueryType})
+		bqSchema = append(bqSchema, &bigquery.FieldSchema{Name: bq.columnName(columnName), Type: bigQueryType})
 	}
 	var labels map[string]string
 	if len(table.PKFields) > 0 && table.PrimaryKeyName != "" {
@@ -340,7 +340,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 	for _, columnName := range patchSchema.SortedColumnNames() {
 		column := patchSchema.Columns[columnName]
 		bigQueryType := bigquery.FieldType(strings.ToUpper(column.GetDDLType()))
-		metadata.Schema = append(metadata.Schema, &bigquery.FieldSchema{Name: columnName, Type: bigQueryType})
+		metadata.Schema = append(metadata.Schema, &bigquery.FieldSchema{Name: bq.columnName(columnName), Type: bigQueryType})
 	}
 	updateReq := bigquery.TableMetadataToUpdate{Schema: metadata.Schema}
 	bq.logQuery("PATCH update request: ", updateReq, nil)
@@ -480,6 +480,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(targetTable.Name)
 	meta, err := bqTable.Metadata(ctx)
 
+	//sort meta schema field order to match csv file column order
 	mp := make(map[string]*bigquery.FieldSchema, len(meta.Schema))
 	for _, field := range meta.Schema {
 		mp[field.Name] = field
@@ -490,9 +491,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 		}
 		meta.Schema[i] = mp[field]
 	}
-	//for _, field := range meta.Schema {
-	//	logging.Infof("FIELD: %s", field.Name)
-	//}
+
 	source := bigquery.NewReaderSource(file)
 	source.Schema = meta.Schema
 
@@ -630,7 +629,7 @@ func (bq *BigQuery) toDeleteQuery(conditions *WhenConditions) string {
 	return strings.Join(queryConditions, " "+conditions.JoinCondition+" ")
 }
 
-func (bq *BigQuery) logQuery(messageTemplate string, entity interface{}, err error) {
+func (bq *BigQuery) logQuery(messageTemplate string, entity any, err error) {
 	entityString := ""
 	if entity != nil {
 		entityJSON, err := json.Marshal(entity)
@@ -656,7 +655,7 @@ func isNotFoundErr(err error) bool {
 
 // BQItem struct for streaming inserts to BigQuery
 type BQItem struct {
-	values map[string]interface{}
+	values map[string]any
 }
 
 func (bqi *BQItem) Save() (row map[string]bigquery.Value, insertID string, err error) {
@@ -859,4 +858,8 @@ func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 
 func (bq *BigQuery) fullTableName(tableName string) string {
 	return bq.config.Project + "." + bq.config.Dataset + "." + tableName
+}
+
+func (bq *BigQuery) columnName(columnName string) string {
+	return columnName
 }

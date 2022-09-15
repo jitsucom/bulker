@@ -26,7 +26,7 @@ type GoogleConfig struct {
 	Bucket  string             `mapstructure:"gcs_bucket,omitempty" json:"gcs_bucket,omitempty" yaml:"gcs_bucket,omitempty"`
 	Project string             `mapstructure:"bq_project,omitempty" json:"bq_project,omitempty" yaml:"bq_project,omitempty"`
 	Dataset string             `mapstructure:"bq_dataset,omitempty" json:"bq_dataset,omitempty" yaml:"bq_dataset,omitempty"`
-	KeyFile interface{}        `mapstructure:"key_file,omitempty" json:"key_file,omitempty" yaml:"key_file,omitempty"`
+	KeyFile any                `mapstructure:"key_file,omitempty" json:"key_file,omitempty" yaml:"key_file,omitempty"`
 	Format  FileEncodingFormat `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
 
 	//will be set on validation
@@ -51,8 +51,8 @@ func (gc *GoogleConfig) Validate() error {
 		}
 	}
 	switch gc.KeyFile.(type) {
-	case map[string]interface{}:
-		keyFileObject := gc.KeyFile.(map[string]interface{})
+	case map[string]any:
+		keyFileObject := gc.KeyFile.(map[string]any)
 		if len(keyFileObject) == 0 {
 			return errors.New("Google key_file is required parameter")
 		}

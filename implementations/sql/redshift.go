@@ -124,15 +124,7 @@ func (p *Redshift) GetTypesMapping() map[types.DataType]string {
 
 // OpenTx opens underline sql transaction and return wrapped instance
 func (p *Redshift) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
-	tx, err := p.dataSource.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, errorj.BeginTransactionError.Wrap(err, "failed to begin transaction").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Schema: p.config.Schema,
-			})
-	}
-
-	return &TxSQLAdapter{sqlAdapter: p, tx: NewTxWrapper(p.Type(), tx, p.queryLogger, checkErr)}, nil
+	return p.openTx(ctx, p)
 }
 
 func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error {
@@ -175,9 +167,10 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if loadSource.Format != CSV {
 		return fmt.Errorf("LoadTable: only CSV format is supported")
 	}
-	var headerWithQuotes []string
-	for _, name := range targetTable.SortedColumnNames() {
-		headerWithQuotes = append(headerWithQuotes, fmt.Sprintf(`"%s"`, name))
+	columns := targetTable.SortedColumnNames()
+	columnNames := make([]string, len(columns))
+	for i, name := range columns {
+		columnNames[i] = p.columnName(name)
 	}
 	tableName := targetTable.Name
 	s3Config := loadSource.S3Config
@@ -186,13 +179,13 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if s3Config.Folder != "" {
 		fileKey = s3Config.Folder + "/" + fileKey
 	}
-	statement := fmt.Sprintf(redshiftCopyTemplate, p.fullTableName(tableName), strings.Join(headerWithQuotes, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
+	statement := fmt.Sprintf(redshiftCopyTemplate, p.fullTableName(tableName), strings.Join(columns, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.CopyError.Wrap(err, "failed to copy data from s3").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
-				Statement: fmt.Sprintf(redshiftCopyTemplate, p.fullTableName(tableName), headerWithQuotes, s3Config.Bucket, fileKey, credentialsMask, credentialsMask, s3Config.Region),
+				Statement: fmt.Sprintf(redshiftCopyTemplate, p.fullTableName(tableName), columns, s3Config.Bucket, fileKey, credentialsMask, credentialsMask, s3Config.Region),
 			})
 	}
 
@@ -286,7 +279,7 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 				Schema:    p.config.Schema,
 				Table:     tableName,
 				Statement: redshiftPrimaryKeyFieldsQuery,
-				Values:    []interface{}{p.config.Schema, tableName},
+				Values:    []any{p.config.Schema, tableName},
 			})
 	}
 
@@ -301,7 +294,7 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 					Schema:    p.config.Schema,
 					Table:     tableName,
 					Statement: redshiftPrimaryKeyFieldsQuery,
-					Values:    []interface{}{p.config.Schema, tableName},
+					Values:    []any{p.config.Schema, tableName},
 				})
 		}
 		if primaryKeyName == "" && constraintName != "" {
@@ -315,7 +308,7 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 				Schema:    p.config.Schema,
 				Table:     tableName,
 				Statement: redshiftPrimaryKeyFieldsQuery,
-				Values:    []interface{}{p.config.Schema, tableName},
+				Values:    []any{p.config.Schema, tableName},
 			})
 	}
 	for _, field := range pkFields {

@@ -280,11 +280,12 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if loadSource.Format != CSV {
 		return fmt.Errorf("LoadTable: only CSV format is supported")
 	}
-	var headerWithQuotes []string
-	for _, name := range targetTable.SortedColumnNames() {
-		headerWithQuotes = append(headerWithQuotes, fmt.Sprintf(`"%s"`, name))
+	columns := targetTable.SortedColumnNames()
+	columnNames := make([]string, len(columns))
+	for i, name := range columns {
+		columnNames[i] = p.columnName(name)
 	}
-	copyStatement := fmt.Sprintf(pgCopyTemplate, p.fullTableName(targetTable.Name), strings.Join(headerWithQuotes, ", "))
+	copyStatement := fmt.Sprintf(pgCopyTemplate, p.fullTableName(targetTable.Name), strings.Join(columnNames, ", "))
 	defer func() {
 		if err != nil {
 			err = errorj.LoadError.Wrap(err, "failed to load table").
@@ -301,6 +302,9 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if err != nil {
 		return err
 	}
+	defer func() {
+		_ = stmt.Close()
+	}()
 	//f, err := os.ReadFile(loadSource.Path)
 	//logging.Infof("FILE: %s", f)
 
@@ -335,7 +339,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		return checkErr(err)
 	}
 
-	return checkErr(stmt.Close())
+	return nil
 }
 
 // pgColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)

@@ -146,7 +146,7 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 //
 ////GetSortedRows returns all selected row from table ordered according to orderClause
 ////or error if occurred
-//func (pgc *PostgresContainer) GetSortedRows(table, selectClause, whereClause, orderClause string) ([]map[string]interface{}, error) {
+//func (pgc *PostgresContainer) GetSortedRows(table, selectClause, whereClause, orderClause string) ([]map[string]any, error) {
 //	where := ""
 //	if whereClause != "" {
 //		where = "where " + whereClause
