@@ -17,6 +17,7 @@ type Marshaller interface {
 	Marshal([]string, io.Writer, ...Object) error
 	WriteHeader([]string, io.Writer) error
 	NeedHeader() bool
+	Format() string
 }
 
 type JSONMarshaller struct {
@@ -45,6 +46,10 @@ func (jm JSONMarshaller) NeedHeader() bool {
 
 func (jm JSONMarshaller) WriteHeader(fields []string, writer io.Writer) error {
 	return nil
+}
+
+func (jm JSONMarshaller) Format() string {
+	return "json"
 }
 
 type CSVMarshaller struct {
@@ -98,6 +103,10 @@ func (cm CSVMarshaller) Marshal(fields []string, writer io.Writer, object ...Obj
 
 func (cm CSVMarshaller) NeedHeader() bool {
 	return true
+}
+
+func (cm CSVMarshaller) Format() string {
+	return "csv"
 }
 
 func (cm CSVMarshaller) WriteHeader(fields []string, writer io.Writer) error {

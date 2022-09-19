@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/hashicorp/go-multierror"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
@@ -136,7 +137,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	s := &Snowflake{newSQLAdapterBase(SnowflakeBulkerTypeId, config, dataSource,
 		queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, tableNameFunc, reformatIdentifier, sfColumnDDL, unmappedValue, checkErr)}
-
+	s.batchFileFormat = CSV
 	return s, nil
 }
 func (s *Snowflake) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -337,8 +338,8 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	if loadSource.Type != LocalFile {
 		return fmt.Errorf("LoadTable: only local file is supported")
 	}
-	if loadSource.Format != CSV {
-		return fmt.Errorf("LoadTable: only CSV format is supported")
+	if loadSource.Format != s.batchFileFormat {
+		return fmt.Errorf("LoadTable: only %s format is supported", s.batchFileFormat)
 	}
 	tableName := targetTable.Name
 	putStatement := fmt.Sprintf("PUT file://%s @~", loadSource.Path)
@@ -352,13 +353,14 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	}
 	defer func() {
 		removeStatement := fmt.Sprintf("REMOVE @~/%s", path.Base(loadSource.Path))
-		if _, err = s.txOrDb(ctx).ExecContext(ctx, removeStatement); err != nil {
-			err = errorj.LoadError.Wrap(err, "failed to remove file from stage").
+		if _, err2 := s.txOrDb(ctx).ExecContext(ctx, removeStatement); err2 != nil {
+			err2 = errorj.LoadError.Wrap(err, "failed to remove file from stage").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:    s.config.Schema,
 					Table:     tableName,
 					Statement: putStatement,
 				})
+			err = multierror.Append(err, err2)
 		}
 	}()
 	columns := targetTable.SortedColumnNames()
@@ -396,7 +398,7 @@ func (s *Snowflake) Insert(ctx context.Context, table *Table, merge bool, object
 				pkMatchConditions = pkMatchConditions.Add(pkColumn, "=", value)
 			}
 		}
-		res, err := s.selectFrom(ctx, table.Name, "*", pkMatchConditions, "")
+		res, err := s.SQLAdapterBase.Select(ctx, table.Name, pkMatchConditions, "")
 		if err != nil {
 			return errorj.ExecuteInsertError.Wrap(err, "failed check primary key collision").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
@@ -439,7 +441,7 @@ func sfColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) stri
 
 func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
 	ctx = sf.WithHigherPrecision(ctx)
-	return s.selectFrom(ctx, tableName, "*", whenConditions, orderBy)
+	return s.SQLAdapterBase.Select(ctx, tableName, whenConditions, orderBy)
 }
 
 // Snowflake has table with schema, table names and there

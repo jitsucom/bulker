@@ -23,6 +23,15 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 	if err != nil {
 		return nil, err
 	}
+	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table) *Table {
+		return &Table{
+			Name:           fmt.Sprintf("%s_tmp_%s", ps.tableName, timestamp.Now().Format("060102_150405")),
+			PrimaryKeyName: tableForObject.PrimaryKeyName,
+			//PrimaryKeyName: fmt.Sprintf("%s_%s", tableForObject.PrimaryKeyName, timestamp.Now().Format("060102_150405")),
+			PKFields: tableForObject.PKFields,
+			Columns:  tableForObject.Columns,
+		}
+	}
 	return &ps, nil
 }
 
@@ -38,20 +47,11 @@ func (ps *ReplaceTableStream) Consume(ctx context.Context, object types.Object) 
 	if err != nil {
 		return err
 	}
-	err = ps.ensureSchema(ctx, &ps.tmpTable, tableForObject, func(ctx context.Context) (*Table, error) {
-		return &Table{
-			Name:           fmt.Sprintf("%s_tmp_%s", ps.tableName, timestamp.Now().Format("060102_150405")),
-			PrimaryKeyName: tableForObject.PrimaryKeyName,
-			//PrimaryKeyName: fmt.Sprintf("%s_%s", tableForObject.PrimaryKeyName, timestamp.Now().Format("060102_150405")),
-			PKFields: tableForObject.PKFields,
-			Columns:  tableForObject.Columns,
-		}, nil
-	})
-	if err != nil {
-		return err
+	if ps.batchFile != nil {
+		return ps.writeToBatchFile(ctx, tableForObject, processedObjects)
+	} else {
+		return ps.insert(ctx, tableForObject, processedObjects)
 	}
-
-	return ps.insert(ctx, ps.tmpTable, processedObjects)
 }
 
 func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -64,8 +64,8 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 	if ps.state.LastError == nil {
 		//if at least one object was inserted
 		if ps.state.SuccessfulRows > 0 {
-			if ps.tmpFile != nil {
-				if err = ps.flushTmpFile(ctx, ps.tmpTable, true); err != nil {
+			if ps.batchFile != nil {
+				if err = ps.flushBatchFile(ctx); err != nil {
 					return ps.state, err
 				}
 			}

@@ -9,6 +9,7 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/types"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -61,11 +62,12 @@ type TypeCastFunction func(placeholder string, column SQLColumn) string
 type ErrorAdapter func(error) error
 
 type SQLAdapterBase[T any] struct {
-	typeId      string
-	config      *T
-	dataSource  *sql.DB
-	dbWrapper   TxOrDB
-	queryLogger *logging.QueryLogger
+	typeId          string
+	config          *T
+	dataSource      *sql.DB
+	dbWrapper       TxOrDB
+	queryLogger     *logging.QueryLogger
+	batchFileFormat LoadSourceFormat
 
 	parameterPlaceholder ParameterPlaceholder
 	typecastFunc         TypeCastFunction
@@ -78,6 +80,7 @@ type SQLAdapterBase[T any] struct {
 
 func newSQLAdapterBase[T any](typeId string, config *T, dataSource *sql.DB, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, tableNameFunc TableNameFunction[T], columnNameFunc ColumnNameFunction, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) SQLAdapterBase[T] {
 	s := SQLAdapterBase[T]{
+		typeId:               typeId,
 		config:               config,
 		dataSource:           dataSource,
 		dbWrapper:            dataSource,
@@ -90,6 +93,7 @@ func newSQLAdapterBase[T any](typeId string, config *T, dataSource *sql.DB, quer
 		valueMappingFunction: valueMappingFunction,
 		checkErrFunc:         checkErrFunc,
 	}
+	s.batchFileFormat = JSON
 	s.dbWrapper = NewDbWrapper(typeId, dataSource, queryLogger, checkErrFunc)
 	return s
 }
@@ -97,6 +101,10 @@ func newSQLAdapterBase[T any](typeId string, config *T, dataSource *sql.DB, quer
 // Type returns Postgres type
 func (b *SQLAdapterBase[T]) Type() string {
 	return b.typeId
+}
+
+func (b *SQLAdapterBase[T]) GetBatchFileFormat() LoadSourceFormat {
+	return b.batchFileFormat
 }
 
 // Close underlying sql.DB
@@ -123,9 +131,9 @@ func (b *SQLAdapterBase[T]) txOrDb(ctx context.Context) TxOrDB {
 }
 
 func (b *SQLAdapterBase[T]) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
-	return b.selectFrom(ctx, tableName, "*", whenConditions, orderBy)
+	return b.selectFrom(ctx, selectQueryTemplate, tableName, "*", whenConditions, orderBy)
 }
-func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
 	whenCondition, values := ToWhenConditions(whenConditions, b.parameterPlaceholder, 0)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
@@ -133,15 +141,21 @@ func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, tableName string, se
 	if orderBy != "" {
 		orderBy = " ORDER BY " + orderBy
 	}
-	query := fmt.Sprintf(selectQueryTemplate, selectExpression, b.fullTableName(tableName), whenCondition, orderBy)
-	//For MySQL using Prepared statement switches mySQL to use Binary protocol that preserves types information
-	stmt, err := b.txOrDb(ctx).PrepareContext(ctx, query)
 	var rows *sql.Rows
-	if err == nil {
-		defer func() {
-			_ = stmt.Close()
-		}()
-		rows, err = stmt.QueryContext(ctx, values...)
+	var err error
+	query := fmt.Sprintf(statement, selectExpression, b.fullTableName(tableName), whenCondition, orderBy)
+	if b.typeId == MySQLBulkerTypeId {
+		//For MySQL using Prepared statement switches mySQL to use Binary protocol that preserves types information
+		var stmt *sql.Stmt
+		stmt, err = b.txOrDb(ctx).PrepareContext(ctx, query)
+		if err == nil {
+			defer func() {
+				_ = stmt.Close()
+			}()
+			rows, err = stmt.QueryContext(ctx, values...)
+		}
+	} else {
+		rows, err = b.txOrDb(ctx).QueryContext(ctx, query, values...)
 	}
 	if err != nil {
 		return nil, errorj.SelectFromTableError.Wrap(err, "failed execute select").
@@ -179,14 +193,15 @@ func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, tableName string, se
 }
 
 func (b *SQLAdapterBase[T]) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
-	res, err := b.selectFrom(ctx, tableName, "count(*) as jitsu_count", whenConditions, "")
+	res, err := b.selectFrom(ctx, selectQueryTemplate, tableName, "count(*) as jitsu_count", whenConditions, "")
 	if err != nil {
 		return -1, err
 	}
 	if len(res) == 0 {
 		return -1, fmt.Errorf("select count * gave no result")
 	}
-	return res[0]["jitsu_count"].(int), nil
+	scnt := res[0]["jitsu_count"]
+	return strconv.Atoi(fmt.Sprint(scnt))
 }
 
 func (b *SQLAdapterBase[T]) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {
@@ -295,7 +310,7 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 
 	for i, name := range columns {
 		if mergeQuery != nil {
-			updateColumns[i] = fmt.Sprintf(`%s=%s`, b.columnName(name), b.typecastFunc(b.parameterPlaceholder(i+1, name), table.Columns[name]))
+			updateColumns[i] = fmt.Sprintf(`%s=%s`, b.columnName(name), b.typecastFunc(b.parameterPlaceholder(i+1, b.columnName(name)), table.Columns[name]))
 		}
 		columnNames[i] = b.columnName(name)
 		placeholders[i] = b.typecastFunc(b.parameterPlaceholder(i+1, name), table.Columns[name])
@@ -349,7 +364,7 @@ func (b *SQLAdapterBase[T]) copy(ctx context.Context, targetTable *Table, source
 
 func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table, sourceTable *Table, mergeQuery *template.Template, sourceAlias string) error {
 	//insert from select
-	columns := targetTable.SortedColumnNames()
+	columns := sourceTable.SortedColumnNames()
 	columnNames := make([]string, len(columns))
 	for i, name := range columns {
 		columnNames[i] = b.columnName(name)
@@ -549,4 +564,11 @@ func (b *SQLAdapterBase[T]) columnName(columnName string) string {
 
 func (b *SQLAdapterBase[T]) columnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
 	return b._columnDDLFunc(name, column, pkFields)
+}
+
+func checkNotExistErr(err error) error {
+	if notExistRegexp.MatchString(err.Error()) {
+		return ErrTableNotExist
+	}
+	return err
 }

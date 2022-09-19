@@ -17,6 +17,7 @@ type ColumnScanner struct {
 }
 
 func (s *ColumnScanner) Scan(src any) error {
+	//logging.Debugf("Scanning %s of %s => %v (%T)", s.ColumnType.Name(), s.ColumnType.DatabaseTypeName(), src, src)
 	switch v := src.(type) {
 	case []byte:
 		s.value = string(v)
@@ -27,15 +28,29 @@ func (s *ColumnScanner) Scan(src any) error {
 		} else {
 			s.value = int(v)
 		}
+	case uint8:
+		if s.ColumnType.DatabaseTypeName() == "UInt8" && (v == 1 || v == 0) {
+			//hack for ClickHouse where boolean is represented as UInt8
+			s.value = v == 1
+		} else {
+			s.value = int(v)
+		}
 	case big.Int:
 		s.value = int(v.Int64())
 	case big.Float:
 		s.value, _ = v.Float64()
 	case time.Time:
-		if v.Location().String() == "" {
-			s.value = v.UTC()
+		//if v.Location().String() == "" {
+		s.value = v.UTC()
+	//} else {
+	//	s.value = v
+	//}
+	case string:
+		nullable, _ := s.ColumnType.Nullable()
+		if !nullable && v == "" {
+			s.value = nil
 		} else {
-			s.value = v
+			s.value = src
 		}
 	default:
 		s.value = src

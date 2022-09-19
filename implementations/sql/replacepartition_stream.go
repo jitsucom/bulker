@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jitsucom/bulker/base/errorj"
+	"github.com/jitsucom/bulker/base/utils"
+	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 )
 
 type ReplacePartitionStream struct {
 	AbstractTransactionalSQLStream
-	cleared     bool
 	partitionId string
 }
 
@@ -29,6 +31,18 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 		return nil, err
 	}
 	ps.partitionId = partitionId
+	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table) *Table {
+		dstTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
+		if dstTable.Exists() {
+			dstTable.Columns = utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
+		} else {
+			dstTable = tableForObject
+		}
+		return &Table{
+			Name:    fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8]),
+			Columns: tableForObject.Columns,
+		}
+	}
 	return &ps, nil
 }
 
@@ -39,11 +53,7 @@ func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Obje
 	if err = ps.init(ctx); err != nil {
 		return err
 	}
-	if !ps.cleared {
-		if err = ps.clearPartition(ctx, ps.tx); err != nil {
-			return err
-		}
-	}
+
 	//mark rows by setting __partition_id column with value of partitionId option
 	object[PartitonIdKeyword] = ps.partitionId
 	//type mapping, flattening => table schema
@@ -51,14 +61,11 @@ func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Obje
 	if err != nil {
 		return err
 	}
-
-	err = ps.ensureSchema(ctx, &ps.dstTable, tableForObject, func(ctx context.Context) (*Table, error) {
-		return tableForObject, nil
-	})
-	if err != nil {
-		return err
+	if ps.batchFile != nil {
+		return ps.writeToBatchFile(ctx, tableForObject, processedObjects)
+	} else {
+		return ps.insert(ctx, tableForObject, processedObjects)
 	}
-	return ps.insert(ctx, ps.dstTable, processedObjects)
 }
 
 func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -74,15 +81,25 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 	}()
 	//if no error happened during inserts. empty stream is valid - means no data for sync period
 	if ps.state.LastError == nil {
-		if !ps.cleared {
-			//we still have to clear all previous data even if no objects was consumed
-			//no transaction was opened yet and not needed that is  why we pass ps.sqlAdapter
-			err = ps.clearPartition(ctx, ps.sqlAdapter)
-		} else {
-			if ps.tmpFile != nil {
-				if err = ps.flushTmpFile(ctx, ps.dstTable, true); err != nil {
+		//we have to clear all previous data even if no objects was consumed
+		//no transaction was opened yet and not needed that is  why we pass ps.sqlAdapter
+		err = ps.clearPartition(ctx, ps.sqlAdapter)
+		if err == nil && ps.state.SuccessfulRows > 0 {
+			if ps.batchFile != nil {
+				if err = ps.flushBatchFile(ctx); err != nil {
 					return ps.state, err
 				}
+			}
+			//ensure that dstTable contains all columns from tmpTable
+			ps.dstTable.Columns = ps.tmpTable.Columns
+			ps.dstTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.dstTable)
+			if err != nil {
+				return ps.state, errorj.Decorate(err, "failed to ensure destination table")
+			}
+			//copy data from tmp table to destination table
+			err = ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.merge)
+			if err != nil {
+				return ps.state, err
 			}
 		}
 		return
@@ -112,6 +129,5 @@ func (ps *ReplacePartitionStream) clearPartition(ctx context.Context, sqlAdapter
 			return fmt.Errorf("couldn't start ReplacePartitionStream: failed to delete data for partitionId: %s error: %s", ps.partitionId, err)
 		}
 	}
-	ps.cleared = true
 	return nil
 }

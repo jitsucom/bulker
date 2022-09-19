@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jitsucom/bulker/types"
+	"regexp"
 )
 
 const ContextTransactionKey = "transaction"
+
+var notExistRegexp = regexp.MustCompile(`(?i)(not|doesn't)\sexist`)
 
 var ErrTableNotExist = errors.New("table doesn't exist")
 
@@ -20,6 +23,7 @@ type SQLAdapter interface {
 
 	//GetTypesMapping return mapping from generic types to SQL types specific for this database
 	GetTypesMapping() map[types.DataType]string
+	GetBatchFileFormat() LoadSourceFormat
 	OpenTx(ctx context.Context) (*TxSQLAdapter, error)
 	Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error
 	// InitDatabase setups required db objects like 'schema' or 'dataset' if they don't exist
@@ -30,8 +34,7 @@ type SQLAdapter interface {
 	LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) error
 	PatchTableSchema(ctx context.Context, patchTable *Table) error
 	TruncateTable(ctx context.Context, tableName string) error
-	//TODO tests for Update
-	Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error
+	//(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error
 	Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error
 	DropTable(ctx context.Context, tableName string, ifExists bool) error
 	ReplaceTable(ctx context.Context, originalTable, replacementTable string, dropOldTable bool) error
@@ -69,6 +72,10 @@ type TxSQLAdapter struct {
 
 func (tx *TxSQLAdapter) Type() string {
 	return tx.sqlAdapter.Type()
+}
+
+func (tx *TxSQLAdapter) GetBatchFileFormat() LoadSourceFormat {
+	return tx.sqlAdapter.GetBatchFileFormat()
 }
 
 func (tx *TxSQLAdapter) GetTypesMapping() map[types.DataType]string {
@@ -111,10 +118,10 @@ func (tx *TxSQLAdapter) TruncateTable(ctx context.Context, tableName string) err
 	return tx.sqlAdapter.TruncateTable(ctx, tableName)
 }
 
-func (tx *TxSQLAdapter) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.Update(ctx, tableName, object, whenConditions)
-}
+//	func (tx *TxSQLAdapter) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error {
+//		ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+//		return tx.sqlAdapter.Update(ctx, tableName, object, whenConditions)
+//	}
 func (tx *TxSQLAdapter) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.Delete(ctx, tableName, deleteConditions)

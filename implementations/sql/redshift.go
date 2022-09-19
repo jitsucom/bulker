@@ -82,7 +82,9 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return nil, err
 	}
 
-	return &Redshift{Postgres: postgres.(*Postgres), s3Config: config.S3OptionConfig}, nil
+	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: config.S3OptionConfig}
+	r.batchFileFormat = CSV
+	return r, nil
 }
 
 func (p *Redshift) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -141,7 +143,7 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 				pkMatchConditions = pkMatchConditions.Add(pkColumn, "=", value)
 			}
 		}
-		res, err := p.selectFrom(ctx, table.Name, "*", pkMatchConditions, "")
+		res, err := p.Select(ctx, table.Name, pkMatchConditions, "")
 		if err != nil {
 			return errorj.ExecuteInsertError.Wrap(err, "failed check primary key collision").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
@@ -164,8 +166,8 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if loadSource.Type != AmazonS3 {
 		return fmt.Errorf("LoadTable: only Amazon S3 file is supported")
 	}
-	if loadSource.Format != CSV {
-		return fmt.Errorf("LoadTable: only CSV format is supported")
+	if loadSource.Format != p.batchFileFormat {
+		return fmt.Errorf("LoadTable: only %s format is supported", p.batchFileFormat)
 	}
 	columns := targetTable.SortedColumnNames()
 	columnNames := make([]string, len(columns))

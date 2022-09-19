@@ -45,7 +45,7 @@ func TestMillionRowsBatched(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional},
 			batchSize:         10_000,
 			expectedRowsCount: 1_000_000,
-			bulkerTypes:       []string{"postgres"},
+			bulkerTypes:       []string{"mysql"},
 			streamOptions:     []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 		},
 	}

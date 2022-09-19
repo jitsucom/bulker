@@ -26,6 +26,18 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 	if err != nil {
 		return nil, err
 	}
+	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table) *Table {
+		dstTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
+		if dstTable.Exists() {
+			dstTable.Columns = utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
+		} else {
+			dstTable = tableForObject
+		}
+		return &Table{
+			Name:    fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8]),
+			Columns: tableForObject.Columns,
+		}
+	}
 	return &ps, nil
 }
 
@@ -34,8 +46,8 @@ func (ps *TransactionalStream) init(ctx context.Context) (err error) {
 		return nil
 	}
 	//localBatchFile := localBatchFileOption.Get(&ps.options)
-	//if localBatchFile != "" && ps.tmpFile == nil {
-	//	ps.tmpFile, err = os.CreateTemp("", localBatchFile)
+	//if localBatchFile != "" && ps.batchFile == nil {
+	//	ps.batchFile, err = os.CreateTemp("", localBatchFile)
 	//	if err != nil {
 	//		return err
 	//	}
@@ -56,28 +68,11 @@ func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object)
 	if err != nil {
 		return err
 	}
-	err = ps.ensureSchema(ctx, &ps.tmpTable, tableForObject, func(ctx context.Context) (*Table, error) {
-		//if destination table already exist
-		//init tmp table with columns=union(table.columns, cachedTable.columns)
-		//to avoid unnecessary alters of tmp table during transaction
-		dstTable, err := ps.tx.GetTableSchema(ctx, ps.tableName)
-		if err != nil {
-			return nil, errorj.Decorate(err, "failed to check for existing destination table schema")
-		}
-		if dstTable.Exists() {
-			utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
-		}
-		ps.dstTable = tableForObject
-		tmpTableName := fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8])
-		return &Table{
-			Name:    tmpTableName,
-			Columns: tableForObject.Columns,
-		}, nil
-	})
-	if err != nil {
-		return err
+	if ps.batchFile != nil {
+		return ps.writeToBatchFile(ctx, tableForObject, processedObjects)
+	} else {
+		return ps.insert(ctx, tableForObject, processedObjects)
 	}
-	return ps.insert(ctx, ps.tmpTable, processedObjects)
 }
 
 func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -89,12 +84,12 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 	}()
 	//if at least one object was inserted
 	if ps.state.SuccessfulRows > 0 {
-		if ps.tmpFile != nil {
-			if err = ps.flushTmpFile(ctx, ps.tmpTable, true); err != nil {
+		if ps.batchFile != nil {
+			if err = ps.flushBatchFile(ctx); err != nil {
 				return ps.state, err
 			}
 		}
-		//tmp table accumulates all schema changes happened during transaction
+		//ensure that dstTable contains all columns from tmpTable
 		ps.dstTable.Columns = ps.tmpTable.Columns
 		ps.dstTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.dstTable)
 		if err != nil {

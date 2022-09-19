@@ -1,16 +1,17 @@
 package sql
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
-	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
-	"io"
 	"os"
 	"strings"
 	"text/template"
@@ -277,8 +278,8 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if loadSource.Type != LocalFile {
 		return fmt.Errorf("LoadTable: only local file is supported")
 	}
-	if loadSource.Format != CSV {
-		return fmt.Errorf("LoadTable: only CSV format is supported")
+	if loadSource.Format != p.batchFileFormat {
+		return fmt.Errorf("LoadTable: only %s format is supported", p.batchFileFormat)
 	}
 	columns := targetTable.SortedColumnNames()
 	columnNames := make([]string, len(columns))
@@ -312,23 +313,19 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if err != nil {
 		return err
 	}
-	reader := csv.NewReader(file)
-	_, _ = reader.Read() //skip header
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		object := map[string]any{}
+		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		decoder.UseNumber()
+		err = decoder.Decode(&object)
 		if err != nil {
 			return err
 		}
-		args := make([]any, len(record))
-		for i, v := range record {
-			if v == "\\N" {
-				args[i] = nil
-			} else {
-				args[i] = v
-			}
+		args := make([]any, len(columns))
+		for i, v := range columns {
+			l := types.ReformatValue(object[v])
+			args[i] = l
 		}
 		if _, err := stmt.ExecContext(ctx, args...); err != nil {
 			return checkErr(err)

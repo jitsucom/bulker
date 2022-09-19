@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
@@ -19,15 +20,17 @@ import (
 	"time"
 )
 
-var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.841182Z")
+var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z")
 
 const forceLeaveResultingTables = false
 
-var allBulkerTypes = []string{"postgres", "redshift", "snowflake", "bigquery", "mysql"}
-var exceptBigquery = []string{"postgres", "redshift", "snowflake", "mysql"}
+//var allBulkerTypes = []string{"postgres", "redshift", "snowflake", "bigquery", "mysql", "clickhouse"}
+//var exceptBigquery = []string{"postgres", "redshift", "snowflake", "mysql", "clickhouse"}
+//var exceptClickhouse = []string{"postgres", "redshift", "snowflake", "bigquery", "mysql"}
 
-//var allBulkerTypes = []string{"mysql"}
-//var exceptBigquery = []string{"mysql"}
+var allBulkerTypes = []string{"bigquery"}
+var exceptBigquery = []string{}
+var exceptClickhouse = []string{"bigquery"}
 
 var configRegistry = map[string]any{
 	"bigquery":  os.Getenv("BULKER_TEST_BIGQUERY"),
@@ -66,6 +69,14 @@ func init() {
 		Db:         mysqlContainer.Database,
 		Parameters: map[string]string{"tls": "false", "parseTime": "true"},
 	}
+	clickhouseContainer, err := testcontainers.NewClickhouseContainer(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	configRegistry["clickhouse"] = ClickHouseConfig{
+		Dsns:     clickhouseContainer.Dsns,
+		Database: clickhouseContainer.Database,
+	}
 }
 
 type bulkerTestConfig struct {
@@ -77,9 +88,6 @@ type bulkerTestConfig struct {
 	config *bulker.Config
 	//for which bulker types (destination types) to run test
 	bulkerTypes []string
-	//create table with provided schema before running the test. name and schema of table are ignored
-	//TODO: implement stream_test preExistingTable
-	preExistingTable *Table
 	//continue test run even after Consume() returned error
 	ignoreConsumeErrors bool
 	//expected state of stream Complete() call
@@ -120,6 +128,7 @@ func TestStreams(t *testing.T) {
 			expectedTable: &ExpectedTable{
 				Columns: justColumns("_timestamp", "column1", "column2", "column3", "id", "name"),
 			},
+			expectedRowsCount: 6,
 			expectedRows: []map[string]any{
 				{"_timestamp": constantTime, "id": 1, "name": "test", "column1": nil, "column2": nil, "column3": nil},
 				{"_timestamp": constantTime, "id": 2, "name": "test2", "column1": "data", "column2": nil, "column3": nil},
@@ -152,8 +161,11 @@ func TestStreams(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types_collision.ndjson",
 			expectedErrors: map[string]any{
-				"consume_object_1_postgres":         "cause: pq: 22P02 invalid input syntax for type bigint: \"1.1\"",
-				"consume_object_1_redshift":         "cause: pq: 22P02 invalid input syntax for integer: \"1.1\"",
+				"consume_object_1_postgres":         "cause: pq: 22P02 invalid input syntax for type bigint: \"a\"",
+				"consume_object_1_redshift":         "cause: pq: 22P02 invalid input syntax for integer: \"a\"",
+				"consume_object_1_mysql":            "cause: Error 1366: Incorrect integer value: 'a' for column 'int1' at row 1",
+				"consume_object_1_snowflake":        "cause: 100038 (22018): Numeric value 'a' is not recognized",
+				"consume_object_1_clickhouse":       "cause: error converting string to int",
 				"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported,
 			},
 			bulkerTypes: allBulkerTypes,
@@ -164,9 +176,12 @@ func TestStreams(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types_collision.ndjson",
 			expectedErrors: map[string]any{
-				"stream_complete_postgres": "cause: pq: 22P02 invalid input syntax for type bigint: \"1.1\"",
-				"stream_complete_redshift": "failed.  Check 'stl_load_errors' system table for details.",
-				"stream_complete_bigquery": "Could not parse '1.1' as INT64 for field int1",
+				"stream_complete_postgres":   "cause: pq: 22P02 invalid input syntax for type bigint: \"a\"",
+				"stream_complete_redshift":   "failed.  Check 'stl_load_errors' system table for details.",
+				"consume_object_1_mysql":     "cause: Error 1366: Incorrect integer value: 'a' for column 'int1' at row 1",
+				"stream_complete_snowflake":  "cause: 100038 (22018): Numeric value 'a' is not recognized",
+				"stream_complete_clickhouse": "cause: error converting string to int",
+				"stream_complete_bigquery":   "Could not parse 'a' as INT64 for field int1",
 			},
 			bulkerTypes: allBulkerTypes,
 		},
@@ -191,7 +206,7 @@ func TestStreams(t *testing.T) {
 			},
 			orderBy:        "id asc, name asc",
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    allBulkerTypes,
+			bulkerTypes:    exceptClickhouse,
 		},
 		{
 			name:              "repeated_ids_pk",
@@ -269,12 +284,6 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		err = sqlAdapter.DropTable(ctx, tableName, true)
 		CheckError("pre_cleanup", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 	}
-	//create destination table with predefined schema before running stream
-	if testConfig.preExistingTable != nil {
-		testConfig.preExistingTable.Name = tableName
-		err = sqlAdapter.CreateTable(ctx, testConfig.preExistingTable)
-		CheckError("pre_existingtable", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
-	}
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		defer func() {
@@ -335,6 +344,10 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			for k := range table.Columns {
 				table.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
 			}
+		}
+		if testConfig.config.BulkerType == "clickhouse" && len(testConfig.expectedTable.PKFields) > 0 {
+			logging.Infof("We don't check PKFields for clickhouse since primary key (sorting key) in CH is required for all MergeTree tables")
+			testConfig.expectedTable.PKFields = utils.NewSet[string]()
 		}
 		pkFields := utils.NewSet[string]()
 		pkName := ""

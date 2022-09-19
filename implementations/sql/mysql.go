@@ -99,7 +99,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	m := &MySQL{newSQLAdapterBase(MySQLBulkerTypeId, config, dataSource,
 		queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, tableNameFunc, mySQLQuoteColumnName, mySQLColumnDDL, mySQLMapColumnValue, checkErr)}
-
+	m.batchFileFormat = CSV
 	return m, nil
 }
 
@@ -188,8 +188,8 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 	if loadSource.Type != LocalFile {
 		return fmt.Errorf("LoadTable: only local file is supported")
 	}
-	if loadSource.Format != CSV {
-		return fmt.Errorf("LoadTable: only CSV format is supported")
+	if loadSource.Format != m.batchFileFormat {
+		return fmt.Errorf("LoadTable: only %s format is supported", m.batchFileFormat)
 	}
 	mysql.RegisterLocalFile(loadSource.Path)
 	defer mysql.DeregisterLocalFile(loadSource.Path)

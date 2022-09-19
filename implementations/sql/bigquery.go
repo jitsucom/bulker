@@ -105,6 +105,10 @@ func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, str
 	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
 }
 
+func (bq *BigQuery) GetBatchFileFormat() LoadSourceFormat {
+	return CSV
+}
+
 func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
 	options := &bulker.StreamOptions{}
 	for _, option := range streamOptions {

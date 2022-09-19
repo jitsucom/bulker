@@ -6,11 +6,11 @@ And HTTP interface on top of Bulker Go intefarce with [persistent configuration]
 
 ## Configuration
 
-The service should be started with a single `./bulker` command and all configuration should be done with envinroment variables. List of available config options:
+The service should be started with a single `./bulker` command and all configuration should be done with environment variables. List of available config options:
 
 #### `BULKER_HTTP_PORT`
 
-(or just `PORT` for comapatibility); default value `3042`
+(or just `PORT` for compatibility); default value `3042`
 
 #### `BULKER_CONFIG`
 
@@ -48,11 +48,11 @@ Body should be either one JSON object (for autocommit mode), or a stream of JSON
 
 ## Config storage
 
-Bulker should make best effort to be able to work without responsive configuration storage. For Redis:
+Bulker should make the best effort to be able to work without responsive configuration storage. For Redis:
 
-* During start it should read all destinations config and keep them in RAM
+* During start, it should read all destinations config and keep them in RAM
 * It should periodically reload configs from Redis
-* It should subsribe to changes in Redis and 
+* It should subscribe to changes in Redis and 
 
 
 

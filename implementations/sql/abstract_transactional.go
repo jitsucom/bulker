@@ -2,10 +2,11 @@ package sql
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/hashicorp/go-multierror"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
@@ -15,18 +16,23 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 )
 
 type AbstractTransactionalSQLStream struct {
 	AbstractSQLStream
-	tx               *TxSQLAdapter
-	tmpTable         *Table
-	dstTable         *Table
-	tmpFile          *os.File
-	tmpWritten       int
-	s3               *implementations.S3
-	tmpFileLineByPK  map[string]int
-	tmpFileSkipLines utils.Set[int]
+	tx       *TxSQLAdapter
+	tmpTable *Table
+	//function that generate tmp table schema based on target table schema
+	tmpTableFunc       func(ctx context.Context, tableForObject *Table) *Table
+	dstTable           *Table
+	batchFile          *os.File
+	marshaller         types.Marshaller
+	targetMarshaller   types.Marshaller
+	eventsInBatch      int
+	s3                 *implementations.S3
+	batchFileLinesByPK map[string]int
+	batchFileSkipLines utils.Set[int]
 }
 
 func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractTransactionalSQLStream, error) {
@@ -37,8 +43,8 @@ func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, m
 	}
 	ps.AbstractSQLStream = abs
 	if ps.merge {
-		ps.tmpFileLineByPK = make(map[string]int)
-		ps.tmpFileSkipLines = utils.NewSet[int]()
+		ps.batchFileLinesByPK = make(map[string]int)
+		ps.batchFileSkipLines = utils.NewSet[int]()
 	}
 	return ps, nil
 }
@@ -57,10 +63,16 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		}
 	}
 	localBatchFile := localBatchFileOption.Get(&ps.options)
-	if localBatchFile != "" && ps.tmpFile == nil {
-		ps.tmpFile, err = os.CreateTemp("", localBatchFile)
+	if localBatchFile != "" && ps.batchFile == nil {
+		ps.batchFile, err = os.CreateTemp("", localBatchFile)
 		if err != nil {
 			return err
+		}
+		ps.marshaller = types.JSONMarshallerInstance
+		if ps.sqlAdapter.GetBatchFileFormat() == CSV {
+			ps.targetMarshaller = types.CSVMarshallerInstance
+		} else {
+			ps.targetMarshaller = types.JSONMarshallerInstance
 		}
 	}
 	if ps.tx == nil {
@@ -79,9 +91,9 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 }
 
 func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err error) (bulker.State, error) {
-	if ps.tmpFile != nil {
-		_ = ps.tmpFile.Close()
-		_ = os.Remove(ps.tmpFile.Name())
+	if ps.batchFile != nil {
+		_ = ps.batchFile.Close()
+		_ = os.Remove(ps.batchFile.Name())
 	}
 	if err != nil {
 		ps.state.SuccessfulRows = 0
@@ -103,29 +115,31 @@ func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err 
 	return ps.AbstractSQLStream.postComplete(err)
 }
 
-func (ps *AbstractTransactionalSQLStream) flushTmpFile(ctx context.Context, table *Table, deleteFile bool) (err error) {
+func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (err error) {
+	table := ps.tmpTable
+	err = ps.tx.CreateTable(ctx, table)
+	if err != nil {
+		return errorj.Decorate(err, "failed to create table")
+	}
+	columns := table.SortedColumnNames()
 	defer func() {
 		if ps.merge {
-			ps.tmpFileLineByPK = make(map[string]int)
-			ps.tmpFileSkipLines = utils.NewSet[int]()
+			ps.batchFileLinesByPK = make(map[string]int)
+			ps.batchFileSkipLines = utils.NewSet[int]()
 		}
-		if deleteFile {
-			_ = ps.tmpFile.Close()
-			_ = os.Remove(ps.tmpFile.Name())
-		} else {
-			ps.tmpWritten = 0
-			ps.tmpFile.Seek(0, 0)
-			err1 := ps.tmpFile.Truncate(0)
-			if err1 != nil {
-				err = multierror.Append(err, errorj.Decorate(err1, "failed truncate csv file"))
-			}
-		}
+		_ = ps.batchFile.Close()
+		_ = os.Remove(ps.batchFile.Name())
 	}()
-	if ps.tmpWritten > 0 {
-		ps.tmpFile.Sync()
-		workingFile := ps.tmpFile
-		if len(ps.tmpFileSkipLines) > 0 {
-			workingFile, err = os.CreateTemp("", path.Base(ps.tmpFile.Name())+"_dedupl")
+	if ps.eventsInBatch > 0 {
+		ps.batchFile.Sync()
+		workingFile := ps.batchFile
+		needToConvert := false
+		convertStart := time.Now()
+		if ps.targetMarshaller != ps.marshaller {
+			needToConvert = true
+		}
+		if len(ps.batchFileSkipLines) > 0 || needToConvert {
+			workingFile, err = os.CreateTemp("", path.Base(ps.batchFile.Name())+"_2")
 			if err != nil {
 				return errorj.Decorate(err, "failed to create tmp file for deduplication")
 			}
@@ -133,23 +147,43 @@ func (ps *AbstractTransactionalSQLStream) flushTmpFile(ctx context.Context, tabl
 				_ = workingFile.Close()
 				_ = os.Remove(workingFile.Name())
 			}()
-			file, err := os.Open(ps.tmpFile.Name())
+			if needToConvert {
+				err = ps.targetMarshaller.WriteHeader(columns, workingFile)
+				if err != nil {
+					return errorj.Decorate(err, "failed to write header for converted batch file")
+				}
+			}
+			file, err := os.Open(ps.batchFile.Name())
 			if err != nil {
 				return errorj.Decorate(err, "failed to open tmp file")
 			}
 			scanner := bufio.NewScanner(file)
 			i := 0
 			for scanner.Scan() {
-				if !ps.tmpFileSkipLines.Contains(i) {
-					_, err := workingFile.Write(scanner.Bytes())
-					if err != nil {
-						return errorj.Decorate(err, "failed write to deduplication file")
+				if !ps.batchFileSkipLines.Contains(i) {
+					if needToConvert {
+						dec := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+						dec.UseNumber()
+						obj := make(map[string]any)
+						err = dec.Decode(&obj)
+						if err != nil {
+							return errorj.Decorate(err, "failed to decode json object from batch filer")
+						}
+						ps.targetMarshaller.Marshal(columns, workingFile, obj)
+					} else {
+						_, err = workingFile.Write(scanner.Bytes())
+						if err != nil {
+							return errorj.Decorate(err, "failed write to deduplication file")
+						}
+						_, _ = workingFile.Write([]byte("\n"))
 					}
-					_, _ = workingFile.Write([]byte("\n"))
 				}
 				i++
 			}
 			workingFile.Sync()
+		}
+		if needToConvert {
+			logging.Infof("[%s] Converted batch file from %s to %s in %s", ps.id, ps.marshaller.Format(), ps.targetMarshaller.Format(), time.Now().Sub(convertStart))
 		}
 		if ps.s3 != nil {
 			s3Config := s3BatchFileOption.Get(&ps.options)
@@ -166,12 +200,12 @@ func (ps *AbstractTransactionalSQLStream) flushTmpFile(ctx context.Context, tabl
 				return errorj.Decorate(err, "failed to upload file to s3")
 			}
 			defer ps.s3.DeleteObject(s3FileName)
-			err = ps.tx.LoadTable(ctx, table, &LoadSource{Type: AmazonS3, Path: s3FileName, Format: CSV, S3Config: s3Config})
+			err = ps.tx.LoadTable(ctx, table, &LoadSource{Type: AmazonS3, Path: s3FileName, Format: ps.sqlAdapter.GetBatchFileFormat(), S3Config: s3Config})
 			if err != nil {
 				return errorj.Decorate(err, "failed to flush tmp file to the warehouse")
 			}
 		} else {
-			err = ps.tx.LoadTable(ctx, table, &LoadSource{Type: LocalFile, Path: workingFile.Name(), Format: CSV})
+			err = ps.tx.LoadTable(ctx, table, &LoadSource{Type: LocalFile, Path: workingFile.Name(), Format: ps.sqlAdapter.GetBatchFileFormat()})
 			if err != nil {
 				return errorj.Decorate(err, "failed to flush tmp file to the warehouse")
 			}
@@ -180,67 +214,87 @@ func (ps *AbstractTransactionalSQLStream) flushTmpFile(ctx context.Context, tabl
 	return nil
 }
 
-func (ps *AbstractTransactionalSQLStream) ensureSchema(ctx context.Context, targetTable **Table, tableForObject *Table, initTable func(ctx context.Context) (*Table, error)) (err error) {
-	needRenewTmpTable := false
-	//first object
-	if *targetTable == nil {
-		*targetTable, err = initTable(ctx)
-		if err != nil {
-			return err
-		}
-		needRenewTmpTable = true
+//func (ps *AbstractTransactionalSQLStream) ensureSchema(ctx context.Context, targetTable **Table, tableForObject *Table, initTable func(ctx context.Context) (*Table, error)) (err error) {
+//	needRenewTmpTable := false
+//	//first object
+//	if *targetTable == nil {
+//		*targetTable, err = initTable(ctx)
+//		if err != nil {
+//			return err
+//		}
+//		needRenewTmpTable = true
+//	} else {
+//		if !tableForObject.FitsToTable(*targetTable) {
+//			needRenewTmpTable = true
+//			if ps.batchFile != nil {
+//				logging.Infof("[%s] Table schema changed during transaction. New columns: %v", ps.id, tableForObject.Diff(*targetTable).Columns)
+//				if err = ps.flushBatchFile(ctx, *targetTable, false); err != nil {
+//					return err
+//				}
+//			}
+//			(*targetTable).Columns = utils.MapPutAll(tableForObject.Columns, (*targetTable).Columns)
+//		}
+//	}
+//	if needRenewTmpTable {
+//		//adapt tmp table for new object columns if any
+//		*targetTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, *targetTable)
+//		if err != nil {
+//			return errorj.Decorate(err, "failed to ensure temporary table")
+//		}
+//		if ps.batchFile != nil {
+//			err = ps.marshaller.WriteHeader((*targetTable).SortedColumnNames(), ps.batchFile)
+//			if err != nil {
+//				return errorj.Decorate(err, "failed write csv header")
+//			}
+//		}
+//	}
+//	return nil
+//}
+
+func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, targetTable *Table, processedObjects []types.Object) error {
+	if ps.tmpTable == nil {
+		ps.dstTable = targetTable
+		ps.tmpTable = ps.tmpTableFunc(ctx, targetTable)
 	} else {
-		if !tableForObject.FitsToTable(*targetTable) {
-			needRenewTmpTable = true
-			if ps.tmpFile != nil {
-				logging.Infof("[%s] Table schema changed during transaction. New columns: %v", ps.id, tableForObject.Diff(*targetTable).Columns)
-				if err = ps.flushTmpFile(ctx, *targetTable, false); err != nil {
-					return err
-				}
-			}
-			(*targetTable).Columns = utils.MapPutAll(tableForObject.Columns, (*targetTable).Columns)
-		}
+		ps.tmpTable.Columns = utils.MapPutAll(targetTable.Columns, ps.tmpTable.Columns)
 	}
-	if needRenewTmpTable {
-		//adapt tmp table for new object columns if any
-		*targetTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, *targetTable)
-		if err != nil {
-			return errorj.Decorate(err, "failed to ensure temporary table")
-		}
-		if ps.tmpFile != nil {
-			err = types.CSVMarshallerInstance.WriteHeader((*targetTable).SortedColumnNames(), ps.tmpFile)
+	for _, obj := range processedObjects {
+		if ps.merge {
+			pk, err := ps.getPKValue(obj)
 			if err != nil {
-				return errorj.Decorate(err, "failed write csv header")
+				return err
 			}
+			line, ok := ps.batchFileLinesByPK[pk]
+			if ok {
+				ps.batchFileSkipLines.Put(line)
+			}
+			lineNumber := ps.eventsInBatch
+			if ps.marshaller.NeedHeader() {
+				lineNumber++
+			}
+			ps.batchFileLinesByPK[pk] = lineNumber
 		}
+		err := ps.marshaller.Marshal(targetTable.SortedColumnNames(), ps.batchFile, obj)
+		if err != nil {
+			return errorj.Decorate(err, "failed to marshall into csv file")
+		}
+		ps.eventsInBatch++
 	}
 	return nil
 }
 
-func (ps *AbstractTransactionalSQLStream) insert(ctx context.Context, targetTable *Table, processedObjects []types.Object) error {
-	if ps.tmpFile != nil {
-		for _, obj := range processedObjects {
-			if ps.merge {
-				pk, err := ps.getPKValue(obj)
-				if err != nil {
-					return err
-				}
-				line, ok := ps.tmpFileLineByPK[pk]
-				if ok {
-					ps.tmpFileSkipLines.Put(line)
-				}
-				ps.tmpFileLineByPK[pk] = ps.tmpWritten + 1 //+1 for header
-			}
-			err := types.CSVMarshallerInstance.Marshal(targetTable.SortedColumnNames(), ps.tmpFile, obj)
-			if err != nil {
-				return errorj.Decorate(err, "failed to marshall into csv file")
-			}
-			ps.tmpWritten++
-		}
-		return nil
+func (ps *AbstractTransactionalSQLStream) insert(ctx context.Context, targetTable *Table, processedObjects []types.Object) (err error) {
+	if ps.tmpTable == nil {
+		ps.dstTable = targetTable
+		ps.tmpTable = ps.tmpTableFunc(ctx, targetTable)
 	} else {
-		return ps.tx.Insert(ctx, targetTable, ps.merge, processedObjects)
+		ps.tmpTable.Columns = utils.MapPutAll(targetTable.Columns, ps.tmpTable.Columns)
 	}
+	ps.tmpTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.tmpTable)
+	if err != nil {
+		return errorj.Decorate(err, "failed to ensure table")
+	}
+	return ps.tx.Insert(ctx, ps.tmpTable, ps.merge, processedObjects)
 }
 
 func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulker.State, err error) {
@@ -251,9 +305,9 @@ func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulk
 		_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
 		_ = ps.tx.Rollback()
 	}
-	if ps.tmpFile != nil {
-		_ = ps.tmpFile.Close()
-		_ = os.Remove(ps.tmpFile.Name())
+	if ps.batchFile != nil {
+		_ = ps.batchFile.Close()
+		_ = os.Remove(ps.batchFile.Name())
 	}
 	ps.state.Status = bulker.Aborted
 	return ps.state, err
