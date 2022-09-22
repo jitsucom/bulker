@@ -6,12 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/implementations/sql/testcontainers"
+	"github.com/jitsucom/bulker/implementations/sql/testcontainers/clickhouse"
 	"github.com/jitsucom/bulker/types"
 	"github.com/stretchr/testify/require"
 	"os"
@@ -24,13 +24,10 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 
 const forceLeaveResultingTables = false
 
-//var allBulkerTypes = []string{"postgres", "redshift", "snowflake", "bigquery", "mysql", "clickhouse"}
-//var exceptBigquery = []string{"postgres", "redshift", "snowflake", "mysql", "clickhouse"}
-//var exceptClickhouse = []string{"postgres", "redshift", "snowflake", "bigquery", "mysql"}
+var allBulkerTypes = []string{ClickHouseBulkerTypeId, PostgresBulkerTypeId, RedshiftBulkerTypeId, SnowflakeBulkerTypeId, BigqueryBulkerTypeId, MySQLBulkerTypeId}
 
-var allBulkerTypes = []string{"bigquery"}
-var exceptBigquery = []string{}
-var exceptClickhouse = []string{"bigquery"}
+// var allBulkerTypes = []string{ClickHouseBulkerTypeId}
+var exceptBigquery = utils.ArrayExcluding(allBulkerTypes, BigqueryBulkerTypeId)
 
 var configRegistry = map[string]any{
 	"bigquery":  os.Getenv("BULKER_TEST_BIGQUERY"),
@@ -48,7 +45,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	configRegistry["postgres"] = DataSourceConfig{
+	configRegistry[PostgresBulkerTypeId] = DataSourceConfig{
 		Host:       postgresContainer.Host,
 		Port:       postgresContainer.Port,
 		Username:   postgresContainer.Username,
@@ -61,7 +58,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	configRegistry["mysql"] = DataSourceConfig{
+	configRegistry[MySQLBulkerTypeId] = DataSourceConfig{
 		Host:       mysqlContainer.Host,
 		Port:       mysqlContainer.Port,
 		Username:   mysqlContainer.Username,
@@ -69,13 +66,14 @@ func init() {
 		Db:         mysqlContainer.Database,
 		Parameters: map[string]string{"tls": "false", "parseTime": "true"},
 	}
-	clickhouseContainer, err := testcontainers.NewClickhouseContainer(context.Background())
+	clickhouseContainer, err := clickhouse.NewClickhouseClusterContainer(context.Background())
 	if err != nil {
 		panic(err)
 	}
-	configRegistry["clickhouse"] = ClickHouseConfig{
+	configRegistry[ClickHouseBulkerTypeId] = ClickHouseConfig{
 		Dsns:     clickhouseContainer.Dsns,
 		Database: clickhouseContainer.Database,
+		Cluster:  clickhouseContainer.Cluster,
 	}
 }
 
@@ -204,9 +202,10 @@ func TestStreams(t *testing.T) {
 				{"_timestamp": constantTime, "id": 4, "name": "test4"},
 				{"_timestamp": constantTime, "id": 4, "name": "test5"},
 			},
-			orderBy:        "id asc, name asc",
-			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    exceptClickhouse,
+			leaveResultingTable: true,
+			orderBy:             "id asc, name asc",
+			expectedErrors:      map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
+			bulkerTypes:         allBulkerTypes,
 		},
 		{
 			name:              "repeated_ids_pk",
@@ -345,10 +344,6 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				table.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
 			}
 		}
-		if testConfig.config.BulkerType == "clickhouse" && len(testConfig.expectedTable.PKFields) > 0 {
-			logging.Infof("We don't check PKFields for clickhouse since primary key (sorting key) in CH is required for all MergeTree tables")
-			testConfig.expectedTable.PKFields = utils.NewSet[string]()
-		}
 		pkFields := utils.NewSet[string]()
 		pkName := ""
 		if len(testConfig.expectedTable.PKFields) > 0 {
@@ -364,6 +359,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		reqr.Equal(expectedTable, table)
 	}
 	if testConfig.expectedRowsCount != nil || testConfig.expectedRows != nil {
+		time.Sleep(1 * time.Second)
 		//Check rows count and rows data when provided
 		rows, err := sqlAdapter.Select(ctx, tableName, nil, testConfig.orderBy)
 		CheckError("select_result", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)

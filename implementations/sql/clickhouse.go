@@ -20,6 +20,11 @@ import (
 	"time"
 )
 
+// TODO: Require PK. Set sorting keys and and sharding jey of distributed table based on provieded columns
+
+// TODO: second test for http
+// TODO: option Optimize table on Complete
+// TODO: add flag &mutations_sync=2
 func init() {
 	bulker.RegisterBulker(ClickHouseBulkerTypeId, NewClickHouse)
 }
@@ -35,9 +40,11 @@ const (
 	chOnClusterClauseTemplate = ` ON CLUSTER "%s" `
 	chNullableColumnTemplate  = ` Nullable(%s) `
 
-	chCreateDistributedTableTemplate = `CREATE TABLE %s %s AS %s ENGINE = Distributed(%s,%s,%s,rand())`
+	chCreateDistributedTableTemplate = `CREATE TABLE %s %s AS %s ENGINE = Distributed(%s,%s,%s,%s)`
 	chAlterTableTemplate             = `ALTER TABLE %s %s %s`
-	//chDeleteQueryTemplate            = `DELETE FROM %s %s WHERE %s`
+	chDeleteBeforeBulkMergeUsing     = `ALTER TABLE %s %s DELETE WHERE %s in (select %s from %s)`
+	//chDeleteBeforeBulkMergeUsing = `DELETE FROM %s %s WHERE %s in (select %s from %s)`
+
 	chDeleteQueryTemplate = `ALTER TABLE %s %s DELETE WHERE %s`
 
 	chCreateTableTemplate   = `CREATE TABLE %s %s (%s) %s %s %s %s`
@@ -48,10 +55,6 @@ const (
 
 	chSelectFinalStatement = `SELECT %s FROM %s FINAL %s%s`
 	chLoadStatement        = `INSERT INTO %s (%s) VALUES (%s)`
-
-	chDefaultPartition  = ``
-	chDefaultOrderBy    = `ORDER BY (id)`
-	chDefaultPrimaryKey = ``
 )
 
 var (
@@ -59,7 +62,7 @@ var (
 		types.STRING:    "String",
 		types.INT64:     "Int64",
 		types.FLOAT64:   "Float64",
-		types.TIMESTAMP: "DateTime",
+		types.TIMESTAMP: "DateTime64(6)",
 		types.BOOL:      "UInt8",
 		types.UNKNOWN:   "String",
 	}
@@ -231,8 +234,8 @@ func (ch *ClickHouse) GetTypesMapping() map[types.DataType]string {
 
 // OpenTx opens underline sql transaction and return wrapped instance
 func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
-	return ch.openTx(ctx, ch)
-	//return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), ch.dataSource, ch.queryLogger, ch.checkErrFunc)}, nil
+	//return ch.openTx(ctx, ch)
+	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), ch.dataSource, ch.queryLogger, ch.checkErrFunc)}, nil
 }
 
 // InitDatabase create database instance if doesn't exist
@@ -254,6 +257,25 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 // CreateTable create database table with name,columns provided in Table representation
 // New tables will have MergeTree() or ReplicatedMergeTree() engine depends on config.cluster empty or not
 func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
+	if table.Temporary {
+		columns := table.SortedColumnNames()
+		columnsDDL := make([]string, len(columns))
+		for i, columnName := range columns {
+			column := table.Columns[columnName]
+			columnsDDL[i] = ch.columnDDL(columnName, column, nil)
+		}
+
+		query := fmt.Sprintf(createTableTemplate+" ENGINE = Memory", ch.fullTableName(table.Name), strings.Join(columnsDDL, ", "))
+
+		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
+			return errorj.CreateTableError.Wrap(err, "failed to create table").
+				WithProperty(errorj.DBInfo, &types.ErrorPayload{
+					Table:     table.Name,
+					Statement: query,
+				})
+		}
+		return nil
+	}
 	columns := table.SortedColumnNames()
 	columnsDDL := make([]string, len(columns))
 	for i, columnName := range table.SortedColumnNames() {
@@ -261,7 +283,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 		columnsDDL[i] = ch.columnDDL(columnName, column, table.PKFields)
 	}
 
-	statementStr := ch.tableStatementFactory.CreateTableStatement(table.Name, strings.Join(columnsDDL, ","))
+	statementStr := ch.tableStatementFactory.CreateTableStatement(table.Name, strings.Join(columnsDDL, ","), table)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, statementStr); err != nil {
 		return errorj.CreateTableError.Wrap(err, "failed to create table").
@@ -276,7 +298,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 
 	//create distributed table if ReplicatedMergeTree engine
 	if ch.config.Cluster != "" {
-		return ch.createDistributedTableInTransaction(ctx, table.Name)
+		return ch.createDistributedTableInTransaction(ctx, table)
 	}
 
 	return nil
@@ -314,6 +336,10 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 				})
 		}
 		table.Columns[columnName] = SQLColumn{Type: columnClickhouseType}
+		if isPk {
+			table.PKFields.Put(columnName)
+			table.PrimaryKeyName = BuildConstraintName(tableName)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
@@ -362,22 +388,32 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 
 		_, err := ch.txOrDb(ctx).ExecContext(ctx, query)
 		if err != nil {
+			logging.Errorf("Error altering distributed table for [%s] with statement [%s]: %v", patchSchema.Name, query, err)
 			// fallback for older clickhouse versions: drop and create distributed table if ReplicatedMergeTree engine
 			ch.dropTable(ctx, ch.fullDistTableName(patchSchema.Name), true)
-			return ch.createDistributedTableInTransaction(ctx, patchSchema.Name)
+			return ch.createDistributedTableInTransaction(ctx, patchSchema)
 		}
 
-		logging.Errorf("Error altering distributed table for [%s] with statement [%s]: %v", patchSchema.Name, query, err)
 	}
 
 	return nil
 }
 
 func (ch *ClickHouse) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+	if ch.config.Cluster != "" {
+		tableName = ch.fullDistTableName(tableName)
+	} else {
+		tableName = ch.fullTableName(tableName)
+	}
 	return ch.selectFrom(ctx, chSelectFinalStatement, tableName, "*", whenConditions, orderBy)
 }
 
 func (ch *ClickHouse) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
+	if ch.config.Cluster != "" {
+		tableName = ch.fullDistTableName(tableName)
+	} else {
+		tableName = ch.fullTableName(tableName)
+	}
 	res, err := ch.selectFrom(ctx, chSelectFinalStatement, tableName, "count(*) as jitsu_count", whenConditions, "")
 	if err != nil {
 		return -1, err
@@ -390,6 +426,10 @@ func (ch *ClickHouse) Count(ctx context.Context, tableName string, whenCondition
 }
 
 func (ch *ClickHouse) Insert(ctx context.Context, targetTable *Table, merge bool, objects []types.Object) (err error) {
+	if ch.config.Cluster != "" && merge && !targetTable.Temporary {
+		targetTable = targetTable.Clone()
+		targetTable.Name = chDistributedPrefix + targetTable.Name
+	}
 	if ch.httpMode {
 		return ch.insert(ctx, targetTable, objects)
 	}
@@ -463,6 +503,12 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	if loadSource.Format != ch.batchFileFormat {
 		return fmt.Errorf("LoadTable: only %s format is supported", ch.batchFileFormat)
 	}
+	tableName := ch.fullTableName(targetTable.Name)
+	if !targetTable.Temporary {
+		if ch.config.Cluster != "" {
+			tableName = ch.fullDistTableName(targetTable.Name)
+		}
+	}
 	tx, err := ch.dataSource.BeginTx(ctx, nil)
 	if err != nil {
 		err = errorj.LoadError.Wrap(err, "failed to open transaction to load table").
@@ -484,7 +530,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		placeHolders[i] = ch.typecastFunc(ch.parameterPlaceholder(i, ch.columnName(name)), column)
 
 	}
-	copyStatement := fmt.Sprintf(chLoadStatement, ch.fullTableName(targetTable.Name), strings.Join(columnNames, ", "), strings.Join(placeHolders, ", "))
+	copyStatement := fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), strings.Join(placeHolders, ", "))
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback()
@@ -547,7 +593,17 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	//return nil
 }
 
-func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) error {
+func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) (err error) {
+	if ch.config.Cluster != "" {
+		if !sourceTable.Temporary {
+			sourceTable = sourceTable.Clone()
+			sourceTable.Name = chDistributedPrefix + sourceTable.Name
+		}
+		if merge {
+			targetTable = targetTable.Clone()
+			targetTable.Name = chDistributedPrefix + targetTable.Name
+		}
+	}
 	return ch.copy(ctx, targetTable, sourceTable)
 }
 
@@ -614,37 +670,35 @@ func (ch *ClickHouse) dropTable(ctx context.Context, fullTableName string, ifExi
 	return nil
 }
 
-func (ch *ClickHouse) ReplaceTable(ctx context.Context, originalTable, replacementTable string, dropOldTable bool) (err error) {
-	query := fmt.Sprintf(chExchangeTableTemplate, ch.fullTableName(originalTable), ch.fullTableName(replacementTable), ch.getOnClusterClause())
-
-	if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-		if checkNotExistErr(err) == ErrTableNotExist {
-			query = fmt.Sprintf(chRenameTableTemplate, ch.fullTableName(replacementTable), ch.fullTableName(originalTable), ch.getOnClusterClause())
-
-			if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-				return fmt.Errorf("error renaming [%s] table: %v", replacementTable, err)
-			}
-			if ch.config.Cluster != "" {
-				query := fmt.Sprintf(chRenameTableTemplate, ch.fullDistTableName(replacementTable), ch.fullDistTableName(originalTable), ch.getOnClusterClause())
-				if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-					return fmt.Errorf("error renaming [%s] distributed table: %v", originalTable, err)
-				}
-			}
-			return nil
-		} else {
-			return fmt.Errorf("error replacing [%s] table: %v", originalTable, err)
-		}
+func (ch *ClickHouse) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
+	targetTable, err := ch.GetTableSchema(ctx, targetTableName)
+	if err != nil {
+		return fmt.Errorf("failed to check existence of target table: %s : %w", targetTableName, err)
 	}
-
-	if ch.config.Cluster != "" {
-		query := fmt.Sprintf(chExchangeTableTemplate, ch.fullDistTableName(originalTable), ch.fullDistTableName(replacementTable), ch.getOnClusterClause())
-
+	if targetTable.Exists() {
+		//exchange local tables only.
+		//For cluster no need to exchange distribute tables. they are linked by name and will represent new data
+		query := fmt.Sprintf(chExchangeTableTemplate, ch.fullTableName(targetTableName), ch.fullTableName(replacementTable.Name), ch.getOnClusterClause())
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-			return fmt.Errorf("error replacing [%s] distributed table: %v", originalTable, err)
+			return fmt.Errorf("error replacing [%s] table: %v", targetTableName, err)
 		}
+	} else {
+		//if target table does not exist yet, just rename replacement table to target one
+		query := fmt.Sprintf(chRenameTableTemplate, ch.fullTableName(replacementTable.Name), ch.fullTableName(targetTableName), ch.getOnClusterClause())
+		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
+			return fmt.Errorf("error renaming [%s] table: %v", replacementTable.Name, err)
+		}
+		//one cluster we also need to create distributed table for newly create target table
+		if ch.config.Cluster != "" {
+			targetTable := replacementTable.Clone()
+			targetTable.Name = targetTableName
+			return ch.createDistributedTableInTransaction(ctx, targetTable)
+		}
+		return nil
 	}
-	if dropOldTable {
-		return ch.DropTable(ctx, replacementTable, true)
+
+	if targetTable.Exists() && dropOldTable {
+		return ch.DropTable(ctx, replacementTable.Name, true)
 	} else {
 		return nil
 	}
@@ -666,9 +720,14 @@ func (ch *ClickHouse) getOnClusterClause() string {
 }
 
 // create distributed table, ignore errors
-func (ch *ClickHouse) createDistributedTableInTransaction(ctx context.Context, originTableName string) error {
+func (ch *ClickHouse) createDistributedTableInTransaction(ctx context.Context, originTable *Table) error {
+	originTableName := originTable.Name
+	shardingKey := "rand()"
+	if len(originTable.PKFields) > 0 {
+		shardingKey = "halfMD5(" + strings.Join(originTable.PKFields.ToSlice(), ",") + ")"
+	}
 	statement := fmt.Sprintf(chCreateDistributedTableTemplate,
-		ch.fullDistTableName(originTableName), ch.getOnClusterClause(), ch.fullTableName(originTableName), ch.config.Cluster, ch.config.Database, originTableName)
+		ch.fullDistTableName(originTableName), ch.getOnClusterClause(), ch.fullTableName(originTableName), ch.config.Cluster, ch.config.Database, originTableName, shardingKey)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return fmt.Errorf("error creating distributed table statement with statement [%s] for [%s] : %w", statement, originTableName, err)
@@ -849,15 +908,9 @@ func (chc *ClickHouseConfig) Validate() error {
 
 // TableStatementFactory is used for creating CREATE TABLE statements depends on config
 type TableStatementFactory struct {
-	engineStatement string
-	database        string
+	config *ClickHouseConfig
+
 	onClusterClause string
-
-	partitionClause  string
-	orderByClause    string
-	primaryKeyClause string
-
-	engineStatementFormat bool
 }
 
 func NewTableStatementFactory(config *ClickHouseConfig) (*TableStatementFactory, error) {
@@ -869,58 +922,56 @@ func NewTableStatementFactory(config *ClickHouseConfig) (*TableStatementFactory,
 		onClusterClause = fmt.Sprintf(chOnClusterClauseTemplate, config.Cluster)
 	}
 
-	partitionClause := chDefaultPartition
-	orderByClause := chDefaultOrderBy
-	primaryKeyClause := chDefaultPrimaryKey
-	if config.Engine != nil {
-		//raw statement overrides all provided config parameters
-		if config.Engine.RawStatement != "" {
-			return &TableStatementFactory{
-				engineStatement: config.Engine.RawStatement,
-				database:        config.Database,
-				onClusterClause: onClusterClause,
-			}, nil
-		}
-
-		if len(config.Engine.PartitionFields) > 0 {
-			partitionClause = "PARTITION BY (" + extractStatement(config.Engine.PartitionFields) + ")"
-		}
-		if len(config.Engine.OrderFields) > 0 {
-			orderByClause = "ORDER BY (" + extractStatement(config.Engine.OrderFields) + ")"
-		}
-		if len(config.Engine.PrimaryKeys) > 0 {
-			primaryKeyClause = "PRIMARY KEY (" + strings.Join(config.Engine.PrimaryKeys, ", ") + ")"
-		}
-	}
-
-	var engineStatement string
-	var engineStatementFormat bool
-	if config.Cluster != "" {
-		//create engine statement with ReplicatedReplacingMergeTree() engine. We need to replace %s with tableName on creating statement
-		engineStatement = `ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/` + config.Database + `/%s', '{replica}')`
-		engineStatementFormat = true
-	} else {
-		//create table template with ReplacingMergeTree() engine
-		engineStatement = `ENGINE = ReplacingMergeTree()`
-	}
-
 	return &TableStatementFactory{
-		engineStatement:       engineStatement,
-		database:              config.Database,
-		onClusterClause:       onClusterClause,
-		partitionClause:       partitionClause,
-		orderByClause:         orderByClause,
-		primaryKeyClause:      primaryKeyClause,
-		engineStatementFormat: engineStatementFormat,
+		config:          config,
+		onClusterClause: onClusterClause,
 	}, nil
 }
 
 // CreateTableStatement return clickhouse DDL for creating table statement
-func (tsf TableStatementFactory) CreateTableStatement(tableName, columnsClause string) string {
-	engineStatement := tsf.engineStatement
-	if tsf.engineStatementFormat {
+func (tsf TableStatementFactory) CreateTableStatement(tableName, columnsClause string, table *Table) string {
+	if tsf.config.Engine != nil && len(tsf.config.Engine.RawStatement) > 0 {
+		return fmt.Sprintf(chCreateTableTemplate, tableName, tsf.onClusterClause, columnsClause, tsf.config.Engine.RawStatement,
+			"", "", "")
+	}
+	var engineStatement string
+	var engineStatementFormat bool
+
+	orderByClause := ""
+	primaryKeyClause := ""
+	partitionClause := ""
+
+	baseEngine := "ReplacingMergeTree"
+	pkFields := table.PKFields
+	if tsf.config.Engine != nil && len(tsf.config.Engine.OrderFields) > 0 {
+		orderByClause = "ORDER BY (" + extractStatement(tsf.config.Engine.OrderFields) + ")"
+	} else if len(pkFields) > 0 {
+		orderByClause = "ORDER BY (" + strings.Join(pkFields.ToSlice(), ", ") + ")"
+	} else {
+		orderByClause = "ORDER BY tuple()"
+		//workaround. ReplacingMergeTree collapses all rows into one on INSERT INTO from SELECT if sorting key is tuple()
+		//TODO: fill a bug report
+		baseEngine = "AggregatingMergeTree"
+	}
+	if len(pkFields) > 0 {
+		primaryKeyClause = "PRIMARY KEY (" + strings.Join(pkFields.ToSlice(), ", ") + ")"
+	}
+	if tsf.config.Engine != nil && len(tsf.config.Engine.PartitionFields) > 0 {
+		partitionClause = "PARTITION BY (" + extractStatement(tsf.config.Engine.PartitionFields) + ")"
+	}
+
+	if tsf.config.Cluster != "" {
+		//create engine statement with ReplicatedReplacingMergeTree() engine. We need to replace %s with tableName on creating statement
+		engineStatement = `ENGINE = Replicated` + baseEngine + `('/clickhouse/tables/{shard}/` + tsf.config.Database + `/%s', '{replica}')`
+		engineStatementFormat = true
+	} else {
+		//create table template with ReplacingMergeTree() engine
+		engineStatement = `ENGINE = ` + baseEngine + `()`
+	}
+
+	if engineStatementFormat {
 		engineStatement = fmt.Sprintf(engineStatement, tableName)
 	}
 	return fmt.Sprintf(chCreateTableTemplate, tableName, tsf.onClusterClause, columnsClause, engineStatement,
-		tsf.partitionClause, tsf.orderByClause, tsf.primaryKeyClause)
+		partitionClause, orderByClause, primaryKeyClause)
 }

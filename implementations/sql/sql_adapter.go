@@ -37,7 +37,7 @@ type SQLAdapter interface {
 	//(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error
 	Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error
 	DropTable(ctx context.Context, tableName string, ifExists bool) error
-	ReplaceTable(ctx context.Context, originalTable, replacementTable string, dropOldTable bool) error
+	ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) error
 
 	Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error)
 	Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error)
@@ -130,9 +130,9 @@ func (tx *TxSQLAdapter) DropTable(ctx context.Context, tableName string, ifExist
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.DropTable(ctx, tableName, ifExists)
 }
-func (tx *TxSQLAdapter) ReplaceTable(ctx context.Context, originalTable, replacementTable string, dropOldTable bool) error {
+func (tx *TxSQLAdapter) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.ReplaceTable(ctx, originalTable, replacementTable, dropOldTable)
+	return tx.sqlAdapter.ReplaceTable(ctx, targetTableName, replacementTable, dropOldTable)
 }
 
 func (tx *TxSQLAdapter) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {

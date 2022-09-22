@@ -184,6 +184,7 @@ func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable 
 	}
 }
 
+// TODO: Use prepared statement
 func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
 	if loadSource.Type != LocalFile {
 		return fmt.Errorf("LoadTable: only local file is supported")
@@ -329,10 +330,10 @@ func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (utils.Set
 	return pkFields, nil
 }
 
-func (m *MySQL) ReplaceTable(ctx context.Context, originalTable, replacementTable string, dropOldTable bool) (err error) {
-	tmpTable := "deprecated_" + originalTable + timestamp.Now().Format("_20060102_150405")
-	err1 := m.renameTable(ctx, true, originalTable, tmpTable)
-	err = m.renameTable(ctx, false, replacementTable, originalTable)
+func (m *MySQL) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
+	tmpTable := "deprecated_" + targetTableName + timestamp.Now().Format("_20060102_150405")
+	err1 := m.renameTable(ctx, true, targetTableName, tmpTable)
+	err = m.renameTable(ctx, false, replacementTable.Name, targetTableName)
 	if dropOldTable && err1 == nil && err == nil {
 		return m.DropTable(ctx, tmpTable, true)
 	}

@@ -65,6 +65,8 @@ type BulkerStream interface {
 	//Complete - commit all uncommitted objects to the database. For stream in AutoCommit mode does nothing.
 	//Returns stream statistics. BulkerStream cannot be used after Complete call.
 	Complete(ctx context.Context) (State, error)
+
+	//TODO: TestConnection
 }
 
 type Config struct {

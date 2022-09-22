@@ -8,8 +8,6 @@ import (
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/testcontainers/testcontainers-go"
 	tcWait "github.com/testcontainers/testcontainers-go/wait"
-	"os"
-	"strconv"
 	"time"
 )
 
@@ -34,26 +32,26 @@ type ClickHouseContainer struct {
 // NewClickhouseContainer creates new Clickhouse test container if CH_TEST_PORT is not defined. Otherwise uses db at defined port.
 // This logic is required for running test at CI environment
 func NewClickhouseContainer(ctx context.Context) (*ClickHouseContainer, error) {
-	if os.Getenv(envClickhousePortVariable) != "" {
-		port, err := strconv.Atoi(os.Getenv(envClickhousePortVariable))
-		if err != nil {
-			return nil, err
-		}
-		dsn := fmt.Sprintf(chDatasourceTemplate, port)
-
-		datasource, err := sql.Open("clickhouse", dsn)
-		if err != nil {
-			return nil, err
-		}
-
-		return &ClickHouseContainer{
-			datasource: datasource,
-			Context:    ctx,
-			Dsns:       []string{dsn},
-			Database:   chDatabase,
-			Port:       port,
-		}, nil
-	}
+	//if os.Getenv(envClickhousePortVariable) != "" {
+	//	port, err := strconv.Atoi(os.Getenv(envClickhousePortVariable))
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	dsn := fmt.Sprintf(chDatasourceTemplate, port)
+	//
+	//	datasource, err := sql.Open("clickhouse", dsn)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//
+	//	return &ClickHouseContainer{
+	//		datasource: datasource,
+	//		Context:    ctx,
+	//		Dsns:       []string{dsn},
+	//		Database:   chDatabase,
+	//		Port:       port,
+	//	}, nil
+	//}
 	dbURL := func(port nat.Port) string {
 		return fmt.Sprintf(chDatasourceTemplate, port.Int())
 	}

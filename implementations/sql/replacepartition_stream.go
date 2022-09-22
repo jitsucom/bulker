@@ -39,8 +39,9 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 			dstTable = tableForObject
 		}
 		return &Table{
-			Name:    fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8]),
-			Columns: tableForObject.Columns,
+			Name:      fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8]),
+			Columns:   tableForObject.Columns,
+			Temporary: true,
 		}
 	}
 	return &ps, nil

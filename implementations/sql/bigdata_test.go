@@ -45,7 +45,7 @@ func TestMillionRowsBatched(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional},
 			batchSize:         10_000,
 			expectedRowsCount: 1_000_000,
-			bulkerTypes:       []string{"mysql"},
+			bulkerTypes:       []string{ClickHouseBulkerTypeId},
 			streamOptions:     []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 		},
 	}
@@ -102,6 +102,9 @@ func testOneMillion(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkM
 			_, err := stream.Complete(ctx)
 			CheckError("stream_complete", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 			logging.Infof("%d. batch is completed in %s", i, time.Since(startTime))
+			_ = blk.Close()
+			blk, err = bulker.CreateBulker(*testConfig.config)
+			CheckError("create_bulker", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 			stream, err = blk.CreateStream(t.Name(), tableName, mode, testConfig.streamOptions...)
 			CheckError("create_stream", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 			if err != nil {
@@ -118,6 +121,7 @@ func testOneMillion(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkM
 	}
 	//Commit stream
 	state, err := stream.Complete(ctx)
+	sqlAdapter = blk.(SQLAdapter)
 	CheckError("stream_complete", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 
 	if testConfig.expectedState != nil {
@@ -135,6 +139,7 @@ func testOneMillion(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkM
 		reqr.Equal(testConfig.expectedTable, table)
 	}
 	if testConfig.expectedRowsCount != nil {
+		time.Sleep(1 * time.Second)
 		//Check rows count and rows data when provided
 		count, err := sqlAdapter.Count(ctx, tableName, nil)
 		CheckError("select_count", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)

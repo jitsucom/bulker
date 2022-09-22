@@ -34,8 +34,9 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 			dstTable = tableForObject
 		}
 		return &Table{
-			Name:    fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8]),
-			Columns: tableForObject.Columns,
+			Name:      fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8]),
+			Columns:   tableForObject.Columns,
+			Temporary: true,
 		}
 	}
 	return &ps, nil

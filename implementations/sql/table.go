@@ -19,7 +19,8 @@ type TableField struct {
 
 // Table is a dto for DWH Table representation
 type Table struct {
-	Name string
+	Name      string
+	Temporary bool
 
 	Columns        Columns
 	PKFields       utils.Set[string]

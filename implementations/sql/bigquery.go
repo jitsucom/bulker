@@ -546,7 +546,7 @@ func (bq *BigQuery) DropTable(ctx context.Context, tableName string, ifExists bo
 	return nil
 }
 
-func (bq *BigQuery) ReplaceTable(ctx context.Context, originalTable, replacementTable string, dropOldTable bool) (err error) {
+func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
 	defer func() {
 		if err != nil {
 			err = errorj.CopyError.Wrap(err, "failed to replace table").
@@ -554,15 +554,15 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, originalTable, replacement
 					Dataset: bq.config.Dataset,
 					Bucket:  bq.config.Bucket,
 					Project: bq.config.Project,
-					Table:   originalTable,
+					Table:   targetTableName,
 				})
 		}
 	}()
 	dataset := bq.client.Dataset(bq.config.Dataset)
-	copier := dataset.Table(originalTable).CopierFrom(dataset.Table(replacementTable))
+	copier := dataset.Table(targetTableName).CopierFrom(dataset.Table(replacementTable.Name))
 	copier.WriteDisposition = bigquery.WriteTruncate
 	copier.CreateDisposition = bigquery.CreateIfNeeded
-	bq.logQuery(fmt.Sprintf("COPY table '%s' to '%s'", replacementTable, originalTable), copier, nil)
+	bq.logQuery(fmt.Sprintf("COPY table '%s' to '%s'", replacementTable.Name, targetTableName), copier, nil)
 
 	job, err := copier.Run(ctx)
 	if err != nil {
@@ -577,7 +577,7 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, originalTable, replacement
 		return err
 	}
 	if dropOldTable {
-		return bq.DropTable(ctx, replacementTable, false)
+		return bq.DropTable(ctx, replacementTable.Name, false)
 	} else {
 		return nil
 	}

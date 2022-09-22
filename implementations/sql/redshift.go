@@ -220,10 +220,10 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 	return p.copy(ctx, targetTable, sourceTable)
 }
 
-func (p *Redshift) ReplaceTable(ctx context.Context, originalTable, replacementTable string, dropOldTable bool) (err error) {
-	tmpTable := "deprecated_" + originalTable + timestamp.Now().Format("_20060102_150405")
-	err1 := p.renameTable(ctx, true, originalTable, tmpTable)
-	err = p.renameTable(ctx, false, replacementTable, originalTable)
+func (p *Redshift) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
+	tmpTable := "deprecated_" + targetTableName + timestamp.Now().Format("_20060102_150405")
+	err1 := p.renameTable(ctx, true, targetTableName, tmpTable)
+	err = p.renameTable(ctx, false, replacementTable.Name, targetTableName)
 	if dropOldTable && err1 == nil && err == nil {
 		return p.DropTable(ctx, tmpTable, true)
 	}
