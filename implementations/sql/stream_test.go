@@ -25,9 +25,9 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 const forceLeaveResultingTables = false
 
 var allBulkerTypes = []string{ClickHouseBulkerTypeId, PostgresBulkerTypeId, RedshiftBulkerTypeId, SnowflakeBulkerTypeId, BigqueryBulkerTypeId, MySQLBulkerTypeId}
-
-// var allBulkerTypes = []string{ClickHouseBulkerTypeId}
 var exceptBigquery = utils.ArrayExcluding(allBulkerTypes, BigqueryBulkerTypeId)
+
+//var allBulkerTypes = []string{MySQLBulkerTypeId}
 
 var configRegistry = map[string]any{
 	"bigquery":  os.Getenv("BULKER_TEST_BIGQUERY"),
@@ -176,7 +176,7 @@ func TestStreams(t *testing.T) {
 			expectedErrors: map[string]any{
 				"stream_complete_postgres":   "cause: pq: 22P02 invalid input syntax for type bigint: \"a\"",
 				"stream_complete_redshift":   "failed.  Check 'stl_load_errors' system table for details.",
-				"consume_object_1_mysql":     "cause: Error 1366: Incorrect integer value: 'a' for column 'int1' at row 1",
+				"stream_complete_mysql":      "cause: Error 1366: Incorrect integer value: 'a' for column 'int1' at row 1",
 				"stream_complete_snowflake":  "cause: 100038 (22018): Numeric value 'a' is not recognized",
 				"stream_complete_clickhouse": "cause: error converting string to int",
 				"stream_complete_bigquery":   "Could not parse 'a' as INT64 for field int1",

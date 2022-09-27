@@ -20,10 +20,8 @@ import (
 	"time"
 )
 
-// TODO: Require PK. Set sorting keys and and sharding jey of distributed table based on provieded columns
-
 // TODO: second test for http
-// TODO: option Optimize table on Complete
+// TODO: option Optimize table on Complete ?
 // TODO: add flag &mutations_sync=2
 func init() {
 	bulker.RegisterBulker(ClickHouseBulkerTypeId, NewClickHouse)
@@ -400,21 +398,38 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 }
 
 func (ch *ClickHouse) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+	table, err := ch.GetTableSchema(ctx, tableName)
+	if err != nil {
+		return nil, err
+	}
 	if ch.config.Cluster != "" {
 		tableName = ch.fullDistTableName(tableName)
 	} else {
 		tableName = ch.fullTableName(tableName)
 	}
-	return ch.selectFrom(ctx, chSelectFinalStatement, tableName, "*", whenConditions, orderBy)
+	if len(table.PKFields) > 0 {
+		return ch.selectFrom(ctx, chSelectFinalStatement, tableName, "*", whenConditions, orderBy)
+	} else {
+		return ch.selectFrom(ctx, selectQueryTemplate, tableName, "*", whenConditions, orderBy)
+	}
 }
 
 func (ch *ClickHouse) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
+	table, err := ch.GetTableSchema(ctx, tableName)
+	if err != nil {
+		return -1, err
+	}
 	if ch.config.Cluster != "" {
 		tableName = ch.fullDistTableName(tableName)
 	} else {
 		tableName = ch.fullTableName(tableName)
 	}
-	res, err := ch.selectFrom(ctx, chSelectFinalStatement, tableName, "count(*) as jitsu_count", whenConditions, "")
+	var res []map[string]any
+	if len(table.PKFields) > 0 {
+		res, err = ch.selectFrom(ctx, chSelectFinalStatement, tableName, "count(*) as jitsu_count", whenConditions, "")
+	} else {
+		res, err = ch.selectFrom(ctx, selectQueryTemplate, tableName, "count(*) as jitsu_count", whenConditions, "")
+	}
 	if err != nil {
 		return -1, err
 	}
@@ -949,9 +964,7 @@ func (tsf TableStatementFactory) CreateTableStatement(tableName, columnsClause s
 		orderByClause = "ORDER BY (" + strings.Join(pkFields.ToSlice(), ", ") + ")"
 	} else {
 		orderByClause = "ORDER BY tuple()"
-		//workaround. ReplacingMergeTree collapses all rows into one on INSERT INTO from SELECT if sorting key is tuple()
-		//TODO: fill a bug report
-		baseEngine = "AggregatingMergeTree"
+		baseEngine = "MergeTree"
 	}
 	if len(pkFields) > 0 {
 		primaryKeyClause = "PRIMARY KEY (" + strings.Join(pkFields.ToSlice(), ", ") + ")"

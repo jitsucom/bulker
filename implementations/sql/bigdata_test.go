@@ -27,7 +27,7 @@ func TestMillionRows(t *testing.T) {
 				SuccessfulRows: 1_000_000,
 			},
 			expectedRowsCount: 1_000_000,
-			bulkerTypes:       []string{"bigquery"},
+			bulkerTypes:       allBulkerTypes,
 		},
 	}
 	for _, tt := range tests {
@@ -45,7 +45,7 @@ func TestMillionRowsBatched(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional},
 			batchSize:         10_000,
 			expectedRowsCount: 1_000_000,
-			bulkerTypes:       []string{ClickHouseBulkerTypeId},
+			bulkerTypes:       allBulkerTypes,
 			streamOptions:     []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 		},
 	}

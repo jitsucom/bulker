@@ -1,8 +1,11 @@
 package sql
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
@@ -63,6 +66,7 @@ var (
 // MySQL is adapter for creating, patching (schema or table), inserting data to mySQL database
 type MySQL struct {
 	SQLAdapterBase[DataSourceConfig]
+	infileEnabled bool
 }
 
 // NewMySQL returns configured MySQL adapter instance
@@ -85,6 +89,20 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		dataSource.Close()
 		return nil, err
 	}
+	rows, err := dataSource.Query("SHOW GLOBAL VARIABLES LIKE 'local_infile'")
+	infileEnabled := false
+	if err == nil && rows.Next() {
+		varRow, _ := rowToMap(rows)
+		infileEnabled = varRow["value"] == "ON"
+	}
+	if !infileEnabled {
+		_, err = dataSource.Exec(mySQLAllowLocalFile)
+		if err != nil {
+			logging.Warnf("Loading tables from local batch file is disabled. Bulk loading will fallback to insert statements. To enable loading from files add to [mysql] and [mysqld] sections of my.cnf file the following line: local-infile=1")
+		} else {
+			infileEnabled = true
+		}
+	}
 
 	//set default values
 	dataSource.SetConnMaxLifetime(3 * time.Minute)
@@ -97,30 +115,21 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return placeholder
 	}
 	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
-	m := &MySQL{newSQLAdapterBase(MySQLBulkerTypeId, config, dataSource,
-		queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, tableNameFunc, mySQLQuoteColumnName, mySQLColumnDDL, mySQLMapColumnValue, checkErr)}
-	m.batchFileFormat = CSV
+	m := &MySQL{
+		SQLAdapterBase: newSQLAdapterBase(MySQLBulkerTypeId, config, dataSource,
+			queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, tableNameFunc, mySQLQuoteColumnName, mySQLColumnDDL, mySQLMapColumnValue, checkErr),
+		infileEnabled: infileEnabled,
+	}
+	if infileEnabled {
+		m.batchFileFormat = CSV
+	} else {
+		m.batchFileFormat = JSON
+	}
 	return m, nil
 }
 
 func (m *MySQL) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
-	rows, err := m.dataSource.Query("SHOW GLOBAL VARIABLES LIKE 'local_infile'")
-	localFileEnabled := false
-	if err == nil && rows.Next() {
-		varRow, _ := rowToMap(rows)
-		localFileEnabled = varRow["value"] == "ON"
-	}
-	if !localFileEnabled {
-		_, err = m.dataSource.Exec(mySQLAllowLocalFile)
-		if err != nil {
-			logging.Warnf("[%s] Loading tables from local batch file is disabled. Bulk loading will fallback to insert statements. To enable loading from files add to [mysql] and [mysqld] sections of my.cnf file the following line: local-infile=1", id)
-		} else {
-			localFileEnabled = true
-		}
-	}
-	if localFileEnabled {
-		streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s_stream_%s_%s", mode, tableName, utils.SanitizeString(id))))
-	}
+	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s_stream_%s_%s", mode, tableName, utils.SanitizeString(id))))
 	if err := m.validateOptions(streamOptions); err != nil {
 		return nil, err
 	}
@@ -190,27 +199,97 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		return fmt.Errorf("LoadTable: only local file is supported")
 	}
 	if loadSource.Format != m.batchFileFormat {
-		return fmt.Errorf("LoadTable: only %s format is supported", m.batchFileFormat)
+		mode := "LOCAL INFILE"
+		if !m.infileEnabled {
+			mode = "prepared statement"
+		}
+		return fmt.Errorf("LoadTable: only %s format is supported in %s mode", m.batchFileFormat, mode)
 	}
-	mysql.RegisterLocalFile(loadSource.Path)
-	defer mysql.DeregisterLocalFile(loadSource.Path)
+	if m.infileEnabled {
+		mysql.RegisterLocalFile(loadSource.Path)
+		defer mysql.DeregisterLocalFile(loadSource.Path)
 
-	columns := targetTable.SortedColumnNames()
-	header := make([]string, len(columns))
-	for i, name := range columns {
-		header[i] = m.columnName(name)
-	}
-	loadStatement := fmt.Sprintf(mySQLLoadTemplate, loadSource.Path, m.fullTableName(targetTable.Name), strings.Join(header, ", "))
-	if _, err := m.txOrDb(ctx).ExecContext(ctx, loadStatement); err != nil {
-		return errorj.CopyError.Wrap(err, "failed to copy data from stage").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Database:  m.config.Db,
-				Table:     targetTable.Name,
-				Statement: loadStatement,
-			})
-	}
+		columns := targetTable.SortedColumnNames()
+		header := make([]string, len(columns))
+		for i, name := range columns {
+			header[i] = m.columnName(name)
+		}
+		loadStatement := fmt.Sprintf(mySQLLoadTemplate, loadSource.Path, m.fullTableName(targetTable.Name), strings.Join(header, ", "))
+		if _, err := m.txOrDb(ctx).ExecContext(ctx, loadStatement); err != nil {
+			return errorj.LoadError.Wrap(err, "failed to load data from local file system").
+				WithProperty(errorj.DBInfo, &types.ErrorPayload{
+					Database:  m.config.Db,
+					Table:     targetTable.Name,
+					Statement: loadStatement,
+				})
+		}
+		return nil
+	} else {
+		columns := targetTable.SortedColumnNames()
+		columnNames := make([]string, len(columns))
+		placeholders := make([]string, len(columns))
+		for i, name := range columns {
+			columnNames[i] = m.columnName(name)
+			placeholders[i] = m.typecastFunc(m.parameterPlaceholder(i+1, name), targetTable.Columns[name])
+		}
+		insertPayload := QueryPayload{
+			TableName:      m.fullTableName(targetTable.Name),
+			Columns:        strings.Join(columnNames, ", "),
+			Placeholders:   strings.Join(placeholders, ", "),
+			PrimaryKeyName: targetTable.PrimaryKeyName,
+		}
+		buf := strings.Builder{}
+		err := insertQueryTemplate.Execute(&buf, insertPayload)
+		if err != nil {
+			return errorj.ExecuteInsertError.Wrap(err, "failed to build query from template")
+		}
+		statement := buf.String()
+		defer func() {
+			if err != nil {
+				err = errorj.LoadError.Wrap(err, "failed to load table").
+					WithProperty(errorj.DBInfo, &types.ErrorPayload{
+						Schema:    m.config.Schema,
+						Table:     targetTable.Name,
+						Statement: statement,
+					})
+			}
+		}()
 
-	return nil
+		stmt, err := m.txOrDb(ctx).PrepareContext(ctx, statement)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_ = stmt.Close()
+		}()
+		//f, err := os.ReadFile(loadSource.Path)
+		//logging.Infof("FILE: %s", f)
+
+		file, err := os.Open(loadSource.Path)
+		if err != nil {
+			return err
+		}
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			object := map[string]any{}
+			decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+			decoder.UseNumber()
+			err = decoder.Decode(&object)
+			if err != nil {
+				return err
+			}
+			args := make([]any, len(columns))
+			for i, v := range columns {
+				l := types.ReformatValue(object[v])
+				args[i] = l
+			}
+			if _, err := stmt.ExecContext(ctx, args...); err != nil {
+				return checkErr(err)
+			}
+		}
+
+		return nil
+	}
 }
 
 // GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
