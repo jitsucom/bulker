@@ -26,7 +26,7 @@ A key where Bulker should read configuration. The key should contain redis hashs
 
 Comma-separated a list of auth tokens. Token can have either of those formats:
 
-* `${token}` un-encripted token value (toke can't contain `.` or white space)
+* `${token}` un-encripted token value (token can't contain `.` or white space)
 * `${salt}.${base64(sha512(token + salt + (process.env.BULKER_TOKEN_SECRET || ''))}` hashed token. `${salt}` should be random string
   * Example of hashing: `21a2ae36-32994870a9fbf2f61ea6f6c8`→ `bt6ghq4tpqr.WMMKlCNvcwpCkHFwFDLDaTGTuBT37yTioDFsMXRAXrY` (without `BULKER_TOKEN_SECRET` )
   * `BULKER_TOKEN_SECRET` can be a comma-separated list of secret. In this case hash should be checked against each secret.
