@@ -16,14 +16,21 @@ See `BULKER_HTTP_PORT`, `BULKER_CONFIG_*` and `AUTH_TOKENS` in [./http.md](HTTP 
 Queue specific parameters are:
 
 * `BULKER_QUEUE_MODE` should be either `producer`, `consumer`, `producer-consumer` or `none`. If not set, the value is infered from presense of `BULKER_BROKER`
+<<<<<<< HEAD
   variable; if the var is defined, `BULKER_QUEUE_MODE` should default to `producer-consumer`. Otherwise it should be `none`
 * `BULKER_BROKER` should be an URL of message broker. So far we intend to support Kafka and Kafka-compatible platforms (such as Redpanda)
 * `BULKER_KAFKA_*` Kafka specific settings if message broker is Kafka
+=======
+variable; if the var is defined, `BULKER_QUEUE_MODE` should default to `producer-consumer`. Otherwise it should be `none`
+* `BULKER_BROKER` should be an URL of message broker. So far we intend to support Kafka and Kafka-compatible platforms (such as Redpanda)
+* `BULKER_KAFKA_*` Kafka specific commands if message broker is Kafka
+>>>>>>> Create queue.md
 
 ## Destination Batching Configuration
 
 ## HTTP API
 
+<<<<<<< HEAD
 ### `POST /post/{destinationId}?tableName=`
 
 Body is JSON object representing single event. The response is either `{"success": true}` or `{"success": false, "error": ""}`
@@ -32,3 +39,10 @@ Body is JSON object representing single event. The response is either `{"success
 
 Topic name pattern: `incoming.destinationId.{}.mode.{stream|batch}.tableName.{}` (query parametes should be always sorted by name).
 
+=======
+### POST /queue/{destinationId}?batch=true
+
+## Internal Implementation
+
+### InMemory queue facade
+>>>>>>> Create queue.md
