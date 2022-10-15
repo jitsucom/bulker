@@ -12,7 +12,7 @@ The service should be started with a single `./bulker` command and all configura
 
 (or just `PORT` for compatibility); default value `3042`
 
-#### `BULKER_CONFIG`
+#### `BULKER_CONFIG_SOURCE`
 
 Points bulker server to a configuration source. So far it should recognize only URL `redis://` (or `rediss://` for secure connection). The string should be a redis Connection URL
 
