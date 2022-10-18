@@ -23,7 +23,7 @@ func TestReplacePartitionStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 5, "name": "test5", "__partition_id": "1"},
 			},
 			streamOptions: []bulker.StreamOption{WithPartition("1")},
-			bulkerTypes:   allBulkerTypes,
+			configIds:     allBulkerTypes,
 		},
 		{
 			name:                "second_partition",
@@ -49,7 +49,7 @@ func TestReplacePartitionStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 20, "name": "test20", "__partition_id": "2"},
 			},
 			streamOptions: []bulker.StreamOption{WithPartition("2")},
-			bulkerTypes:   allBulkerTypes,
+			configIds:     allBulkerTypes,
 		},
 		{
 			name:                "first_partition_reprocess",
@@ -75,7 +75,7 @@ func TestReplacePartitionStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 20, "name": "test20", "__partition_id": "2"},
 			},
 			streamOptions: []bulker.StreamOption{WithPartition("1")},
-			bulkerTypes:   allBulkerTypes,
+			configIds:     allBulkerTypes,
 		},
 		{
 			name:                "second_partition_empty",
@@ -91,7 +91,7 @@ func TestReplacePartitionStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 10, "name": "test10", "__partition_id": "1"},
 			},
 			streamOptions: []bulker.StreamOption{WithPartition("2")},
-			bulkerTypes:   allBulkerTypes,
+			configIds:     allBulkerTypes,
 		},
 		{
 			name:          "dummy_test_table_cleanup",
@@ -99,7 +99,7 @@ func TestReplacePartitionStream(t *testing.T) {
 			modes:         []bulker.BulkMode{bulker.ReplacePartition},
 			dataFile:      "test_data/empty.ndjson",
 			streamOptions: []bulker.StreamOption{WithPartition("1")},
-			bulkerTypes:   allBulkerTypes,
+			configIds:     allBulkerTypes,
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}

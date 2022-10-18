@@ -105,8 +105,8 @@ func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, str
 	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
 }
 
-func (bq *BigQuery) GetBatchFileFormat() LoadSourceFormat {
-	return CSV
+func (bq *BigQuery) GetBatchFileFormat() implementations.FileFormat {
+	return implementations.CSV
 }
 
 func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
@@ -499,11 +499,11 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	source := bigquery.NewReaderSource(file)
 	source.Schema = meta.Schema
 
-	if loadSource.Format == CSV {
+	if loadSource.Format == implementations.CSV {
 		source.SourceFormat = bigquery.CSV
 		source.SkipLeadingRows = 1
 		source.CSVOptions.NullMarker = "\\N"
-	} else if loadSource.Format == JSON {
+	} else if loadSource.Format == implementations.JSON {
 		source.SourceFormat = bigquery.JSON
 	}
 	loader := bq.client.Dataset(bq.config.Dataset).Table(targetTable.Name).LoaderFrom(source)

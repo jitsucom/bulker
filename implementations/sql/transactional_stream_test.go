@@ -16,7 +16,7 @@ func TestTransactionalSequentialAddColumns(t *testing.T) {
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added.ndjson",
 			expectedRowsCount:   6,
-			bulkerTypes:         allBulkerTypes,
+			configIds:           allBulkerTypes,
 		},
 		{
 			name:                "added_columns_second_run",
@@ -37,14 +37,14 @@ func TestTransactionalSequentialAddColumns(t *testing.T) {
 				{"_timestamp": constantTime, "id": 7, "name": "test", "column1": nil, "column2": nil, "column3": nil, "column4": "data", "column5": nil},
 				{"_timestamp": constantTime, "id": 8, "name": "test2", "column1": nil, "column2": nil, "column3": nil, "column4": nil, "column5": "data"},
 			},
-			bulkerTypes: allBulkerTypes,
+			configIds: allBulkerTypes,
 		},
 		{
-			name:        "dummy_test_table_cleanup",
-			tableName:   "transactional_test",
-			modes:       []bulker.BulkMode{bulker.Transactional},
-			dataFile:    "test_data/empty.ndjson",
-			bulkerTypes: allBulkerTypes,
+			name:      "dummy_test_table_cleanup",
+			tableName: "transactional_test",
+			modes:     []bulker.BulkMode{bulker.Transactional},
+			dataFile:  "test_data/empty.ndjson",
+			configIds: allBulkerTypes,
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}
@@ -73,7 +73,7 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 				{"_timestamp": constantTime, "id": 3, "name": "test6"},
 				{"_timestamp": constantTime, "id": 4, "name": "test5"},
 			},
-			bulkerTypes:    allBulkerTypes,
+			configIds:      allBulkerTypes,
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 		},
@@ -92,7 +92,7 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 			},
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    allBulkerTypes,
+			configIds:      allBulkerTypes,
 		},
 		{
 			name:           "dummy_test_table_cleanup",
@@ -101,7 +101,7 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 			dataFile:       "test_data/empty.ndjson",
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    allBulkerTypes,
+			configIds:      allBulkerTypes,
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}

@@ -23,11 +23,11 @@ import (
 var ErrMalformedBQDataset = errors.New("bq_dataset must be alphanumeric (plus underscores) and must be at most 1024 characters long")
 
 type GoogleConfig struct {
-	Bucket  string             `mapstructure:"gcs_bucket,omitempty" json:"gcs_bucket,omitempty" yaml:"gcs_bucket,omitempty"`
-	Project string             `mapstructure:"bq_project,omitempty" json:"bq_project,omitempty" yaml:"bq_project,omitempty"`
-	Dataset string             `mapstructure:"bq_dataset,omitempty" json:"bq_dataset,omitempty" yaml:"bq_dataset,omitempty"`
-	KeyFile any                `mapstructure:"key_file,omitempty" json:"key_file,omitempty" yaml:"key_file,omitempty"`
-	Format  FileEncodingFormat `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
+	Bucket  string     `mapstructure:"gcs_bucket,omitempty" json:"gcs_bucket,omitempty" yaml:"gcs_bucket,omitempty"`
+	Project string     `mapstructure:"bq_project,omitempty" json:"bq_project,omitempty" yaml:"bq_project,omitempty"`
+	Dataset string     `mapstructure:"bq_dataset,omitempty" json:"bq_dataset,omitempty" yaml:"bq_dataset,omitempty"`
+	KeyFile any        `mapstructure:"key_file,omitempty" json:"key_file,omitempty" yaml:"key_file,omitempty"`
+	Format  FileFormat `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
 
 	//will be set on validation
 	Credentials option.ClientOption
@@ -102,13 +102,13 @@ func NewGoogleCloudStorage(ctx context.Context, config *GoogleConfig) (*GoogleCl
 	}
 
 	if config.Format == "" {
-		config.Format = FileFormatJSON
+		config.Format = JSON
 	}
 
 	return &GoogleCloudStorage{client: client, config: config, ctx: ctx, closed: atomic.NewBool(false)}, nil
 }
 
-func (gcs *GoogleCloudStorage) Format() FileEncodingFormat {
+func (gcs *GoogleCloudStorage) Format() FileFormat {
 	return gcs.config.Format
 }
 

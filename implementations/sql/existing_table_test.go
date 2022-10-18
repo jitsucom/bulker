@@ -15,7 +15,7 @@ func TestExistingTable1(t *testing.T) {
 			dataFile:            "test_data/existing_table_text.ndjson",
 			leaveResultingTable: true,
 			expectedErrors:      map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:         allBulkerTypes,
+			configIds:           allBulkerTypes,
 		},
 		{
 			name:                "existing_table1_add_events",
@@ -30,7 +30,7 @@ func TestExistingTable1(t *testing.T) {
 				{"id": "string_id2"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    allBulkerTypes,
+			configIds:      allBulkerTypes,
 		},
 		{
 			name:           "existing_table1_cleanup",
@@ -38,7 +38,7 @@ func TestExistingTable1(t *testing.T) {
 			modes:          []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
 			dataFile:       "test_data/empty.ndjson",
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    allBulkerTypes,
+			configIds:      allBulkerTypes,
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}
@@ -62,7 +62,7 @@ func TestExistingTable2(t *testing.T) {
 			dataFile:            "test_data/existing_table_num.ndjson",
 			leaveResultingTable: true,
 			expectedErrors:      map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:         allBulkerTypes,
+			configIds:           allBulkerTypes,
 		},
 		{
 			name:                "existing_table2_add_events",
@@ -84,7 +84,7 @@ func TestExistingTable2(t *testing.T) {
 				"create_stream_bigquery_autocommit":        BigQueryAutocommitUnsupported,
 				"stream_complete_bigquery_transactional":   "Could not parse 'string_id' as INT64 for field id",
 			},
-			bulkerTypes: allBulkerTypes,
+			configIds: allBulkerTypes,
 		},
 		{
 			name:           "existing_table2_cleanup",
@@ -92,7 +92,7 @@ func TestExistingTable2(t *testing.T) {
 			modes:          []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
 			dataFile:       "test_data/empty.ndjson",
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    allBulkerTypes,
+			configIds:      allBulkerTypes,
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}

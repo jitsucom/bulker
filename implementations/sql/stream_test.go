@@ -29,10 +29,18 @@ var exceptBigquery = utils.ArrayExcluding(allBulkerTypes, BigqueryBulkerTypeId)
 
 //var allBulkerTypes = []string{MySQLBulkerTypeId}
 
+type TestConfig struct {
+	//type of bulker destination
+	BulkerType string
+	//Config     destination config
+	Config any
+}
+
 var configRegistry = map[string]any{
-	"bigquery":  os.Getenv("BULKER_TEST_BIGQUERY"),
-	"redshift":  os.Getenv("BULKER_TEST_REDSHIFT"),
-	"snowflake": os.Getenv("BULKER_TEST_SNOWFLAKE"),
+	"bigquery":            TestConfig{BulkerType: BigqueryBulkerTypeId, Config: os.Getenv("BULKER_TEST_BIGQUERY")},
+	"redshift":            TestConfig{BulkerType: RedshiftBulkerTypeId, Config: os.Getenv("BULKER_TEST_REDSHIFT")},
+	"redshift_serverless": TestConfig{BulkerType: RedshiftBulkerTypeId, Config: os.Getenv("BULKER_TEST_REDSHIFT_SERVERLESS")},
+	"snowflake":           TestConfig{BulkerType: SnowflakeBulkerTypeId, Config: os.Getenv("BULKER_TEST_SNOWFLAKE")},
 }
 
 type ExpectedTable struct {
@@ -45,7 +53,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	configRegistry[PostgresBulkerTypeId] = DataSourceConfig{
+	configRegistry[PostgresBulkerTypeId] = TestConfig{BulkerType: PostgresBulkerTypeId, Config: DataSourceConfig{
 		Host:       postgresContainer.Host,
 		Port:       postgresContainer.Port,
 		Username:   postgresContainer.Username,
@@ -53,28 +61,28 @@ func init() {
 		Db:         postgresContainer.Database,
 		Schema:     postgresContainer.Schema,
 		Parameters: map[string]string{"sslmode": "disable"},
-	}
+	}}
 	mysqlContainer, err := testcontainers.NewMySQLContainer(context.Background())
 	if err != nil {
 		panic(err)
 	}
-	configRegistry[MySQLBulkerTypeId] = DataSourceConfig{
+	configRegistry[MySQLBulkerTypeId] = TestConfig{BulkerType: MySQLBulkerTypeId, Config: DataSourceConfig{
 		Host:       mysqlContainer.Host,
 		Port:       mysqlContainer.Port,
 		Username:   mysqlContainer.Username,
 		Password:   mysqlContainer.Password,
 		Db:         mysqlContainer.Database,
 		Parameters: map[string]string{"tls": "false", "parseTime": "true"},
-	}
+	}}
 	clickhouseContainer, err := clickhouse.NewClickhouseClusterContainer(context.Background())
 	if err != nil {
 		panic(err)
 	}
-	configRegistry[ClickHouseBulkerTypeId] = ClickHouseConfig{
+	configRegistry[ClickHouseBulkerTypeId] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
 		Dsns:     clickhouseContainer.Dsns,
 		Database: clickhouseContainer.Database,
 		Cluster:  clickhouseContainer.Cluster,
-	}
+	}}
 }
 
 type bulkerTestConfig struct {
@@ -84,8 +92,8 @@ type bulkerTestConfig struct {
 	tableName string
 	//bulker config
 	config *bulker.Config
-	//for which bulker types (destination types) to run test
-	bulkerTypes []string
+	//for which bulker predefined configurations to run test
+	configIds []string
 	//continue test run even after Consume() returned error
 	ignoreConsumeErrors bool
 	//expected state of stream Complete() call
@@ -136,7 +144,7 @@ func TestStreams(t *testing.T) {
 				{"_timestamp": constantTime, "id": 6, "name": "test4", "column1": "data", "column2": "data", "column3": "data"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    allBulkerTypes,
+			configIds:      allBulkerTypes,
 		},
 		{
 			name:              "types",
@@ -151,7 +159,7 @@ func TestStreams(t *testing.T) {
 				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    allBulkerTypes,
+			configIds:      allBulkerTypes,
 		},
 		{
 			name:              "types_collision_autocommit",
@@ -166,7 +174,7 @@ func TestStreams(t *testing.T) {
 				"consume_object_1_clickhouse":       "cause: error converting string to int",
 				"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported,
 			},
-			bulkerTypes: allBulkerTypes,
+			configIds: allBulkerTypes,
 		},
 		{
 			name:              "types_collision_other",
@@ -181,7 +189,7 @@ func TestStreams(t *testing.T) {
 				"stream_complete_clickhouse": "cause: error converting string to int",
 				"stream_complete_bigquery":   "Could not parse 'a' as INT64 for field int1",
 			},
-			bulkerTypes: allBulkerTypes,
+			configIds: allBulkerTypes,
 		},
 		{
 			name:              "repeated_ids_no_pk",
@@ -205,7 +213,7 @@ func TestStreams(t *testing.T) {
 			leaveResultingTable: true,
 			orderBy:             "id asc, name asc",
 			expectedErrors:      map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:         allBulkerTypes,
+			configIds:           allBulkerTypes,
 		},
 		{
 			name:              "repeated_ids_pk",
@@ -228,7 +236,7 @@ func TestStreams(t *testing.T) {
 				{"_timestamp": constantTime, "id": 4, "name": "test5"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    allBulkerTypes,
+			configIds:      allBulkerTypes,
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 		},
 	}
@@ -247,11 +255,16 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 			})
 		}
 	} else {
-		for _, bulkerType := range tt.bulkerTypes {
+		for _, testConfigId := range tt.configIds {
 			newTd := tt
-			newTd.config = &bulker.Config{Id: bulkerType, BulkerType: bulkerType, DestinationConfig: configRegistry[bulkerType]}
+			testConfigRaw, ok := configRegistry[testConfigId]
+			if !ok {
+				t.Fatalf("No config found for %s", testConfigId)
+			}
+			testConfig := testConfigRaw.(TestConfig)
+			newTd.config = &bulker.Config{Id: testConfigId, BulkerType: testConfig.BulkerType, DestinationConfig: testConfig.Config}
 			for _, mode := range newTd.modes {
-				t.Run(string(mode)+"_"+bulkerType+"_"+newTd.name, func(t *testing.T) {
+				t.Run(string(mode)+"_"+testConfigId+"_"+newTd.name, func(t *testing.T) {
 					testFunc(t, newTd, mode)
 				})
 			}

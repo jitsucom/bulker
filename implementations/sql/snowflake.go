@@ -11,6 +11,7 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
+	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	"os"
 	"path"
@@ -137,7 +138,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	s := &Snowflake{newSQLAdapterBase(SnowflakeBulkerTypeId, config, dataSource,
 		queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, tableNameFunc, reformatIdentifier, sfColumnDDL, unmappedValue, checkErr)}
-	s.batchFileFormat = CSV
+	s.batchFileFormat = implementations.CSV
 	return s, nil
 }
 func (s *Snowflake) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {

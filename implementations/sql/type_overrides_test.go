@@ -29,7 +29,7 @@ func TestTypeOverride(t *testing.T) {
 				With("boolstring", "boolean").
 				With("date1", "date").
 				With("intstring", "bigint"))},
-			bulkerTypes: utils.ArrayIntersection(allBulkerTypes, []string{PostgresBulkerTypeId}),
+			configIds: utils.ArrayIntersection(allBulkerTypes, []string{PostgresBulkerTypeId}),
 		},
 		{
 			name:              "types_override_redshift",
@@ -49,7 +49,7 @@ func TestTypeOverride(t *testing.T) {
 				With("boolstring", "boolean").
 				With("date1", "date").
 				With("intstring", "bigint"))},
-			bulkerTypes: utils.ArrayIntersection(allBulkerTypes, []string{RedshiftBulkerTypeId}),
+			configIds: utils.ArrayIntersection(allBulkerTypes, []string{RedshiftBulkerTypeId}),
 		},
 		{
 			name:              "types_override_bigquery",
@@ -70,7 +70,7 @@ func TestTypeOverride(t *testing.T) {
 				With("date1", "DATE").
 				With("intstring", "INTEGER"))},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			bulkerTypes:    utils.ArrayIntersection(allBulkerTypes, []string{BigqueryBulkerTypeId}),
+			configIds:      utils.ArrayIntersection(allBulkerTypes, []string{BigqueryBulkerTypeId}),
 		},
 		{
 			name:              "types_override_snowflake",
@@ -90,7 +90,7 @@ func TestTypeOverride(t *testing.T) {
 				With("boolstring", "boolean").
 				With("date1", "date").
 				With("intstring", "bigint"))},
-			bulkerTypes: utils.ArrayIntersection(allBulkerTypes, []string{SnowflakeBulkerTypeId}),
+			configIds: utils.ArrayIntersection(allBulkerTypes, []string{SnowflakeBulkerTypeId}),
 		},
 		{
 			name:              "types_override_mysql",
@@ -110,7 +110,7 @@ func TestTypeOverride(t *testing.T) {
 				//With("boolstring", "boolean"). //mysql doesnt cast 'true','false' string to boolean
 				With("date1", "date").
 				With("intstring", "BIGINT"))},
-			bulkerTypes: utils.ArrayIntersection(allBulkerTypes, []string{MySQLBulkerTypeId}),
+			configIds: utils.ArrayIntersection(allBulkerTypes, []string{MySQLBulkerTypeId}),
 		},
 		{
 			name:              "types_override_clickhouse",
@@ -130,7 +130,7 @@ func TestTypeOverride(t *testing.T) {
 				With("boolstring", "bool").
 				With("date1", "Date").
 				With("intstring", "Int64"))},
-			bulkerTypes: utils.ArrayIntersection(allBulkerTypes, []string{ClickHouseBulkerTypeId}),
+			configIds: utils.ArrayIntersection(allBulkerTypes, []string{ClickHouseBulkerTypeId}),
 		},
 	}
 	for _, tt := range tests {

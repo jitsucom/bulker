@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
+	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	"strconv"
 	"strings"
@@ -15,7 +16,7 @@ import (
 )
 
 const (
-	createTableTemplate     = `CREATE TABLE %s (%s)`
+	createTableTemplate     = `CREATE %s TABLE %s (%s)`
 	addColumnTemplate       = `ALTER TABLE %s ADD COLUMN %s`
 	dropPrimaryKeyTemplate  = `ALTER TABLE %s DROP CONSTRAINT %s`
 	alterPrimaryKeyTemplate = `ALTER TABLE %s ADD CONSTRAINT %s PRIMARY KEY (%s)`
@@ -67,7 +68,8 @@ type SQLAdapterBase[T any] struct {
 	dataSource      *sql.DB
 	dbWrapper       TxOrDB
 	queryLogger     *logging.QueryLogger
-	batchFileFormat LoadSourceFormat
+	batchFileFormat implementations.FileFormat
+	temporaryTables bool
 
 	parameterPlaceholder ParameterPlaceholder
 	typecastFunc         TypeCastFunction
@@ -93,7 +95,7 @@ func newSQLAdapterBase[T any](typeId string, config *T, dataSource *sql.DB, quer
 		valueMappingFunction: valueMappingFunction,
 		checkErrFunc:         checkErrFunc,
 	}
-	s.batchFileFormat = JSON
+	s.batchFileFormat = implementations.JSON
 	s.dbWrapper = NewDbWrapper(typeId, dataSource, queryLogger, checkErrFunc)
 	return s
 }
@@ -103,7 +105,7 @@ func (b *SQLAdapterBase[T]) Type() string {
 	return b.typeId
 }
 
-func (b *SQLAdapterBase[T]) GetBatchFileFormat() LoadSourceFormat {
+func (b *SQLAdapterBase[T]) GetBatchFileFormat() implementations.FileFormat {
 	return b.batchFileFormat
 }
 
@@ -424,8 +426,12 @@ func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Tab
 		column := schemaToCreate.Columns[columnName]
 		columnsDDL[i] = b.columnDDL(columnName, column, pkFields)
 	}
+	temporary := ""
+	if b.temporaryTables && schemaToCreate.Temporary {
+		temporary = "TEMPORARY"
+	}
 
-	query := fmt.Sprintf(createTableTemplate, b.fullTableName(schemaToCreate.Name), strings.Join(columnsDDL, ", "))
+	query := fmt.Sprintf(createTableTemplate, temporary, b.fullTableName(schemaToCreate.Name), strings.Join(columnsDDL, ", "))
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		return errorj.CreateTableError.Wrap(err, "failed to create table").

@@ -14,6 +14,7 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
+	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	"os"
 	"strings"
@@ -121,9 +122,9 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		infileEnabled: infileEnabled,
 	}
 	if infileEnabled {
-		m.batchFileFormat = CSV
+		m.batchFileFormat = implementations.CSV
 	} else {
-		m.batchFileFormat = JSON
+		m.batchFileFormat = implementations.JSON
 	}
 	return m, nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
+	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	"os"
 	"strconv"
@@ -196,7 +197,7 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	sqlAdapterBase := newSQLAdapterBase(ClickHouseBulkerTypeId, config, dataSource,
 		queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, tableNameFunc,
 		originalColumnName, columnDDlFunc, chReformatValue, checkErr)
-	sqlAdapterBase.batchFileFormat = JSON
+	sqlAdapterBase.batchFileFormat = implementations.JSON
 	c := &ClickHouse{
 		SQLAdapterBase:        sqlAdapterBase,
 		tableStatementFactory: tableStatementFactory,
@@ -263,7 +264,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 			columnsDDL[i] = ch.columnDDL(columnName, column, nil)
 		}
 
-		query := fmt.Sprintf(createTableTemplate+" ENGINE = Memory", ch.fullTableName(table.Name), strings.Join(columnsDDL, ", "))
+		query := fmt.Sprintf(createTableTemplate+" ENGINE = Memory", "", ch.fullTableName(table.Name), strings.Join(columnsDDL, ", "))
 
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 			return errorj.CreateTableError.Wrap(err, "failed to create table").

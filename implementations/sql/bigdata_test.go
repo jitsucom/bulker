@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const eventsCount = 1_000_000
+
 func TestMillionRows(t *testing.T) {
 	t.Skip("This test is too slow")
 	tests := []bulkerTestConfig{
@@ -23,39 +25,40 @@ func TestMillionRows(t *testing.T) {
 			},
 			expectedState: &bulker.State{
 				Status:         bulker.Completed,
-				ProcessedRows:  1_000_000,
-				SuccessfulRows: 1_000_000,
+				ProcessedRows:  eventsCount,
+				SuccessfulRows: eventsCount,
 			},
-			expectedRowsCount: 1_000_000,
-			bulkerTypes:       allBulkerTypes,
+			expectedRowsCount: eventsCount,
+			configIds:         allBulkerTypes,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runTestConfig(t, tt, testOneMillion)
+			runTestConfig(t, tt, testLotOfEvents)
 		})
 	}
 }
 
 func TestMillionRowsBatched(t *testing.T) {
-	t.Skip("This test is too slow")
+	//t.Skip("This test is too slow")
 	tests := []bulkerTestConfig{
 		{
-			name:              "one_million_rows_batched",
-			modes:             []bulker.BulkMode{bulker.Transactional},
-			batchSize:         10_000,
-			expectedRowsCount: 1_000_000,
-			bulkerTypes:       allBulkerTypes,
-			streamOptions:     []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
+			name:                "one_million_rows_batched",
+			modes:               []bulker.BulkMode{bulker.Transactional},
+			batchSize:           100_000,
+			expectedRowsCount:   eventsCount,
+			leaveResultingTable: false,
+			configIds:           []string{"redshift_serverless"},
+			streamOptions:       []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runTestConfig(t, tt, testOneMillion)
+			runTestConfig(t, tt, testLotOfEvents)
 		})
 	}
 }
-func testOneMillion(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode) {
+func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode) {
 	reqr := require.New(t)
 	blk, err := bulker.CreateBulker(*testConfig.config)
 	CheckError("create_bulker", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
@@ -97,8 +100,9 @@ func testOneMillion(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkM
 	}()
 
 	startTime := timestamp.Now()
-	for i := 0; i < 1_000_000; i++ {
-		if i > 0 && i%10000 == 0 {
+	i := 0
+	for ; i < eventsCount; i++ {
+		if i > 0 && i%testConfig.batchSize == 0 {
 			_, err := stream.Complete(ctx)
 			CheckError("stream_complete", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 			logging.Infof("%d. batch is completed in %s", i, time.Since(startTime))
@@ -123,6 +127,7 @@ func testOneMillion(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkM
 	state, err := stream.Complete(ctx)
 	sqlAdapter = blk.(SQLAdapter)
 	CheckError("stream_complete", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	logging.Infof("%d. batch is completed in %s", i, time.Since(startTime))
 
 	if testConfig.expectedState != nil {
 		reqr.Equal(*testConfig.expectedState, state)

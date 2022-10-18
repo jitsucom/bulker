@@ -17,7 +17,7 @@ func TestAutocommitStream(t *testing.T) {
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added.ndjson",
 			expectedRowsCount:   6,
-			bulkerTypes:         exceptBigquery,
+			configIds:           exceptBigquery,
 		},
 		{
 			name:                "added_columns_second_run",
@@ -38,14 +38,14 @@ func TestAutocommitStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 7, "name": "test", "column1": nil, "column2": nil, "column3": nil, "column4": "data", "column5": nil},
 				{"_timestamp": constantTime, "id": 8, "name": "test2", "column1": nil, "column2": nil, "column3": nil, "column4": nil, "column5": "data"},
 			},
-			bulkerTypes: exceptBigquery,
+			configIds: exceptBigquery,
 		},
 		{
-			name:        "dummy_test_table_cleanup",
-			tableName:   "autocommit_test",
-			modes:       []bulker.BulkMode{bulker.AutoCommit},
-			dataFile:    "test_data/empty.ndjson",
-			bulkerTypes: exceptBigquery,
+			name:      "dummy_test_table_cleanup",
+			tableName: "autocommit_test",
+			modes:     []bulker.BulkMode{bulker.AutoCommit},
+			dataFile:  "test_data/empty.ndjson",
+			configIds: exceptBigquery,
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}

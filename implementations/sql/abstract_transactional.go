@@ -56,7 +56,7 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 	s3 := s3BatchFileOption.Get(&ps.options)
 	if s3 != nil {
 		s3Config := implementations.S3Config{AccessKeyID: s3.AccessKeyID, SecretKey: s3.SecretKey, Bucket: s3.Bucket, Region: s3.Region,
-			FileConfig: implementations.FileConfig{Format: implementations.FileFormatCSV}}
+			FileConfig: implementations.FileConfig{Format: ps.sqlAdapter.GetBatchFileFormat()}}
 		ps.s3, err = implementations.NewS3(&s3Config)
 		if err != nil {
 			return fmt.Errorf("failed to setup s3 client: %w", err)
@@ -68,11 +68,14 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		if err != nil {
 			return err
 		}
-		ps.marshaller = types.JSONMarshallerInstance
-		if ps.sqlAdapter.GetBatchFileFormat() == CSV {
-			ps.targetMarshaller = types.CSVMarshallerInstance
-		} else {
-			ps.targetMarshaller = types.JSONMarshallerInstance
+		ps.marshaller = &types.JSONMarshaller{}
+		switch ps.sqlAdapter.GetBatchFileFormat() {
+		case implementations.CSV:
+			ps.targetMarshaller = &types.CSVMarshaller{}
+		case implementations.CSV_GZIP:
+			ps.targetMarshaller = &types.CSVMarshaller{Gzip: true}
+		default:
+			ps.targetMarshaller = &types.JSONMarshaller{}
 		}
 	}
 	if ps.tx == nil {
@@ -131,11 +134,12 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (e
 		_ = os.Remove(ps.batchFile.Name())
 	}()
 	if ps.eventsInBatch > 0 {
+		ps.marshaller.Flush()
 		ps.batchFile.Sync()
 		workingFile := ps.batchFile
 		needToConvert := false
 		convertStart := time.Now()
-		if ps.targetMarshaller != ps.marshaller {
+		if ps.targetMarshaller.Format() != ps.marshaller.Format() {
 			needToConvert = true
 		}
 		if len(ps.batchFileSkipLines) > 0 || needToConvert {
@@ -148,7 +152,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (e
 				_ = os.Remove(workingFile.Name())
 			}()
 			if needToConvert {
-				err = ps.targetMarshaller.WriteHeader(columns, workingFile)
+				err = ps.targetMarshaller.Init(workingFile, columns)
 				if err != nil {
 					return errorj.Decorate(err, "failed to write header for converted batch file")
 				}
@@ -169,7 +173,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (e
 						if err != nil {
 							return errorj.Decorate(err, "failed to decode json object from batch filer")
 						}
-						ps.targetMarshaller.Marshal(columns, workingFile, obj)
+						ps.targetMarshaller.Marshal(obj)
 					} else {
 						_, err = workingFile.Write(scanner.Bytes())
 						if err != nil {
@@ -180,6 +184,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (e
 				}
 				i++
 			}
+			ps.targetMarshaller.Flush()
 			workingFile.Sync()
 		}
 		if needToConvert {
@@ -258,6 +263,7 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 	} else {
 		ps.tmpTable.Columns = utils.MapPutAll(targetTable.Columns, ps.tmpTable.Columns)
 	}
+	ps.marshaller.Init(ps.batchFile, targetTable.SortedColumnNames())
 	for _, obj := range processedObjects {
 		if ps.merge {
 			pk, err := ps.getPKValue(obj)
@@ -274,7 +280,7 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 			}
 			ps.batchFileLinesByPK[pk] = lineNumber
 		}
-		err := ps.marshaller.Marshal(targetTable.SortedColumnNames(), ps.batchFile, obj)
+		err := ps.marshaller.Marshal(obj)
 		if err != nil {
 			return errorj.Decorate(err, "failed to marshall into csv file")
 		}

@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
+	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	_ "github.com/lib/pq"
 	"strings"
@@ -26,6 +27,7 @@ const (
     				SECRET_ACCESS_KEY '%s'
     				region '%s'
     				csv
+					gzip
 					IGNOREHEADER 1
                     dateformat 'auto'
                     timeformat 'auto'`
@@ -83,7 +85,9 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 
 	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: config.S3OptionConfig}
-	r.batchFileFormat = CSV
+	r.batchFileFormat = implementations.CSV_GZIP
+	//r.temporaryTables = true
+	r._columnDDLFunc = redshiftColumnDDL
 	return r, nil
 }
 
@@ -318,4 +322,21 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 	}
 
 	return primaryKeyName, primaryKeys, nil
+}
+
+// redshiftColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
+func redshiftColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
+	var columnConstaints string
+	var columnAttributes string
+
+	sqlType := column.GetDDLType()
+
+	if _, ok := pkFields[name]; ok {
+		columnConstaints = " not null " + getDefaultValueStatement(sqlType)
+		if len(pkFields) == 1 {
+			//columnAttributes = " DISTKEY "
+		}
+	}
+
+	return fmt.Sprintf(`"%s" %s%s%s`, name, sqlType, columnAttributes, columnConstaints)
 }

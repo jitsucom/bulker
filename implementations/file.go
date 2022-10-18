@@ -4,17 +4,12 @@ import (
 	"io"
 )
 
-type (
-	FileEncodingFormat string
-	FileCompression    string
-)
+type FileFormat string
 
 const (
-	FileFormatFlatJSON  FileEncodingFormat = "flat_json" //flattened json objects with \n delimiter
-	FileFormatJSON      FileEncodingFormat = "json"      //file with json objects with \n delimiter (not flattened)
-	FileFormatCSV       FileEncodingFormat = "csv"       //flattened csv objects with \n delimiter
-	FileFormatParquet   FileEncodingFormat = "parquet"   //flattened objects which are marshalled in apache parquet file
-	FileCompressionGZIP FileCompression    = "gzip"      //gzip compression
+	CSV      FileFormat = "csv"
+	CSV_GZIP FileFormat = "csv_gzip"
+	JSON     FileFormat = "json"
 )
 
 type FileAdapter interface {
@@ -22,12 +17,12 @@ type FileAdapter interface {
 	UploadBytes(fileName string, fileBytes []byte) error
 	Upload(fileName string, fileReader io.ReadSeeker) error
 	DeleteObject(key string) error
-	Format() FileEncodingFormat
+	Format() FileFormat
 }
 
 type FileConfig struct {
-	Folder string             `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
-	Format FileEncodingFormat `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
+	Folder string     `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
+	Format FileFormat `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
 	//	Compression FileCompression    `mapstructure:"compression,omitempty" json:"compression,omitempty" yaml:"compression,omitempty"`
 }
 

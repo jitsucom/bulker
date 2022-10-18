@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	"regexp"
 )
@@ -23,7 +24,7 @@ type SQLAdapter interface {
 
 	//GetTypesMapping return mapping from generic types to SQL types specific for this database
 	GetTypesMapping() map[types.DataType]string
-	GetBatchFileFormat() LoadSourceFormat
+	GetBatchFileFormat() implementations.FileFormat
 	OpenTx(ctx context.Context) (*TxSQLAdapter, error)
 	Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error
 	// InitDatabase setups required db objects like 'schema' or 'dataset' if they don't exist
@@ -51,16 +52,9 @@ const (
 	AmazonS3         LoadSourceType = "amazon_s3"
 )
 
-type LoadSourceFormat string
-
-const (
-	CSV  LoadSourceFormat = "csv"
-	JSON LoadSourceFormat = "json"
-)
-
 type LoadSource struct {
 	Type     LoadSourceType
-	Format   LoadSourceFormat
+	Format   implementations.FileFormat
 	Path     string
 	S3Config *S3OptionConfig
 }
@@ -74,7 +68,7 @@ func (tx *TxSQLAdapter) Type() string {
 	return tx.sqlAdapter.Type()
 }
 
-func (tx *TxSQLAdapter) GetBatchFileFormat() LoadSourceFormat {
+func (tx *TxSQLAdapter) GetBatchFileFormat() implementations.FileFormat {
 	return tx.sqlAdapter.GetBatchFileFormat()
 }
 

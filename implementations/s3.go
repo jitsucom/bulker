@@ -67,14 +67,14 @@ func NewS3(s3Config *S3Config) (*S3, error) {
 		awsConfig.WithEndpoint(s3Config.Endpoint)
 	}
 	if s3Config.Format == "" {
-		s3Config.Format = FileFormatFlatJSON
+		s3Config.Format = JSON
 	}
 	s3Session := session.Must(session.NewSession())
 
 	return &S3{client: s3.New(s3Session, awsConfig), config: s3Config, closed: atomic.NewBool(false)}, nil
 }
 
-func (a *S3) Format() FileEncodingFormat {
+func (a *S3) Format() FileFormat {
 	return a.config.Format
 }
 
@@ -82,7 +82,7 @@ func (a *S3) UploadBytes(fileName string, fileBytes []byte) error {
 	return a.Upload(fileName, bytes.NewReader(fileBytes))
 }
 
-// UploadBytes creates named file on s3 with payload
+// Upload creates named file on s3 with payload
 func (a *S3) Upload(fileName string, fileReader io.ReadSeeker) error {
 	if a.closed.Load() {
 		return fmt.Errorf("attempt to use closed S3 instance")
@@ -91,9 +91,11 @@ func (a *S3) Upload(fileName string, fileReader io.ReadSeeker) error {
 	params := &s3.PutObjectInput{
 		Bucket: aws.String(a.config.Bucket),
 	}
-	if a.config.Format == FileFormatCSV {
+	if a.config.Format == CSV {
 		params.ContentType = aws.String("text/csv")
-	} else if a.config.Format == FileFormatFlatJSON || a.config.Format == FileFormatJSON {
+	} else if a.config.Format == CSV_GZIP {
+		params.ContentType = aws.String("application/gzip")
+	} else if a.config.Format == JSON {
 		params.ContentType = aws.String("application/json")
 	}
 	params.Key = aws.String(fileName)

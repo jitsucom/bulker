@@ -85,8 +85,8 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
 
-	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s ",
-		config.Host, config.Port, config.Db, config.Username, config.Password)
+	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
+		config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
 	logging.Infof("connecting: %s", connectionString)
 	//concat provided connection parameters
 	for k, v := range config.Parameters {
@@ -106,7 +106,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	dataSource.SetConnMaxLifetime(10 * time.Minute)
 
 	tableNameFunc := func(config *DataSourceConfig, tableName string) string {
-		return fmt.Sprintf(`"%s"."%s"`, config.Schema, tableName)
+		return fmt.Sprintf(`"%s"`, tableName)
 	}
 	typecastFunc := func(placeholder string, column SQLColumn) string {
 		if column.Override {
