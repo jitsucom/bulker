@@ -14,13 +14,17 @@ The service should be started with a single `./bulker` command and all configura
 
 #### `BULKER_CONFIG_SOURCE`
 
-Points bulker server to a configuration source. So far it should recognize only URL `redis://` (or `rediss://` for secure connection). The string should be a redis Connection URL
+Points bulker server to a configuration source. So far it should recognize only URL `postgres://user:password@host:port/db` which should be a connection to postgres. In future we add `redis://` (for redis based config), `file:/path/to/file` (for local files) 
 
-#### `BULKER_REDIS_CONFIG_KEY`
+#### `BULKER_CONFIG_POSTGRES_QUERY`
 
-Default value `bulker_connections`
+Relevent only for `postres://` config sources. Contains a query which pulls list of destinations. Example:
 
-A key where Bulker should read configuration. The key should contain redis hashset where the key is a unique id of destination (see below).
+```
+BULKER_CONFIG_POSTGRES_QUERY="select id as destination_id,config::TEXT as config from \"ConfigurationObject]" where deleted=false and type='destination'"
+```
+
+The result should contain two columns: destination_id and config
 
 #### `AUTH_TOKENS` (and `BULKER_TOKEN_SECRET`)
 
@@ -48,17 +52,10 @@ Body should be either one JSON object (for autocommit mode), or a stream of JSON
 
 ## Config storage
 
-Bulker should make the best effort to be able to work without responsive configuration storage. For Redis:
+Bulker should make the best effort to be able to work without responsive configuration storage. For Postgres:
 
 * During start, it should read all destinations config and keep them in RAM
-* It should periodically reload configs from Redis
-* It should subscribe to changes in Redis and 
-
-
-
-
-
-
+* It should periodically reload configs from Postgres
 
 
 
