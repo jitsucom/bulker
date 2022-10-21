@@ -58,8 +58,8 @@ var (
 )
 
 type RedshiftConfig struct {
-	DataSourceConfig
-	*S3OptionConfig `mapstructure:"s3_config,omitempty" json:"s3_config,omitempty" yaml:"s3_config,omitempty"`
+	DataSourceConfig `mapstructure:",squash"`
+	*S3OptionConfig  `mapstructure:"s3_config,omitempty" json:"s3_config,omitempty" yaml:"s3_config,omitempty"`
 }
 
 // Redshift adapter for creating,patching (schema or table), inserting and copying data from s3 to redshift
@@ -86,7 +86,7 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 
 	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: config.S3OptionConfig}
 	r.batchFileFormat = implementations.CSV_GZIP
-	//r.temporaryTables = true
+	r.temporaryTables = true
 	r._columnDDLFunc = redshiftColumnDDL
 	return r, nil
 }
@@ -334,7 +334,7 @@ func redshiftColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]
 	if _, ok := pkFields[name]; ok {
 		columnConstaints = " not null " + getDefaultValueStatement(sqlType)
 		if len(pkFields) == 1 {
-			//columnAttributes = " DISTKEY "
+			columnAttributes = " DISTKEY "
 		}
 	}
 

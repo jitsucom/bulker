@@ -31,12 +31,12 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	for _, option := range streamOptions {
 		option(&ps.options)
 	}
-	ps.merge = mergeRowsOption.Get(&ps.options)
-	if ps.merge && len(primaryKeyOption.Get(&ps.options)) == 0 {
+	ps.merge = MergeRowsOption.Get(&ps.options)
+	if ps.merge && len(PrimaryKeyOption.Get(&ps.options)) == 0 {
 		return AbstractSQLStream{}, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	//TODO: max column?
-	ps.tableHelper = NewTableHelper(p, coordination.DummyCoordinationService{}, primaryKeyOption.Get(&ps.options), 1000)
+	ps.tableHelper = NewTableHelper(p, coordination.DummyCoordinationService{}, PrimaryKeyOption.Get(&ps.options), 1000)
 	ps.state = bulker.State{Status: bulker.Active}
 	return ps, nil
 }
@@ -49,7 +49,7 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, []types.Ob
 	if err != nil {
 		return nil, nil, err
 	}
-	var customFields = columnTypesOption.Get(&ps.options)
+	var customFields = ColumnTypesOption.Get(&ps.options)
 	if len(customFields) > 0 {
 		// enrich overridden schema types
 		batchHeader.Fields.OverrideTypes(customFields)

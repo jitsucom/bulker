@@ -22,7 +22,7 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 	for _, opt := range streamOptions {
 		opt(&so)
 	}
-	partitionId := partitionIdOption.Get(&so)
+	partitionId := PartitionIdOption.Get(&so)
 	if partitionId == "" {
 		return nil, errors.New("WithPartition is required option for ReplacePartitionStream")
 	}

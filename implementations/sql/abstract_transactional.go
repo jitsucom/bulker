@@ -320,7 +320,7 @@ func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulk
 }
 
 func (ps *AbstractSQLStream) getPKValue(object types.Object) (string, error) {
-	pkColumns := primaryKeyOption.Get(&ps.options)
+	pkColumns := PrimaryKeyOption.Get(&ps.options)
 	l := len(pkColumns)
 	if l == 0 {
 		return "", fmt.Errorf("primary key is not set")

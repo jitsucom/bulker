@@ -23,6 +23,12 @@ func (s Set[K]) PutAll(keys []K) {
 	}
 }
 
+func (s Set[K]) PutSet(keys Set[K]) {
+	for key, _ := range keys {
+		s.Put(key)
+	}
+}
+
 func (s Set[K]) Remove(key K) {
 	delete(s, key)
 }
