@@ -26,18 +26,20 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 	if err != nil {
 		return nil, err
 	}
-	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table) *Table {
-		dstTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
-		if dstTable.Exists() {
-			dstTable.Columns = utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
-		} else {
-			dstTable = tableForObject
+	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, batchFile bool) *Table {
+		dstTable := tableForObject
+		if !batchFile {
+			existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
+			if existingTable.Exists() {
+				dstTable = existingTable
+				dstTable.Columns = utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
+			}
 		}
 		tmpTableName := fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8])
 		return &Table{
 			Name:           tmpTableName,
-			Columns:        tableForObject.Columns,
-			PKFields:       tableForObject.PKFields,
+			Columns:        dstTable.Columns,
+			PKFields:       dstTable.PKFields,
 			PrimaryKeyName: BuildConstraintName(tmpTableName),
 			Temporary:      true,
 		}

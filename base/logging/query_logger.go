@@ -83,7 +83,7 @@ func (l *QueryLogger) LogQuery(query string, err error, values ...any) {
 			levelPrefix = errPrefix
 			errorString = "; error: " + err.Error()
 		}
-		logger.Printf("%s [%s] %s%s%s\n", levelPrefix, l.identifier, query, errorString, valuesString)
+		logger.Printf("%s [%s] %s%s%s\n", levelPrefix, l.identifier, strings.ReplaceAll(query, "\n", ""), errorString, valuesString)
 	}
 }
 

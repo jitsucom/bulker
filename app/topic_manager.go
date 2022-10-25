@@ -15,7 +15,7 @@ var TopicPattern = regexp.MustCompile(`^incoming[.]destinationId[.](.*)[.]mode[.
 
 type TopicManager struct {
 	sync.Mutex
-	config *Config
+	config *AppConfig
 
 	kafkaBootstrapServer string
 	//consumer         *kafka.Consumer
@@ -27,10 +27,8 @@ type TopicManager struct {
 }
 
 // NewTopicManager returns TopicManager
-func NewTopicManager(config *Config) (*TopicManager, error) {
-	admin, err := kafka.NewAdminClient(&kafka.ConfigMap{
-		"bootstrap.servers": config.KafkaBootstrapServers,
-	})
+func NewTopicManager(config *AppConfig, kafkaConfig *kafka.ConfigMap) (*TopicManager, error) {
+	admin, err := kafka.NewAdminClient(kafkaConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[topic-manager] Error creating kafka admin client: %w", err)
 	}
@@ -62,6 +60,7 @@ func (tm *TopicManager) Start() error {
 				metadata, err = tm.kaftaAdminClient.GetMetadata(nil, true, tm.config.KafkaAdminMetadataTimeoutMs)
 				if err != nil {
 					logging.Errorf("[topic-manager] Error getting metadata: %v", err)
+					continue
 				}
 				tm.Lock()
 				for topic, _ := range metadata.Topics {

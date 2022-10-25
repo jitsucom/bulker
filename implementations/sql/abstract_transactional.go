@@ -24,7 +24,7 @@ type AbstractTransactionalSQLStream struct {
 	tx       *TxSQLAdapter
 	tmpTable *Table
 	//function that generate tmp table schema based on target table schema
-	tmpTableFunc       func(ctx context.Context, tableForObject *Table) *Table
+	tmpTableFunc       func(ctx context.Context, tableForObject *Table, batchFile bool) *Table
 	dstTable           *Table
 	batchFile          *os.File
 	marshaller         types.Marshaller
@@ -259,7 +259,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (e
 func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, targetTable *Table, processedObjects []types.Object) error {
 	if ps.tmpTable == nil {
 		ps.dstTable = targetTable
-		ps.tmpTable = ps.tmpTableFunc(ctx, targetTable)
+		ps.tmpTable = ps.tmpTableFunc(ctx, targetTable, true)
 	} else {
 		ps.tmpTable.Columns = utils.MapPutAll(targetTable.Columns, ps.tmpTable.Columns)
 	}
@@ -292,7 +292,7 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 func (ps *AbstractTransactionalSQLStream) insert(ctx context.Context, targetTable *Table, processedObjects []types.Object) (err error) {
 	if ps.tmpTable == nil {
 		ps.dstTable = targetTable
-		ps.tmpTable = ps.tmpTableFunc(ctx, targetTable)
+		ps.tmpTable = ps.tmpTableFunc(ctx, targetTable, false)
 	} else {
 		ps.tmpTable.Columns = utils.MapPutAll(targetTable.Columns, ps.tmpTable.Columns)
 	}

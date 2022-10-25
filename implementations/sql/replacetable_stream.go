@@ -23,7 +23,7 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 	if err != nil {
 		return nil, err
 	}
-	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table) *Table {
+	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, batchFile bool) *Table {
 		return &Table{
 			Name:           fmt.Sprintf("%s_tmp_%s", ps.tableName, timestamp.Now().Format("060102_150405")),
 			PrimaryKeyName: tableForObject.PrimaryKeyName,

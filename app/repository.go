@@ -20,8 +20,8 @@ func (r *Repository) GetDestinations() []*Destination {
 }
 
 type repositoryInternal struct {
-	setupProvider SetupProvider
-	destinations  map[string]*Destination
+	configurationSource ConfigurationSource
+	destinations        map[string]*Destination
 }
 
 type Destination struct {
@@ -30,9 +30,9 @@ type Destination struct {
 	streamOptions []bulker.StreamOption
 }
 
-func NewRepository(config *Config, setupProvider SetupProvider) (*Repository, error) {
+func NewRepository(config *AppConfig, configurationSource ConfigurationSource) (*Repository, error) {
 	var repository atomic.Pointer[repositoryInternal]
-	internal := &repositoryInternal{setupProvider: setupProvider, destinations: make(map[string]*Destination)}
+	internal := &repositoryInternal{configurationSource: configurationSource, destinations: make(map[string]*Destination)}
 	err := internal.init()
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func NewRepository(config *Config, setupProvider SetupProvider) (*Repository, er
 }
 
 func (r *repositoryInternal) init() error {
-	for _, cfg := range r.setupProvider.GetDestinationConfigs() {
+	for _, cfg := range r.configurationSource.GetDestinationConfigs() {
 		bulkerInstance, err := bulker.CreateBulker(cfg.Config)
 		if err != nil {
 			logging.Errorf("[%s] failed to init destination: %v", cfg.Id(), err)

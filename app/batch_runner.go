@@ -1,21 +1,24 @@
 package app
 
 import (
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/jitsucom/bulker/base/logging"
 	"time"
 )
 
 type BatchRunner struct {
-	config       *Config
+	config       *AppConfig
+	kafkaConfig  *kafka.ConfigMap
 	repository   *Repository
 	topicManager *TopicManager
 	batchPeriod  time.Duration
 	closed       chan struct{}
 }
 
-func NewBatchRunner(config *Config, repository *Repository, topicManager *TopicManager) *BatchRunner {
+func NewBatchRunner(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repository, topicManager *TopicManager) *BatchRunner {
 	return &BatchRunner{
 		config:       config,
+		kafkaConfig:  kafkaConfig,
 		repository:   repository,
 		topicManager: topicManager,
 		batchPeriod:  time.Second * time.Duration(config.BatchRunnerPeriodSec),
@@ -41,7 +44,7 @@ func (br *BatchRunner) Start() {
 					for _, topic := range topics {
 						batchSize := destination.config.BatchSize
 						logging.Infof("[%s] Running batch task for destination topic %s batch size: %d", destination.Id(), topic, batchSize)
-						batchConsumer, err := NewBatchConsumer(destination, topic, br.config, destination.config.BatchSize)
+						batchConsumer, err := NewBatchConsumer(destination, topic, br.config, br.kafkaConfig, destination.config.BatchSize)
 						if err != nil {
 							logging.Errorf("[%s] Failed to create batch consumer for destination: %v", destination.Id(), err)
 							continue
