@@ -99,8 +99,9 @@ func (bc *BatchConsumer) processBatch() (int, error) {
 	}
 
 	i := 0
+	timeEnd := time.Now().Add(bc.waitForMessages)
 	for ; i < bc.batchSize; i++ {
-		message, err := bc.consumer.ReadMessage(bc.waitForMessages)
+		message, err := bc.consumer.ReadMessage(timeEnd.Sub(time.Now()))
 		if err == nil {
 			fmt.Printf("[%s] %d. Message claimed: offset = %s, partition = %d, timestamp = %v, topic = %s\n", bc.destination.Id(), i, message.TopicPartition.Offset.String(), message.TopicPartition.Partition, message.Timestamp, *message.TopicPartition.Topic)
 			obj := types.Object{}

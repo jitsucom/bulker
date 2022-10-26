@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/spf13/viper"
 	"os"
@@ -13,7 +14,7 @@ type AppConfig struct {
 	ClusterId  string `mapstructure:"CLUSTER_ID" default:"bulker_cluster"`
 	InstanceId string `mapstructure:"INSTANCE_ID"`
 
-	HTTPPort int `mapstructure:"HTTP_PORT" default:"3042"`
+	HTTPPort int `mapstructure:"HTTP_PORT"`
 
 	AuthTokens   string `mapstructure:"AUTH_TOKENS"`
 	TokenSecrets string `mapstructure:"TOKEN_SECRETS"`
@@ -47,6 +48,7 @@ type AppConfig struct {
 func init() {
 	initViperVariables()
 	viper.SetDefault("INSTANCE_ID", uuid.New())
+	viper.SetDefault("HTTP_PORT", utils.NvlString(os.Getenv("PORT"), "3042"))
 }
 
 func initViperVariables() {

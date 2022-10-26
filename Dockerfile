@@ -36,6 +36,4 @@ WORKDIR /app
 COPY --from=build /app/bulkerapp ./bulkerapp
 COPY ./config.yaml ./
 
-EXPOSE 3042
-
 CMD ["/app/bulkerapp"]
