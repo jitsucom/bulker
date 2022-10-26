@@ -138,7 +138,7 @@ func (tm *TopicManager) CreateTopic(destination *Destination, tableName string) 
 		{
 			Topic:         topic,
 			NumPartitions: tm.config.KafkaTopicPartitionsCount,
-			//TODO: get broker count from admin
+			//TODO  get broker count from admin
 			ReplicationFactor: tm.config.KafkaTopicReplicationFactor,
 			Config: map[string]string{
 				"retention.ms": fmt.Sprint(tm.config.KafkaTopicRetentionMs),

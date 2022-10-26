@@ -19,6 +19,11 @@ func (r *Repository) GetDestinations() []*Destination {
 	return r.repository.Load().GetDestinations()
 }
 
+// Close Repository
+func (r *Repository) Close() error {
+	return nil
+}
+
 type repositoryInternal struct {
 	configurationSource ConfigurationSource
 	destinations        map[string]*Destination

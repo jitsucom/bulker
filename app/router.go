@@ -58,7 +58,7 @@ func NewRouter(config *AppConfig, repository *Repository, topicManager *TopicMan
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Errorf("error reading HTTP body: %w", err).Error()})
 			return
 		}
-		err = producer.ProduceSync(topicId, body)
+		err = producer.ProduceAsync(topicId, body)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("couldn't produce message for kafka topic: %s : %w", topicId, err).Error()})
 			return
@@ -87,7 +87,7 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 	for _, authToken := range r.authTokens {
 		if !strings.Contains(authToken, ".") {
 			if token == authToken {
-				logging.Infof("Token %s is valid", token)
+				//logging.Debugf("Token %s is valid", token)
 				return
 			}
 		} else {
@@ -95,10 +95,10 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 			salt := hashedToken[0]
 			hash := hashedToken[1]
 			for _, secret := range r.tokenSecrets {
-				a := hashToken(token, salt, secret)
-				logging.Infof("Hashed token: %s. Hash: %s ", a, hash)
+				//a := hashToken(token, salt, secret)
+				//logging.Debugf("Hashed token: %s. Hash: %s ", a, hash)
 				if hashToken(token, salt, secret) == hash {
-					logging.Infof("Token %s is valid", token)
+					//logging.Debugf("Token %s is valid", token)
 					return
 				}
 			}
@@ -109,6 +109,7 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 }
 
 func hashToken(token string, salt string, secret string) string {
+	//logging.Infof("Hashing token: %s. Salt: %s. Secret: %s", token, salt, secret)
 	hash := sha512.New()
 	hash.Write([]byte(token + salt + secret))
 	return base64.RawStdEncoding.EncodeToString(hash.Sum(nil))

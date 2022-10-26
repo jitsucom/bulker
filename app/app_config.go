@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/spf13/viper"
 	"os"
@@ -21,8 +22,8 @@ type AppConfig struct {
 	ConfigSource string `mapstructure:"CONFIG_SOURCE"`
 
 	KafkaBootstrapServers string `mapstructure:"KAFKA_BOOTSTRAP_SERVERS" default:"localhost:9092"`
-	KafkaSecurityProtocol string `mapstructure:"KAFKA_SECURITY_PROTOCOL" default:"PLAINTEXT"`
-	KafkaSaslMechanism    string `mapstructure:"KAFKA_SASL_MECHANISM" default:"GSSAPI"`
+	KafkaSecurityProtocol string `mapstructure:"KAFKA_SECURITY_PROTOCOL"`
+	KafkaSaslMechanism    string `mapstructure:"KAFKA_SASL_MECHANISM"`
 	KafkaSaslUsername     string `mapstructure:"KAFKA_SASL_USERNAME"`
 	KafkaSaslPassword     string `mapstructure:"KAFKA_SASL_PASSWORD"`
 
@@ -88,4 +89,24 @@ func InitAppConfig() (*AppConfig, error) {
 		return nil, fmt.Errorf("❗error unmarshalling config: %s", err)
 	}
 	return &appConfig, nil
+}
+
+// GetKafkaConfig returns kafka config
+func (ac *AppConfig) GetKafkaConfig() *kafka.ConfigMap {
+	kafkaConfig := &kafka.ConfigMap{
+		"bootstrap.servers": ac.KafkaBootstrapServers,
+	}
+	if ac.KafkaSecurityProtocol != "" {
+		_ = kafkaConfig.SetKey("security.protocol", ac.KafkaSecurityProtocol)
+	}
+	if ac.KafkaSaslMechanism != "" {
+		_ = kafkaConfig.SetKey("sasl.mechanism", ac.KafkaSaslMechanism)
+	}
+	if ac.KafkaSaslUsername != "" {
+		_ = kafkaConfig.SetKey("sasl.username", ac.KafkaSaslUsername)
+	}
+	if ac.KafkaSaslPassword != "" {
+		_ = kafkaConfig.SetKey("sasl.password", ac.KafkaSaslPassword)
+	}
+	return kafkaConfig
 }

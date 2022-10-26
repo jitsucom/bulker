@@ -12,8 +12,9 @@ import (
 type Producer struct {
 	producer *kafka.Producer
 
-	waitForDelivery time.Duration
-	closed          bool
+	asyncDeliveryChannel chan kafka.Event
+	waitForDelivery      time.Duration
+	closed               bool
 }
 
 // NewProducer creates new Producer
@@ -27,12 +28,30 @@ func NewProducer(config *AppConfig, kafkaConfig *kafka.ConfigMap) (*Producer, er
 
 	}
 	return &Producer{
-		producer:        producer,
-		waitForDelivery: time.Millisecond * time.Duration(config.ProducerWaitForDeliveryMs),
+		producer:             producer,
+		asyncDeliveryChannel: make(chan kafka.Event, 1000),
+		waitForDelivery:      time.Millisecond * time.Duration(config.ProducerWaitForDeliveryMs),
 	}, nil
 }
 
-// ProduceSync TODO: transactional delivery
+func (p *Producer) Start() {
+	go func() {
+		for e := range p.producer.Events() {
+			switch ev := e.(type) {
+			case *kafka.Message:
+				if ev.TopicPartition.Error != nil {
+					//TODO: store to fallback file or some retry queue
+					logging.Errorf("Message delivery failed to topic %s: %v", *ev.TopicPartition.Topic, ev.TopicPartition.Error)
+				} else {
+					logging.Infof("Message delivered to topic %s [%d] at offset %v", *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
+				}
+			}
+		}
+		logging.Infof("Producer closed")
+	}()
+}
+
+// ProduceSync TODO: transactional delivery?
 // produces messages to kafka
 func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 	if p.closed {
@@ -79,12 +98,37 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 	return errors.ErrorOrNil()
 }
 
+// ProduceAsync TODO: transactional delivery?
+// produces messages to kafka
+func (p *Producer) ProduceAsync(topic string, events ...[]byte) error {
+	if p.closed {
+		return fmt.Errorf("producer is closed")
+	}
+	errors := multierror.Error{}
+	for _, event := range events {
+		err := p.producer.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+			Value:          event,
+		}, nil)
+		if err != nil {
+			errors.Errors = append(errors.Errors, err)
+		}
+	}
+	return errors.ErrorOrNil()
+}
+
 // Close closes producer
 func (p *Producer) Close() error {
 	if p.closed {
 		return nil
 	}
+	notProduced := p.producer.Flush(3000)
+	if notProduced > 0 {
+		logging.Errorf("%d message left unsent in producer queue.", notProduced)
+		//TODO: suck p.producer.ProduceChannel() and store to fallback file or some retry queue
+	}
 	p.closed = true
 	p.producer.Close()
+	close(p.asyncDeliveryChannel)
 	return nil
 }

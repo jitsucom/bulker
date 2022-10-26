@@ -65,6 +65,7 @@ func (br *BatchRunner) Start() {
 }
 
 // Close
-func (br *BatchRunner) Close() {
+func (br *BatchRunner) Close() error {
 	close(br.closed)
+	return nil
 }
