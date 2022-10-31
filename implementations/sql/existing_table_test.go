@@ -76,7 +76,7 @@ func TestExistingTable2(t *testing.T) {
 				"consume_object_0_clickhouse_stream": "error converting string to int",
 				"stream_complete_clickhouse_batch":   "error converting string to int",
 				"consume_object_0_redshift_stream":   "pq: 22P02 invalid input syntax for integer: \"string_id\"",
-				"stream_complete_redshift_batch":     "failed.  Check 'stl_load_errors' system table for details",
+				"stream_complete_redshift_batch":     "system table for details",
 				"consume_object_0_mysql_stream":      "Error 1366: Incorrect integer value: 'string_id' for column 'id' at row 1",
 				"stream_complete_mysql_batch":        "Error 1366: Incorrect integer value: 'string_id' for column 'id' at row 1",
 				"consume_object_0_snowflake_stream":  "100038 (22018): Numeric value 'string_id' is not recognized",

@@ -221,7 +221,7 @@ func TestStreams(t *testing.T) {
 			dataFile:          "test_data/types_collision.ndjson",
 			expectedErrors: map[string]any{
 				"stream_complete_postgres":   "cause: pq: 22P02 invalid input syntax for type bigint: \"a\"",
-				"stream_complete_redshift":   "failed.  Check 'stl_load_errors' system table for details.",
+				"stream_complete_redshift":   "system table for details.",
 				"stream_complete_mysql":      "cause: Error 1366: Incorrect integer value: 'a' for column 'int1' at row 1",
 				"stream_complete_snowflake":  "cause: 100038 (22018): Numeric value 'a' is not recognized",
 				"stream_complete_clickhouse": "cause: error converting string to int",
