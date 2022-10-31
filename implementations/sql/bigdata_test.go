@@ -25,7 +25,7 @@ func TestMillionRows(t *testing.T) {
 	}
 	configIds := strings.Split(configsEnabled, ",")
 	configIds = utils.ArrayIntersection(allBulkerConfigs, configIds)
-	if configsEnabled == "" {
+	if len(configIds) == 0 {
 		t.Skipf("Test was skipped. IDs: %v is not among configured configs: %v", configIds, allBulkerConfigs)
 		return
 	}
@@ -60,7 +60,7 @@ func TestMillionRowsBatched(t *testing.T) {
 	}
 	configIds := strings.Split(configsEnabled, ",")
 	configIds = utils.ArrayIntersection(allBulkerConfigs, configIds)
-	if configsEnabled == "" {
+	if len(configIds) == 0 {
 		t.Skipf("Test was skipped. IDs: %v is not among configured configs: %v", configIds, allBulkerConfigs)
 		return
 	}
