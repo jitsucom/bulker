@@ -38,7 +38,7 @@ func NewClickhouseClusterContainer(ctx context.Context) (*ClickHouseClusterConta
 	execError := compose.Down()
 	err := execError.Error
 	if err != nil {
-		logging.Errorf("couldnt down docker compose: %s : %w", compose.Identifier, err)
+		logging.Errorf("couldnt down docker compose: %s : %v", compose.Identifier, err)
 	}
 
 	compose = testcontainers.NewLocalDockerCompose(composeFilePaths, identifier)
