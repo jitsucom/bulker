@@ -74,7 +74,7 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 				{"_timestamp": constantTime, "id": 4, "name": "test5"},
 			},
 			configIds:      allBulkerConfigs,
-			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 		},
 		{
@@ -91,7 +91,7 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 				{"_timestamp": constantTime, "id": 5, "name": "test15"},
 			},
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
-			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
 		},
 		{
@@ -100,7 +100,7 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 			modes:          []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
 			dataFile:       "test_data/empty.ndjson",
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
-			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
 		},
 	}

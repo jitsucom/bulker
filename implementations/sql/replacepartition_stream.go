@@ -33,17 +33,18 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 	ps.partitionId = partitionId
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, batchFile bool) *Table {
 		dstTable := tableForObject
-		if !batchFile {
-			existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
-			if existingTable.Exists() {
-				dstTable = existingTable
-				dstTable.Columns = utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
-			}
+		existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
+		if existingTable.Exists() {
+			dstTable = existingTable
+			dstTable.Columns = utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
 		}
+		tmpTableName := fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8])
 		return &Table{
-			Name:      fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8]),
-			Columns:   tableForObject.Columns,
-			Temporary: true,
+			Name:           tmpTableName,
+			Columns:        dstTable.Columns,
+			PKFields:       dstTable.PKFields,
+			PrimaryKeyName: BuildConstraintName(tmpTableName),
+			Temporary:      true,
 		}
 	}
 	return &ps, nil

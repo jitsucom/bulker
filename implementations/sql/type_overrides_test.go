@@ -69,7 +69,7 @@ func TestTypeOverride(t *testing.T) {
 				With("boolstring", "BOOLEAN").
 				With("date1", "DATE").
 				With("intstring", "INTEGER"))},
-			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      utils.ArrayIntersection(allBulkerConfigs, []string{BigqueryBulkerTypeId}),
 		},
 		{

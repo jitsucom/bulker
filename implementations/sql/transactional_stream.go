@@ -28,12 +28,10 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 	}
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, batchFile bool) *Table {
 		dstTable := tableForObject
-		if !batchFile {
-			existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
-			if existingTable.Exists() {
-				dstTable = existingTable
-				dstTable.Columns = utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
-			}
+		existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
+		if existingTable.Exists() {
+			dstTable = existingTable
+			dstTable.Columns = utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
 		}
 		tmpTableName := fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8])
 		return &Table{
