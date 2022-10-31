@@ -23,7 +23,7 @@ var (
 	}
 	MergeRowsOption = bulker.ImplementationOption[bool]{
 		Key:          "deduplicate",
-		DefaultValue: true,
+		DefaultValue: false,
 		ParseFunc: func(o *bulker.ImplementationOption[bool], serializedValue any) (bulker.StreamOption, error) {
 			b, err := utils.ParseBool(serializedValue)
 			if err != nil {

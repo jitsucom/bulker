@@ -87,11 +87,12 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 
 	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
 		config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
-	logging.Infof("connecting: %s", connectionString)
 	//concat provided connection parameters
 	for k, v := range config.Parameters {
-		connectionString += k + "=" + v + " "
+		connectionString += " " + k + "=" + v + " "
 	}
+	logging.Infof("connecting: %s", connectionString)
+
 	dataSource, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		return nil, err

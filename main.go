@@ -66,6 +66,7 @@ func main() {
 		signal := <-exitChannel
 		logging.Infof("Received signal: %s. Shutting down...", signal)
 		_ = producer.Close()
+		//TODO: proper consumer shutdown
 		_ = batchRunner.Close()
 		_ = topicManager.Close()
 		_ = repository.Close()

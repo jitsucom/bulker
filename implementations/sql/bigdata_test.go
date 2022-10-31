@@ -8,6 +8,8 @@ import (
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 	"github.com/stretchr/testify/require"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -15,7 +17,12 @@ import (
 const eventsCount = 1_000_000
 
 func TestMillionRows(t *testing.T) {
-	t.Skip("This test is too slow")
+	configsEnabled := os.Getenv("BULKER_TEST_MILLION_ROWS")
+	if configsEnabled == "" {
+		t.Skip("This test is disabled by default. To enable it set BULKER_TEST_MILLION_ROWS env variable with comma separated list of bulker config ids")
+		return
+	}
+	configIds := strings.Split(configsEnabled, ",")
 	tests := []bulkerTestConfig{
 		{
 			name:  "one_million_rows",
@@ -29,7 +36,7 @@ func TestMillionRows(t *testing.T) {
 				SuccessfulRows: eventsCount,
 			},
 			expectedRowsCount: eventsCount,
-			configIds:         allBulkerTypes,
+			configIds:         configIds,
 		},
 	}
 	for _, tt := range tests {
@@ -40,7 +47,12 @@ func TestMillionRows(t *testing.T) {
 }
 
 func TestMillionRowsBatched(t *testing.T) {
-	//t.Skip("This test is too slow")
+	configsEnabled := os.Getenv("BULKER_TEST_MILLION_ROWS_BATCHED")
+	if configsEnabled == "" {
+		t.Skip("This test is disabled by default. To enable it set BULKER_TEST_MILLION_ROWS_BATCHED env variable with comma separated list of bulker config ids")
+		return
+	}
+	configIds := strings.Split(configsEnabled, ",")
 	tests := []bulkerTestConfig{
 		{
 			name:                "one_million_rows_batched",
@@ -48,7 +60,7 @@ func TestMillionRowsBatched(t *testing.T) {
 			batchSize:           100_000,
 			expectedRowsCount:   eventsCount,
 			leaveResultingTable: false,
-			configIds:           []string{"redshift_serverless"},
+			configIds:           configIds,
 			streamOptions:       []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 		},
 	}

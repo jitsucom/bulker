@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
@@ -24,8 +25,8 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 
 const forceLeaveResultingTables = false
 
-var allBulkerTypes = []string{ClickHouseBulkerTypeId, PostgresBulkerTypeId, RedshiftBulkerTypeId, SnowflakeBulkerTypeId, BigqueryBulkerTypeId, MySQLBulkerTypeId}
-var exceptBigquery = utils.ArrayExcluding(allBulkerTypes, BigqueryBulkerTypeId)
+var allBulkerTypes []string
+var exceptBigquery []string
 
 //var allBulkerTypes = []string{MySQLBulkerTypeId}
 
@@ -36,12 +37,7 @@ type TestConfig struct {
 	Config any
 }
 
-var configRegistry = map[string]any{
-	"bigquery":            TestConfig{BulkerType: BigqueryBulkerTypeId, Config: os.Getenv("BULKER_TEST_BIGQUERY")},
-	"redshift":            TestConfig{BulkerType: RedshiftBulkerTypeId, Config: os.Getenv("BULKER_TEST_REDSHIFT")},
-	"redshift_serverless": TestConfig{BulkerType: RedshiftBulkerTypeId, Config: os.Getenv("BULKER_TEST_REDSHIFT_SERVERLESS")},
-	"snowflake":           TestConfig{BulkerType: SnowflakeBulkerTypeId, Config: os.Getenv("BULKER_TEST_SNOWFLAKE")},
-}
+var configRegistry = map[string]any{}
 
 type ExpectedTable struct {
 	PKFields utils.Set[string]
@@ -49,6 +45,26 @@ type ExpectedTable struct {
 }
 
 func init() {
+	bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
+	if bigqueryConfig != "" {
+		configRegistry[BigqueryBulkerTypeId] = TestConfig{BulkerType: BigqueryBulkerTypeId, Config: bigqueryConfig}
+	}
+
+	redshiftConfig := os.Getenv("BULKER_TEST_REDSHIFT")
+	if redshiftConfig != "" {
+		configRegistry[RedshiftBulkerTypeId] = TestConfig{BulkerType: RedshiftBulkerTypeId, Config: redshiftConfig}
+	}
+
+	redshiftServerlessConfig := os.Getenv("BULKER_TEST_REDSHIFT_SERVERLESS")
+	if redshiftServerlessConfig != "" {
+		configRegistry[RedshiftBulkerTypeId+"_serverless"] = TestConfig{BulkerType: RedshiftBulkerTypeId, Config: redshiftServerlessConfig}
+	}
+
+	snowflakeConfig := os.Getenv("BULKER_TEST_SNOWFLAKE")
+	if snowflakeConfig != "" {
+		configRegistry[SnowflakeBulkerTypeId] = TestConfig{BulkerType: SnowflakeBulkerTypeId, Config: snowflakeConfig}
+	}
+
 	postgresContainer, err := testcontainers.NewPostgresContainer(context.Background())
 	if err != nil {
 		panic(err)
@@ -62,6 +78,7 @@ func init() {
 		Schema:     postgresContainer.Schema,
 		Parameters: map[string]string{"sslmode": "disable"},
 	}}
+
 	mysqlContainer, err := testcontainers.NewMySQLContainer(context.Background())
 	if err != nil {
 		panic(err)
@@ -74,6 +91,7 @@ func init() {
 		Db:         mysqlContainer.Database,
 		Parameters: map[string]string{"tls": "false", "parseTime": "true"},
 	}}
+
 	clickhouseContainer, err := clickhouse.NewClickhouseClusterContainer(context.Background())
 	if err != nil {
 		panic(err)
@@ -81,8 +99,28 @@ func init() {
 	configRegistry[ClickHouseBulkerTypeId] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
 		Dsns:     clickhouseContainer.Dsns,
 		Database: clickhouseContainer.Database,
-		Cluster:  clickhouseContainer.Cluster,
 	}}
+
+	clickhouseClusterContainer, err := clickhouse.NewClickhouseClusterContainer(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	configRegistry[ClickHouseBulkerTypeId+"_cluster"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
+		Dsns:     clickhouseClusterContainer.Dsns,
+		Database: clickhouseClusterContainer.Database,
+		Cluster:  clickhouseClusterContainer.Cluster,
+	}}
+
+	allBulkerTypes = make([]string, 0, len(configRegistry))
+	exceptBigquery = make([]string, 0, len(configRegistry))
+	for k := range configRegistry {
+		allBulkerTypes = append(allBulkerTypes, k)
+		if k != BigqueryBulkerTypeId {
+			exceptBigquery = append(exceptBigquery, k)
+		}
+	}
+
+	logging.Infof("Initialized bulker types: %v", allBulkerTypes)
 }
 
 type bulkerTestConfig struct {

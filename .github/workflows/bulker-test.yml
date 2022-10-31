@@ -1,0 +1,55 @@
+name: Bulker Test
+
+on:
+  push:
+    branches:
+      - '**'
+
+env:
+  BULKER_TEST_BIGQUERY: ${{ secrets.BULKER_TEST_BIGQUERY }}
+  BULKER_TEST_REDSHIFT: ${{ secrets.BULKER_TEST_REDSHIFT }}
+  BULKER_TEST_REDSHIFT_SERVERLESS: ${{ secrets.BULKER_TEST_REDSHIFT_SERVERLESS }}
+  BULKER_TEST_SNOWFLAKE: ${{ secrets.BULKER_TEST_SNOWFLAKE }}
+  BULKER_TEST_MILLION_ROWS_BATCHED: redshift_serverless
+
+jobs:
+  bulker-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+        ref: ${{ github.head_ref }}
+        # Make sure the value of GITHUB_TOKEN will not be persisted in repo's config
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.19.2
+        cache: true
+
+
+    - name: Bulker Test
+      run: |
+        go test -parallel=1 -json ./... > test_report.json
+
+    - name: Test Report
+      run: |
+        go install github.com/vakenbolt/go-test-report@latest
+        cat test_report.json | ~/go/bin/go-test-report
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: test-report
+        path: |
+          ./server/test_report.html
+ 
+#    - name: Notify to Slack on Errors
+#      uses: rtCamp/action-slack-notify@v2.2.0
+#      if: ${{ failure() && (steps.go-change.outputs.server == 1 || steps.go-change.outputs.backend == 1) && (github.ref_name == 'beta' || github.ref_name == 'master' ) }}
+#      env:
+#        SLACK_COLOR: ${{ job.status }} # or a specific color like 'good' or '#ff00ff'
+#        SLACK_ICON_EMOJI: 👿
+#        SLACK_WEBHOOK: ${{ secrets.SLACK_CI_BACKEND_WEBHOOK }}
+#        SLACK_FOOTER: ""
