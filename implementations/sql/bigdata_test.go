@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
+	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,11 @@ func TestMillionRows(t *testing.T) {
 		return
 	}
 	configIds := strings.Split(configsEnabled, ",")
+	configIds = utils.ArrayIntersection(allBulkerConfigs, configIds)
+	if configsEnabled == "" {
+		t.Skipf("Test was skipped. IDs: %v is not among configured configs: %v", configIds, allBulkerConfigs)
+		return
+	}
 	tests := []bulkerTestConfig{
 		{
 			name:  "one_million_rows",
@@ -53,6 +59,11 @@ func TestMillionRowsBatched(t *testing.T) {
 		return
 	}
 	configIds := strings.Split(configsEnabled, ",")
+	configIds = utils.ArrayIntersection(allBulkerConfigs, configIds)
+	if configsEnabled == "" {
+		t.Skipf("Test was skipped. IDs: %v is not among configured configs: %v", configIds, allBulkerConfigs)
+		return
+	}
 	tests := []bulkerTestConfig{
 		{
 			name:                "one_million_rows_batched",

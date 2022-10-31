@@ -16,7 +16,7 @@ func TestReplaceTableStream(t *testing.T) {
 			leaveResultingTable: true,
 			dataFile:            "test_data/partition1.ndjson",
 			expectedRowsCount:   5,
-			configIds:           allBulkerTypes,
+			configIds:           allBulkerConfigs,
 		},
 		{
 			name:                "second_run",
@@ -36,7 +36,7 @@ func TestReplaceTableStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 19, "name": "test19"},
 				{"_timestamp": constantTime, "id": 20, "name": "test20"},
 			},
-			configIds: allBulkerTypes,
+			configIds: allBulkerConfigs,
 		},
 		{
 			name:                "empty_run",
@@ -45,14 +45,14 @@ func TestReplaceTableStream(t *testing.T) {
 			modes:               []bulker.BulkMode{bulker.ReplaceTable},
 			dataFile:            "test_data/empty.ndjson",
 			expectedRowsCount:   0,
-			configIds:           allBulkerTypes,
+			configIds:           allBulkerConfigs,
 		},
 		{
 			name:      "dummy_test_table_cleanup",
 			tableName: "replace_table_test",
 			modes:     []bulker.BulkMode{bulker.ReplaceTable},
 			dataFile:  "test_data/empty.ndjson",
-			configIds: allBulkerTypes,
+			configIds: allBulkerConfigs,
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}

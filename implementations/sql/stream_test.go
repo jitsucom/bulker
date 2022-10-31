@@ -25,10 +25,10 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 
 const forceLeaveResultingTables = false
 
-var allBulkerTypes []string
+var allBulkerConfigs []string
 var exceptBigquery []string
 
-//var allBulkerTypes = []string{MySQLBulkerTypeId}
+//var allBulkerConfigs = []string{MySQLBulkerTypeId}
 
 type TestConfig struct {
 	//type of bulker destination
@@ -92,7 +92,7 @@ func init() {
 		Parameters: map[string]string{"tls": "false", "parseTime": "true"},
 	}}
 
-	clickhouseContainer, err := clickhouse.NewClickhouseClusterContainer(context.Background())
+	clickhouseContainer, err := testcontainers.NewClickhouseContainer(context.Background())
 	if err != nil {
 		panic(err)
 	}
@@ -111,16 +111,16 @@ func init() {
 		Cluster:  clickhouseClusterContainer.Cluster,
 	}}
 
-	allBulkerTypes = make([]string, 0, len(configRegistry))
+	allBulkerConfigs = make([]string, 0, len(configRegistry))
 	exceptBigquery = make([]string, 0, len(configRegistry))
 	for k := range configRegistry {
-		allBulkerTypes = append(allBulkerTypes, k)
+		allBulkerConfigs = append(allBulkerConfigs, k)
 		if k != BigqueryBulkerTypeId {
 			exceptBigquery = append(exceptBigquery, k)
 		}
 	}
 
-	logging.Infof("Initialized bulker types: %v", allBulkerTypes)
+	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 
 type bulkerTestConfig struct {
@@ -182,7 +182,7 @@ func TestStreams(t *testing.T) {
 				{"_timestamp": constantTime, "id": 6, "name": "test4", "column1": "data", "column2": "data", "column3": "data"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			configIds:      allBulkerTypes,
+			configIds:      allBulkerConfigs,
 		},
 		{
 			name:              "types",
@@ -197,7 +197,7 @@ func TestStreams(t *testing.T) {
 				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			configIds:      allBulkerTypes,
+			configIds:      allBulkerConfigs,
 		},
 		{
 			name:              "types_collision_autocommit",
@@ -212,7 +212,7 @@ func TestStreams(t *testing.T) {
 				"consume_object_1_clickhouse":       "cause: error converting string to int",
 				"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported,
 			},
-			configIds: allBulkerTypes,
+			configIds: allBulkerConfigs,
 		},
 		{
 			name:              "types_collision_other",
@@ -227,7 +227,7 @@ func TestStreams(t *testing.T) {
 				"stream_complete_clickhouse": "cause: error converting string to int",
 				"stream_complete_bigquery":   "Could not parse 'a' as INT64 for field int1",
 			},
-			configIds: allBulkerTypes,
+			configIds: allBulkerConfigs,
 		},
 		{
 			name:              "repeated_ids_no_pk",
@@ -251,7 +251,7 @@ func TestStreams(t *testing.T) {
 			leaveResultingTable: true,
 			orderBy:             "id asc, name asc",
 			expectedErrors:      map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			configIds:           allBulkerTypes,
+			configIds:           allBulkerConfigs,
 		},
 		{
 			name:              "repeated_ids_pk",
@@ -274,7 +274,7 @@ func TestStreams(t *testing.T) {
 				{"_timestamp": constantTime, "id": 4, "name": "test5"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_autocommit": BigQueryAutocommitUnsupported},
-			configIds:      allBulkerTypes,
+			configIds:      allBulkerConfigs,
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 		},
 	}

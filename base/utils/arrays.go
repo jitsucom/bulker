@@ -20,10 +20,10 @@ func ArrayExcluding[T comparable](arr []T, valueToExclude T) []T {
 }
 
 func ArrayIntersection[T comparable](firstArray []T, secondArray []T) []T {
-	res := make([]T, 0, len(firstArray))
 	if len(secondArray) < len(firstArray) {
 		firstArray, secondArray = secondArray, firstArray
 	}
+	res := make([]T, 0, len(firstArray))
 	for _, a := range firstArray {
 		if ArrayContains(secondArray, a) {
 			res = append(res, a)
