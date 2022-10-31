@@ -16,7 +16,7 @@ jobs:
   bulker-test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         fetch-depth: 0
         ref: ${{ github.head_ref }}
@@ -32,7 +32,7 @@ jobs:
 
     - name: Bulker Test
       run: |
-        go test -parallel=1 -json ./... > test_report.json
+        go test -parallel=1 -timeout 30m -json ./... > test_report.json
 
     - name: Test Report
       if: ${{ always() }}
