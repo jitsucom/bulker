@@ -248,10 +248,9 @@ func TestStreams(t *testing.T) {
 				{"_timestamp": constantTime, "id": 4, "name": "test4"},
 				{"_timestamp": constantTime, "id": 4, "name": "test5"},
 			},
-			leaveResultingTable: true,
-			orderBy:             "id asc, name asc",
-			expectedErrors:      map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
-			configIds:           allBulkerConfigs,
+			orderBy:        "id asc, name asc",
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
 		},
 		{
 			name:              "repeated_ids_pk",
