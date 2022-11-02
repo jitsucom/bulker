@@ -417,8 +417,6 @@ func GranularityToPartitionIds(g Granularity, t time.Time) []string {
 	}
 }
 
-// insertBatch streams data into BQ using stream API
-// 1 insert = max 500 rows
 func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) (err error) {
 	inserter := bq.client.Dataset(bq.config.Dataset).Table(table.Name).Inserter()
 	bq.logQuery(fmt.Sprintf("Inserting [%d] values to table %s using BigQuery Streaming API with chunks [%d]: ", len(objects), table.Name, bigqueryRowsLimitPerInsertOperation), objects, nil)

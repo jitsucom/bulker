@@ -8,7 +8,8 @@ import (
 )
 
 type Repository struct {
-	repository atomic.Pointer[repositoryInternal]
+	configurationSource ConfigurationSource
+	repository          atomic.Pointer[repositoryInternal]
 }
 
 func (r *Repository) GetDestination(id string) *Destination {
@@ -19,35 +20,56 @@ func (r *Repository) GetDestinations() []*Destination {
 	return r.repository.Load().GetDestinations()
 }
 
+func (r *Repository) init() error {
+	internal := &repositoryInternal{destinations: make(map[string]*Destination)}
+	err := internal.init(r.configurationSource)
+	if err != nil {
+		return err
+	}
+	//Cleanup
+	//TODO: detect changes and close only changed destinations
+	oldInternal := r.repository.Swap(internal)
+	if oldInternal != nil {
+		for id, destination := range oldInternal.destinations {
+			logging.Infof("[%s] closing destination", id)
+			_ = destination.Close()
+		}
+	}
+	return nil
+}
+
+func (r *Repository) changeListener() {
+	for range r.configurationSource.ChangesChannel() {
+		err := r.init()
+		if err != nil {
+			logging.Errorf("[repository] failed to reload repository: %v", err)
+		}
+	}
+	logging.Infof("[repository] change listener stopped.")
+}
+
 // Close Repository
 func (r *Repository) Close() error {
 	return nil
 }
 
 type repositoryInternal struct {
-	configurationSource ConfigurationSource
-	destinations        map[string]*Destination
-}
-
-type Destination struct {
-	config        *DestinationConfig
-	bulker        bulker.Bulker
-	streamOptions []bulker.StreamOption
+	destinations map[string]*Destination
 }
 
 func NewRepository(config *AppConfig, configurationSource ConfigurationSource) (*Repository, error) {
-	var repository atomic.Pointer[repositoryInternal]
-	internal := &repositoryInternal{configurationSource: configurationSource, destinations: make(map[string]*Destination)}
-	err := internal.init()
+	r := Repository{configurationSource: configurationSource}
+	err := r.init()
 	if err != nil {
 		return nil, err
 	}
-	repository.Store(internal)
-	return &Repository{repository: repository}, nil
+	go r.changeListener()
+	return &r, nil
 }
 
-func (r *repositoryInternal) init() error {
-	for _, cfg := range r.configurationSource.GetDestinationConfigs() {
+func (r *repositoryInternal) init(configurationSource ConfigurationSource) error {
+	logging.Debugf("[repository] Initializing repository")
+	for _, cfg := range configurationSource.GetDestinationConfigs() {
 		bulkerInstance, err := bulker.CreateBulker(cfg.Config)
 		if err != nil {
 			logging.Errorf("[%s] failed to init destination: %v", cfg.Id(), err)
@@ -62,6 +84,7 @@ func (r *repositoryInternal) init() error {
 			options = append(options, opt)
 		}
 		r.destinations[cfg.Id()] = &Destination{config: cfg, bulker: bulkerInstance, streamOptions: options}
+		logging.Infof("[%s] destination initialized", cfg.Id())
 	}
 	return nil
 }
@@ -78,6 +101,13 @@ func (r *repositoryInternal) GetDestinations() []*Destination {
 	return destinations
 }
 
+type Destination struct {
+	//TODO: keep consumers and cron tasks ids here
+	config        *DestinationConfig
+	bulker        bulker.Bulker
+	streamOptions []bulker.StreamOption
+}
+
 // TopicId generates topic id for Destination
 func (d *Destination) TopicId(tableName string) string {
 	if tableName == "" {
@@ -89,4 +119,7 @@ func (d *Destination) TopicId(tableName string) string {
 // Id returns destination id
 func (d *Destination) Id() string {
 	return d.config.Id()
+}
+func (d *Destination) Close() error {
+	return d.bulker.Close()
 }

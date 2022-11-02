@@ -3,6 +3,7 @@ module github.com/jitsucom/bulker
 go 1.19
 
 require (
+	github.com/mitchellh/hashstructure/v2 v2.0.2
 	cloud.google.com/go v0.102.1
 	cloud.google.com/go/bigquery v1.39.0
 	cloud.google.com/go/storage v1.26.0
@@ -12,6 +13,7 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/gin-gonic/gin v1.8.1
 	github.com/go-sql-driver/mysql v1.6.0
+	github.com/gomodule/redigo v1.8.9
 	github.com/google/martian v2.1.0+incompatible
 	github.com/google/uuid v1.3.0
 	github.com/gookit/color v1.5.1

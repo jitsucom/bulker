@@ -6,8 +6,8 @@ import "errors"
 type DataSourceConfig struct {
 	Host       string            `mapstructure:"host,omitempty" json:"host,omitempty" yaml:"host,omitempty"`
 	Port       int               `mapstructure:"port,omitempty" json:"port,omitempty" yaml:"port,omitempty"`
-	Db         string            `mapstructure:"db,omitempty" json:"db,omitempty" yaml:"db,omitempty"`
-	Schema     string            `mapstructure:"schema,omitempty" json:"schema,omitempty" yaml:"schema,omitempty"`
+	Db         string            `mapstructure:"database,omitempty" json:"database,omitempty" yaml:"database,omitempty"`
+	Schema     string            `mapstructure:"default_schema,omitempty" json:"default_schema,omitempty" yaml:"default_schema,omitempty"`
 	Username   string            `mapstructure:"username,omitempty" json:"username,omitempty" yaml:"username,omitempty"`
 	Password   string            `mapstructure:"password,omitempty" json:"password,omitempty" yaml:"password,omitempty"`
 	Parameters map[string]string `mapstructure:"parameters,omitempty" json:"parameters,omitempty" yaml:"parameters,omitempty"`

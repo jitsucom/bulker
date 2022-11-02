@@ -11,8 +11,6 @@ import (
 	"strings"
 )
 
-const workspaceId = "ildar"
-
 type Router struct {
 	engine       *gin.Engine
 	authTokens   []string
@@ -33,7 +31,6 @@ func NewRouter(config *AppConfig, repository *Repository, topicManager *TopicMan
 	engine.POST("/load/:destinationId", func(c *gin.Context) {
 		destinationId := c.Param("destinationId")
 		tableName := c.Query("tableName")
-		destinationId = fmt.Sprintf("%s_%s", workspaceId, destinationId)
 
 		destination := repository.GetDestination(destinationId)
 		if destination == nil {

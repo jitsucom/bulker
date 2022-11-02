@@ -20,6 +20,8 @@ import (
 
 // TODO: graceful shutdown and cleanups. Flush producer
 func main() {
+	logging.LogLevel = logging.INFO
+
 	exitChannel := make(chan os.Signal, 1) // we need to reserve to buffer size 1, so the notifier are not blocked
 	signal.Notify(exitChannel, os.Interrupt, os.Kill, syscall.SIGTERM)
 
@@ -70,6 +72,7 @@ func main() {
 		_ = batchRunner.Close()
 		_ = topicManager.Close()
 		_ = repository.Close()
+		_ = configurationSource.Close()
 		_ = server.Shutdown(context.Background())
 		os.Exit(0)
 	}()

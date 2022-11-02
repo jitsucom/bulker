@@ -6,6 +6,7 @@ import (
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
+	"io"
 	"os"
 	"reflect"
 	"strings"
@@ -14,21 +15,24 @@ import (
 const destinationsKey = "destinations"
 
 type DestinationConfig struct {
-	WorkspaceId   string `mapstructure:"workspace_id"`
-	BatchSize     int    `mapstructure:"batch_size"`
-	bulker.Config `mapstructure:",squash"`
-	StreamConfig  bulker.StreamConfig `mapstructure:",squash"`
+	BatchSize      int `mapstructure:"batch_size" json:"batch_size"`
+	BatchPeriodSec int `mapstructure:"batch_period_sec" json:"batch_period_sec"`
+
+	bulker.Config       `mapstructure:",squash"`
+	bulker.StreamConfig `mapstructure:",squash"`
 }
 
 func (dc *DestinationConfig) Id() string {
-	return fmt.Sprintf("%s_%s", dc.WorkspaceId, dc.Config.Id)
+	return dc.Config.Id
 }
 
 type ConfigurationSource interface {
+	io.Closer
 	GetDestinationConfigs() []*DestinationConfig
 	GetDestinationConfig(id string) *DestinationConfig
 	GetValue(key string) any
-	Equals(other ConfigurationSource) bool
+	ChangesChannel() <-chan bool
+	//Equals(other ConfigurationSource) bool
 }
 
 func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
@@ -47,12 +51,20 @@ func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
 			return nil, fmt.Errorf("❗error creating yaml configuration source from config file: %s: %v", filePath, err)
 		}
 		return cfgSrc, nil
+	} else if strings.HasPrefix(config.ConfigSource, "redis://") {
+		redisConfigSource, err := NewRedisConfigurationSource(config.ConfigSource)
+		if err != nil {
+			return nil, fmt.Errorf("❗️error while init redis configuration source: %s: %w", config.ConfigSource, err)
+		}
+		return redisConfigSource, nil
 	} else {
 		return nil, fmt.Errorf("❗unsupported configuration source: %s", config.ConfigSource)
 	}
 }
 
 type YamlConfigurationSource struct {
+	changesChan chan bool
+
 	config       map[string]any
 	destinations map[string]*DestinationConfig
 }
@@ -63,7 +75,10 @@ func NewYamlConfigurationSource(data []byte) (*YamlConfigurationSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	y := &YamlConfigurationSource{config: cfg}
+	y := &YamlConfigurationSource{
+		changesChan: make(chan bool),
+		config:      cfg,
+	}
 	err = y.init()
 	if err != nil {
 		return nil, err
@@ -120,4 +135,13 @@ func (ycp *YamlConfigurationSource) Equals(other ConfigurationSource) bool {
 		return false
 	}
 	return reflect.DeepEqual(ycp.config, o.config)
+}
+
+func (ycp *YamlConfigurationSource) ChangesChannel() <-chan bool {
+	return ycp.changesChan
+}
+
+func (ycp *YamlConfigurationSource) Close() error {
+	close(ycp.changesChan)
+	return nil
 }
