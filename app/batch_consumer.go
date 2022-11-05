@@ -8,26 +8,33 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
+	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
+	"sync/atomic"
 	"time"
 )
 
 const pauseHeartBeatInterval = 1 * time.Second
 
 type BatchConsumer struct {
-	destination *Destination
+	config         *AppConfig
+	repository     *Repository
+	destinationId  string
+	batchPeriodSec int
 	//bulkerStream bulker.BulkerStream
 	consumer *kafka.Consumer
 
 	topicId         string
-	batchSize       int
 	waitForMessages time.Duration
 	closed          chan struct{}
+
+	//consumer that marked as no longer needed. We cannot close it immediately because it can be in the middle of processing batch
+	retired atomic.Bool
 
 	resumeChannel chan struct{}
 }
 
-func NewBatchConsumer(destination *Destination, topicId string, config *AppConfig, kafkaConfig *kafka.ConfigMap, batchSize int) (*BatchConsumer, error) {
+func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *AppConfig, kafkaConfig *kafka.ConfigMap) (*BatchConsumer, error) {
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"group.id":           topicId,
 		"auto.offset.reset":  "earliest",
@@ -40,40 +47,82 @@ func NewBatchConsumer(destination *Destination, topicId string, config *AppConfi
 	}
 	consumer, err := kafka.NewConsumer(&consumerConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[%s] Error creating consumer: %w", destination.Id(), err)
+		return nil, fmt.Errorf("[%s] Error creating consumer: %w", destinationId, err)
 	}
-	err = consumer.SubscribeTopics([]string{topicId}, nil)
+	//consumer.Assign([]kafka.TopicPartition{{Topic: &topicId, Partition: kafka.PartitionAny}})
+	//md, _ := consumer.GetMetadata(&topicId, false, 1000)
+	//md.Topics[topicId].Partitions[0].
+	err = consumer.Subscribe(topicId, nil)
 	if err != nil {
 		_ = consumer.Close()
-		return nil, fmt.Errorf("[%s] Failed to subscribe to topic %s: %w", destination.Id(), topicId, err)
+		return nil, fmt.Errorf("[%s] Failed to subscribe to topic %s: %w", destinationId, topicId, err)
 	}
-	if batchSize <= 0 {
-		batchSize = config.BatchRunnerDefaultBatchSize
-	}
-	return &BatchConsumer{
-		destination:     destination,
+
+	bc := &BatchConsumer{
+		config:          config,
+		repository:      repository,
+		destinationId:   destinationId,
+		batchPeriodSec:  batchPeriodSec,
 		topicId:         topicId,
 		consumer:        consumer,
-		batchSize:       batchSize,
 		waitForMessages: time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
 		closed:          make(chan struct{}),
 		resumeChannel:   make(chan struct{}),
-	}, nil
+	}
+	err = bc.pause(true)
+	if err != nil {
+		_ = bc.close()
+		return nil, fmt.Errorf("[%s] Failed to set consumer on pause %s: %w", destinationId, topicId, err)
+	}
+	//runtime.SetFinalizer(bc, func(bc *BatchConsumer) {
+	//	logging.Infof("[%s] closing batch consumer", d.Id())
+	//	_ = d.bulker.Close()
+	//})
+	return bc, nil
 }
 
-func (bc *BatchConsumer) ConsumeAll() (int, error) {
-	consumed := 0
+func (bc *BatchConsumer) ConsumeAll() (consumed int, err error) {
+	logging.Infof("[%s] Starting consuming messages from topic %s", bc.destinationId, bc.topicId)
+	defer func() {
+		if err != nil {
+			logging.Errorf("[%s] Consume finished with error for topic %s. %d messages consumed. Error: %v", bc.destinationId, bc.topicId, consumed, err)
+		} else {
+			logging.Infof("[%s] Successfully consumed %d messages from topic %s", bc.destinationId, consumed, bc.topicId)
+		}
+	}()
+	destination := bc.repository.LeaseDestination(bc.destinationId)
+	if destination == nil {
+		bc.Retire()
+		return 0, fmt.Errorf("destination not found: %s. Retiring consumer", bc.destinationId)
+	}
+	defer func() {
+		destination.Release()
+	}()
+	maxBatchSize := destination.config.BatchSize
+	if maxBatchSize <= 0 {
+		maxBatchSize = bc.config.BatchRunnerDefaultBatchSize
+	}
+	err = bc.resume()
+	if err != nil {
+		return 0, fmt.Errorf("failed to resume kafka consumer to process batch: %s: %v", bc.topicId, err)
+	}
+	defer func() {
+		err = bc.pause(true)
+		if err != nil {
+			logging.SystemErrorf("[%s] Failed to pause kafka consumer after processing batch: %s: %v", bc.destinationId, bc.topicId, err)
+		}
+	}()
 	for {
 		select {
 		case <-bc.closed:
 			return consumed, nil
 		default:
-			batchSize, err := bc.processBatch()
+			batchSize, err := bc.processBatch(destination, maxBatchSize)
 			if err != nil {
 				return consumed, err
 			}
 			consumed += batchSize
-			if batchSize < bc.batchSize {
+			if batchSize < maxBatchSize {
 				//we've consumed fewer events than batch size. It means that there are no more events in topic
 				return consumed, nil
 			}
@@ -81,73 +130,74 @@ func (bc *BatchConsumer) ConsumeAll() (int, error) {
 	}
 }
 
-func (bc *BatchConsumer) Close() error {
+func (bc *BatchConsumer) close() error {
 	close(bc.closed)
-	return bc.consumer.Close()
+	err := bc.consumer.Close()
+	return err
 }
 
-func (bc *BatchConsumer) processBatch() (int, error) {
+func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (int, error) {
 	matches := TopicPattern.FindStringSubmatch(bc.topicId)
 	if len(matches) != 4 {
-		return 0, fmt.Errorf("[%s] Failed to parse topic %s", bc.destination.Id(), bc.topicId)
+		return 0, fmt.Errorf("[%s] Failed to parse topic %s", bc.destinationId, bc.topicId)
 	}
 	tableName := matches[3]
-	streamConfig := bc.destination.config.StreamConfig
-	bulkerStream, err := bc.destination.bulker.CreateStream(bc.topicId, tableName, streamConfig.BulkMode, bc.destination.streamOptions...)
+	bulkerStream, err := destination.bulker.CreateStream(bc.topicId, tableName, bulker.Transactional, destination.streamOptions...)
 	if err != nil {
-		return 0, fmt.Errorf("[%s] Failed to create bulker stream: %w", bc.destination.Id(), err)
+		return 0, fmt.Errorf("[%s] Failed to create bulker stream: %w", bc.destinationId, err)
 	}
 
 	i := 0
 	timeEnd := time.Now().Add(bc.waitForMessages)
-	for ; i < bc.batchSize; i++ {
+	for ; i < batchSize; i++ {
 		wait := timeEnd.Sub(time.Now())
 		if wait <= 0 {
 			break
 		}
 		message, err := bc.consumer.ReadMessage(wait)
+		//TODO: do we heed to interrupt batch on close?
 		if err == nil {
-			fmt.Printf("[%s] %d. Message claimed: offset = %s, partition = %d, timestamp = %v, topic = %s\n", bc.destination.Id(), i, message.TopicPartition.Offset.String(), message.TopicPartition.Partition, message.Timestamp, *message.TopicPartition.Topic)
+			logging.Infof("[%s] %d. Message claimed: offset = %s, partition = %d, timestamp = %v, topic = %s\n", bc.destinationId, i, message.TopicPartition.Offset.String(), message.TopicPartition.Partition, message.Timestamp, *message.TopicPartition.Topic)
 			obj := types.Object{}
 			dec := json.NewDecoder(bytes.NewReader(message.Value))
 			dec.UseNumber()
 			err := dec.Decode(&obj)
 			if err != nil {
 				_, _ = bulkerStream.Abort(context.Background())
-				return 0, fmt.Errorf("[%s] Failed to parse event from message: %s: %w", bc.destination.Id(), message.Value, err)
+				return 0, fmt.Errorf("[%s] Failed to parse event from message: %s: %w", bc.destinationId, message.Value, err)
 			}
 			err = bulkerStream.Consume(context.Background(), obj)
 			if err != nil {
 				_, _ = bulkerStream.Abort(context.Background())
-				return 0, fmt.Errorf("[%s] Failed to inject event to bulker stream: %s: %w", bc.destination.Id(), bc.topicId, err)
+				return 0, fmt.Errorf("[%s] Failed to inject event to bulker stream: %s: %w", bc.destinationId, bc.topicId, err)
 			}
 		} else if (err.(kafka.Error)).Code() == kafka.ErrTimedOut {
 			break
 		} else {
 			_, _ = bulkerStream.Abort(context.Background())
-			return 0, fmt.Errorf("[%s] Failed to consume event from topic: %s: %w", bc.destination.Id(), bc.topicId, err)
+			return 0, fmt.Errorf("[%s] Failed to consume event from topic: %s: %w", bc.destinationId, bc.topicId, err)
 		}
 	}
 	if i > 0 {
-		err = bc.pause()
+		err = bc.pause(false)
 		if err != nil {
 			_, _ = bulkerStream.Abort(context.Background())
-			return 0, fmt.Errorf("[%s] Failed to pause kafka consumer to process batch: %w", bc.destination.Id(), err)
+			return 0, fmt.Errorf("[%s] Failed to pause kafka consumer to process batch: %w", bc.destinationId, err)
 		}
-		logging.Infof("[%s] Consumer paused. Committing %d events to destination.", bc.destination.Id(), i)
+		logging.Infof("[%s] Consumer paused. Committing %d events to destination.", bc.destinationId, i)
 		_, err = bulkerStream.Complete(context.Background())
 		if err != nil {
-			return 0, fmt.Errorf("[%s] Failed to commit bulker stream: %w", bc.destination.Id(), err)
+			return 0, fmt.Errorf("[%s] Failed to commit bulker stream: %w", bc.destinationId, err)
 		}
 		_, err = bc.consumer.Commit()
 		if err != nil {
-			return i, fmt.Errorf("[%s] Failed to commit kafka consumer: %w", bc.destination.Id(), err)
+			return i, fmt.Errorf("[%s] Failed to commit kafka consumer: %w", bc.destinationId, err)
 		}
 		err = bc.resume()
 		if err != nil {
-			return i, fmt.Errorf("[%s] Failed to resume kafka consumer: %w", bc.destination.Id(), err)
+			return i, fmt.Errorf("[%s] Failed to resume kafka consumer: %w", bc.destinationId, err)
 		} else {
-			logging.Infof("[%s] Consumer resumed.", bc.destination.Id())
+			logging.Infof("[%s] Consumer resumed.", bc.destinationId)
 		}
 	} else {
 		_, _ = bulkerStream.Abort(context.Background())
@@ -155,19 +205,29 @@ func (bc *BatchConsumer) processBatch() (int, error) {
 	return i, nil
 }
 
-func (bc *BatchConsumer) pause() error {
-	partitions, err := bc.consumer.Assignment()
-	if err != nil {
-		return fmt.Errorf("[%s] Failed to pause kafka consumer to process batch: %w", bc.destination.Id(), err)
+// pause consumer.
+// Set idle to true when consumer is not used
+// idle=false to pause consumer in the middle of loading batch to destination
+func (bc *BatchConsumer) pause(idle bool) error {
+	if idle && bc.retired.Load() {
+		// Close retired idling consumer
+		logging.Infof("[%s] Consumer %s is retired. Closing", bc.destinationId, bc.topicId)
+		return bc.close()
 	}
-	err = bc.consumer.Pause(partitions)
+	err := bc.pauseKafkaConsumer()
 	if err != nil {
-		return fmt.Errorf("[%s] Failed to pause kafka consumer to process batch: %w", bc.destination.Id(), err)
+		return err
 	}
 	go func() {
 		//this loop keeps heatbeating consumer to prevent it from being kicked out from group
 	loop:
 		for {
+			if idle && bc.retired.Load() {
+				// Close retired idling consumer
+				logging.Infof("[%s] Consumer %s is retired. Closing", bc.destinationId, bc.topicId)
+				_ = bc.close()
+				return
+			}
 			select {
 			case <-bc.resumeChannel:
 				break loop
@@ -177,15 +237,37 @@ func (bc *BatchConsumer) pause() error {
 			message, err := bc.consumer.ReadMessage(pauseHeartBeatInterval)
 			if err != nil {
 				if (err.(kafka.Error)).Code() == kafka.ErrTimedOut {
-					logging.Debugf("[%s] Consumer paused. Heartbeat sent.", bc.destination.Id())
+					logging.Debugf("[%s] Consumer paused. Heartbeat sent.", bc.destinationId)
 					continue
 				}
-				logging.SystemErrorf("[%s] Error on paused consumer: %v", bc.destination.Id(), err)
+				logging.SystemErrorf("[%s] Error on paused consumer: %v", bc.destinationId, err)
 			} else if message != nil {
-				logging.SystemErrorf("[%s] Received message while paused: %v", bc.destination.Id(), message)
+				//If message slipped through pause, rollback offset and make sure consumer is paused
+				topicPartition := message.TopicPartition
+				err = bc.consumer.Seek(topicPartition, 0)
+				if err != nil {
+					logging.SystemErrorf("[%s] Failed to rollback offset on paused consumer: %v", bc.destinationId, err)
+				}
+				err = bc.pauseKafkaConsumer()
+				if err != nil {
+					logging.SystemError(err)
+					continue
+				}
 			}
 		}
+
 	}()
+	return nil
+}
+
+func (bc *BatchConsumer) pauseKafkaConsumer() error {
+	partitions, err := bc.consumer.Assignment()
+	if len(partitions) > 0 {
+		err = bc.consumer.Pause(partitions)
+	}
+	if err != nil {
+		return fmt.Errorf("[%s] Failed to pause kafka consumer: %w", bc.destinationId, err)
+	}
 	return nil
 }
 
@@ -200,4 +282,11 @@ func (bc *BatchConsumer) resume() error {
 	case <-time.After(pauseHeartBeatInterval * 2):
 		return fmt.Errorf("resume timeout")
 	}
+}
+
+// Retire Mark consumer as retired
+// Consumer will close itself when com
+func (bc *BatchConsumer) Retire() {
+	logging.Infof("[%s] Retiring batch consumer for topic: %s", bc.destinationId, bc.topicId)
+	bc.retired.Store(true)
 }

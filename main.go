@@ -39,7 +39,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	topicManager, err := app.NewTopicManager(appConfig, kafkaConfig)
+	cron := app.NewCron(appConfig)
+	topicManager, err := app.NewTopicManager(appConfig, kafkaConfig, repository, cron)
 	if err != nil {
 		panic(err)
 	}
@@ -47,8 +48,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	batchRunner := app.NewBatchRunner(appConfig, kafkaConfig, repository, topicManager)
-	batchRunner.Start()
+	//batchRunner := app.NewBatchRunner(appConfig, kafkaConfig, repository, topicManager)
+	//batchRunner.Start()
 
 	producer, err := app.NewProducer(appConfig, kafkaConfig)
 	if err != nil {
@@ -69,8 +70,9 @@ func main() {
 		logging.Infof("Received signal: %s. Shutting down...", signal)
 		_ = producer.Close()
 		//TODO: proper consumer shutdown
-		_ = batchRunner.Close()
+		//_ = batchRunner.Close()
 		_ = topicManager.Close()
+		cron.Close()
 		_ = repository.Close()
 		_ = configurationSource.Close()
 		_ = server.Shutdown(context.Background())

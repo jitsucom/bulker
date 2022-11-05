@@ -4,20 +4,39 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/bulker"
-	"sync/atomic"
+	"sync"
 )
 
+type RepositoryChange struct {
+	AddedDestinations     []*Destination
+	ChangedDestinations   []*Destination
+	RemovedDestinationIds []string
+}
+
 type Repository struct {
+	sync.Mutex
 	configurationSource ConfigurationSource
-	repository          atomic.Pointer[repositoryInternal]
+	repository          *repositoryInternal
+
+	changesChan chan RepositoryChange
 }
 
 func (r *Repository) GetDestination(id string) *Destination {
-	return r.repository.Load().GetDestination(id)
+	r.Lock()
+	defer r.Unlock()
+	return r.repository.GetDestination(id)
+}
+
+func (r *Repository) LeaseDestination(id string) *Destination {
+	r.Lock()
+	defer r.Unlock()
+	return r.repository.LeaseDestination(id)
 }
 
 func (r *Repository) GetDestinations() []*Destination {
-	return r.repository.Load().GetDestinations()
+	r.Lock()
+	defer r.Unlock()
+	return r.repository.GetDestinations()
 }
 
 func (r *Repository) init() error {
@@ -28,14 +47,45 @@ func (r *Repository) init() error {
 	}
 	//Cleanup
 	//TODO: detect changes and close only changed destinations
-	oldInternal := r.repository.Swap(internal)
+	r.Lock()
+	oldInternal := r.repository
+	r.repository = internal
 	if oldInternal != nil {
 		for id, destination := range oldInternal.destinations {
-			logging.Infof("[%s] closing destination", id)
-			_ = destination.Close()
+			logging.Infof("[%s] retiring destination. Ver: %s", id, destination.config.UpdatedAt)
+			oldInternal.retireDestination(destination)
 		}
 	}
+	r.Unlock()
+	repositoryChange := RepositoryChange{}
+	var oldDestinations map[string]*Destination
+	if oldInternal != nil {
+		oldDestinations = oldInternal.destinations
+	}
+	for id, _ := range oldDestinations {
+		newDst, ok := internal.destinations[id]
+		if !ok {
+			repositoryChange.RemovedDestinationIds = append(repositoryChange.RemovedDestinationIds, id)
+		} else {
+			//TODO: track changes for each destination individually
+			repositoryChange.ChangedDestinations = append(repositoryChange.ChangedDestinations, newDst)
+		}
+	}
+	for id, dst := range internal.destinations {
+		_, ok := oldDestinations[id]
+		if !ok {
+			repositoryChange.AddedDestinations = append(repositoryChange.AddedDestinations, dst)
+		}
+	}
+	select {
+	case r.changesChan <- repositoryChange:
+	default:
+	}
 	return nil
+}
+
+func (r *Repository) ChangesChannel() <-chan RepositoryChange {
+	return r.changesChan
 }
 
 func (r *Repository) changeListener() {
@@ -54,11 +104,12 @@ func (r *Repository) Close() error {
 }
 
 type repositoryInternal struct {
+	sync.Mutex
 	destinations map[string]*Destination
 }
 
 func NewRepository(config *AppConfig, configurationSource ConfigurationSource) (*Repository, error) {
-	r := Repository{configurationSource: configurationSource}
+	r := Repository{configurationSource: configurationSource, changesChan: make(chan RepositoryChange, 10)}
 	err := r.init()
 	if err != nil {
 		return nil, err
@@ -83,14 +134,43 @@ func (r *repositoryInternal) init(configurationSource ConfigurationSource) error
 			}
 			options = append(options, opt)
 		}
-		r.destinations[cfg.Id()] = &Destination{config: cfg, bulker: bulkerInstance, streamOptions: options}
-		logging.Infof("[%s] destination initialized", cfg.Id())
+		r.destinations[cfg.Id()] = &Destination{config: cfg, bulker: bulkerInstance, streamOptions: options, owner: r}
+		logging.Infof("[%s] destination initialized. Ver: %s", cfg.Id(), cfg.UpdatedAt)
 	}
 	return nil
 }
 
 func (r *repositoryInternal) GetDestination(id string) *Destination {
 	return r.destinations[id]
+}
+
+func (r *repositoryInternal) LeaseDestination(id string) *Destination {
+	//TODO: move locks to destination ??
+	r.Lock()
+	defer r.Unlock()
+	dst := r.destinations[id]
+	if dst != nil {
+		dst.incLeases()
+	}
+	return dst
+}
+
+func (r *repositoryInternal) leaseDestination(destination *Destination) {
+	r.Lock()
+	defer r.Unlock()
+	destination.incLeases()
+}
+
+func (r *repositoryInternal) releaseDestination(destination *Destination) {
+	r.Lock()
+	defer r.Unlock()
+	destination.decLeases()
+}
+
+func (r *repositoryInternal) retireDestination(destination *Destination) {
+	r.Lock()
+	defer r.Unlock()
+	destination.retire()
 }
 
 func (r *repositoryInternal) GetDestinations() []*Destination {
@@ -102,10 +182,14 @@ func (r *repositoryInternal) GetDestinations() []*Destination {
 }
 
 type Destination struct {
-	//TODO: keep consumers and cron tasks ids here
+	sync.Mutex
 	config        *DestinationConfig
 	bulker        bulker.Bulker
 	streamOptions []bulker.StreamOption
+
+	owner       *repositoryInternal
+	retired     bool
+	leasesCount int
 }
 
 // TopicId generates topic id for Destination
@@ -120,6 +204,58 @@ func (d *Destination) TopicId(tableName string) string {
 func (d *Destination) Id() string {
 	return d.config.Id()
 }
-func (d *Destination) Close() error {
-	return d.bulker.Close()
+func (d *Destination) retire() error {
+	d.retired = true
+	if d.leasesCount == 0 {
+		logging.Infof("[%s] closing retired destination. Ver: %s", d.Id(), d.config.UpdatedAt)
+		_ = d.bulker.Close()
+	}
+	return nil
 }
+
+func (d *Destination) incLeases() {
+	d.leasesCount++
+}
+
+func (d *Destination) decLeases() {
+	d.leasesCount--
+	if d.retired && d.leasesCount == 0 {
+		logging.Infof("[%s] closing retired destination. Ver: %s", d.Id(), d.config.UpdatedAt)
+		_ = d.bulker.Close()
+	}
+}
+
+func (d *Destination) Lease() {
+	d.owner.leaseDestination(d)
+}
+
+func (d *Destination) Release() {
+	d.owner.releaseDestination(d)
+}
+
+//// AddBatchConsumer Add batch consumer to destination
+//func (d *Destination) AddBatchConsumer(batchConsumer *BatchConsumer) {
+//	d.Lock()
+//	d.batchConsumers[batchConsumer.topicId] = batchConsumer
+//	d.Unlock()
+//}
+//
+//// RemoveBatchConsumer removes batch consumer from destination
+//// and closes destination when no cosumers left and destination is retired
+//func (d *Destination) RemoveBatchConsumer(batchConsumer *BatchConsumer) {
+//	d.Lock()
+//	bc := d.batchConsumers[batchConsumer.topicId]
+//	if bc != batchConsumer {
+//		logging.SystemErrorf("[%s] consumers for topic id: %s mismatches: %v != %v", d.Id(), batchConsumer.topicId, bc, batchConsumer)
+//	}
+//	delete(d.batchConsumers, batchConsumer.topicId)
+//	if len(d.batchConsumers) == 0 {
+//		if d.retired.Load() {
+//			logging.Infof("[%s] closing retired destination", d.Id())
+//			_ = d.bulker.Close()
+//		} else {
+//			logging.Warnf("[%s] no consumers left but destination is not retired", d.Id())
+//		}
+//	}
+//	d.Unlock()
+//}

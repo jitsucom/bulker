@@ -3,7 +3,6 @@ module github.com/jitsucom/bulker
 go 1.19
 
 require (
-	github.com/mitchellh/hashstructure/v2 v2.0.2
 	cloud.google.com/go v0.102.1
 	cloud.google.com/go/bigquery v1.39.0
 	cloud.google.com/go/storage v1.26.0
@@ -12,6 +11,7 @@ require (
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/docker/go-connections v0.4.0
 	github.com/gin-gonic/gin v1.8.1
+	github.com/go-co-op/gocron v1.17.1
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/martian v2.1.0+incompatible
@@ -21,6 +21,7 @@ require (
 	github.com/hjson/hjson-go/v4 v4.2.0
 	github.com/joomcode/errorx v1.1.0
 	github.com/lib/pq v1.10.4
+	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/snowflakedb/gosnowflake v1.6.13
 	github.com/spf13/viper v1.13.0
@@ -103,6 +104,7 @@ require (
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
@@ -120,6 +122,7 @@ require (
 	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa // indirect
 	golang.org/x/net v0.0.0-20220927171203-f486391704dc // indirect
 	golang.org/x/oauth2 v0.0.0-20220822191816-0ebed06d0094 // indirect
+	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
 	golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f // indirect

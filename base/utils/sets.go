@@ -33,6 +33,12 @@ func (s Set[K]) Remove(key K) {
 	delete(s, key)
 }
 
+func (s Set[K]) Clear() {
+	for key, _ := range s {
+		delete(s, key)
+	}
+}
+
 func (s Set[K]) Clone() Set[K] {
 	newSet := make(Set[K])
 	for k := range s {

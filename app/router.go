@@ -38,20 +38,17 @@ func NewRouter(config *AppConfig, repository *Repository, topicManager *TopicMan
 			return
 		}
 		topicId := destination.TopicId(tableName)
-		topics := topicManager.GetTopics(destinationId)
-		if !topics.Contains(topicId) {
-			logging.Infof("Topic %s not found for destination %s. Creating one", topicId, destinationId)
-			err := topicManager.CreateTopic(destination, tableName)
-			if err != nil {
-				err = fmt.Errorf("couldn't create topic: %s : %w", topicId, err)
-				logging.Error(err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
+		err := topicManager.EnsureTopic(destination, topicId)
+		if err != nil {
+			err = fmt.Errorf("couldn't create topic: %s : %w", topicId, err)
+			logging.Error(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
+
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
-			fmt.Printf("error reading HTTP body: %v\n", err)
+			logging.Infof("error reading HTTP body: %v\n", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Errorf("error reading HTTP body: %w", err).Error()})
 			return
 		}

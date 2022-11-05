@@ -10,13 +10,15 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"time"
 )
 
 const destinationsKey = "destinations"
 
 type DestinationConfig struct {
-	BatchSize      int `mapstructure:"batch_size" json:"batch_size"`
-	BatchPeriodSec int `mapstructure:"batch_period_sec" json:"batch_period_sec"`
+	UpdatedAt      time.Time `mapstructure:"updated_at" json:"updated_at"`
+	BatchSize      int       `mapstructure:"batch_size" json:"batch_size"`
+	BatchPeriodSec int       `mapstructure:"batch_period_sec" json:"batch_period_sec"`
 
 	bulker.Config       `mapstructure:",squash"`
 	bulker.StreamConfig `mapstructure:",squash"`
