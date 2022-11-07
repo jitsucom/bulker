@@ -19,12 +19,21 @@ COPY command, for BigQuery it uses files
 per second for most databases
 * 🐫 **Deduplication** - Bulker can optionally deduplicate data by primary key. 
 * 📋 **Schema management** - Bulker can create tables and columns on the fly. It also flattens nested JSON-objects. Example if you send `{"a": {"b": 1}}` to 
-builker, it will make sure that there is a column `a_b` in the table (and will create it)
+Bulker, it will make sure that there is a column `a_b` in the table (and will create it)
 * 📌 **Explicit and implicit typing** - Bulker can infer types of columns from JSON-data. It can also use explicit types from type hints, that can be
 placed right in the JSON as `{"a": "test", "__sql_type_a": "varchar(4)"}`.
+* 📈 **Horizontal Scaling**. Bulker scales horrizontally. Too much data? No problem, just add more Bulker instances!
+* 📦 **Dockerized** - Bulker is dockerized and can be deployed to any cloud provider and k8s. 
+* ☁️ **Cloud Native** - each Bulker instance is stateless and is configured by only few environment variables. 
+
 
 ## Supported databases
 
-Bulker supports the following databases: Postgres, Redshit, Snowflake, BigQuery, Clickhouse, MySQL and S3.
+Bulker supports the following databases: Postgres, Redshit, Snowflake, BigQuery, Clickhouse, MySQL. S3 and GCS support is coming soon.
 
 Not all features supported by all databases. See [.docs/db-feature-matrix.md](DB Feature Matrix) for details.
+
+## Documentation
+
+* [How to use Bulker as HTTP Service](./docs/server-howto.md)
+* [How to use bulker as Go-lib](./docs/golib-howto.md)
