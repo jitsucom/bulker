@@ -33,14 +33,16 @@ placed right in the JSON as `{"a": "test", "__sql_type_a": "varchar(4)"}`.
 Postgres • Redshit • Snowflake • BigQuery • Clickhouse • MySQL
 </p></b>
 
-### Coming Soon
+<p align="center">
+Coming soon
+</p>
 
 <p align="center"><b>
 S3 • GCS
 </p></b>
 
 
-Not all features supported by all databases. See [DB Feature Matrix](docs/db-feature-matrix.md) for details.
+Not all features supported by all databases. See [DB Feature Matrix](.docs/db-feature-matrix.md) for details.
 
 ## Documentation
 
