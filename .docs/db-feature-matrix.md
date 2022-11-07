@@ -2,16 +2,18 @@
 
 ## Glossary
 
-* **Stream** — a mode when bulker inserts data to a destination on per record basis. Usually,
-databases don't like when a large amount of data is streamed
-* **Batch** — a mode when bulker inserts data to a destination in batches. Usually, databases
-* **Primary Keys **
-* **Dedup**
+* 🚿**Stream** — a mode when Bulker inserts data to a destination on per record basis. Usually,
+databases don't like when a large amount of data is streamed. Don't use at production scale (more than 10-100 records per minute, 
+depending on database).
+* 🛢️**Batch** — a mode when Bulker inserts data to a destination in batches. Preferred mode for large amounts of data.
+* 🐫**Dedup** — deduplication. Some databases support deduplication by event id (id field is configurable). It means that if Bulker receives
+a record with the same id, the old one will be replaced. However, this feature sometimes comes with performance tradeoffs.
 
 ### Advanced feature
 
-Those features are not exposed as HTTP API and supported only on Go-lib API level
+Those features are not exposed as HTTP API and supported only on Go-lib API level.
 
+* **Primary Keys** - if Bulker users primary keys and how
 * **Replace Table**
 * **Replace Partition**
 
@@ -66,21 +68,27 @@ Those features are not exposed as HTTP API and supported only on Go-lib API leve
             <td><b>Stream with dedup</b></td>
             <td>
                 <!--Redshift-->
+                <a href="#stream-with-dedup-redshift">✅Supported</a>
             </td>
             <td>
                 <!--BigQuery-->
+                <a href="#stream-with-dedup-redshift">❌Not supported</a>, not possible
             </td>
             <td>
                 <!--Clickhouse-->
+                <a href="#stream-with-dedup-clickhouse">✅Supported</a>
             </td>
             <td>
                 <!--Snowflake-->
+                <a href="#stream-with-dedup-snowflake">✅Supported</a>
             </td>
             <td>
                 <!--Postgres-->
+                <a href="#stream-with-dedup-snowflake">✅Supported</a>
             </td>
             <td>
                 <!--MySQL-->
+                <a href="#stream-with-dedup-snowflake">✅Supported</a>
             </td>
             <td>
                 <!--S3-->
@@ -159,6 +167,11 @@ Those features are not exposed as HTTP API and supported only on Go-lib API leve
             </td>
         </tr>        
         <tr>
+            <td colspan="5">
+                <h3>Advanced Features</h3>
+            </td>
+        </tr>
+        <tr>
             <td><b>Replace Table</b></td>
             <td>
                 <!--Redshift-->
@@ -209,7 +222,7 @@ Those features are not exposed as HTTP API and supported only on Go-lib API leve
     </tbody>
 </table>
 
-##Stream
+## Stream
 
 ### Stream: Redshift
 
@@ -239,4 +252,34 @@ Supported as plain insert statements
 
 Coming soon
 
-## Stream with dedup: Redshift
+## Stream with dedup
+
+### Stream with dedup: Redshift
+
+`SELECT` by id. Then either `INSERT` or `UPDATE` depending on result. Don't use at production scale (more than 10 records per minute)
+
+### Stream with dedup: BigQuery
+
+Not supported, though it's possible to implement.
+
+### Stream with dedup: Clickhouse
+
+TODO
+
+### Stream with dedup: Snowflake
+
+`SELECT` by id, then either `INSERT` or `UPDATE` depending on result
+
+### Stream with dedup: Postgres
+
+As `INSERT ... ON CONFLICT UPDATE`
+
+### Stream with dedup: MySQL
+
+As `INSERT ... ON DUPLICATE KEY UPDATE`
+
+### Stream with dedup: S3
+
+Coming soon
+
+
