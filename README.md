@@ -7,9 +7,9 @@ Bulker is a heart 💜 of [Jitsu](https://github.com/jitsucom/jitsu), an open-so
 
 HTTP-server relies on Kafka for message delivery.   
 
-
-![./.docs/assets/bulker-summary.excalidraw.png](./.docs/assets/bulker-summary.excalidraw.png)
-
+<p align="center">
+<img src="https://github.com/jitsucom/bulker/raw/main/.docs/assets/bulker-summary.excalidraw.png" width="600" />
+</p>
 
 ## Features
 
@@ -29,9 +29,18 @@ placed right in the JSON as `{"a": "test", "__sql_type_a": "varchar(4)"}`.
 
 ## Supported databases
 
-Bulker supports the following databases: Postgres, Redshit, Snowflake, BigQuery, Clickhouse, MySQL. S3 and GCS support is coming soon.
+<p align="center"><b>
+Postgres • Redshit • Snowflake • BigQuery • Clickhouse • MySQL
+</p></b>
 
-Not all features supported by all databases. See [.docs/db-feature-matrix.md](DB Feature Matrix) for details.
+### Coming Soon
+
+<p align="center"><b>
+S3 • GCS
+</p></b>
+
+
+Not all features supported by all databases. See [DB Feature Matrix](docs/db-feature-matrix.md) for details.
 
 ## Documentation
 
