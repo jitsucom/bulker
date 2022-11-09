@@ -4,7 +4,6 @@ import (
 	"github.com/jitsucom/bulker/base/safego"
 	"io"
 	"path/filepath"
-	"regexp"
 	"sync/atomic"
 	"time"
 
@@ -17,11 +16,8 @@ const (
 	twentyFourHoursInMinutes = 1440
 )
 
-//TokenIDExtractRegexp is a regex for reading already rotated and closed log files
-var TokenIDExtractRegexp = regexp.MustCompile("incoming.tok=(.*)-\\d\\d\\d\\d-\\d\\d-\\d\\dT")
-
-//RollingWriterProxy for lumberjack.Logger
-//Rotate() only if file isn't empty
+// RollingWriterProxy for lumberjack.Logger
+// Rotate() only if file isn't empty
 type RollingWriterProxy struct {
 	lWriter       *lumberjack.Logger
 	rotateOnClose bool

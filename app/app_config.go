@@ -22,17 +22,18 @@ type AppConfig struct {
 	//TODO: CONFIGURATION_SOURCE
 	ConfigSource string `mapstructure:"CONFIG_SOURCE"`
 
-	KafkaBootstrapServers string `mapstructure:"KAFKA_BOOTSTRAP_SERVERS" default:"localhost:9092"`
+	KafkaBootstrapServers string `mapstructure:"KAFKA_BOOTSTRAP_SERVERS" default:"127.0.0.1:9092"`
 	KafkaSecurityProtocol string `mapstructure:"KAFKA_SECURITY_PROTOCOL"`
 	KafkaSaslMechanism    string `mapstructure:"KAFKA_SASL_MECHANISM"`
 	KafkaSaslUsername     string `mapstructure:"KAFKA_SASL_USERNAME"`
 	KafkaSaslPassword     string `mapstructure:"KAFKA_SASL_PASSWORD"`
 
 	//TODO: Change to hours
-	KafkaTopicRetentionMs       int `mapstructure:"KAFKA_TOPIC_RETENTION_MS" default:"604800000"`
-	KafkaTopicPartitionsCount   int `mapstructure:"KAFKA_TOPIC_PARTITIONS_COUNT" default:"4"`
-	KafkaTopicReplicationFactor int `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR" default:"1"`
-	KafkaAdminMetadataTimeoutMs int `mapstructure:"KAFKA_ADMIN_METADATA_TIMEOUT_MS" default:"1000"`
+	KafkaTopicRetentionMs int `mapstructure:"KAFKA_TOPIC_RETENTION_MS" default:"604800000"`
+	//KafkaTopicPartitionsCount   int `mapstructure:"KAFKA_TOPIC_PARTITIONS_COUNT" default:"4"`
+	KafkaTopicReplicationFactor              int    `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR" default:"1"`
+	KafkaAdminMetadataTimeoutMs              int    `mapstructure:"KAFKA_ADMIN_METADATA_TIMEOUT_MS" default:"1000"`
+	KafkaConsumerPartitionsAssigmentStrategy string `mapstructure:"KAFKA_CONSUMER_PARTITIONS_ASSIGMENT_STRATEGY" default:"cooperative-sticky"`
 	//TODO: max.poll.interval.ms
 
 	TopicManagerRefreshPeriodSec int `mapstructure:"TOPIC_MANAGER_REFRESH_PERIOD_SEC" default:"5"`
@@ -96,7 +97,10 @@ func InitAppConfig() (*AppConfig, error) {
 // GetKafkaConfig returns kafka config
 func (ac *AppConfig) GetKafkaConfig() *kafka.ConfigMap {
 	kafkaConfig := &kafka.ConfigMap{
-		"bootstrap.servers": ac.KafkaBootstrapServers,
+		"client.id":                "bulkerapp",
+		"bootstrap.servers":        ac.KafkaBootstrapServers,
+		"reconnect.backoff.ms":     1000,
+		"reconnect.backoff.max.ms": 10000,
 	}
 	if ac.KafkaSecurityProtocol != "" {
 		_ = kafkaConfig.SetKey("security.protocol", ac.KafkaSecurityProtocol)

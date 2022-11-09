@@ -4,61 +4,54 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gin-gonic/gin"
-	"github.com/jitsucom/bulker/base/logging"
+	"github.com/hjson/hjson-go/v4"
+	"github.com/jitsucom/bulker/base/objects"
+	"github.com/jitsucom/bulker/base/utils"
+	"github.com/jitsucom/bulker/base/uuid"
+	jsoniter "github.com/json-iterator/go"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type Router struct {
+	objects.ServiceBase
 	engine       *gin.Engine
+	config       *AppConfig
+	kafkaConfig  *kafka.ConfigMap
+	repository   *Repository
+	topicManager *TopicManager
+	producer     *Producer
 	authTokens   []string
 	tokenSecrets []string
 }
 
-func NewRouter(config *AppConfig, repository *Repository, topicManager *TopicManager, producer *Producer) *Router {
+func NewRouter(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repository, topicManager *TopicManager, producer *Producer) *Router {
+	base := objects.NewServiceBase("router")
 	authTokens := strings.Split(config.AuthTokens, ",")
 	if len(authTokens) == 1 && authTokens[0] == "" {
 		authTokens = nil
-		logging.Warn("⚠️ No auth tokens provided. All requests will be allowed")
+		base.Warnf("⚠️ No auth tokens provided. All requests will be allowed")
 	}
 	tokenSecrets := strings.Split(config.TokenSecrets, ",")
 
-	router := &Router{authTokens: authTokens, tokenSecrets: tokenSecrets}
+	router := &Router{
+		ServiceBase:  base,
+		authTokens:   authTokens,
+		config:       config,
+		kafkaConfig:  kafkaConfig,
+		repository:   repository,
+		topicManager: topicManager,
+		producer:     producer,
+		tokenSecrets: tokenSecrets,
+	}
 	engine := gin.New()
 	engine.Use(router.AuthMiddleware)
-	engine.POST("/load/:destinationId", func(c *gin.Context) {
-		destinationId := c.Param("destinationId")
-		tableName := c.Query("tableName")
-
-		destination := repository.GetDestination(destinationId)
-		if destination == nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "destination not found"})
-			return
-		}
-		topicId := destination.TopicId(tableName)
-		err := topicManager.EnsureTopic(destination, topicId)
-		if err != nil {
-			err = fmt.Errorf("couldn't create topic: %s : %w", topicId, err)
-			logging.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		body, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			logging.Infof("error reading HTTP body: %v\n", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Errorf("error reading HTTP body: %w", err).Error()})
-			return
-		}
-		err = producer.ProduceAsync(topicId, body)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("couldn't produce message for kafka topic: %s : %w", topicId, err).Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"message": "ok"})
-	})
+	engine.POST("/post/:destinationId", router.EventsHandler)
+	engine.GET("/failed/:destinationId", router.FailedHandler)
 	router.engine = engine
 	return router
 }
@@ -66,6 +59,102 @@ func NewRouter(config *AppConfig, repository *Repository, topicManager *TopicMan
 // GetEngine returns gin router
 func (r *Router) GetEngine() *gin.Engine {
 	return r.engine
+}
+
+func (r *Router) EventsHandler(c *gin.Context) {
+	destinationId := c.Param("destinationId")
+	tableName := c.Query("tableName")
+	if tableName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tableName query parameter is required"})
+		return
+	}
+	destination := r.repository.GetDestination(destinationId)
+	if destination == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "destination not found"})
+		return
+	}
+	topicId := destination.TopicId(tableName)
+	err := r.topicManager.EnsureTopic(destination, topicId)
+	if err != nil {
+		err = fmt.Errorf("couldn't create topic: %s : %w", topicId, err)
+		r.Errorf(err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		r.Infof("error reading HTTP body: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Errorf("error reading HTTP body: %w", err).Error()})
+		return
+	}
+	err = r.producer.ProduceAsync(topicId, body)
+	if err != nil {
+		errorID := uuid.NewLettersNumbers()
+		err = fmt.Errorf("error# %s: couldn't produce message for kafka topic: %s : %w", errorID, topicId, err)
+		r.Errorf(err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("error# %s: couldn't produce message", errorID).Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "ok"})
+}
+
+func (r *Router) FailedHandler(c *gin.Context) {
+	destinationId := c.Param("destinationId")
+	tableName := c.Query("tableName")
+	if tableName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tableName query parameter is required"})
+		return
+	}
+	topicId := MakeTopicId(destinationId, "failed", tableName)
+	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
+		"auto.offset.reset":             "earliest",
+		"group.id":                      uuid.New(),
+		"enable.auto.commit":            false,
+		"partition.assignment.strategy": r.config.KafkaConsumerPartitionsAssigmentStrategy,
+		"isolation.level":               "read_committed",
+	}, *r.kafkaConfig))
+
+	consumer, err := kafka.NewConsumer(&consumerConfig)
+	if err == nil {
+		err = consumer.Assign([]kafka.TopicPartition{{Topic: &topicId, Partition: 0, Offset: kafka.OffsetBeginning}})
+	}
+	if err != nil {
+		errorID := uuid.NewLettersNumbers()
+		err = fmt.Errorf("error# %s: couldn't start kafka consumer for topic: %s : %w", errorID, topicId, err)
+		r.Errorf(err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("error# %s: couldn't start kafka consumer", errorID).Error()})
+		return
+	}
+	start := time.Now()
+	c.Header("Content-Type", "application/x-ndjson")
+	for {
+		msg, err := consumer.ReadMessage(time.Second)
+		json := make(map[string]any)
+		if err != nil {
+			kafkaErr := err.(kafka.Error)
+			if kafkaErr.Code() == kafka.ErrTimedOut {
+				break
+			}
+			errorID := uuid.NewLettersNumbers()
+			err = fmt.Errorf("error# %s: couldn't read kafka message from topic: %s : %w", errorID, topicId, kafkaErr)
+			r.Errorf(err.Error())
+			json["ERROR"] = fmt.Errorf("error# %s: couldn't read kafka message", errorID).Error()
+		} else {
+			err = hjson.Unmarshal(msg.Value, &json)
+			if err != nil {
+				json["UNPARSABLE_MESSAGE"] = string(msg.Value)
+			}
+		}
+
+		bytes, _ := jsoniter.Marshal(json)
+		_, _ = c.Writer.Write(bytes)
+		_, _ = c.Writer.Write([]byte("\n"))
+		if msg.Timestamp.After(start) {
+			break
+		}
+	}
+	_ = consumer.Close()
 }
 
 func (r *Router) AuthMiddleware(c *gin.Context) {

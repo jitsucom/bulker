@@ -2,7 +2,7 @@ package app
 
 import (
 	"fmt"
-	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
@@ -65,6 +65,8 @@ func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
 }
 
 type YamlConfigurationSource struct {
+	objects.ServiceBase
+
 	changesChan chan bool
 
 	config       map[string]any
@@ -72,12 +74,14 @@ type YamlConfigurationSource struct {
 }
 
 func NewYamlConfigurationSource(data []byte) (*YamlConfigurationSource, error) {
+	base := objects.NewServiceBase("yaml_configuration")
 	cfg := make(map[string]any)
 	err := yaml.Unmarshal(data, cfg)
 	if err != nil {
 		return nil, err
 	}
 	y := &YamlConfigurationSource{
+		ServiceBase: base,
 		changesChan: make(chan bool),
 		config:      cfg,
 	}
@@ -95,14 +99,14 @@ func (ycp *YamlConfigurationSource) init() error {
 	}
 	destinations, ok := destinationsRaw.(map[string]any)
 	if !ok {
-		return fmt.Errorf("failed to parse destinations. Expected map[string]any got: %T", destinationsRaw)
+		return ycp.NewError("failed to parse destinations. Expected map[string]any got: %T", destinationsRaw)
 	}
 	results := make(map[string]*DestinationConfig, len(destinations))
 	for id, destination := range destinations {
 		cfg := &DestinationConfig{}
 		err := mapstructure.Decode(destination, cfg)
 		if err != nil {
-			logging.Errorf("Failed to parse destination config %s: %v:\n%s", id, err, destination)
+			ycp.Errorf("Failed to parse destination config %s: %v:\n%s", id, err, destination)
 			continue
 		}
 		cfg.Config.Id = id

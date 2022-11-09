@@ -1,8 +1,8 @@
 package app
 
 import (
-	"fmt"
 	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/bulker"
 	"sync"
 )
@@ -14,6 +14,7 @@ type RepositoryChange struct {
 }
 
 type Repository struct {
+	objects.ServiceBase
 	sync.Mutex
 	configurationSource ConfigurationSource
 	repository          *repositoryInternal
@@ -27,6 +28,7 @@ func (r *Repository) GetDestination(id string) *Destination {
 	return r.repository.GetDestination(id)
 }
 
+// LeaseDestination destination. destination cannot be closed while at lease one service is using it (e.g. batch consumer)
 func (r *Repository) LeaseDestination(id string) *Destination {
 	r.Lock()
 	defer r.Unlock()
@@ -40,7 +42,11 @@ func (r *Repository) GetDestinations() []*Destination {
 }
 
 func (r *Repository) init() error {
-	internal := &repositoryInternal{destinations: make(map[string]*Destination)}
+	base := objects.NewServiceBase("repository")
+	internal := &repositoryInternal{
+		ServiceBase:  base,
+		destinations: make(map[string]*Destination),
+	}
 	err := internal.init(r.configurationSource)
 	if err != nil {
 		return err
@@ -52,7 +58,7 @@ func (r *Repository) init() error {
 	r.repository = internal
 	if oldInternal != nil {
 		for id, destination := range oldInternal.destinations {
-			logging.Infof("[%s] retiring destination. Ver: %s", id, destination.config.UpdatedAt)
+			r.Infof("retiring destination %s. Ver: %s", id, destination.config.UpdatedAt)
 			oldInternal.retireDestination(destination)
 		}
 	}
@@ -92,10 +98,10 @@ func (r *Repository) changeListener() {
 	for range r.configurationSource.ChangesChannel() {
 		err := r.init()
 		if err != nil {
-			logging.Errorf("[repository] failed to reload repository: %v", err)
+			r.Errorf("failed to reload repository: %w", err)
 		}
 	}
-	logging.Infof("[repository] change listener stopped.")
+	r.Infof("change listener stopped.")
 }
 
 // Close Repository
@@ -104,12 +110,18 @@ func (r *Repository) Close() error {
 }
 
 type repositoryInternal struct {
+	objects.ServiceBase
 	sync.Mutex
 	destinations map[string]*Destination
 }
 
 func NewRepository(config *AppConfig, configurationSource ConfigurationSource) (*Repository, error) {
-	r := Repository{configurationSource: configurationSource, changesChan: make(chan RepositoryChange, 10)}
+	base := objects.NewServiceBase("repository")
+	r := Repository{
+		ServiceBase:         base,
+		configurationSource: configurationSource,
+		changesChan:         make(chan RepositoryChange, 10),
+	}
 	err := r.init()
 	if err != nil {
 		return nil, err
@@ -119,11 +131,11 @@ func NewRepository(config *AppConfig, configurationSource ConfigurationSource) (
 }
 
 func (r *repositoryInternal) init(configurationSource ConfigurationSource) error {
-	logging.Debugf("[repository] Initializing repository")
+	r.Debugf("Initializing repository")
 	for _, cfg := range configurationSource.GetDestinationConfigs() {
 		bulkerInstance, err := bulker.CreateBulker(cfg.Config)
 		if err != nil {
-			logging.Errorf("[%s] failed to init destination: %v", cfg.Id(), err)
+			r.Errorf("failed to init destination %s: %v", cfg.Id(), err)
 			continue
 		}
 		options := make([]bulker.StreamOption, 0, len(cfg.StreamConfig.Options))
@@ -135,7 +147,7 @@ func (r *repositoryInternal) init(configurationSource ConfigurationSource) error
 			options = append(options, opt)
 		}
 		r.destinations[cfg.Id()] = &Destination{config: cfg, bulker: bulkerInstance, streamOptions: options, owner: r}
-		logging.Infof("[%s] destination initialized. Ver: %s", cfg.Id(), cfg.UpdatedAt)
+		r.Infof("destination %s initialized. Ver: %s", cfg.Id(), cfg.UpdatedAt)
 	}
 	return nil
 }
@@ -197,7 +209,7 @@ func (d *Destination) TopicId(tableName string) string {
 	if tableName == "" {
 		tableName = d.config.StreamConfig.TableName
 	}
-	return fmt.Sprintf("incoming.destinationId.%s.mode.%s.tableName.%s", d.Id(), d.config.StreamConfig.BulkMode, tableName)
+	return MakeTopicId(d.Id(), string(d.config.StreamConfig.BulkMode), tableName)
 }
 
 // Id returns destination id
@@ -225,10 +237,12 @@ func (d *Destination) decLeases() {
 	}
 }
 
+// Lease destination. destination cannot be closed while at lease one service is using it (e.g. batch consumer)
 func (d *Destination) Lease() {
 	d.owner.leaseDestination(d)
 }
 
+// Release destination. See Lease
 func (d *Destination) Release() {
 	d.owner.releaseDestination(d)
 }

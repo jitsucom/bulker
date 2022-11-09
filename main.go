@@ -40,7 +40,13 @@ func main() {
 		panic(err)
 	}
 	cron := app.NewCron(appConfig)
-	topicManager, err := app.NewTopicManager(appConfig, kafkaConfig, repository, cron)
+	producer, err := app.NewProducer(appConfig, kafkaConfig)
+	if err != nil {
+		panic(err)
+	}
+	producer.Start()
+
+	topicManager, err := app.NewTopicManager(appConfig, kafkaConfig, repository, cron, producer)
 	if err != nil {
 		panic(err)
 	}
@@ -51,13 +57,7 @@ func main() {
 	//batchRunner := app.NewBatchRunner(appConfig, kafkaConfig, repository, topicManager)
 	//batchRunner.Start()
 
-	producer, err := app.NewProducer(appConfig, kafkaConfig)
-	if err != nil {
-		panic(err)
-	}
-	producer.Start()
-
-	router := app.NewRouter(appConfig, repository, topicManager, producer)
+	router := app.NewRouter(appConfig, kafkaConfig, repository, topicManager, producer)
 	server := &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", appConfig.HTTPPort),
 		Handler:           router.GetEngine(),

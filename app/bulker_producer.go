@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/hashicorp/go-multierror"
-	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/utils"
 	"time"
 )
 
 type Producer struct {
+	objects.ServiceBase
 	producer *kafka.Producer
 
 	asyncDeliveryChannel chan kafka.Event
@@ -19,15 +20,18 @@ type Producer struct {
 
 // NewProducer creates new Producer
 func NewProducer(config *AppConfig, kafkaConfig *kafka.ConfigMap) (*Producer, error) {
+	base := objects.NewServiceBase("producer")
+
 	producerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		//TODO: add producer specific config here
 	}, *kafkaConfig))
 	producer, err := kafka.NewProducer(&producerConfig)
 	if err != nil {
-		return nil, fmt.Errorf("error creating kafka producer: %w", err)
+		return nil, base.NewError("error creating kafka producer: %w", err)
 
 	}
 	return &Producer{
+		ServiceBase:          base,
 		producer:             producer,
 		asyncDeliveryChannel: make(chan kafka.Event, 1000),
 		waitForDelivery:      time.Millisecond * time.Duration(config.ProducerWaitForDeliveryMs),
@@ -40,14 +44,16 @@ func (p *Producer) Start() {
 			switch ev := e.(type) {
 			case *kafka.Message:
 				if ev.TopicPartition.Error != nil {
-					//TODO: store to fallback file or some retry queue
-					logging.Errorf("Message delivery failed to topic %s: %v", *ev.TopicPartition.Topic, ev.TopicPartition.Error)
+					//TODO: check for retrieable errors
+					p.Errorf("Error sending message to kafka topic %s: %w", ev.TopicPartition.Topic, ev.TopicPartition.Error)
 				} else {
-					logging.Infof("Message delivered to topic %s [%d] at offset %v", *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
+					p.Infof("Message delivered to topic %s [%d] at offset %v", *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 				}
+				//case kafka.Error:
+				//	p.Debugf("Producer error: %w", ev)
 			}
 		}
-		logging.Infof("Producer closed")
+		p.Infof("Producer closed")
 	}()
 }
 
@@ -55,7 +61,7 @@ func (p *Producer) Start() {
 // produces messages to kafka
 func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 	if p.closed {
-		return fmt.Errorf("producer is closed")
+		return p.NewError("producer is closed")
 	}
 	started := time.Now()
 	deliveryChan := make(chan kafka.Event, len(events))
@@ -74,7 +80,7 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 	}
 	if sent > 0 {
 		p.producer.Flush(2)
-		logging.Infof("Sent %d messages to kafka topic %s in %s", sent, topic, time.Since(started))
+		p.Infof("Sent %d messages to kafka topic %s in %s", sent, topic, time.Since(started))
 		until := time.After(p.waitForDelivery)
 	loop:
 		for i := 0; i < sent; i++ {
@@ -82,18 +88,18 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 			case e := <-deliveryChan:
 				m := e.(*kafka.Message)
 				if m.TopicPartition.Error != nil {
-					logging.Errorf("Error sending message to kafka topic %s: %v", topic, m.TopicPartition.Error)
+					p.Errorf("Error sending message to kafka topic %s: %v", topic, m.TopicPartition.Error)
 					errors.Errors = append(errors.Errors, m.TopicPartition.Error)
 				} else {
-					logging.Infof("Message delivered to topic %s [%d] at offset %v", *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
+					p.Infof("Message delivered to topic %s [%d] at offset %v", *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
 				}
 			case <-until:
-				logging.Errorf("Timeout waiting for delivery")
+				p.Errorf("Timeout waiting for delivery")
 				errors.Errors = append(errors.Errors, fmt.Errorf("timeout waiting for delivery"))
 				break loop
 			}
 		}
-		logging.Infof("Delivered %d messages to kafka topic %s in %s", sent, topic, time.Since(started))
+		p.Infof("Delivered %d messages to kafka topic %s in %s", sent, topic, time.Since(started))
 	}
 	return errors.ErrorOrNil()
 }
@@ -102,7 +108,7 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 // produces messages to kafka
 func (p *Producer) ProduceAsync(topic string, events ...[]byte) error {
 	if p.closed {
-		return fmt.Errorf("producer is closed")
+		return p.NewError("producer is closed")
 	}
 	errors := multierror.Error{}
 	for _, event := range events {
@@ -124,7 +130,7 @@ func (p *Producer) Close() error {
 	}
 	notProduced := p.producer.Flush(3000)
 	if notProduced > 0 {
-		logging.Errorf("%d message left unsent in producer queue.", notProduced)
+		p.Errorf("%d message left unsent in producer queue.", notProduced)
 		//TODO: suck p.producer.ProduceChannel() and store to fallback file or some retry queue
 	}
 	p.closed = true

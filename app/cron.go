@@ -26,7 +26,7 @@ func (c *Cron) AddBatchConsumer(batchConsumer *BatchConsumer) (*gocron.Job, erro
 	return c.scheduler.Every(batchPeriodSeconds).Seconds().
 		StartAt(time.Now().Add(time.Duration(rand.Intn(batchPeriodSeconds)) * time.Second)).
 		Tag(batchConsumer.topicId).
-		Do(batchConsumer.ConsumeAll)
+		Do(batchConsumer.RunJob)
 }
 
 func (c *Cron) ReplaceBatchConsumer(batchConsumer *BatchConsumer) (*gocron.Job, error) {
@@ -38,13 +38,13 @@ func (c *Cron) ReplaceBatchConsumer(batchConsumer *BatchConsumer) (*gocron.Job, 
 	return c.scheduler.Every(batchPeriodSeconds).Seconds().
 		StartAt(time.Now().Add(time.Duration(rand.Intn(batchPeriodSeconds)) * time.Second)).
 		Tag(batchConsumer.topicId).
-		Do(batchConsumer.ConsumeAll)
+		Do(batchConsumer.RunJob)
 }
 
 // Close scheduler
 func (c *Cron) Close() {
 	go func() {
 		c.scheduler.Stop()
-		time.Sleep(3 * time.Second)
+		time.Sleep(5 * time.Second)
 	}()
 }

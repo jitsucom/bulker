@@ -1,18 +1,18 @@
 package app
 
 import (
-	"fmt"
 	"github.com/gomodule/redigo/redis"
-	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/utils"
 	"sync"
 	"time"
 )
 
 const redisDestinationsKey = "bulkerExportDestinations"
-const redisConfigurationSourceServiceName = "redis_configuration_source"
+const redisConfigurationSourceServiceName = "redis_configuration"
 
 type RedisConfigurationSource struct {
+	objects.ServiceBase
 	sync.Mutex
 	currentHash uint64
 	refreshChan chan bool
@@ -24,9 +24,11 @@ type RedisConfigurationSource struct {
 }
 
 func NewRedisConfigurationSource(redisURL string) (*RedisConfigurationSource, error) {
-	logging.Debugf("[%s] Creating RedisConfigurationSource with redisURL: %s", redisConfigurationSourceServiceName, redisURL)
+	base := objects.NewServiceBase(redisConfigurationSourceServiceName)
+	base.Debugf("Creating RedisConfigurationSource with redisURL: %s", redisURL)
 	redisPool := newPool(redisURL)
 	r := RedisConfigurationSource{
+		ServiceBase:  base,
 		redisPool:    redisPool,
 		refreshChan:  make(chan bool, 1),
 		changesChan:  make(chan bool, 1),
@@ -45,11 +47,11 @@ func (rcs *RedisConfigurationSource) init() error {
 	defer conn.Close()
 	_, err := conn.Do("CONFIG", "SET", "notify-keyspace-events", "Kg")
 	if err != nil {
-		return fmt.Errorf("failed to set 'notify-keyspace-events' config setting: %v", err)
+		return rcs.NewError("failed to set 'notify-keyspace-events' config setting: %w", err)
 	}
 	err = rcs.load(false)
 	if err != nil {
-		return fmt.Errorf("failed to load initial config: %v", err)
+		return rcs.NewError("failed to load initial config: %w", err)
 	}
 	go rcs.pubsub()
 	go rcs.refresh()
@@ -64,12 +66,12 @@ func (rcs *RedisConfigurationSource) pubsub() {
 		case refresh := <-rcs.refreshChan:
 			if !refresh {
 				//closed channel. exiting goroutine
-				logging.Infof("[%s] Closed Redis Pub/Sub channel: %s", redisConfigurationSourceServiceName, redisPubSubChannel)
+				rcs.Infof("Closed Redis Pub/Sub channel: %s", redisPubSubChannel)
 				return
 			}
 		default:
 		}
-		logging.Infof("[%s] Starting Redis Pub/Sub channel: %s", redisConfigurationSourceServiceName, redisPubSubChannel)
+		rcs.Infof("Starting Redis Pub/Sub channel: %s", redisPubSubChannel)
 		pubSubConn := rcs.redisPool.Get()
 		// Subscribe to the channel
 		psc := redis.PubSubConn{Conn: pubSubConn}
@@ -77,7 +79,7 @@ func (rcs *RedisConfigurationSource) pubsub() {
 		if err != nil {
 			_ = psc.Unsubscribe(redisPubSubChannel)
 			_ = pubSubConn.Close()
-			logging.Errorf("[%s] Failed to subscribe to Redis Pub/Sub channel %s: %v", redisConfigurationSourceServiceName, redisPubSubChannel, err)
+			rcs.Errorf("Failed to subscribe to Redis Pub/Sub channel %s: %v", redisPubSubChannel, err)
 			time.Sleep(10 * time.Second)
 			continue
 		}
@@ -85,15 +87,15 @@ func (rcs *RedisConfigurationSource) pubsub() {
 		for {
 			switch v := psc.Receive().(type) {
 			case redis.Message:
-				logging.Infof("[%s] %s: message: %s", redisConfigurationSourceServiceName, v.Channel, v.Data)
+				rcs.Infof("%s: message: %s", v.Channel, v.Data)
 				rcs.refreshChan <- true
 			case redis.Subscription:
-				logging.Infof("[%s] %s: %s %d", redisConfigurationSourceServiceName, v.Channel, v.Kind, v.Count)
+				rcs.Infof("%s: %s %d", v.Channel, v.Kind, v.Count)
 				if v.Kind == "subscribe" {
 					rcs.refreshChan <- true
 				}
 			case error:
-				logging.Errorf("[%s] Redis PubSub error.: %v", redisConfigurationSourceServiceName, v)
+				rcs.Errorf("Redis PubSub error.: %v", v)
 				break loop
 			}
 		}
@@ -107,25 +109,25 @@ func (rcs *RedisConfigurationSource) refresh() {
 	for range rcs.refreshChan {
 		err := rcs.load(true)
 		if err != nil {
-			logging.Errorf("[%s] Failed to refresh RedisConfigurationSource: %v", redisConfigurationSourceServiceName, err)
+			rcs.Errorf("Failed to refresh RedisConfigurationSource: %v", err)
 		}
 	}
 }
 
 func (rcs *RedisConfigurationSource) load(notify bool) error {
-	logging.Debugf("[%s] Loading RedisConfigurationSource", redisConfigurationSourceServiceName)
+	rcs.Debugf("Loading RedisConfigurationSource")
 	conn := rcs.redisPool.Get()
 	defer conn.Close()
 	configsById, err := redis.StringMap(conn.Do("HGETALL", redisDestinationsKey))
 	if err != nil {
-		return fmt.Errorf("failed to set 'notify-keyspace-events' config setting: %v", err)
+		return rcs.NewError("failed to set 'notify-keyspace-events' config setting: %v", err)
 	}
 	newHash, err := utils.HashAny(configsById)
 	if err != nil {
-		return fmt.Errorf("failed generate hash of redis config: %v", err)
+		return rcs.NewError("failed generate hash of redis config: %v", err)
 	}
 	if newHash == rcs.currentHash {
-		logging.Infof("[%s] RedisConfigurationSource: no changes", redisConfigurationSourceServiceName)
+		rcs.Infof("RedisConfigurationSource: no changes")
 		return nil
 	}
 	newDsts := make(map[string]*DestinationConfig, len(configsById))
@@ -133,9 +135,9 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 		dstCfg := DestinationConfig{}
 		err := utils.ParseObject(config, &dstCfg)
 		if err != nil {
-			logging.Errorf("[%s] failed to parse destination config %s: %v", id, config, err)
+			rcs.Errorf("failed to parse config for destination %s: %s: %v", id, config, err)
 		} else {
-			logging.Infof("[%s] parsed destination config: %+v", id, dstCfg)
+			rcs.Infof("parsed config for destination %s: %+v", id, dstCfg)
 			newDsts[id] = &dstCfg
 		}
 	}
@@ -146,7 +148,7 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 	if notify {
 		select {
 		case rcs.changesChan <- true:
-			logging.Infof("[%s] RedisConfigurationSource: changes detected", redisConfigurationSourceServiceName)
+			rcs.Infof("RedisConfigurationSource: changes detected")
 			//notify listener if it is listening
 		default:
 		}

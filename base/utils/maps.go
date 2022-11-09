@@ -20,3 +20,15 @@ func MapHasSameKeys[K comparable, V any, J any](a map[K]V, b map[K]J) bool {
 
 	return true
 }
+
+func MapClear[K comparable, V any](mp map[K]V) {
+	for key, _ := range mp {
+		delete(mp, key)
+	}
+}
+
+func MapPutIfAbsent[K comparable, V any](mp map[K]V, key K, value V) {
+	if _, ok := mp[key]; !ok {
+		mp[key] = value
+	}
+}
