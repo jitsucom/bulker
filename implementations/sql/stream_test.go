@@ -65,7 +65,7 @@ func init() {
 		configRegistry[SnowflakeBulkerTypeId] = TestConfig{BulkerType: SnowflakeBulkerTypeId, Config: snowflakeConfig}
 	}
 
-	postgresContainer, err := testcontainers.NewPostgresContainer(context.Background())
+	postgresContainer, err := testcontainers.NewPostgresContainer(context.Background(), "")
 	if err != nil {
 		panic(err)
 	}
@@ -119,7 +119,9 @@ func init() {
 			exceptBigquery = append(exceptBigquery, k)
 		}
 	}
-
+	//uncomment to run test for single db only
+	//allBulkerConfigs = []string{PostgresBulkerTypeId}
+	//exceptBigquery = allBulkerConfigs
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 

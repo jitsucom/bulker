@@ -18,6 +18,7 @@ const topicExpression = "in.id.%s.m.%s.t.%s"
 type TopicManager struct {
 	objects.ServiceBase
 	sync.Mutex
+	ready       bool
 	config      *AppConfig
 	kafkaConfig *kafka.ConfigMap
 
@@ -63,10 +64,12 @@ func NewTopicManager(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository
 }
 
 // Start starts TopicManager
-func (tm *TopicManager) Start() error {
+func (tm *TopicManager) Start() {
 	metadata, err := tm.kaftaAdminClient.GetMetadata(nil, true, tm.config.KafkaAdminMetadataTimeoutMs)
 	if err != nil {
-		return tm.NewError("Error getting metadata: %w", err)
+		tm.Errorf("Error getting metadata: %v", err)
+	} else {
+		tm.loadMetadata(metadata)
 	}
 	// refresh metadata every 10 seconds
 	go func() {
@@ -126,64 +129,78 @@ func (tm *TopicManager) Start() error {
 					tm.Errorf("Error getting metadata: %v", err)
 					continue
 				}
-				tm.Lock()
-				for topic, _ := range metadata.Topics {
-					if tm.abanonedTopics.Contains(topic) {
-						continue
-					}
-					destinationId, mode, tableName, err := ParseTopicId(topic)
-					if err != nil {
-						continue
-					}
-					var set utils.Set[string]
-					ok := false
-					if set, ok = tm.topics[destinationId]; !ok {
-						set = utils.NewSet[string]()
-						tm.topics[destinationId] = set
-					}
-					if !set.Contains(topic) {
-						tm.Infof("Found topic %s for destination %s and table %s", topic, destinationId, tableName)
-						destination := tm.repository.GetDestination(destinationId)
-						if destination == nil {
-							tm.Warnf("No destination found for topic: %s", topic)
-							tm.abanonedTopics.Put(topic)
-							continue
-						}
-						if mode == "stream" {
-							streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.bulkerProducer)
-							if err != nil {
-								tm.SystemErrorf("Failed to create consumer for destination topic: %s: %v", topic, err)
-								continue
-							}
-							tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
-						} else if mode == "batch" {
-							batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, destination.config.BatchPeriodSec, topic, tm.config, tm.kafkaConfig)
-							if err != nil {
-								tm.Errorf("Failed to create batch consumer for destination topic: %s: %v", topic, err)
-								continue
-							}
-							tm.batchConsumers[destinationId] = append(tm.batchConsumers[destinationId], batchConsumer)
-							_, err = tm.cron.AddBatchConsumer(batchConsumer)
-							if err != nil {
-								batchConsumer.Retire()
-								tm.Errorf("Failed to schedule consumer for destination topic: %s: %v", topic, err)
-								continue
-							} else {
-								tm.Infof("Consumer for destination topic %s was scheduled with batch period %d", topic, batchConsumer.batchPeriodSec)
-							}
-						} else {
-							tm.Errorf("Unknown stream mode: %s for topic: %s", mode, topic)
-						}
-						set.Put(topic)
-					}
-
-				}
-				tm.Unlock()
-				//logging.Infof("[topic-manager] Refreshed metadata in %v", time.Since(start))
+				tm.loadMetadata(metadata)
 			}
 		}
 	}()
-	return nil
+}
+
+func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
+	tm.Lock()
+	defer tm.Unlock()
+	start := time.Now()
+	for topic, _ := range metadata.Topics {
+		if tm.abanonedTopics.Contains(topic) {
+			continue
+		}
+		destinationId, mode, tableName, err := ParseTopicId(topic)
+		if err != nil {
+			continue
+		}
+		var set utils.Set[string]
+		ok := false
+		if set, ok = tm.topics[destinationId]; !ok {
+			set = utils.NewSet[string]()
+			tm.topics[destinationId] = set
+		}
+		if !set.Contains(topic) {
+			tm.Infof("Found topic %s for destination %s and table %s", topic, destinationId, tableName)
+			destination := tm.repository.GetDestination(destinationId)
+			if destination == nil {
+				tm.Warnf("No destination found for topic: %s", topic)
+				tm.abanonedTopics.Put(topic)
+				continue
+			}
+			switch mode {
+			case "stream":
+				streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.bulkerProducer)
+				if err != nil {
+					tm.SystemErrorf("Failed to create consumer for destination topic: %s: %v", topic, err)
+					continue
+				}
+				tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
+			case "batch":
+				batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, destination.config.BatchPeriodSec, topic, tm.config, tm.kafkaConfig)
+				if err != nil {
+					tm.Errorf("Failed to create batch consumer for destination topic: %s: %v", topic, err)
+					continue
+				}
+				tm.batchConsumers[destinationId] = append(tm.batchConsumers[destinationId], batchConsumer)
+				_, err = tm.cron.AddBatchConsumer(batchConsumer)
+				if err != nil {
+					batchConsumer.Retire()
+					tm.Errorf("Failed to schedule consumer for destination topic: %s: %v", topic, err)
+					continue
+				} else {
+					tm.Infof("Consumer for destination topic %s was scheduled with batch period %d", topic, batchConsumer.batchPeriodSec)
+				}
+			case "failed":
+				tm.Infof("Found topic %s for 'failed' events", topic)
+			default:
+				tm.Errorf("Unknown stream mode: %s for topic: %s", mode, topic)
+			}
+			set.Put(topic)
+		}
+	}
+	tm.Infof("[topic-manager] Refreshed metadata in %v", time.Since(start))
+	tm.ready = true
+}
+
+// IsReady returns true if topic manager is ready to serve requests
+func (tm *TopicManager) IsReady() bool {
+	tm.Lock()
+	defer tm.Unlock()
+	return tm.ready
 }
 
 //// GetTopicsSlice returns topics for destinationId
@@ -248,6 +265,7 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 		set = utils.NewSet[string]()
 		tm.topics[destinationId] = set
 	}
+	failedTopic := MakeTopicId(destinationId, "failed", tableName)
 	topicRes, err := tm.kaftaAdminClient.CreateTopics(context.Background(), []kafka.TopicSpecification{
 		{
 			Topic:         topic,
@@ -259,7 +277,7 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 			},
 		},
 		{
-			Topic:         MakeTopicId(destinationId, "failed", tableName),
+			Topic:         failedTopic,
 			NumPartitions: 1,
 			//TODO  get broker count from admin
 			ReplicationFactor: tm.config.KafkaTopicReplicationFactor,
@@ -272,10 +290,9 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 	if err != nil {
 		return tm.NewError("Error creating topic %s: %w", topic, err)
 	}
-	tm.Infof("Created topic %s", topic)
 	for _, res := range topicRes {
 		if res.Error.Code() != kafka.ErrNoError {
-			return tm.NewError("Error creating topic %s: %v", topic, res.Error)
+			return tm.NewError("Error creating topic %s: %w", res.Topic, res.Error)
 		}
 	}
 	switch mode {
@@ -300,6 +317,8 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 		}
 	}
 	set.Put(topic)
+	tm.Infof("Created topic %s", topic)
+	tm.Infof("Created topic %s", failedTopic)
 
 	return nil
 }

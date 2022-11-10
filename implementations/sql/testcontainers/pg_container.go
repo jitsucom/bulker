@@ -10,6 +10,7 @@ import (
 	tcWait "github.com/testcontainers/testcontainers-go/wait"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -39,7 +40,7 @@ type PostgresContainer struct {
 
 // NewPostgresContainer creates new Postgres test container if PG_TEST_PORT is not defined. Otherwise uses db at defined port. This logic is required
 // for running test at CI environment
-func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
+func NewPostgresContainer(ctx context.Context, hostPort string) (*PostgresContainer, error) {
 	if os.Getenv(envPostgresPortVariable) != "" {
 		port, err := strconv.Atoi(os.Getenv(envPostgresPortVariable))
 		if err != nil {
@@ -75,10 +76,15 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 		return fmt.Sprintf("postgres://%s:%s@localhost:%s/%s?sslmode=disable", pgUser, pgPassword, port.Port(), pgDatabase)
 	}
 
+	exposedPort := pgDefaultPort
+	if hostPort != "" {
+		exposedPort = fmt.Sprintf("%s:%s", hostPort, pgDefaultPort)
+	}
+
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "postgres:12-alpine",
-			ExposedPorts: []string{pgDefaultPort},
+			ExposedPorts: []string{exposedPort},
 			Env:          dbSettings,
 			WaitingFor:   tcWait.ForSQL(pgDefaultPort, "postgres", dbURL).Timeout(time.Second * 60),
 		},
@@ -98,9 +104,9 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 		container.Terminate(ctx)
 		return nil, err
 	}
-
 	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=disable",
 		host, port.Int(), pgDatabase, pgUser, pgPassword)
+	logging.Infof("testcontainters postgres connection string: %s", connectionString)
 	dataSource, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		container.Terminate(ctx)
@@ -125,41 +131,71 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 	}, nil
 }
 
-////CountRows returns row count in DB table with name = table
-////or error if occurred
-//func (pgc *PostgresContainer) CountRows(table string) (int, error) {
-//	rows, err := pgc.datasource.Query(fmt.Sprintf("SELECT count(*) from %s", table))
-//	if err != nil {
-//		errMessage := err.Error()
-//		if strings.HasPrefix(errMessage, "pq: relation") && strings.HasSuffix(errMessage, "does not exist") {
-//			return 0, err
-//		}
-//
-//		return -1, err
-//	}
-//	defer rows.Close()
-//	rows.Next()
-//	var count int
-//	err = rows.Scan(&count)
-//	return count, err
-//}
-//
-////GetSortedRows returns all selected row from table ordered according to orderClause
-////or error if occurred
-//func (pgc *PostgresContainer) GetSortedRows(table, selectClause, whereClause, orderClause string) ([]map[string]any, error) {
-//	where := ""
-//	if whereClause != "" {
-//		where = "where " + whereClause
-//	}
-//
-//	rows, err := pgc.datasource.Query(fmt.Sprintf("SELECT %s from %s %s %s", selectClause, table, where, orderClause))
-//	if err != nil {
-//		return nil, err
-//	}
-//	defer rows.Close()
-//
-//	return extractData(rows)
-//}
+// CountRows returns row count in DB table with name = table
+// or error if occurred
+func (pgc *PostgresContainer) CountRows(table string) (int, error) {
+	rows, err := pgc.datasource.Query(fmt.Sprintf("SELECT count(*) from %s", table))
+	if err != nil {
+		errMessage := err.Error()
+		if strings.HasPrefix(errMessage, "pq: relation") && strings.HasSuffix(errMessage, "does not exist") {
+			return 0, err
+		}
+
+		return -1, err
+	}
+	defer rows.Close()
+	rows.Next()
+	var count int
+	err = rows.Scan(&count)
+	return count, err
+}
+
+// GetSortedRows returns all selected row from table ordered according to orderClause
+// or error if occurred
+func (pgc *PostgresContainer) GetSortedRows(table, selectClause, whereClause, orderClause string) ([]map[string]any, error) {
+	where := ""
+	if whereClause != "" {
+		where = "where " + whereClause
+	}
+
+	rows, err := pgc.datasource.Query(fmt.Sprintf("SELECT %s from %s %s %s", selectClause, table, where, orderClause))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return extractData(rows)
+}
+
+func extractData(rows *sql.Rows) ([]map[string]interface{}, error) {
+	cols, _ := rows.Columns()
+
+	objects := []map[string]interface{}{}
+	for rows.Next() {
+		columns := make([]interface{}, len(cols))
+		columnPointers := make([]interface{}, len(cols))
+		for i := range columns {
+			columnPointers[i] = &columns[i]
+		}
+
+		// Scan the result into the column pointers...
+		if err := rows.Scan(columnPointers...); err != nil {
+			return nil, err
+		}
+
+		// Create our map, and retrieve the value for each column from the pointers slice,
+		// storing it in the map with the name of the column as the key.
+		object := make(map[string]interface{})
+		for i, colName := range cols {
+			val := columnPointers[i].(*interface{})
+			object[colName] = *val
+		}
+
+		objects = append(objects, object)
+	}
+
+	return objects, nil
+}
 
 // Close terminates underlying postgres docker container
 func (pgc *PostgresContainer) Close() error {

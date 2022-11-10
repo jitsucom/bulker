@@ -119,6 +119,11 @@ func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err 
 }
 
 func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (err error) {
+	existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
+	if existingTable.Exists() {
+		//we need to respect types of existing columns when we create tmp table
+		ps.tmpTable.Columns = utils.MapPutAll(ps.tmpTable.Columns, existingTable.Columns)
+	}
 	table := ps.tmpTable
 	err = ps.tx.CreateTable(ctx, table)
 	if err != nil {

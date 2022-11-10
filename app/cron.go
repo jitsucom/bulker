@@ -15,7 +15,7 @@ func NewCron(config *AppConfig) *Cron {
 	s := gocron.NewScheduler(time.UTC)
 	s.TagsUnique()
 	s.StartAsync()
-	return &Cron{scheduler: s}
+	return &Cron{scheduler: s, config: config}
 }
 
 func (c *Cron) AddBatchConsumer(batchConsumer *BatchConsumer) (*gocron.Job, error) {

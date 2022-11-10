@@ -1,0 +1,18 @@
+version: "3"
+services:
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    container_name: zoo
+    expose:
+      - 2181
+  kafka:
+    image: wurstmeister/kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "19092:19092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:19092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:19092
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181

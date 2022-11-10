@@ -27,6 +27,7 @@ type Router struct {
 	producer     *Producer
 	authTokens   []string
 	tokenSecrets []string
+	noAuthPaths  []string
 }
 
 func NewRouter(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repository, topicManager *TopicManager, producer *Producer) *Router {
@@ -47,11 +48,19 @@ func NewRouter(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repo
 		topicManager: topicManager,
 		producer:     producer,
 		tokenSecrets: tokenSecrets,
+		noAuthPaths:  []string{"/ready"},
 	}
 	engine := gin.New()
 	engine.Use(router.AuthMiddleware)
 	engine.POST("/post/:destinationId", router.EventsHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
+	engine.GET("/ready", func(c *gin.Context) {
+		if router.topicManager.IsReady() {
+			c.Status(http.StatusOK)
+		} else {
+			c.Status(http.StatusServiceUnavailable)
+		}
+	})
 	router.engine = engine
 	return router
 }
@@ -159,6 +168,10 @@ func (r *Router) FailedHandler(c *gin.Context) {
 
 func (r *Router) AuthMiddleware(c *gin.Context) {
 	if len(r.authTokens) == 0 {
+		return
+	}
+	if utils.ArrayContains(r.noAuthPaths, c.FullPath()) {
+		//no auth for this path
 		return
 	}
 	authorizationHeader := c.GetHeader("Authorization")
