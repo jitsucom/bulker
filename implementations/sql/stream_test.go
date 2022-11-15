@@ -40,6 +40,7 @@ type TestConfig struct {
 var configRegistry = map[string]any{}
 
 type ExpectedTable struct {
+	Name     string
 	PKFields utils.Set[string]
 	Columns  Columns
 }
@@ -119,9 +120,9 @@ func init() {
 			exceptBigquery = append(exceptBigquery, k)
 		}
 	}
-	//uncomment to run test for single db only
-	//allBulkerConfigs = []string{PostgresBulkerTypeId}
-	//exceptBigquery = allBulkerConfigs
+	////uncomment to run test for single db only
+	//allBulkerConfigs = []string{MySQLBulkerTypeId}
+	//exceptBigquery = []string{}
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 
@@ -142,6 +143,8 @@ type bulkerTestConfig struct {
 	expectedTable *ExpectedTable
 	//control whether to check types of columns fow expectedTable. For test that run against multiple bulker types is required to leave 'false'
 	expectedTableTypeChecking bool
+	//control whether to check character case of table and columns names
+	expectedTableCaseChecking bool
 	//for configs that runs for multiple modes including bulker.ReplacePartition automatically adds WithPartition to streamOptions and partition id column to expectedTable and expectedRows for that particular mode
 	expectPartitionId bool
 	//orderBy clause for select query to check expectedTable (default: id asc)
@@ -192,15 +195,32 @@ func TestStreams(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: &ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 			},
 			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
 		},
+		//{
+		//	name:              "types2",
+		//	modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+		//	expectPartitionId: true,
+		//	dataFile:          "test_data/types2.ndjson",
+		//	expectedTable: &ExpectedTable{
+		//		Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+		//	},
+		//	expectedRows: []map[string]any{
+		//		{"id": 1, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+		//		{"id": 2, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+		//		{"id": 3, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+		//	},
+		//	expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+		//	configIds:      allBulkerConfigs,
+		//},
 		{
 			name:              "types_collision_stream",
 			modes:             []bulker.BulkMode{bulker.AutoCommit},
@@ -209,7 +229,7 @@ func TestStreams(t *testing.T) {
 			expectedErrors: map[string]any{
 				"consume_object_1_postgres":     "cause: pq: 22P02 invalid input syntax for type bigint: \"a\"",
 				"consume_object_1_redshift":     "cause: pq: 22P02 invalid input syntax for integer: \"a\"",
-				"consume_object_1_mysql":        "cause: Error 1366: Incorrect integer value: 'a' for column 'int1' at row 1",
+				"consume_object_1_mysql":        "cause: Error 1366: Incorrect integer value: 'a' for column 'int_1' at row 1",
 				"consume_object_1_snowflake":    "cause: 100038 (22018): Numeric value 'a' is not recognized",
 				"consume_object_1_clickhouse":   "cause: error converting string to int",
 				"create_stream_bigquery_stream": BigQueryAutocommitUnsupported,
@@ -224,10 +244,10 @@ func TestStreams(t *testing.T) {
 			expectedErrors: map[string]any{
 				"stream_complete_postgres":   "cause: pq: 22P02 invalid input syntax for type bigint: \"a\"",
 				"stream_complete_redshift":   "system table for details.",
-				"stream_complete_mysql":      "cause: Error 1366: Incorrect integer value: 'a' for column 'int1' at row 1",
+				"stream_complete_mysql":      "cause: Error 1366: Incorrect integer value: 'a' for column 'int_1' at row 1",
 				"stream_complete_snowflake":  "cause: 100038 (22018): Numeric value 'a' is not recognized",
 				"stream_complete_clickhouse": "cause: error converting string to int",
-				"stream_complete_bigquery":   "Could not parse 'a' as INT64 for field int1",
+				"stream_complete_bigquery":   "Could not parse 'a' as INT64 for field int_1",
 			},
 			configIds: allBulkerConfigs,
 		},
@@ -296,6 +316,9 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 	} else {
 		for _, testConfigId := range tt.configIds {
 			newTd := tt
+			if !utils.ArrayContains(allBulkerConfigs, testConfigId) {
+				t.Skipf("Config '%s' is not selected for this test", testConfigId)
+			}
 			testConfigRaw, ok := configRegistry[testConfigId]
 			if !ok {
 				t.Fatalf("No config found for %s", testConfigId)
@@ -396,16 +419,48 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				table.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
 			}
 		}
-		pkFields := utils.NewSet[string]()
-		pkName := ""
+		if !testConfig.expectedTableCaseChecking {
+			newColumns := make(Columns, len(testConfig.expectedTable.Columns))
+			for k := range testConfig.expectedTable.Columns {
+				newColumns[strings.ToLower(k)] = testConfig.expectedTable.Columns[k]
+			}
+			testConfig.expectedTable.Columns = newColumns
+			newColumns = make(Columns, len(table.Columns))
+			for k := range table.Columns {
+				newColumns[strings.ToLower(k)] = table.Columns[k]
+			}
+			table.Columns = newColumns
+
+			newPKFields := utils.NewSet[string]()
+			for k := range testConfig.expectedTable.PKFields {
+				newPKFields.Put(strings.ToLower(k))
+			}
+			testConfig.expectedTable.PKFields = newPKFields
+			newPKFields = utils.NewSet[string]()
+			for k := range table.PKFields {
+				newPKFields.Put(strings.ToLower(k))
+			}
+			table.PKFields = newPKFields
+
+			testConfig.expectedTable.Name = strings.ToLower(testConfig.expectedTable.Name)
+			table.Name = strings.ToLower(table.Name)
+
+			table.PrimaryKeyName = strings.ToLower(table.PrimaryKeyName)
+		}
+		expectedPKFields := utils.NewSet[string]()
+		expectedPKName := ""
 		if len(testConfig.expectedTable.PKFields) > 0 {
-			pkName = BuildConstraintName(tableName)
-			pkFields = testConfig.expectedTable.PKFields
+			expectedPKName = BuildConstraintName(table.Name)
+			expectedPKFields = testConfig.expectedTable.PKFields
+		}
+		// don't check table name if not explicitly set
+		if testConfig.expectedTable.Name == "" {
+			table.Name = ""
 		}
 		expectedTable := &Table{
-			Name:           tableName,
-			PrimaryKeyName: pkName,
-			PKFields:       pkFields,
+			Name:           testConfig.expectedTable.Name,
+			PrimaryKeyName: expectedPKName,
+			PKFields:       expectedPKFields,
 			Columns:        testConfig.expectedTable.Columns,
 		}
 		reqr.Equal(expectedTable, table)
@@ -441,7 +496,10 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 			if testConfig.expectedTable != nil {
 				textColumn, ok := testConfig.expectedTable.Columns["name"]
 				if !ok {
-					t.Fatalf("test config error: expected table must have a 'name' column of string type to guess what type to expect for %s column", PartitonIdKeyword)
+					textColumn, ok = testConfig.expectedTable.Columns["NAME"]
+					if !ok {
+						t.Fatalf("test config error: expected table must have a 'name' column of string type to guess what type to expect for %s column", PartitonIdKeyword)
+					}
 				}
 				newExpectedTable := ExpectedTable{Columns: testConfig.expectedTable.Columns.Clone(), PKFields: testConfig.expectedTable.PKFields.Clone()}
 				newExpectedTable.Columns[PartitonIdKeyword] = textColumn

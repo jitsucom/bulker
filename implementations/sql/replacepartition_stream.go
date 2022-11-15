@@ -125,9 +125,9 @@ func (ps *ReplacePartitionStream) clearPartition(ctx context.Context, sqlAdapter
 	if table.Exists() {
 		//if table exists we need to delete previous data associated with partitionId,
 		//but we need to check if partitionId column exists in table first
-		_, ok := table.Columns[PartitonIdKeyword]
+		_, ok := table.Columns[sqlAdapter.ColumnName(PartitonIdKeyword)]
 		if !ok {
-			return fmt.Errorf("couldn't start ReplacePartitionStream: destination table [%s] exist but it is not managed by ReplacePartitionStream: %s column is missing", ps.tableName, PartitonIdKeyword)
+			return fmt.Errorf("couldn't start ReplacePartitionStream: destination table [%s] exist but it is not managed by ReplacePartitionStream: %s column is missing", ps.tableName, sqlAdapter.ColumnName(PartitonIdKeyword))
 		}
 		//delete previous data by provided partition id
 		err = sqlAdapter.Delete(ctx, ps.tableName, ByPartitionId(ps.partitionId))

@@ -9,10 +9,17 @@ func ArrayContains[T comparable](arr []T, value T) bool {
 	return false
 }
 
-func ArrayExcluding[T comparable](arr []T, valueToExclude T) []T {
+func ArrayExcluding[T comparable](arr []T, valueToExclude ...T) []T {
 	res := make([]T, 0, len(arr))
 	for _, a := range arr {
-		if a != valueToExclude {
+		exclude := false
+		for _, v := range valueToExclude {
+			if a == v {
+				exclude = true
+				break
+			}
+		}
+		if !exclude {
 			res = append(res, a)
 		}
 	}

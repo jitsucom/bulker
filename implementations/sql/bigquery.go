@@ -1,6 +1,7 @@
 package sql
 
 import (
+	"cloud.google.com/go/bigquery"
 	"cloud.google.com/go/civil"
 	"context"
 	"encoding/json"
@@ -13,16 +14,15 @@ import (
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"math"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	"cloud.google.com/go/bigquery"
-	"google.golang.org/api/googleapi"
 )
 
 func init() {
@@ -33,17 +33,19 @@ const (
 	BigQueryAutocommitUnsupported = "BigQuery bulker doesn't support auto commit mode as not efficient"
 	BigqueryBulkerTypeId          = "bigquery"
 
-	bigqueryMergeTemplate  = "MERGE INTO `%s` T USING `%s` S ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)"
-	bigqueryDeleteTemplate = "DELETE FROM `%s` WHERE %s"
-	bigqueryUpdateTemplate = "UPDATE `%s` SET %s WHERE %s"
+	bigqueryMergeTemplate  = "MERGE INTO %s T USING %s S ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)"
+	bigqueryDeleteTemplate = "DELETE FROM %s WHERE %s"
+	bigqueryUpdateTemplate = "UPDATE %s SET %s WHERE %s"
 
-	bigqueryTruncateTemplate = "TRUNCATE TABLE `%s`"
-	bigquerySelectTemplate   = "SELECT %s FROM `%s`%s%s"
+	bigqueryTruncateTemplate = "TRUNCATE TABLE %s"
+	bigquerySelectTemplate   = "SELECT %s FROM %s%s%s"
 
 	bigqueryRowsLimitPerInsertOperation = 500
 )
 
 var (
+	bigqueryColumnUnsupportedCharacters = regexp.MustCompile(`[^0-9A-Za-z_]`)
+
 	//SchemaToBigQueryString is mapping between JSON types and BigQuery types
 	SchemaToBigQueryString = map[types.DataType]string{
 		types.STRING:    string(bigquery.StringFieldType),
@@ -164,11 +166,11 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 		columns := sourceTable.SortedColumnNames()
 		updateSet := make([]string, len(columns))
 		for i, name := range columns {
-			updateSet[i] = fmt.Sprintf("T.%s = S.%s", bq.columnName(name), bq.columnName(name))
+			updateSet[i] = fmt.Sprintf("T.%s = S.%s", bq.ColumnName(name), bq.ColumnName(name))
 		}
 		var joinConditions []string
 		for pkField := range targetTable.PKFields {
-			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = S.%s", bq.columnName(pkField), bq.columnName(pkField)))
+			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = S.%s", bq.ColumnName(pkField), bq.ColumnName(pkField)))
 		}
 		columnsString := strings.Join(columns, ",")
 		insertFromSelectStatement := fmt.Sprintf(bigqueryMergeTemplate, bq.fullTableName(targetTable.Name), bq.fullTableName(sourceTable.Name),
@@ -199,6 +201,7 @@ func (bq *BigQuery) GetTypesMapping() map[types.DataType]string {
 
 // GetTableSchema return google BigQuery table (name,columns) representation wrapped in Table struct
 func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
+	tableName = bq.TableName(tableName)
 	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.Set[string]{}}
 
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
@@ -235,11 +238,12 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 
 // CreateTable creates google BigQuery table from Table
 func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
-	bqTable := bq.client.Dataset(bq.config.Dataset).Table(table.Name)
+	tableName := bq.TableName(table.Name)
+	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
 
 	_, err = bqTable.Metadata(ctx)
 	if err == nil {
-		logging.Info("BigQuery table", table.Name, "already exists")
+		logging.Info("BigQuery table", tableName, "already exists")
 		return nil
 	}
 
@@ -249,7 +253,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 				Dataset: bq.config.Dataset,
 				Bucket:  bq.config.Bucket,
 				Project: bq.config.Project,
-				Table:   table.Name,
+				Table:   tableName,
 			})
 	}
 
@@ -257,13 +261,13 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	for _, columnName := range table.SortedColumnNames() {
 		column := table.Columns[columnName]
 		bigQueryType := bigquery.FieldType(strings.ToUpper(column.GetDDLType()))
-		bqSchema = append(bqSchema, &bigquery.FieldSchema{Name: bq.columnName(columnName), Type: bigQueryType})
+		bqSchema = append(bqSchema, &bigquery.FieldSchema{Name: bq.ColumnName(columnName), Type: bigQueryType})
 	}
 	var labels map[string]string
 	if len(table.PKFields) > 0 && table.PrimaryKeyName != "" {
 		labels = map[string]string{table.PrimaryKeyName: strings.Join(table.PKFields.ToSlice(), ",")}
 	}
-	tableMetaData := bigquery.TableMetadata{Name: table.Name, Schema: bqSchema, Labels: labels}
+	tableMetaData := bigquery.TableMetadata{Name: tableName, Schema: bqSchema, Labels: labels}
 	bq.logQuery("CREATE table for schema: ", tableMetaData, nil)
 	if table.Partition.Field != "" && table.Partition.Granularity != ALL {
 		var partitioningType bigquery.TimePartitioningType
@@ -286,7 +290,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 				Dataset:   bq.config.Dataset,
 				Bucket:    bq.config.Bucket,
 				Project:   bq.config.Project,
-				Table:     table.Name,
+				Table:     tableName,
 				Statement: string(schemaJson),
 			})
 	}
@@ -344,7 +348,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 	for _, columnName := range patchSchema.SortedColumnNames() {
 		column := patchSchema.Columns[columnName]
 		bigQueryType := bigquery.FieldType(strings.ToUpper(column.GetDDLType()))
-		metadata.Schema = append(metadata.Schema, &bigquery.FieldSchema{Name: bq.columnName(columnName), Type: bigQueryType})
+		metadata.Schema = append(metadata.Schema, &bigquery.FieldSchema{Name: bq.ColumnName(columnName), Type: bigQueryType})
 	}
 	updateReq := bigquery.TableMetadataToUpdate{Schema: metadata.Schema}
 	bq.logQuery("PATCH update request: ", updateReq, nil)
@@ -364,6 +368,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 }
 
 func (bq *BigQuery) DeletePartition(ctx context.Context, tableName string, datePartiton *DatePartition) error {
+	tableName = bq.TableName(tableName)
 	partitions := GranularityToPartitionIds(datePartiton.Granularity, datePartiton.Value)
 	for _, partition := range partitions {
 		bq.logQuery("DELETE partition "+partition+" in table"+tableName, "", nil)
@@ -460,6 +465,7 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 }
 
 func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+	tableName := bq.TableName(targetTable.Name)
 	defer func() {
 		if err != nil {
 			err = errorj.ExecuteInsertInBatchError.Wrap(err, "failed to execute middle insert batch").
@@ -467,7 +473,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 					Dataset: bq.config.Dataset,
 					Bucket:  bq.config.Bucket,
 					Project: bq.config.Project,
-					Table:   targetTable.Name,
+					Table:   tableName,
 				})
 		}
 	}()
@@ -479,7 +485,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	if err != nil {
 		return err
 	}
-	bqTable := bq.client.Dataset(bq.config.Dataset).Table(targetTable.Name)
+	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
 	meta, err := bqTable.Metadata(ctx)
 
 	//sort meta schema field order to match csv file column order
@@ -504,7 +510,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	} else if loadSource.Format == implementations.JSON {
 		source.SourceFormat = bigquery.JSON
 	}
-	loader := bq.client.Dataset(bq.config.Dataset).Table(targetTable.Name).LoaderFrom(source)
+	loader := bq.client.Dataset(bq.config.Dataset).Table(tableName).LoaderFrom(source)
 	loader.CreateDisposition = bigquery.CreateIfNeeded
 	loader.WriteDisposition = bigquery.WriteAppend
 	job, err := loader.Run(ctx)
@@ -523,6 +529,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 
 // DropTable drops table from BigQuery
 func (bq *BigQuery) DropTable(ctx context.Context, tableName string, ifExists bool) error {
+	tableName = bq.TableName(tableName)
 	bq.logQuery(fmt.Sprintf("DROP table '%s' if exists: %t", tableName, ifExists), nil, nil)
 
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
@@ -545,6 +552,8 @@ func (bq *BigQuery) DropTable(ctx context.Context, tableName string, ifExists bo
 }
 
 func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
+	targetTableName = bq.TableName(targetTableName)
+	replacementTableName := bq.TableName(replacementTable.Name)
 	defer func() {
 		if err != nil {
 			err = errorj.CopyError.Wrap(err, "failed to replace table").
@@ -557,10 +566,10 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, re
 		}
 	}()
 	dataset := bq.client.Dataset(bq.config.Dataset)
-	copier := dataset.Table(targetTableName).CopierFrom(dataset.Table(replacementTable.Name))
+	copier := dataset.Table(targetTableName).CopierFrom(dataset.Table(replacementTableName))
 	copier.WriteDisposition = bigquery.WriteTruncate
 	copier.CreateDisposition = bigquery.CreateIfNeeded
-	bq.logQuery(fmt.Sprintf("COPY table '%s' to '%s'", replacementTable.Name, targetTableName), copier, nil)
+	bq.logQuery(fmt.Sprintf("COPY table '%s' to '%s'", replacementTableName, targetTableName), copier, nil)
 
 	job, err := copier.Run(ctx)
 	if err != nil {
@@ -575,7 +584,7 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, re
 		return err
 	}
 	if dropOldTable {
-		return bq.DropTable(ctx, replacementTable.Name, false)
+		return bq.DropTable(ctx, replacementTableName, false)
 	} else {
 		return nil
 	}
@@ -583,6 +592,7 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, re
 
 // TruncateTable deletes all records in tableName table
 func (bq *BigQuery) TruncateTable(ctx context.Context, tableName string) error {
+	tableName = bq.TableName(tableName)
 	query := fmt.Sprintf(bigqueryTruncateTemplate, bq.fullTableName(tableName))
 	bq.logQuery(query, nil, nil)
 	if _, err := bq.client.Query(query).Read(ctx); err != nil {
@@ -671,6 +681,7 @@ func (bqi *BQItem) Save() (row map[string]bigquery.Value, insertID string, err e
 }
 
 func (bq *BigQuery) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) (err error) {
+	tableName = bq.TableName(tableName)
 	updateCondition, updateValues := bq.toWhenConditions(whenConditions)
 
 	columns := make([]string, len(object), len(object))
@@ -718,6 +729,7 @@ func (bq *BigQuery) Select(ctx context.Context, tableName string, whenConditions
 	return bq.selectFrom(ctx, tableName, "*", whenConditions, orderBy)
 }
 func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy string) (res []map[string]any, err error) {
+	tableName = bq.TableName(tableName)
 	whenCondition, values := bq.toWhenConditions(whenConditions)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
@@ -818,6 +830,7 @@ func (bq *BigQuery) toWhenConditions(conditions *WhenConditions) (string, []bigq
 	return strings.Join(queryConditions, " "+conditions.JoinCondition+" "), values
 }
 func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) (err error) {
+	tableName = bq.TableName(tableName)
 	whenCondition, values := bq.toWhenConditions(deleteConditions)
 	if len(whenCondition) == 0 {
 		return errors.New("delete conditions are empty")
@@ -859,9 +872,42 @@ func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 }
 
 func (bq *BigQuery) fullTableName(tableName string) string {
-	return bq.config.Project + "." + bq.config.Dataset + "." + tableName
+	quoted, _ := bq.adaptSqlIdentifier(tableName, 1024)
+	return bq.config.Project + "." + bq.config.Dataset + "." + quoted
 }
 
-func (bq *BigQuery) columnName(columnName string) string {
-	return columnName
+func (bq *BigQuery) ColumnName(identifier string) string {
+	cleanIdentifier := bigqueryColumnUnsupportedCharacters.ReplaceAllString(identifier, "")
+	if cleanIdentifier == "" {
+		return fmt.Sprintf("column_%x", utils.HashString(identifier))
+	}
+	identifier = strings.ReplaceAll(identifier, " ", "_")
+	result := bigqueryColumnUnsupportedCharacters.ReplaceAllString(identifier, "")
+	if utils.IsNumber(int32(result[0])) {
+		result = "_" + result
+	}
+	return utils.ShortenString(strings.ToLower(result), 300)
+}
+
+func (bq *BigQuery) TableName(identifier string) string {
+	_, unquoted := bq.adaptSqlIdentifier(identifier, 1024)
+	return unquoted
+}
+
+// adaptSqlIdentifier adapts the given identifier to basic rules derived from the SQL standard and injection protection:
+// - must only contain letters, numbers, underscores, hyphen, and spaces - all other characters are removed
+// - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
+func (bq *BigQuery) adaptSqlIdentifier(identifier string, maxIdentifierLength int) (quotedIfNeeded string, unquoted string) {
+	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "")
+	result := utils.ShortenString(cleanIdentifier, maxIdentifierLength)
+	if result == "" {
+		result = fmt.Sprintf("column_%x", utils.HashString(identifier))
+		return result, result
+	}
+	m := sqlUnquotedIdentifierPattern.MatchString(result)
+	if !m {
+		return fmt.Sprintf(`%c%s%c`, '`', result, '`'), result
+	} else {
+		return result, result
+	}
 }

@@ -78,6 +78,8 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Port == 0 {
 		config.Port = 5439
 	}
+	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0)
+
 	bulkerConfig.DestinationConfig = config.DataSourceConfig
 	postgres, err := NewPostgres(bulkerConfig)
 	if err != nil {
@@ -86,8 +88,12 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 
 	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: config.S3OptionConfig}
 	r.batchFileFormat = implementations.CSV_GZIP
+	r.maxIdentifierLength = 127
 	r.temporaryTables = true
 	r._columnDDLFunc = redshiftColumnDDL
+	// Redshift is case insensitive by default
+	r._columnNameFunc = strings.ToLower
+	r._tableNameFunc = func(config *DataSourceConfig, tableName string) string { return strings.ToLower(tableName) }
 	return r, nil
 }
 
@@ -152,7 +158,7 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 			return errorj.ExecuteInsertError.Wrap(err, "failed check primary key collision").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:      p.config.Schema,
-					Table:       table.Name,
+					Table:       p.quotedTableName(table.Name),
 					PrimaryKeys: table.GetPKFields(),
 				})
 		}
@@ -167,6 +173,7 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 
 // LoadTable copy transfer data from s3 to redshift by passing COPY request to redshift
 func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+	quotedTableName := p.quotedTableName(targetTable.Name)
 	if loadSource.Type != AmazonS3 {
 		return fmt.Errorf("LoadTable: only Amazon S3 file is supported")
 	}
@@ -176,22 +183,21 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	columns := targetTable.SortedColumnNames()
 	columnNames := make([]string, len(columns))
 	for i, name := range columns {
-		columnNames[i] = p.columnName(name)
+		columnNames[i] = p.quotedColumnName(name)
 	}
-	tableName := targetTable.Name
 	s3Config := loadSource.S3Config
 	fileKey := loadSource.Path
 	//add folder prefix if configured
 	if s3Config.Folder != "" {
 		fileKey = s3Config.Folder + "/" + fileKey
 	}
-	statement := fmt.Sprintf(redshiftCopyTemplate, p.fullTableName(tableName), strings.Join(columns, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
+	statement := fmt.Sprintf(redshiftCopyTemplate, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.CopyError.Wrap(err, "failed to copy data from s3").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    p.config.Schema,
-				Table:     tableName,
-				Statement: fmt.Sprintf(redshiftCopyTemplate, p.fullTableName(tableName), columns, s3Config.Bucket, fileKey, credentialsMask, credentialsMask, s3Config.Region),
+				Table:     quotedTableName,
+				Statement: fmt.Sprintf(redshiftCopyTemplate, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, credentialsMask, credentialsMask, s3Config.Region),
 			})
 	}
 
@@ -199,6 +205,9 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 }
 
 func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) (err error) {
+	quotedTargetTableName := p.quotedTableName(targetTable.Name)
+	quotedSourceTableName := p.quotedTableName(sourceTable.Name)
+
 	if merge && len(targetTable.PKFields) > 0 {
 		//delete duplicates from table
 		var pkMatchConditions string
@@ -206,16 +215,16 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 			if i > 0 {
 				pkMatchConditions += " AND "
 			}
-			pkMatchConditions += fmt.Sprintf(`%s.%s = %s.%s`, p.fullTableName(targetTable.Name), pkColumn, p.fullTableName(sourceTable.Name), pkColumn)
+			pkMatchConditions += fmt.Sprintf(`%s.%s = %s.%s`, quotedTargetTableName, pkColumn, quotedSourceTableName, pkColumn)
 		}
-		deleteStatement := fmt.Sprintf(redshiftDeleteBeforeBulkMergeUsing, p.fullTableName(targetTable.Name), p.fullTableName(sourceTable.Name), pkMatchConditions)
+		deleteStatement := fmt.Sprintf(redshiftDeleteBeforeBulkMergeUsing, quotedTargetTableName, quotedSourceTableName, pkMatchConditions)
 
 		if _, err = p.txOrDb(ctx).ExecContext(ctx, deleteStatement); err != nil {
 
 			return errorj.BulkMergeError.Wrap(err, "failed to delete duplicated rows").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:      p.config.Schema,
-					Table:       targetTable.Name,
+					Table:       quotedTargetTableName,
 					PrimaryKeys: targetTable.GetPKFields(),
 					Statement:   deleteStatement,
 				})
@@ -251,7 +260,7 @@ func (p *Redshift) renameTable(ctx context.Context, ifExists bool, tableName, ne
 
 // GetTableSchema return table (name,columns, primary key) representation wrapped in Table struct
 func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
-	table, err := p.getTable(ctx, tableName)
+	table, err := p.getTable(ctx, strings.ToLower(tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +270,7 @@ func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table
 		return table, nil
 	}
 
-	primaryKeyName, pkFields, err := p.getPrimaryKeys(ctx, tableName)
+	primaryKeyName, pkFields, err := p.getPrimaryKeys(ctx, table.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -277,6 +286,7 @@ func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table
 }
 
 func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string, utils.Set[string], error) {
+	tableName = p.TableName(tableName)
 	primaryKeys := utils.NewSet[string]()
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftPrimaryKeyFieldsQuery, p.config.Schema, tableName)
 	if err != nil {
@@ -338,5 +348,5 @@ func redshiftColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]
 		}
 	}
 
-	return fmt.Sprintf(`"%s" %s%s%s`, name, sqlType, columnAttributes, columnConstaints)
+	return fmt.Sprintf(`%s %s%s%s`, strings.ToLower(name), sqlType, columnAttributes, columnConstaints)
 }

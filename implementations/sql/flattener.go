@@ -3,7 +3,6 @@ package sql
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jitsucom/bulker/base/utils"
 	"reflect"
 	"strings"
 )
@@ -45,7 +44,6 @@ func (f *FlattenerImpl) FlattenObject(json map[string]any) (map[string]any, erro
 // recursive function for flatten key (if value is inner object -> recursion call)
 // Reformat key
 func (f *FlattenerImpl) flatten(key string, value any, destination map[string]any) error {
-	key = Reformat(key)
 	t := reflect.ValueOf(value)
 	switch t.Kind() {
 	case reflect.Slice:
@@ -87,20 +85,6 @@ func (f *FlattenerImpl) flatten(key string, value any, destination map[string]an
 	}
 
 	return nil
-}
-
-// Reformat makes all keys to lower case and replaces all special symbols with '_'
-func Reformat(key string) string {
-	key = strings.ToLower(key)
-	var result strings.Builder
-	for _, symbol := range key {
-		if utils.IsLetterOrNumber(symbol) {
-			result.WriteByte(byte(symbol))
-		} else {
-			result.WriteRune('_')
-		}
-	}
-	return result.String()
 }
 
 type DummyFlattener struct {

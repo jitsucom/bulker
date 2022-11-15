@@ -10,6 +10,7 @@ import (
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -33,6 +34,9 @@ const (
 )
 
 var (
+	sqlIdentifierUnsupportedCharacters = regexp.MustCompile(`[^\p{L}_\d $-]`)
+	sqlUnquotedIdentifierPattern       = regexp.MustCompile(`^[a-zA-Z_][0-9A-Za-z_]*$`)
+
 	insertQueryTemplate, _                              = template.New("insertQuery").Parse(insertQuery)
 	insertFromSelectQueryTemplate, _                    = template.New("insertFromSelectQuery").Parse(insertFromSelectQuery)
 	originalColumnName               ColumnNameFunction = func(col string) string {
@@ -71,6 +75,8 @@ type SQLAdapterBase[T any] struct {
 	batchFileFormat implementations.FileFormat
 	temporaryTables bool
 
+	maxIdentifierLength  int
+	identifierQuoteChar  rune
 	parameterPlaceholder ParameterPlaceholder
 	typecastFunc         TypeCastFunction
 	_tableNameFunc       TableNameFunction[T]
@@ -80,7 +86,7 @@ type SQLAdapterBase[T any] struct {
 	checkErrFunc         ErrorAdapter
 }
 
-func newSQLAdapterBase[T any](typeId string, config *T, dataSource *sql.DB, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, tableNameFunc TableNameFunction[T], columnNameFunc ColumnNameFunction, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) SQLAdapterBase[T] {
+func newSQLAdapterBase[T any](typeId string, config *T, dataSource *sql.DB, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) SQLAdapterBase[T] {
 	s := SQLAdapterBase[T]{
 		typeId:               typeId,
 		config:               config,
@@ -89,11 +95,12 @@ func newSQLAdapterBase[T any](typeId string, config *T, dataSource *sql.DB, quer
 		queryLogger:          queryLogger,
 		parameterPlaceholder: parameterPlaceholder,
 		typecastFunc:         typecastFunc,
-		_tableNameFunc:       tableNameFunc,
-		_columnNameFunc:      columnNameFunc,
+		_columnNameFunc:      originalColumnName,
 		_columnDDLFunc:       columnDDLFunc,
 		valueMappingFunction: valueMappingFunction,
 		checkErrFunc:         checkErrFunc,
+		maxIdentifierLength:  63,
+		identifierQuoteChar:  '"',
 	}
 	s.batchFileFormat = implementations.JSON
 	s.dbWrapper = NewDbWrapper(typeId, dataSource, queryLogger, checkErrFunc)
@@ -136,6 +143,7 @@ func (b *SQLAdapterBase[T]) Select(ctx context.Context, tableName string, whenCo
 	return b.selectFrom(ctx, selectQueryTemplate, tableName, "*", whenConditions, orderBy)
 }
 func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+	quotedTableName := b.quotedTableName(tableName)
 	whenCondition, values := ToWhenConditions(whenConditions, b.parameterPlaceholder, 0)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
@@ -145,7 +153,7 @@ func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, ta
 	}
 	var rows *sql.Rows
 	var err error
-	query := fmt.Sprintf(statement, selectExpression, b.fullTableName(tableName), whenCondition, orderBy)
+	query := fmt.Sprintf(statement, selectExpression, quotedTableName, whenCondition, orderBy)
 	if b.typeId == MySQLBulkerTypeId {
 		//For MySQL using Prepared statement switches mySQL to use Binary protocol that preserves types information
 		var stmt *sql.Stmt
@@ -162,7 +170,7 @@ func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, ta
 	if err != nil {
 		return nil, errorj.SelectFromTableError.Wrap(err, "failed execute select").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: query,
 				Values:    values,
 			})
@@ -185,7 +193,7 @@ func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, ta
 	if err != nil {
 		return nil, errorj.SelectFromTableError.Wrap(err, "failed read selected rows").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: query,
 				Values:    values,
 			})
@@ -207,14 +215,16 @@ func (b *SQLAdapterBase[T]) Count(ctx context.Context, tableName string, whenCon
 }
 
 func (b *SQLAdapterBase[T]) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {
+	quotedTableName := b.quotedTableName(tableName)
+
 	deleteCondition, values := ToWhenConditions(deleteConditions, b.parameterPlaceholder, 0)
-	query := fmt.Sprintf(deleteQueryTemplate, b.fullTableName(tableName), deleteCondition)
+	query := fmt.Sprintf(deleteQueryTemplate, quotedTableName, deleteCondition)
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query, values...); err != nil {
 
 		return errorj.DeleteFromTableError.Wrap(err, "failed to delete data").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: query,
 			})
 	}
@@ -223,6 +233,8 @@ func (b *SQLAdapterBase[T]) Delete(ctx context.Context, tableName string, delete
 }
 
 func (b *SQLAdapterBase[T]) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error {
+	quotedTableName := b.quotedTableName(tableName)
+
 	updateCondition, updateValues := ToWhenConditions(whenConditions, b.parameterPlaceholder, len(object))
 
 	columns := make([]string, len(object), len(object))
@@ -237,13 +249,13 @@ func (b *SQLAdapterBase[T]) Update(ctx context.Context, tableName string, object
 		values[i+a] = updateValues[a]
 	}
 
-	statement := fmt.Sprintf(updateStatementTemplate, b.fullTableName(tableName), strings.Join(columns, ", "), updateCondition)
+	statement := fmt.Sprintf(updateStatementTemplate, quotedTableName, strings.Join(columns, ", "), updateCondition)
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement, values...); err != nil {
 
 		return errorj.UpdateError.Wrap(err, "failed to update").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: statement,
 				Values:    values,
 			})
@@ -253,17 +265,19 @@ func (b *SQLAdapterBase[T]) Update(ctx context.Context, tableName string, object
 }
 
 func (b *SQLAdapterBase[T]) DropTable(ctx context.Context, tableName string, ifExists bool) error {
+	quotedTableName := b.quotedTableName(tableName)
+
 	ifExs := ""
 	if ifExists {
 		ifExs = "IF EXISTS "
 	}
-	query := fmt.Sprintf(dropTableTemplate, ifExs, b.fullTableName(tableName))
+	query := fmt.Sprintf(dropTableTemplate, ifExs, quotedTableName)
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 
 		return errorj.DropError.Wrap(err, "failed to drop table").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: query,
 			})
 	}
@@ -273,11 +287,13 @@ func (b *SQLAdapterBase[T]) DropTable(ctx context.Context, tableName string, ifE
 
 // TruncateTable deletes all records in tableName table
 func (b *SQLAdapterBase[T]) TruncateTable(ctx context.Context, tableName string) error {
-	statement := fmt.Sprintf(truncateTableTemplate, b.fullTableName(tableName))
+	quotedTableName := b.quotedTableName(tableName)
+
+	statement := fmt.Sprintf(truncateTableTemplate, quotedTableName)
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.TruncateError.Wrap(err, "failed to truncate table").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: statement,
 			})
 	}
@@ -304,6 +320,8 @@ func (b *SQLAdapterBase[T]) insert(ctx context.Context, table *Table, objects []
 
 // plainInsert inserts provided object into Snowflake
 func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, objects []types.Object, mergeQuery *template.Template) error {
+	quotedTableName := b.quotedTableName(table.Name)
+
 	columns := table.SortedColumnNames()
 	columnNames := make([]string, len(columns))
 	placeholders := make([]string, len(columns))
@@ -312,14 +330,14 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 
 	for i, name := range columns {
 		if mergeQuery != nil {
-			updateColumns[i] = fmt.Sprintf(`%s=%s`, b.columnName(name), b.typecastFunc(b.parameterPlaceholder(i+1, b.columnName(name)), table.Columns[name]))
+			updateColumns[i] = fmt.Sprintf(`%s=%s`, b.quotedColumnName(name), b.typecastFunc(b.parameterPlaceholder(i+1, b.quotedColumnName(name)), table.Columns[name]))
 		}
-		columnNames[i] = b.columnName(name)
+		columnNames[i] = b.quotedColumnName(name)
 		placeholders[i] = b.typecastFunc(b.parameterPlaceholder(i+1, name), table.Columns[name])
 	}
 
 	insertPayload := QueryPayload{
-		TableName:      b.fullTableName(table.Name),
+		TableName:      quotedTableName,
 		Columns:        strings.Join(columnNames, ", "),
 		Placeholders:   strings.Join(placeholders, ", "),
 		PrimaryKeyName: table.PrimaryKeyName,
@@ -349,7 +367,7 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 		if err != nil {
 			return errorj.ExecuteInsertError.Wrap(err, "failed to execute single insert").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
-					Table:       table.Name,
+					Table:       quotedTableName,
 					PrimaryKeys: table.GetPKFields(),
 					Statement:   statement,
 					Values:      values,
@@ -365,27 +383,30 @@ func (b *SQLAdapterBase[T]) copy(ctx context.Context, targetTable *Table, source
 }
 
 func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table, sourceTable *Table, mergeQuery *template.Template, sourceAlias string) error {
+	quotedTargetTableName := b.quotedTableName(targetTable.Name)
+	quotedSourceTableName := b.quotedTableName(sourceTable.Name)
+
 	//insert from select
 	columns := sourceTable.SortedColumnNames()
 	columnNames := make([]string, len(columns))
 	for i, name := range columns {
-		columnNames[i] = b.columnName(name)
+		columnNames[i] = b.quotedColumnName(name)
 	}
 	updateColumns := make([]string, len(columns))
 	insertColumns := make([]string, len(columns))
 	var joinConditions []string
 	if mergeQuery != nil {
 		for i, name := range columns {
-			updateColumns[i] = fmt.Sprintf(`%s=%s.%s`, b.columnName(name), sourceAlias, b.columnName(name))
-			insertColumns[i] = b.typecastFunc(fmt.Sprintf(`%s.%s`, sourceAlias, b.columnName(name)), targetTable.Columns[name])
+			updateColumns[i] = fmt.Sprintf(`%s=%s.%s`, b.quotedColumnName(name), sourceAlias, b.quotedColumnName(name))
+			insertColumns[i] = b.typecastFunc(fmt.Sprintf(`%s.%s`, sourceAlias, b.quotedColumnName(name)), targetTable.Columns[name])
 		}
 		for pkField := range targetTable.PKFields {
-			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = %s.%s", b.columnName(pkField), sourceAlias, b.columnName(pkField)))
+			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = %s.%s", b.quotedColumnName(pkField), sourceAlias, b.quotedColumnName(pkField)))
 		}
 	}
 	insertPayload := QueryPayload{
-		TableTo:        b.fullTableName(targetTable.Name),
-		TableFrom:      b.fullTableName(sourceTable.Name),
+		TableTo:        quotedTargetTableName,
+		TableFrom:      quotedSourceTableName,
 		Columns:        strings.Join(columnNames, ","),
 		PrimaryKeyName: targetTable.PrimaryKeyName,
 		JoinConditions: strings.Join(joinConditions, " AND "),
@@ -407,7 +428,7 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 
 		return errorj.BulkMergeError.Wrap(err, "failed to bulk insert").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:       targetTable.Name,
+				Table:       quotedTargetTableName,
 				PrimaryKeys: targetTable.GetPKFields(),
 				Statement:   statement,
 			})
@@ -419,6 +440,8 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 // override input table sql type with configured cast type
 // make fields from Table PkFields - 'not null'
 func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+	quotedTableName := b.quotedTableName(schemaToCreate.Name)
+
 	pkFields := schemaToCreate.GetPKFieldsSet()
 	columns := schemaToCreate.SortedColumnNames()
 	columnsDDL := make([]string, len(columns))
@@ -431,12 +454,12 @@ func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Tab
 		temporary = "TEMPORARY"
 	}
 
-	query := fmt.Sprintf(createTableTemplate, temporary, b.fullTableName(schemaToCreate.Name), strings.Join(columnsDDL, ", "))
+	query := fmt.Sprintf(createTableTemplate, temporary, quotedTableName, strings.Join(columnsDDL, ", "))
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		return errorj.CreateTableError.Wrap(err, "failed to create table").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:       schemaToCreate.Name,
+				Table:       quotedTableName,
 				PrimaryKeys: schemaToCreate.GetPKFields(),
 				Statement:   query,
 			})
@@ -452,6 +475,8 @@ func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Tab
 // PatchTableSchema alter table with columns (if not empty)
 // recreate primary key (if not empty) or delete primary key if Table.DeletePkFields is true
 func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Table) error {
+	quotedTableName := b.quotedTableName(patchTable.Name)
+
 	pkFields := patchTable.GetPKFieldsSet()
 	columns := patchTable.SortedColumnNames()
 
@@ -459,12 +484,12 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 	for _, columnName := range columns {
 		column := patchTable.Columns[columnName]
 		columnDDL := b.columnDDL(columnName, column, pkFields)
-		query := fmt.Sprintf(addColumnTemplate, b.fullTableName(patchTable.Name), columnDDL)
+		query := fmt.Sprintf(addColumnTemplate, quotedTableName, columnDDL)
 
 		if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 			return errorj.PatchTableError.Wrap(err, "failed to patch table").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
-					Table:       patchTable.Name,
+					Table:       quotedTableName,
 					PrimaryKeys: patchTable.GetPKFields(),
 					Statement:   query,
 				})
@@ -492,22 +517,24 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 
 // createPrimaryKey create primary key constraint
 func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) error {
+	quotedTableName := b.quotedTableName(table.Name)
+
 	if len(table.PKFields) == 0 {
 		return nil
 	}
 
 	columnNames := make([]string, len(table.PKFields))
 	for i, column := range table.GetPKFields() {
-		columnNames[i] = b.columnName(column)
+		columnNames[i] = b.quotedColumnName(column)
 	}
 
 	statement := fmt.Sprintf(alterPrimaryKeyTemplate,
-		b.fullTableName(table.Name), table.PrimaryKeyName, strings.Join(columnNames, ","))
+		quotedTableName, table.PrimaryKeyName, strings.Join(columnNames, ","))
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.CreatePrimaryKeysError.Wrap(err, "failed to set primary key").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:       table.Name,
+				Table:       quotedTableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   statement,
 			})
@@ -518,12 +545,14 @@ func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) 
 
 // delete primary key
 func (b *SQLAdapterBase[T]) deletePrimaryKey(ctx context.Context, table *Table) error {
-	query := fmt.Sprintf(dropPrimaryKeyTemplate, b.fullTableName(table.Name), table.PrimaryKeyName)
+	quotedTableName := b.quotedTableName(table.Name)
+
+	query := fmt.Sprintf(dropPrimaryKeyTemplate, quotedTableName, table.PrimaryKeyName)
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		return errorj.DeletePrimaryKeysError.Wrap(err, "failed to delete primary key").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:       table.Name,
+				Table:       quotedTableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   query,
 			})
@@ -533,16 +562,19 @@ func (b *SQLAdapterBase[T]) deletePrimaryKey(ctx context.Context, table *Table) 
 }
 
 func (b *SQLAdapterBase[T]) renameTable(ctx context.Context, ifExists bool, tableName, newTableName string) error {
+	quotedTableName := b.quotedTableName(tableName)
+	quotedNewTableName := b.quotedTableName(newTableName)
+
 	ifExs := ""
 	if ifExists {
 		ifExs = "IF EXISTS "
 	}
-	query := fmt.Sprintf(renameTableTemplate, ifExs, b.fullTableName(tableName), newTableName)
+	query := fmt.Sprintf(renameTableTemplate, ifExs, quotedTableName, quotedNewTableName)
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		return errorj.RenameError.Wrap(err, "failed to rename table").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: query,
 			})
 	}
@@ -560,16 +592,57 @@ func (b *SQLAdapterBase[T]) ReplaceTable(ctx context.Context, targetTableName st
 	return
 }
 
-func (b *SQLAdapterBase[T]) fullTableName(tableName string) string {
-	return b._tableNameFunc(b.config, tableName)
+// quotedColumnName adapts table name to sql identifier rules of database and quotes accordingly (if needed)
+func (b *SQLAdapterBase[T]) quotedTableName(tableName string) string {
+	quoted, _ := b.adaptSqlIdentifier(tableName)
+	if b._tableNameFunc != nil {
+		return b._tableNameFunc(b.config, quoted)
+	} else {
+		return quoted
+	}
 }
 
-func (b *SQLAdapterBase[T]) columnName(columnName string) string {
-	return b._columnNameFunc(columnName)
+// quotedColumnName adapts column name to sql identifier rules of database and quotes accordingly (if needed)
+func (b *SQLAdapterBase[T]) quotedColumnName(columnName string) string {
+	quoted, _ := b.adaptSqlIdentifier(columnName)
+	return b._columnNameFunc(quoted)
 }
 
 func (b *SQLAdapterBase[T]) columnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
-	return b._columnDDLFunc(name, column, pkFields)
+	quoted, _ := b.adaptSqlIdentifier(name)
+	return b._columnDDLFunc(quoted, column, pkFields)
+}
+
+// adaptSqlIdentifier adapts the given identifier to basic rules derived from the SQL standard and injection protection:
+// - must only contain letters, numbers, underscores, hyphen, and spaces - all other characters are removed
+// - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
+func (b *SQLAdapterBase[T]) adaptSqlIdentifier(identifier string) (quotedIfNeeded string, unquoted string) {
+	return adaptSqlIdentifier(identifier, b.maxIdentifierLength, b.identifierQuoteChar)
+}
+
+func adaptSqlIdentifier(identifier string, maxIdentifierLength int, identifierQuoteChar rune) (quotedIfNeeded string, unquoted string) {
+	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "")
+	result := utils.ShortenString(cleanIdentifier, maxIdentifierLength)
+	if result == "" {
+		result = fmt.Sprintf("column_%x", utils.HashString(identifier))
+		return result, result
+	}
+	m := sqlUnquotedIdentifierPattern.MatchString(result)
+	if !m && identifierQuoteChar != rune(0) {
+		return fmt.Sprintf(`%c%s%c`, identifierQuoteChar, result, identifierQuoteChar), result
+	} else {
+		return result, result
+	}
+}
+
+func (b *SQLAdapterBase[T]) ColumnName(identifier string) string {
+	_, unquoted := b.adaptSqlIdentifier(identifier)
+	return unquoted
+}
+
+func (b *SQLAdapterBase[T]) TableName(identifier string) string {
+	_, unquoted := b.adaptSqlIdentifier(identifier)
+	return unquoted
 }
 
 func checkNotExistErr(err error) error {

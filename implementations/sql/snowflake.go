@@ -56,8 +56,8 @@ var (
 type SnowflakeConfig struct {
 	Account    string             `mapstructure:"account,omitempty" json:"account,omitempty" yaml:"account,omitempty"`
 	Port       int                `mapstructure:"port,omitempty" json:"port,omitempty" yaml:"port,omitempty"`
-	Db         string             `mapstructure:"db,omitempty" json:"db,omitempty" yaml:"db,omitempty"`
-	Schema     string             `mapstructure:"schema,omitempty" json:"schema,omitempty" yaml:"schema,omitempty"`
+	Db         string             `mapstructure:"database,omitempty" json:"database,omitempty" yaml:"database,omitempty"`
+	Schema     string             `mapstructure:"default_schema,omitempty" json:"default_schema,omitempty" yaml:"default_schema,omitempty"`
 	Username   string             `mapstructure:"username,omitempty" json:"username,omitempty" yaml:"username,omitempty"`
 	Password   string             `mapstructure:"password,omitempty" json:"password,omitempty" yaml:"password,omitempty"`
 	Warehouse  string             `mapstructure:"warehouse,omitempty" json:"warehouse,omitempty" yaml:"warehouse,omitempty"`
@@ -87,7 +87,7 @@ func (sc *SnowflakeConfig) Validate() error {
 		sc.Parameters = map[string]*string{}
 	}
 
-	sc.Schema = reformatIdentifier(sc.Schema)
+	sc.Schema = sfReformatIdentifier(sc.Schema)
 	return nil
 }
 
@@ -102,6 +102,8 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
+	_, config.Schema = adaptSqlIdentifier(config.Schema, 255, 0)
+	config.Schema = sfReformatIdentifier(config.Schema)
 	cfg := &sf.Config{
 		Account:   config.Account,
 		User:      config.Username,
@@ -112,6 +114,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		Warehouse: config.Warehouse,
 		Params:    config.Parameters,
 	}
+
 	connectionString, err := sf.DSN(cfg)
 	if err != nil {
 		return nil, err
@@ -126,9 +129,6 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		dataSource.Close()
 		return nil, err
 	}
-	tableNameFunc := func(config *SnowflakeConfig, tableName string) string {
-		return fmt.Sprintf(`%s.%s`, config.Schema, reformatIdentifier(tableName))
-	}
 	typecastFunc := func(placeholder string, column SQLColumn) string {
 		if column.Override {
 			return placeholder + "::" + column.Type
@@ -136,9 +136,13 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return placeholder
 	}
 	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
-	s := &Snowflake{newSQLAdapterBase(SnowflakeBulkerTypeId, config, dataSource,
-		queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, tableNameFunc, reformatIdentifier, sfColumnDDL, unmappedValue, checkErr)}
+	s := &Snowflake{newSQLAdapterBase(SnowflakeBulkerTypeId, config, dataSource, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)}
+	s._tableNameFunc = func(config *SnowflakeConfig, tableName string) string {
+		return sfReformatIdentifier(tableName)
+	}
+	s._columnNameFunc = sfReformatIdentifier
 	s.batchFileFormat = implementations.CSV
+	s.maxIdentifierLength = 255
 	return s, nil
 }
 func (s *Snowflake) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -196,16 +200,18 @@ func (s *Snowflake) InitDatabase(ctx context.Context) error {
 
 // GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
 func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
+	tableName = s.TableName(tableName)
+	quotedTableName := s.quotedColumnName(tableName)
 	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.NewSet[string]()}
 
-	countReqRows, err := s.txOrDb(ctx).QueryContext(ctx, sfTableExistenceQuery, reformatToParam(s.config.Schema), reformatToParam(reformatIdentifier(tableName)))
+	countReqRows, err := s.txOrDb(ctx).QueryContext(ctx, sfTableExistenceQuery, s.config.Schema, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table existence").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    s.config.Schema,
-				Table:     table.Name,
+				Table:     tableName,
 				Statement: sfTableExistenceQuery,
-				Values:    []any{reformatToParam(s.config.Schema), reformatToParam(reformatIdentifier(tableName))},
+				Values:    []any{s.config.Schema, tableName},
 			})
 	}
 	defer countReqRows.Close()
@@ -215,9 +221,9 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 		return nil, errorj.GetTableError.Wrap(err, "failed to scan existence result").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    s.config.Schema,
-				Table:     table.Name,
+				Table:     tableName,
 				Statement: sfTableExistenceQuery,
-				Values:    []any{reformatToParam(s.config.Schema), reformatToParam(reformatIdentifier(tableName))},
+				Values:    []any{s.config.Schema, tableName},
 			})
 	}
 
@@ -226,13 +232,13 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 		return table, nil
 	}
 
-	query := fmt.Sprintf(sfDescTableQuery, s.fullTableName(tableName))
+	query := fmt.Sprintf(sfDescTableQuery, quotedTableName)
 	rows, err := s.txOrDb(ctx).QueryContext(ctx, query)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    s.config.Schema,
-				Table:     table.Name,
+				Table:     quotedTableName,
 				Statement: query,
 			})
 	}
@@ -245,21 +251,20 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 			return nil, errorj.GetTableError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:    s.config.Schema,
-					Table:     table.Name,
+					Table:     quotedTableName,
 					Statement: query,
 				})
 		}
 
 		columnName := fmt.Sprint(row["name"])
 		columnSnowflakeType := fmt.Sprint(row["type"])
-
-		table.Columns[strings.ToLower(columnName)] = SQLColumn{Type: columnSnowflakeType}
+		table.Columns[columnName] = SQLColumn{Type: columnSnowflakeType}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    s.config.Schema,
-				Table:     table.Name,
+				Table:     quotedTableName,
 				Statement: query,
 			})
 	}
@@ -282,14 +287,16 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 
 // getPrimaryKey returns primary key name and fields
 func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string, utils.Set[string], error) {
+	quotedTableName := s.quotedColumnName(tableName)
+
 	primaryKeys := utils.Set[string]{}
-	statement := fmt.Sprintf(sfPrimaryKeyFieldsQuery, s.fullTableName(tableName))
+	statement := fmt.Sprintf(sfPrimaryKeyFieldsQuery, quotedTableName)
 	pkFieldsRows, err := s.txOrDb(ctx).QueryContext(ctx, statement)
 	if err != nil {
 		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    s.config.Schema,
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: statement,
 			})
 	}
@@ -304,17 +311,17 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 			return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:    s.config.Schema,
-					Table:     tableName,
+					Table:     quotedTableName,
 					Statement: statement,
 				})
 		}
 		constraintName, ok := row["constraint_name"].(string)
 		if primaryKeyName == "" && ok {
-			primaryKeyName = strings.ToLower(constraintName)
+			primaryKeyName = constraintName
 		}
 		keyColumn, ok := row["column_name"].(string)
 		if ok && keyColumn != "" {
-			pkFields = append(pkFields, strings.ToLower(keyColumn))
+			pkFields = append(pkFields, keyColumn)
 		}
 	}
 
@@ -322,7 +329,7 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    s.config.Schema,
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: statement,
 			})
 	}
@@ -336,19 +343,20 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 
 // LoadTable transfer data from local file to Snowflake by passing COPY request to Snowflake
 func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+	quotedTableName := s.quotedColumnName(targetTable.Name)
+
 	if loadSource.Type != LocalFile {
 		return fmt.Errorf("LoadTable: only local file is supported")
 	}
 	if loadSource.Format != s.batchFileFormat {
 		return fmt.Errorf("LoadTable: only %s format is supported", s.batchFileFormat)
 	}
-	tableName := targetTable.Name
 	putStatement := fmt.Sprintf("PUT file://%s @~", loadSource.Path)
 	if _, err = s.txOrDb(ctx).ExecContext(ctx, putStatement); err != nil {
 		return errorj.LoadError.Wrap(err, "failed to put file to stage").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    s.config.Schema,
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: putStatement,
 			})
 	}
@@ -358,7 +366,7 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 			err2 = errorj.LoadError.Wrap(err, "failed to remove file from stage").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:    s.config.Schema,
-					Table:     tableName,
+					Table:     quotedTableName,
 					Statement: putStatement,
 				})
 			err = multierror.Append(err, err2)
@@ -367,16 +375,16 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	columns := targetTable.SortedColumnNames()
 	columnNames := make([]string, len(columns))
 	for i, name := range columns {
-		columnNames[i] = s.columnName(name)
+		columnNames[i] = s.quotedColumnName(name)
 	}
 
-	statement := fmt.Sprintf(sfCopyStatement, s.fullTableName(tableName), strings.Join(columnNames, ","), path.Base(loadSource.Path))
+	statement := fmt.Sprintf(sfCopyStatement, quotedTableName, strings.Join(columnNames, ","), path.Base(loadSource.Path))
 
 	if _, err := s.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.CopyError.Wrap(err, "failed to copy data from stage").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    s.config.Schema,
-				Table:     tableName,
+				Table:     quotedTableName,
 				Statement: statement,
 			})
 	}
@@ -437,7 +445,7 @@ func (s *Snowflake) ReplaceTable(ctx context.Context, targetTableName string, re
 
 // columnDDLsfColumnDDL returns column DDL (column name, mapped sql type)
 func sfColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
-	return fmt.Sprintf(`%s %s`, reformatIdentifier(name), column.GetDDLType())
+	return fmt.Sprintf(`%s %s`, sfReformatIdentifier(name), column.GetDDLType())
 }
 
 func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
@@ -445,54 +453,35 @@ func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions
 	return s.SQLAdapterBase.Select(ctx, tableName, whenConditions, orderBy)
 }
 
-// Snowflake has table with schema, table names and there
-// quoted identifiers = without quotes
-// unquoted identifiers = uppercased
-func reformatToParam(value string) string {
-	if strings.Contains(value, `"`) {
-		return strings.ReplaceAll(value, `"`, ``)
-	} else {
-		return strings.ToUpper(value)
-	}
-}
-
 // Snowflake accepts names (identifiers) started with '_' or letter
 // also names can contain only '_', letters, numbers, '$'
 // otherwise double quote them
 // https://docs.snowflake.com/en/sql-reference/identifiers-syntax.html#unquoted-identifiers
-func reformatIdentifier(value string) string {
-	if len(value) > 0 {
-		if value == "default" {
-			return `"DEFAULT"`
-		}
-
-		//must begin with a letter or underscore, or enclose in double quotes
-		firstSymbol := value[0]
-
-		if isNotLetterOrUnderscore(int32(firstSymbol)) {
-			return `"` + value + `"`
-		}
-
-		for _, symbol := range value {
-			if isNotLetterOrUnderscore(symbol) && isNotNumberOrDollar(symbol) {
-				return `"` + value + `"`
-			}
-		}
-
+func sfReformatIdentifier(value string) string {
+	if value == "default" {
+		return `"DEFAULT"`
 	}
-
+	m := sqlUnquotedIdentifierPattern.MatchString(strings.Trim(value, `"`))
+	if m {
+		return strings.ToUpper(value)
+	}
 	return value
 }
 
-// _: 95
-// A - Z: 65-90
-// a - z: 97-122
-func isNotLetterOrUnderscore(symbol int32) bool {
-	return symbol < 65 || (symbol != 95 && symbol > 90 && symbol < 97) || symbol > 122
+func (s *Snowflake) ColumnName(identifier string) string {
+	quoted, unquoted := s.adaptSqlIdentifier(identifier)
+	if quoted == unquoted {
+		//unquoted identifier needs to be uppercase
+		return strings.ToUpper(unquoted)
+	}
+	return unquoted
 }
 
-// $: 36
-// 0 - 9: 48-57
-func isNotNumberOrDollar(symbol int32) bool {
-	return symbol != 36 && (symbol < 48 || symbol > 57)
+func (s *Snowflake) TableName(identifier string) string {
+	quoted, unquoted := s.adaptSqlIdentifier(identifier)
+	if quoted == unquoted {
+		//unquoted identifier needs to be uppercase
+		return strings.ToUpper(unquoted)
+	}
+	return unquoted
 }

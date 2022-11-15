@@ -38,7 +38,7 @@ const (
 									column_name AS name
 								FROM information_schema.columns
 								WHERE table_schema = ? AND table_name = ? AND column_key = 'PRI'`
-	mySQLCreateDBIfNotExistsTemplate = "CREATE DATABASE IF NOT EXISTS `%s`"
+	mySQLCreateDBIfNotExistsTemplate = "CREATE DATABASE IF NOT EXISTS %s"
 	mySQLAllowLocalFile              = "SET GLOBAL local_infile = 1"
 	mySQLLoadTemplate                = `LOAD DATA LOCAL INFILE '%s' INTO TABLE %s FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\n' IGNORE 1 LINES (%s)`
 	mySQLMergeQuery                  = `INSERT INTO {{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}}) ON DUPLICATE KEY UPDATE {{.UpdateSet}}`
@@ -80,6 +80,8 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		// similar to postgres default value of sslmode option
 		config.Parameters["tls"] = "preferred"
 	}
+	config.Db, _ = adaptSqlIdentifier(config.Db, 63, '`')
+
 	connectionString := mySQLDriverConnectionString(config)
 	dataSource, err := sql.Open("mysql", connectionString)
 	if err != nil {
@@ -109,18 +111,15 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	dataSource.SetConnMaxLifetime(3 * time.Minute)
 	dataSource.SetMaxIdleConns(10)
 
-	tableNameFunc := func(config *DataSourceConfig, tableName string) string {
-		return fmt.Sprintf("`%s`.`%s`", config.Db, tableName)
-	}
 	typecastFunc := func(placeholder string, column SQLColumn) string {
 		return placeholder
 	}
 	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	m := &MySQL{
-		SQLAdapterBase: newSQLAdapterBase(MySQLBulkerTypeId, config, dataSource,
-			queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, tableNameFunc, mySQLQuoteColumnName, mySQLColumnDDL, mySQLMapColumnValue, checkErr),
-		infileEnabled: infileEnabled,
+		SQLAdapterBase: newSQLAdapterBase(MySQLBulkerTypeId, config, dataSource, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr),
+		infileEnabled:  infileEnabled,
 	}
+	m.identifierQuoteChar = '`'
 	if infileEnabled {
 		m.batchFileFormat = implementations.CSV
 	} else {
@@ -196,6 +195,8 @@ func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable 
 
 // TODO: Use prepared statement
 func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+	quotedTableName := m.quotedTableName(targetTable.Name)
+
 	if loadSource.Type != LocalFile {
 		return fmt.Errorf("LoadTable: only local file is supported")
 	}
@@ -213,14 +214,14 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		columns := targetTable.SortedColumnNames()
 		header := make([]string, len(columns))
 		for i, name := range columns {
-			header[i] = m.columnName(name)
+			header[i] = m.quotedColumnName(name)
 		}
-		loadStatement := fmt.Sprintf(mySQLLoadTemplate, loadSource.Path, m.fullTableName(targetTable.Name), strings.Join(header, ", "))
+		loadStatement := fmt.Sprintf(mySQLLoadTemplate, loadSource.Path, quotedTableName, strings.Join(header, ", "))
 		if _, err := m.txOrDb(ctx).ExecContext(ctx, loadStatement); err != nil {
 			return errorj.LoadError.Wrap(err, "failed to load data from local file system").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Database:  m.config.Db,
-					Table:     targetTable.Name,
+					Table:     quotedTableName,
 					Statement: loadStatement,
 				})
 		}
@@ -230,11 +231,11 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		columnNames := make([]string, len(columns))
 		placeholders := make([]string, len(columns))
 		for i, name := range columns {
-			columnNames[i] = m.columnName(name)
+			columnNames[i] = m.quotedColumnName(name)
 			placeholders[i] = m.typecastFunc(m.parameterPlaceholder(i+1, name), targetTable.Columns[name])
 		}
 		insertPayload := QueryPayload{
-			TableName:      m.fullTableName(targetTable.Name),
+			TableName:      quotedTableName,
 			Columns:        strings.Join(columnNames, ", "),
 			Placeholders:   strings.Join(placeholders, ", "),
 			PrimaryKeyName: targetTable.PrimaryKeyName,
@@ -250,7 +251,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 				err = errorj.LoadError.Wrap(err, "failed to load table").
 					WithProperty(errorj.DBInfo, &types.ErrorPayload{
 						Schema:    m.config.Schema,
-						Table:     targetTable.Name,
+						Table:     quotedTableName,
 						Statement: statement,
 					})
 			}
@@ -319,6 +320,7 @@ func (m *MySQL) GetTableSchema(ctx context.Context, tableName string) (*Table, e
 }
 
 func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) {
+	tableName = m.TableName(tableName)
 	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.NewSet[string]()}
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
@@ -327,7 +329,7 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Database:    m.config.Db,
-				Table:       table.Name,
+				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   mySQLTableSchemaQuery,
 				Values:      []any{m.config.Db, tableName},
@@ -341,7 +343,7 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 			return nil, errorj.GetTableError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Database:    m.config.Db,
-					Table:       table.Name,
+					Table:       tableName,
 					PrimaryKeys: table.GetPKFields(),
 					Statement:   mySQLTableSchemaQuery,
 					Values:      []any{m.config.Db, tableName},
@@ -359,7 +361,7 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Database:    m.config.Db,
-				Table:       table.Name,
+				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   mySQLTableSchemaQuery,
 				Values:      []any{m.config.Db, tableName},
@@ -370,6 +372,7 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 }
 
 func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (utils.Set[string], error) {
+	tableName = m.TableName(tableName)
 	pkFieldsRows, err := m.dataSource.QueryContext(ctx, mySQLPrimaryKeyFieldsQuery, m.config.Db, tableName)
 	if err != nil {
 		return nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
@@ -422,6 +425,7 @@ func (m *MySQL) ReplaceTable(ctx context.Context, targetTableName string, replac
 
 func (m *MySQL) renameTable(ctx context.Context, ifExists bool, tableName, newTableName string) error {
 	if ifExists {
+		tableName = m.TableName(tableName)
 		row := m.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s')`, m.config.Db, tableName))
 		exists := false
 		err := row.Scan(&exists)
@@ -463,11 +467,7 @@ func mySQLColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) s
 		}
 	}
 
-	return fmt.Sprintf("%s %s", mySQLQuoteColumnName(name), sqlType)
-}
-
-func mySQLQuoteColumnName(str string) string {
-	return fmt.Sprintf("`%s`", str)
+	return fmt.Sprintf("%s %s", name, sqlType)
 }
 
 func mySQLMapColumnValue(value any, valuePresent bool, column SQLColumn) any {

@@ -273,17 +273,16 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 			//TODO  get broker count from admin
 			ReplicationFactor: tm.config.KafkaTopicReplicationFactor,
 			Config: map[string]string{
-				"retention.ms": fmt.Sprint(tm.config.KafkaTopicRetentionMs),
+				"retention.ms": fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
 			},
 		},
 		{
-			Topic:         failedTopic,
-			NumPartitions: 1,
-			//TODO  get broker count from admin
+			Topic:             failedTopic,
+			NumPartitions:     1,
 			ReplicationFactor: tm.config.KafkaTopicReplicationFactor,
 			Config: map[string]string{
 				// TODO: Separate retention for failed topic
-				"retention.ms": fmt.Sprint(tm.config.KafkaTopicRetentionMs),
+				"retention.ms": fmt.Sprint(tm.config.KafkaFailedTopicRetentionHours * 60 * 60 * 1000),
 			},
 		},
 	})

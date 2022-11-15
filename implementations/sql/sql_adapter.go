@@ -42,6 +42,11 @@ type SQLAdapter interface {
 
 	Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error)
 	Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error)
+
+	// ColumnName adapts column name to sql identifier rules of database
+	ColumnName(rawColumn string) string
+	// TableName adapts table name to sql identifier rules of database
+	TableName(rawTableName string) string
 }
 
 type LoadSourceType string
@@ -144,4 +149,12 @@ func (tx *TxSQLAdapter) Commit() error {
 
 func (tx *TxSQLAdapter) Rollback() error {
 	return tx.tx.Rollback()
+}
+
+func (tx *TxSQLAdapter) ColumnName(identifier string) string {
+	return tx.sqlAdapter.ColumnName(identifier)
+}
+
+func (tx *TxSQLAdapter) TableName(identifier string) string {
+	return tx.sqlAdapter.TableName(identifier)
 }

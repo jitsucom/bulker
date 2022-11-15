@@ -84,7 +84,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
-
+	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0)
 	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
 		config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
 	//concat provided connection parameters
@@ -106,9 +106,6 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	//set default value
 	dataSource.SetConnMaxLifetime(10 * time.Minute)
 
-	tableNameFunc := func(config *DataSourceConfig, tableName string) string {
-		return fmt.Sprintf(`"%s"`, tableName)
-	}
 	typecastFunc := func(placeholder string, column SQLColumn) string {
 		if column.Override {
 			return placeholder + "::" + column.Type
@@ -127,8 +124,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return value
 	}
 	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
-	p := &Postgres{newSQLAdapterBase(PostgresBulkerTypeId, config, dataSource,
-		queryLogger, typecastFunc, IndexParameterPlaceholder, tableNameFunc, originalColumnName, pgColumnDDL, valueMappingFunc, checkErr)}
+	p := &Postgres{newSQLAdapterBase(PostgresBulkerTypeId, config, dataSource, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)}
 
 	return p, nil
 }
@@ -212,13 +208,14 @@ func (p *Postgres) GetTableSchema(ctx context.Context, tableName string) (*Table
 }
 
 func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, error) {
+	tableName = p.TableName(tableName)
 	table := &Table{Name: tableName, Columns: map[string]SQLColumn{}, PKFields: utils.Set[string]{}}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, p.config.Schema, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:      p.config.Schema,
-				Table:       table.Name,
+				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   pgTableSchemaQuery,
 				Values:      []any{p.config.Schema, tableName},
@@ -232,7 +229,7 @@ func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, erro
 			return nil, errorj.GetTableError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:      p.config.Schema,
-					Table:       table.Name,
+					Table:       tableName,
 					PrimaryKeys: table.GetPKFields(),
 					Statement:   pgTableSchemaQuery,
 					Values:      []any{p.config.Schema, tableName},
@@ -249,7 +246,7 @@ func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, erro
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:      p.config.Schema,
-				Table:       table.Name,
+				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   pgTableSchemaQuery,
 				Values:      []any{p.config.Schema, tableName},
@@ -276,6 +273,7 @@ func (p *Postgres) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 }
 
 func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+	quotedTableName := p.quotedTableName(targetTable.Name)
 	if loadSource.Type != LocalFile {
 		return fmt.Errorf("LoadTable: only local file is supported")
 	}
@@ -285,15 +283,15 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	columns := targetTable.SortedColumnNames()
 	columnNames := make([]string, len(columns))
 	for i, name := range columns {
-		columnNames[i] = p.columnName(name)
+		columnNames[i] = p.quotedColumnName(name)
 	}
-	copyStatement := fmt.Sprintf(pgCopyTemplate, p.fullTableName(targetTable.Name), strings.Join(columnNames, ", "))
+	copyStatement := fmt.Sprintf(pgCopyTemplate, quotedTableName, strings.Join(columnNames, ", "))
 	defer func() {
 		if err != nil {
 			err = errorj.LoadError.Wrap(err, "failed to load table").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Schema:      p.config.Schema,
-					Table:       targetTable.Name,
+					Table:       quotedTableName,
 					PrimaryKeys: targetTable.GetPKFields(),
 					Statement:   copyStatement,
 				})
@@ -350,7 +348,7 @@ func pgColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) stri
 		notNullClause = " not null " + getDefaultValueStatement(sqlType)
 	}
 
-	return fmt.Sprintf(`"%s" %s%s`, name, sqlType, notNullClause)
+	return fmt.Sprintf(`%s %s%s`, name, sqlType, notNullClause)
 }
 
 // return default value statement for creating column
@@ -365,6 +363,7 @@ func getDefaultValueStatement(sqlType string) string {
 
 // getPrimaryKey returns primary key name and fields
 func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string, utils.Set[string], error) {
+	tableName = p.TableName(tableName)
 	primaryKeys := utils.Set[string]{}
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, pgPrimaryKeyFieldsQuery, p.config.Schema, tableName)
 	if err != nil {

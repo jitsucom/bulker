@@ -11,11 +11,12 @@ import (
 	"time"
 )
 
+var exitChannel = make(chan os.Signal, 1)
+
 // TODO: graceful shutdown and cleanups. Flush producer
 func Run() {
 	logging.LogLevel = logging.INFO
 
-	exitChannel := make(chan os.Signal, 1) // we need to reserve to buffer size 1, so the notifier are not blocked
 	signal.Notify(exitChannel, os.Interrupt, os.Kill, syscall.SIGTERM)
 
 	appConfig, err := InitAppConfig()
@@ -60,8 +61,6 @@ func Run() {
 		signal := <-exitChannel
 		logging.Infof("Received signal: %s. Shutting down...", signal)
 		_ = producer.Close()
-		//TODO: proper consumer shutdown
-		//_ = batchRunner.Close()
 		_ = topicManager.Close()
 		cron.Close()
 		_ = repository.Close()
@@ -70,4 +69,9 @@ func Run() {
 		os.Exit(0)
 	}()
 	logging.Info(server.ListenAndServe())
+}
+
+func Exit() {
+	logging.Infof("App Triggered Exit...")
+	exitChannel <- os.Interrupt
 }

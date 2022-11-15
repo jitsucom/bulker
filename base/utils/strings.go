@@ -42,6 +42,10 @@ func IsLetterOrNumber(symbol int32) bool {
 		('0' <= symbol && symbol <= '9')
 }
 
+func IsNumber(symbol int32) bool {
+	return '0' <= symbol && symbol <= '9'
+}
+
 // SanitizeString returns string with only alphanumeric characters and underscores
 func SanitizeString(str string) string {
 	return nonAlphanumericRegex.ReplaceAllString(str, "_")

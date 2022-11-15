@@ -1,6 +1,7 @@
 package sql
 
 import (
+	"fmt"
 	"github.com/jitsucom/bulker/base/utils"
 	"sort"
 )
@@ -133,7 +134,7 @@ func (t *Table) FitsToTable(destination *Table) bool {
 }
 
 func BuildConstraintName(tableName string) string {
-	return BulkerManagedPkConstraintPrefix + tableName + "_pk"
+	return fmt.Sprintf("%s%x_pk", BulkerManagedPkConstraintPrefix, utils.HashString(tableName))
 }
 
 func (c Columns) Clone() Columns {

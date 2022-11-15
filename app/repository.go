@@ -157,7 +157,6 @@ func (r *repositoryInternal) GetDestination(id string) *Destination {
 }
 
 func (r *repositoryInternal) LeaseDestination(id string) *Destination {
-	//TODO: move locks to destination ??
 	r.Lock()
 	defer r.Unlock()
 	dst := r.destinations[id]

@@ -173,7 +173,7 @@ func TestBulkerApp(t *testing.T) {
 			logging.Infof("Test %s passed", tt.name)
 		})
 	}
-
+	Exit()
 }
 
 func CheckError(step string, reqr *require.Assertions, expectedErrors map[string]any, err error) {

@@ -10,7 +10,7 @@ const SqlTypeKeyword = "__sql_type_"
 // ProcessEvents processes events objects without applying mapping rules
 // returns table headerm array of processed objects
 // or error if at least 1 was occurred
-func ProcessEvents(tableName string, objects []types.Object) (*BatchHeader, []types.Object, error) {
+func ProcessEvents(tableName string, objects []types.Object, sqlAdapter SQLAdapter) (*BatchHeader, []types.Object, error) {
 
 	var batchHeader *BatchHeader
 	var payload []types.Object
@@ -19,18 +19,22 @@ func ProcessEvents(tableName string, objects []types.Object) (*BatchHeader, []ty
 		if err != nil {
 			return nil, nil, err
 		}
-		fields, err := DefaultTypeResolver.Resolve(flatObject)
+		sqlAdaptedObject := make(types.Object)
+		for k, v := range flatObject {
+			sqlAdaptedObject[sqlAdapter.ColumnName(k)] = v
+		}
+		fields, err := DefaultTypeResolver.Resolve(sqlAdaptedObject)
 		if err != nil {
 			return nil, nil, err
 		}
-		bh := &BatchHeader{TableName: tableName, Fields: fields}
+		bh := &BatchHeader{TableName: sqlAdapter.TableName(tableName), Fields: fields}
 
 		//don't process empty and skipped object
 		if !bh.Exists() {
 			continue
 		}
 
-		foldedBatchHeader, foldedObject, _ := foldLongFields(bh, flatObject)
+		foldedBatchHeader, foldedObject, _ := foldLongFields(bh, sqlAdaptedObject)
 
 		if len(payload) == 0 {
 			payload = []types.Object{foldedObject}

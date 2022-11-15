@@ -45,6 +45,6 @@ func (c *Cron) ReplaceBatchConsumer(batchConsumer *BatchConsumer) (*gocron.Job, 
 func (c *Cron) Close() {
 	go func() {
 		c.scheduler.Stop()
-		time.Sleep(5 * time.Second)
 	}()
+	time.Sleep(5 * time.Second)
 }

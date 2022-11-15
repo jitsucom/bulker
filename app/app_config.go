@@ -19,7 +19,6 @@ type AppConfig struct {
 	AuthTokens   string `mapstructure:"AUTH_TOKENS"`
 	TokenSecrets string `mapstructure:"TOKEN_SECRETS"`
 
-	//TODO: CONFIGURATION_SOURCE
 	ConfigSource string `mapstructure:"CONFIG_SOURCE"`
 
 	KafkaBootstrapServers string `mapstructure:"KAFKA_BOOTSTRAP_SERVERS" default:"127.0.0.1:9092"`
@@ -28,9 +27,9 @@ type AppConfig struct {
 	KafkaSaslUsername     string `mapstructure:"KAFKA_SASL_USERNAME"`
 	KafkaSaslPassword     string `mapstructure:"KAFKA_SASL_PASSWORD"`
 
-	//TODO: Change to hours
-	KafkaTopicRetentionMs int `mapstructure:"KAFKA_TOPIC_RETENTION_MS" default:"604800000"`
-	//KafkaTopicPartitionsCount   int `mapstructure:"KAFKA_TOPIC_PARTITIONS_COUNT" default:"4"`
+	KafkaTopicRetentionHours       int `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
+	KafkaFailedTopicRetentionHours int `mapstructure:"KAFKA_FAILED_TOPIC_RETENTION_HOURS" default:"720"`
+
 	KafkaTopicReplicationFactor              int    `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR" default:"1"`
 	KafkaAdminMetadataTimeoutMs              int    `mapstructure:"KAFKA_ADMIN_METADATA_TIMEOUT_MS" default:"1000"`
 	KafkaConsumerPartitionsAssigmentStrategy string `mapstructure:"KAFKA_CONSUMER_PARTITIONS_ASSIGMENT_STRATEGY" default:"cooperative-sticky"`
@@ -40,7 +39,6 @@ type AppConfig struct {
 
 	ProducerWaitForDeliveryMs int `mapstructure:"PRODUCER_WAIT_FOR_DELIVERY_MS" default:"1000"`
 
-	//TODO: per destination batch period
 	BatchRunnerPeriodSec          int `mapstructure:"BATCH_RUNNER_PERIOD_SEC" default:"300"`
 	BatchRunnerDefaultBatchSize   int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"1000"`
 	BatchRunnerWaitForMessagesSec int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"1"`
