@@ -6,11 +6,11 @@ on:
       - '**'
 
 env:
-  BULKER_TEST_BIGQUERY: ${{ secrets.BULKER_TEST_BIGQUERY }}
-  BULKER_TEST_REDSHIFT: ${{ secrets.BULKER_TEST_REDSHIFT }}
-  BULKER_TEST_REDSHIFT_SERVERLESS: ${{ secrets.BULKER_TEST_REDSHIFT_SERVERLESS }}
-  BULKER_TEST_SNOWFLAKE: ${{ secrets.BULKER_TEST_SNOWFLAKE }}
-  BULKER_TEST_MILLION_ROWS_BATCHED: redshift_serverless
+#  BULKER_TEST_BIGQUERY: ${{ secrets.BULKER_TEST_BIGQUERY }}
+#  BULKER_TEST_REDSHIFT: ${{ secrets.BULKER_TEST_REDSHIFT }}
+#  BULKER_TEST_REDSHIFT_SERVERLESS: ${{ secrets.BULKER_TEST_REDSHIFT_SERVERLESS }}
+#  BULKER_TEST_SNOWFLAKE: ${{ secrets.BULKER_TEST_SNOWFLAKE }}
+#  BULKER_TEST_MILLION_ROWS_BATCHED: redshift_serverless
 
 jobs:
   bulker-test:
@@ -26,13 +26,13 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v3
       with:
-        go-version: 1.19.2
+        go-version: 1.19.3
         cache: true
 
 
     - name: Bulker Test
       run: |
-        go test -parallel=1 -timeout 30m -json ./... > test_report.json
+        go test -parallel=1 -timeout 60m -json ./... > test_report.json
 
     - name: Test Report
       if: ${{ always() }}

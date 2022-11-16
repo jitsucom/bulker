@@ -31,17 +31,21 @@ type AppTestConfig struct {
 	expectedErrors map[string]any
 }
 
+var inited bool
 var postgresContainer *testcontainers.PostgresContainer
 
-func init() {
+func initContainers(t *testing.T) {
+	if inited {
+		return
+	}
 	_, err := kafka.NewKafkaContainer(context.Background())
 	if err != nil {
-		panic(fmt.Errorf("could not start kafka container: %v", err))
+		t.Fatalf("could not start kafka container: %v", err)
 	}
 
 	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background(), "65432")
 	if err != nil {
-		panic(fmt.Errorf("could not start postgres container: %v", err))
+		t.Fatalf("could not start postgres container: %v", err)
 	}
 
 	go func() {
@@ -51,7 +55,7 @@ func init() {
 	}()
 	ready := false
 	//wait in loop for server readiness
-	for i := 0; i < 120; i++ {
+	for i := 0; i < 240; i++ {
 		res, err := http.Get(testBulkerURL + "/ready")
 		if err == nil && res.StatusCode == 200 {
 			ready = true
@@ -61,12 +65,16 @@ func init() {
 		time.Sleep(500 * time.Millisecond)
 	}
 	if !ready {
-		panic("bulker is not ready")
+		t.Fatalf("bulker is not ready")
+	} else {
+		inited = true
 	}
 }
 
 // Test BulkerApp
 func TestBulkerApp(t *testing.T) {
+	initContainers(t)
+	defer Exit()
 	tests := []AppTestConfig{
 		{
 			name:                "good_batch",
@@ -173,7 +181,6 @@ func TestBulkerApp(t *testing.T) {
 			logging.Infof("Test %s passed", tt.name)
 		})
 	}
-	Exit()
 }
 
 func CheckError(step string, reqr *require.Assertions, expectedErrors map[string]any, err error) {
