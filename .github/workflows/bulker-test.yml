@@ -5,7 +5,7 @@ on:
     branches:
       - '**'
 
-env:
+#env:
 #  BULKER_TEST_BIGQUERY: ${{ secrets.BULKER_TEST_BIGQUERY }}
 #  BULKER_TEST_REDSHIFT: ${{ secrets.BULKER_TEST_REDSHIFT }}
 #  BULKER_TEST_REDSHIFT_SERVERLESS: ${{ secrets.BULKER_TEST_REDSHIFT_SERVERLESS }}
