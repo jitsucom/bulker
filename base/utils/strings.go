@@ -18,18 +18,18 @@ func NvlString(args ...string) string {
 
 // ShortenString returns the first N slice of a string.
 func ShortenString(str string, n int) string {
-	if len(str) <= n {
+	if len([]rune(str)) <= n {
 		return str
 	}
-	return str[:n]
+	return string([]rune(str)[:n])
 }
 
 // ShortenStringWithEllipsis returns the first N slice of a string and ends with ellipsis.
 func ShortenStringWithEllipsis(str string, n int) string {
-	if len(str) <= n {
+	if len([]rune(str)) <= n {
 		return str
 	}
-	return str[:n] + "..."
+	return string([]rune(str)[:n]) + "..."
 }
 
 // IsLetterOrNumber returns true if input symbol is:

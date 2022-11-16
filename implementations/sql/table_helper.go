@@ -37,16 +37,12 @@ type TableHelper struct {
 // Note: columnTypesMapping must be not empty (or fields will be ignored)
 func NewTableHelper(sqlAdapter SQLAdapter, coordinationService coordination.Service, pkFields utils.Set[string],
 	maxColumns int) *TableHelper {
-	adjustedPKFields := make(utils.Set[string], len(pkFields))
-	for k, _ := range pkFields {
-		adjustedPKFields.Put(sqlAdapter.ColumnName(k))
-	}
 	return &TableHelper{
 		sqlAdapter:          sqlAdapter,
 		coordinationService: coordinationService,
 		tables:              map[string]*Table{},
 
-		pkFields:           adjustedPKFields,
+		pkFields:           pkFields,
 		columnTypesMapping: sqlAdapter.GetTypesMapping(),
 
 		destinationType: sqlAdapter.Type(),
@@ -58,7 +54,7 @@ func NewTableHelper(sqlAdapter SQLAdapter, coordinationService coordination.Serv
 // applies column types mapping
 func (th *TableHelper) MapTableSchema(batchHeader *BatchHeader) *Table {
 	table := &Table{
-		Name:      batchHeader.TableName,
+		Name:      th.sqlAdapter.TableName(batchHeader.TableName),
 		Columns:   Columns{},
 		Partition: batchHeader.Partition,
 		PKFields:  th.pkFields,

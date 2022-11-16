@@ -152,7 +152,7 @@ func (sc *StreamConsumer) start() {
 						}
 					}
 					if err != nil {
-						failedTopic := MakeTopicId(sc.destination.Id(), "failed", sc.tableName)
+						failedTopic, _ := MakeTopicId(sc.destination.Id(), "failed", sc.tableName, false)
 						err = sc.bulkerProducer.ProduceSync(failedTopic, message.Value)
 						if err != nil {
 							sc.Errorf("failed to store event to 'failed' topic: %s: %v", failedTopic, err)

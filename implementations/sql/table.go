@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/base/utils"
 	"sort"
+	"strings"
 )
 
 const BulkerManagedPkConstraintPrefix = "bulker_managed_"
@@ -100,7 +101,7 @@ func (t *Table) Diff(another *Table) *Table {
 
 	jitsuPrimaryKeyName := BuildConstraintName(t.Name)
 	//check if primary key is maintained by Jitsu (for Postgres and Redshift)
-	if t.PrimaryKeyName != "" && t.PrimaryKeyName != jitsuPrimaryKeyName {
+	if t.PrimaryKeyName != "" && strings.ToLower(t.PrimaryKeyName) != strings.ToLower(jitsuPrimaryKeyName) {
 		//primary key isn't maintained by Jitsu: do nothing
 		return diff
 	}

@@ -204,11 +204,11 @@ type Destination struct {
 }
 
 // TopicId generates topic id for Destination
-func (d *Destination) TopicId(tableName string) string {
+func (d *Destination) TopicId(tableName string) (string, error) {
 	if tableName == "" {
 		tableName = d.config.StreamConfig.TableName
 	}
-	return MakeTopicId(d.Id(), string(d.config.StreamConfig.BulkMode), tableName)
+	return MakeTopicId(d.Id(), string(d.config.StreamConfig.BulkMode), tableName, true)
 }
 
 // Id returns destination id
