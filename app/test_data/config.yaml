@@ -1,0 +1,27 @@
+destinations:
+  batch_postgres:
+    type: "postgres"
+    stream_mode: "batch"
+    batch_size: 10
+    destination_config:
+      host: localhost
+      port: 65432
+      database: test
+      username: test
+      password: test
+      default_schema: bulker
+      parameters:
+        sslmode: disable
+  stream_postgres:
+    type: "postgres"
+    stream_mode: "stream"
+    destination_config:
+      host: localhost
+      port: 65432
+      database: test
+      username: test
+      password: test
+      default_schema: bulker
+      parameters:
+        sslmode: disable
+
