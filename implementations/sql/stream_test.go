@@ -121,8 +121,8 @@ func init() {
 		}
 	}
 	////uncomment to run test for single db only
-	allBulkerConfigs = []string{SnowflakeBulkerTypeId}
-	exceptBigquery = []string{}
+	//allBulkerConfigs = []string{SnowflakeBulkerTypeId}
+	//exceptBigquery = []string{}
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 
