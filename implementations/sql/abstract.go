@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/jitsucom/bulker/base/coordination"
+	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 )
@@ -25,6 +26,7 @@ type AbstractSQLStream struct {
 	inited      bool
 
 	customTypes SQLTypes
+	pkColumns   utils.Set[string]
 }
 
 func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractSQLStream, error) {
@@ -34,7 +36,8 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 		option(&ps.options)
 	}
 	ps.merge = MergeRowsOption.Get(&ps.options)
-	if ps.merge && len(PrimaryKeyOption.Get(&ps.options)) == 0 {
+	pkColumns := PrimaryKeyOption.Get(&ps.options)
+	if ps.merge && len(pkColumns) == 0 {
 		return AbstractSQLStream{}, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	var customFields = ColumnTypesOption.Get(&ps.options)
@@ -42,8 +45,13 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	for k, v := range customFields {
 		adaptedCustomFields[p.ColumnName(k)] = v
 	}
+	adaptedPkColumns := utils.NewSet[string]()
+	for k, _ := range pkColumns {
+		adaptedPkColumns.Put(p.ColumnName(k))
+	}
+	ps.pkColumns = adaptedPkColumns
 	//TODO: max column?
-	ps.tableHelper = NewTableHelper(p, coordination.DummyCoordinationService{}, PrimaryKeyOption.Get(&ps.options), 1000)
+	ps.tableHelper = NewTableHelper(p, coordination.DummyCoordinationService{}, ps.pkColumns, 1000)
 	ps.state = bulker.State{Status: bulker.Active}
 	ps.customTypes = adaptedCustomFields
 	return ps, nil

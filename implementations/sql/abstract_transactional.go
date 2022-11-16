@@ -324,14 +324,13 @@ func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulk
 	return ps.state, err
 }
 
-func (ps *AbstractSQLStream) getPKValue(object types.Object) (string, error) {
-	pkColumns := PrimaryKeyOption.Get(&ps.options)
-	l := len(pkColumns)
+func (ps *AbstractTransactionalSQLStream) getPKValue(object types.Object) (string, error) {
+	l := len(ps.pkColumns)
 	if l == 0 {
 		return "", fmt.Errorf("primary key is not set")
 	}
 	if l == 1 {
-		for col := range pkColumns {
+		for col := range ps.pkColumns {
 			pkValue, ok := object[col]
 			if !ok {
 				return "", fmt.Errorf("primary key [%s] is not found in the object", col)
@@ -340,7 +339,7 @@ func (ps *AbstractSQLStream) getPKValue(object types.Object) (string, error) {
 		}
 	}
 	var builder strings.Builder
-	for col := range pkColumns {
+	for col := range ps.pkColumns {
 		pkValue, ok := object[col]
 		if ok {
 			builder.WriteString(fmt.Sprint(pkValue))

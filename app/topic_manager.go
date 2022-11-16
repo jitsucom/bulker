@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/jitsucom/bulker/base/objects"
@@ -11,9 +12,13 @@ import (
 	"time"
 )
 
-var topicPattern = regexp.MustCompile(`^in[.]id[.](.*)[.]m[.](.*)[.]t[.](.*)$`)
+var topicUnsupportedCharacters = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
+var topicPattern = regexp.MustCompile(`^in[.]id[.](.*)[.]m[.](.*)[.](t|b64)[.](.*)$`)
 
 const topicExpression = "in.id.%s.m.%s.t.%s"
+const topicExpressionBase64 = "in.id.%s.m.%s.b64.%s"
+
+const topicLengthLimit = 200
 
 type TopicManager struct {
 	objects.ServiceBase
@@ -265,7 +270,7 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 		set = utils.NewSet[string]()
 		tm.topics[destinationId] = set
 	}
-	failedTopic := MakeTopicId(destinationId, "failed", tableName)
+	failedTopic, _ := MakeTopicId(destinationId, "failed", tableName, false)
 	topicRes, err := tm.kaftaAdminClient.CreateTopics(context.Background(), []kafka.TopicSpecification{
 		{
 			Topic:         topic,
@@ -338,16 +343,36 @@ func (tm *TopicManager) Close() error {
 
 func ParseTopicId(topic string) (destinationId, mode, tableName string, err error) {
 	topicGroups := topicPattern.FindStringSubmatch(topic)
-	if len(topicGroups) == 4 {
+	if len(topicGroups) == 5 {
 		destinationId = topicGroups[1]
 		mode = topicGroups[2]
-		tableName = topicGroups[3]
+		tableEncoding := topicGroups[3]
+		tableName = topicGroups[4]
+		if tableEncoding == "b64" {
+			b, err := base64.RawURLEncoding.DecodeString(tableName)
+			if err != nil {
+				return "", "", "", fmt.Errorf("error decoding table name from topic: %s: %w", topic, err)
+			}
+			tableName = string(b)
+		}
+
 	} else {
 		err = fmt.Errorf("topic name %s doesn't match pattern %s", topic, topicPattern.String())
 	}
 	return
 }
 
-func MakeTopicId(destinationId, mode, tableName string) string {
-	return fmt.Sprintf(topicExpression, destinationId, mode, tableName)
+func MakeTopicId(destinationId, mode, tableName string, checkLength bool) (string, error) {
+	unsupportedChars := topicUnsupportedCharacters.FindString(tableName)
+	topicId := ""
+	if unsupportedChars != "" {
+		tableName = base64.RawURLEncoding.EncodeToString([]byte(tableName))
+		topicId = fmt.Sprintf(topicExpressionBase64, destinationId, mode, tableName)
+	} else {
+		topicId = fmt.Sprintf(topicExpression, destinationId, mode, tableName)
+	}
+	if checkLength && len(topicId) > topicLengthLimit {
+		return "", fmt.Errorf("topic name %s length %d exceeds limit (%d). Please choose shorter table name. Recommended table name length is <= 63 symbols", topicId, len(topicId), topicLengthLimit)
+	}
+	return topicId, nil
 }

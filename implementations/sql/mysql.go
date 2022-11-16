@@ -129,7 +129,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 }
 
 func (m *MySQL) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
-	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s_stream_%s_%s", mode, tableName, utils.SanitizeString(id))))
+	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s", utils.SanitizeString(id))))
 	if err := m.validateOptions(streamOptions); err != nil {
 		return nil, err
 	}

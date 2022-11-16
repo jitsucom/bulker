@@ -121,8 +121,8 @@ func init() {
 		}
 	}
 	////uncomment to run test for single db only
-	//allBulkerConfigs = []string{MySQLBulkerTypeId}
-	//exceptBigquery = []string{}
+	allBulkerConfigs = []string{SnowflakeBulkerTypeId}
+	exceptBigquery = []string{}
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 
@@ -350,6 +350,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	if tableName == "" {
 		tableName = testConfig.name
 	}
+	id := fmt.Sprintf("%s_%s_%s_%s", tableName, testConfig.config.BulkerType, strings.ToLower(string(mode)), uuid.NewLettersNumbers())
 	tableName = tableName + "_" + strings.ToLower(string(mode))
 	err = sqlAdapter.InitDatabase(ctx)
 	CheckError("init_database", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
@@ -364,7 +365,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			sqlAdapter.DropTable(ctx, tableName, true)
 		}()
 	}
-	stream, err := blk.CreateStream(t.Name(), tableName, mode, testConfig.streamOptions...)
+	stream, err := blk.CreateStream(id, tableName, mode, testConfig.streamOptions...)
 	CheckError("create_stream", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 	if err != nil {
 		return
@@ -419,6 +420,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				table.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
 			}
 		}
+		originalTableName := table.Name
 		if !testConfig.expectedTableCaseChecking {
 			newColumns := make(Columns, len(testConfig.expectedTable.Columns))
 			for k := range testConfig.expectedTable.Columns {
@@ -450,7 +452,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		expectedPKFields := utils.NewSet[string]()
 		expectedPKName := ""
 		if len(testConfig.expectedTable.PKFields) > 0 {
-			expectedPKName = BuildConstraintName(table.Name)
+			expectedPKName = BuildConstraintName(originalTableName)
 			expectedPKFields = testConfig.expectedTable.PKFields
 		}
 		// don't check table name if not explicitly set

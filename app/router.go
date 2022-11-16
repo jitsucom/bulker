@@ -82,8 +82,14 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "destination not found"})
 		return
 	}
-	topicId := destination.TopicId(tableName)
-	err := r.topicManager.EnsureTopic(destination, topicId)
+	topicId, err := destination.TopicId(tableName)
+	if err != nil {
+		err = fmt.Errorf("couldn't create topic: %w", err)
+		r.Errorf(err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	err = r.topicManager.EnsureTopic(destination, topicId)
 	if err != nil {
 		err = fmt.Errorf("couldn't create topic: %s : %w", topicId, err)
 		r.Errorf(err.Error())
@@ -115,7 +121,7 @@ func (r *Router) FailedHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tableName query parameter is required"})
 		return
 	}
-	topicId := MakeTopicId(destinationId, "failed", tableName)
+	topicId, _ := MakeTopicId(destinationId, "failed", tableName, false)
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"auto.offset.reset":             "earliest",
 		"group.id":                      uuid.New(),

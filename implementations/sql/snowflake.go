@@ -278,7 +278,7 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 	table.PrimaryKeyName = primaryKeyName
 
 	jitsuPrimaryKeyName := BuildConstraintName(table.Name)
-	if primaryKeyName != "" && primaryKeyName != jitsuPrimaryKeyName {
+	if primaryKeyName != "" && strings.ToLower(primaryKeyName) != strings.ToLower(jitsuPrimaryKeyName) {
 		logging.Warnf("table: %s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
 	}
 

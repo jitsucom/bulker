@@ -342,7 +342,7 @@ func (bc *BatchConsumer) processFailed(failedPosition *kafka.TopicPartition) (er
 			}
 		}
 
-		failedTopic := MakeTopicId(bc.destinationId, "failed", bc.tableName)
+		failedTopic, _ := MakeTopicId(bc.destinationId, "failed", bc.tableName, false)
 		err = bc.failedProducer.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
 			Value:          message.Value,

@@ -92,7 +92,7 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 
 func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	bq.validateOptions(streamOptions)
-	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s_stream_%s_%s", mode, tableName, utils.SanitizeString(id))))
+	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s", utils.SanitizeString(id))))
 	switch mode {
 	case bulker.AutoCommit:
 		return nil, errors.New(BigQueryAutocommitUnsupported)
