@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
@@ -16,6 +15,7 @@ import (
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
+	jsoniter "github.com/json-iterator/go"
 	"os"
 	"strings"
 	"text/template"
@@ -274,7 +274,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
 			object := map[string]any{}
-			decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+			decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
 			decoder.UseNumber()
 			err = decoder.Decode(&object)
 			if err != nil {

@@ -1,8 +1,8 @@
 package sql
 
 import (
-	"encoding/json"
 	"fmt"
+	jsoniter "github.com/json-iterator/go"
 	"reflect"
 	"strings"
 )
@@ -52,7 +52,7 @@ func (f *FlattenerImpl) flatten(key string, value any, destination map[string]an
 			destination[key] = value
 			return nil
 		}
-		b, err := json.Marshal(value)
+		b, err := jsoniter.Marshal(value)
 		if err != nil {
 			return fmt.Errorf("Error marshaling array with key %s: %v", key, err)
 		}

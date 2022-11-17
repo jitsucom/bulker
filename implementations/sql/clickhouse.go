@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	_ "github.com/ClickHouse/clickhouse-go/v2"
@@ -15,6 +14,7 @@ import (
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
+	jsoniter "github.com/json-iterator/go"
 	"os"
 	"strconv"
 	"strings"
@@ -577,7 +577,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		object := map[string]any{}
-		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
 		decoder.UseNumber()
 		err = decoder.Decode(&object)
 		if err != nil {

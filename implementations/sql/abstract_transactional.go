@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
@@ -13,6 +12,7 @@ import (
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
+	jsoniter "github.com/json-iterator/go"
 	"os"
 	"path"
 	"strings"
@@ -171,7 +171,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (e
 			for scanner.Scan() {
 				if !ps.batchFileSkipLines.Contains(i) {
 					if needToConvert {
-						dec := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+						dec := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
 						dec.UseNumber()
 						obj := make(map[string]any)
 						err = dec.Decode(&obj)
@@ -313,7 +313,9 @@ func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulk
 		return ps.state, errors.New("stream is not active")
 	}
 	if ps.tx != nil {
-		_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
+		if ps.tmpTable != nil {
+			_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
+		}
 		_ = ps.tx.Rollback()
 	}
 	if ps.batchFile != nil {

@@ -3,7 +3,6 @@ package implementations
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
@@ -11,6 +10,7 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/types"
+	jsoniter "github.com/json-iterator/go"
 	"io"
 	"strings"
 
@@ -56,7 +56,7 @@ func (gc *GoogleConfig) Validate() error {
 		if len(keyFileObject) == 0 {
 			return errors.New("Google key_file is required parameter")
 		}
-		b, err := json.Marshal(keyFileObject)
+		b, err := jsoniter.Marshal(keyFileObject)
 		if err != nil {
 			return fmt.Errorf("Malformed google key_file: %v", err)
 		}

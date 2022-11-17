@@ -4,7 +4,6 @@ import (
 	"cloud.google.com/go/bigquery"
 	"cloud.google.com/go/civil"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/hashicorp/go-multierror"
@@ -14,6 +13,7 @@ import (
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
+	jsoniter "github.com/json-iterator/go"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"math"
@@ -644,7 +644,7 @@ func (bq *BigQuery) toDeleteQuery(conditions *WhenConditions) string {
 func (bq *BigQuery) logQuery(messageTemplate string, entity any, err error) {
 	entityString := ""
 	if entity != nil {
-		entityJSON, err := json.Marshal(entity)
+		entityJSON, err := jsoniter.Marshal(entity)
 		if err != nil {
 			entityString = fmt.Sprintf("[failed to marshal query entity: %v]", err)
 			logging.Warnf("Failed to serialize entity for logging: %s", fmt.Sprint(entity))

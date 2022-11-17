@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/jitsucom/bulker/base/logging"
@@ -11,6 +10,7 @@ import (
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
+	jsoniter "github.com/json-iterator/go"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -257,7 +257,7 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 		latestPosition = message.TopicPartition
 		bc.Infof("%d. Message claimed: offset = %s, partition = %d, timestamp = %v, topic = %s", i, latestPosition.Offset.String(), latestPosition.Partition, message.Timestamp, *latestPosition.Topic)
 		obj := types.Object{}
-		dec := json.NewDecoder(bytes.NewReader(message.Value))
+		dec := jsoniter.NewDecoder(bytes.NewReader(message.Value))
 		dec.UseNumber()
 		err = dec.Decode(&obj)
 		if err == nil {

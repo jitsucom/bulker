@@ -42,6 +42,9 @@ type AppConfig struct {
 	BatchRunnerPeriodSec          int `mapstructure:"BATCH_RUNNER_PERIOD_SEC" default:"300"`
 	BatchRunnerDefaultBatchSize   int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"1000"`
 	BatchRunnerWaitForMessagesSec int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"1"`
+
+	EventsLogRedisURL string `mapstructure:"EVENTS_LOG_REDIS_URL"`
+	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
 }
 
 func init() {

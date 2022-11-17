@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-//DataType is a type representation of common data types
+// DataType is a type representation of common data types
 type DataType int
 
 const (
@@ -65,8 +65,8 @@ func (dt DataType) String() string {
 	}
 }
 
-//TypeFromString returns DataType from input string
-//or error if mapping doesn't exist
+// TypeFromString returns DataType from input string
+// or error if mapping doesn't exist
 func TypeFromString(t string) (DataType, error) {
 	trimmed := strings.TrimSpace(t)
 	lowerTrimmed := strings.ToLower(trimmed)
@@ -77,8 +77,8 @@ func TypeFromString(t string) (DataType, error) {
 	return dataType, nil
 }
 
-//StringFromType returns string representation of DataType
-//or error if mapping doesn't exist
+// StringFromType returns string representation of DataType
+// or error if mapping doesn't exist
 func StringFromType(dataType DataType) (string, error) {
 	str, ok := typeToInputString[dataType]
 	if !ok {
@@ -87,19 +87,23 @@ func StringFromType(dataType DataType) (string, error) {
 	return str, nil
 }
 
-//ReformatNumberValue process json.Number types into int64 or float64
-//processes string with ISO DateTime or Golang layout into time.Time
-//note: json.Unmarshal returns json.Number type that can be int or float
-//      we have to check does json number have dot in string representation
+// ReformatNumberValue process json.Number types into int64 or float64
+// processes string with ISO DateTime or Golang layout into time.Time
+// note: jsoniter.Unmarshal returns json.Number type that can be int or float
+//
+//	we have to check does json number have dot in string representation
+//
 // if have -> return float64 otherwise int64
 func ReformatValue(v any) any {
 	v = ReformatNumberValue(v)
 	return ReformatTimeValue(v)
 }
 
-//ReformatNumberValue process json.Number types into int64 or float64
-//note: json.Unmarshal returns json.Number type that can be int or float
-//      we have to check does json number have dot in string representation
+// ReformatNumberValue process json.Number types into int64 or float64
+// note: jsoniter.Unmarshal returns json.Number type that can be int or float
+//
+//	we have to check does json number have dot in string representation
+//
 // if have -> return float64 otherwise int64
 func ReformatNumberValue(v any) any {
 	jsonNumber, ok := v.(json.Number)
@@ -144,7 +148,7 @@ func ReformatTimeValue(value any) any {
 	return value
 }
 
-//TypeFromValue return DataType from v type
+// TypeFromValue return DataType from v type
 func TypeFromValue(v any) (DataType, error) {
 	switch v.(type) {
 	case string:

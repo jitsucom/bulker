@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
@@ -14,6 +13,7 @@ import (
 	"github.com/jitsucom/bulker/implementations/sql/testcontainers"
 	"github.com/jitsucom/bulker/implementations/sql/testcontainers/clickhouse"
 	"github.com/jitsucom/bulker/types"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/require"
 	"os"
 	"strings"
@@ -385,7 +385,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	i := 0
 	for scanner.Scan() {
 		obj := types.Object{}
-		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
 		decoder.UseNumber()
 		err = decoder.Decode(&obj)
 		CheckError("decode_json", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)

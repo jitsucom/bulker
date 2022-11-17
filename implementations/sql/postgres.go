@@ -5,13 +5,13 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
+	jsoniter "github.com/json-iterator/go"
 	"os"
 	"strings"
 	"text/template"
@@ -315,7 +315,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		object := map[string]any{}
-		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
 		decoder.UseNumber()
 		err = decoder.Decode(&object)
 		if err != nil {

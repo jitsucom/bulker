@@ -3,12 +3,12 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
+	jsoniter "github.com/json-iterator/go"
 	"sync/atomic"
 	"time"
 )
@@ -140,7 +140,7 @@ func (sc *StreamConsumer) start() {
 				if err == nil {
 					sc.Infof("Message claimed: offset = %s, partition = %d, timestamp = %v, topic = %s\n", message.TopicPartition.Offset.String(), message.TopicPartition.Partition, message.Timestamp, *message.TopicPartition.Topic)
 					obj := types.Object{}
-					dec := json.NewDecoder(bytes.NewReader(message.Value))
+					dec := jsoniter.NewDecoder(bytes.NewReader(message.Value))
 					dec.UseNumber()
 					err := dec.Decode(&obj)
 					if err != nil {

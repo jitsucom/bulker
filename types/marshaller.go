@@ -3,7 +3,7 @@ package types
 import (
 	"compress/gzip"
 	"encoding/csv"
-	"encoding/json"
+	jsoniter "github.com/json-iterator/go"
 	"io"
 )
 
@@ -36,7 +36,7 @@ func (jm *JSONMarshaller) Init(writer io.Writer, header []string) error {
 // Marshal object as json
 func (jm *JSONMarshaller) Marshal(object ...Object) error {
 	for _, obj := range object {
-		bytes, err := json.Marshal(obj)
+		bytes, err := jsoniter.Marshal(obj)
 		if err != nil {
 			return err
 		}
@@ -112,7 +112,7 @@ func (cm *CSVMarshaller) Marshal(object ...Object) error {
 					}
 				default:
 					//use json marshaller to marshal types like arrays and time in unified way
-					b, err := json.Marshal(v)
+					b, err := jsoniter.Marshal(v)
 					if err != nil {
 						return err
 					}
