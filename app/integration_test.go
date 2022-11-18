@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"github.com/jitsucom/bulker/app/testcontainers/kafka"
 	"github.com/jitsucom/bulker/base/logging"
@@ -13,6 +14,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
+	"strings"
 	"testing"
 	"time"
 )
@@ -31,6 +34,12 @@ type AppTestConfig struct {
 	expectedErrors map[string]any
 }
 
+//go:embed test_data/config.yaml
+var testConfigSource string
+
+//go:embed test_data/bulker.env
+var testBulkerEnv string
+
 var inited bool
 var postgresContainer *testcontainers.PostgresContainer
 
@@ -43,14 +52,24 @@ func initContainers(t *testing.T) {
 		t.Fatalf("could not start kafka container: %v", err)
 	}
 
-	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background(), "65432")
+	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background())
 	if err != nil {
 		t.Fatalf("could not start postgres container: %v", err)
 	}
-
+	dir, _ := os.MkdirTemp("", "bulker")
+	cfg := strings.ReplaceAll(testConfigSource, "[[POSTGRES_PORT]]", fmt.Sprint(postgresContainer.Port))
+	err = os.WriteFile(path.Join(dir, "config.yaml"), []byte(cfg), 0644)
+	if err != nil {
+		t.Fatalf("could not write config.yaml to temp file: %v", err)
+	}
+	env := strings.ReplaceAll(testBulkerEnv, "[[CONFIG_SOURCE]]", path.Join(dir, "config.yaml"))
+	err = os.WriteFile(path.Join(dir, "bulker.env"), []byte(env), 0644)
+	if err != nil {
+		t.Fatalf("could not write bulker.env to temp file: %v", err)
+	}
 	go func() {
 		_ = os.Setenv("HTTP_PORT", testBulkerPort)
-		_ = os.Setenv("BULKER_CONFIG_PATH", "./test_data/")
+		_ = os.Setenv("BULKER_CONFIG_PATH", dir)
 		Run()
 	}()
 	ready := false

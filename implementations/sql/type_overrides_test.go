@@ -16,7 +16,7 @@ func TestTypeOverride(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 			},
 			expectedRows: []map[string]any{
@@ -37,7 +37,7 @@ func TestTypeOverride(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 			},
 			expectedRows: []map[string]any{
@@ -58,7 +58,7 @@ func TestTypeOverride(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 			},
 			expectedRows: []map[string]any{
@@ -80,7 +80,7 @@ func TestTypeOverride(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 			},
 			expectedRows: []map[string]any{
@@ -101,7 +101,7 @@ func TestTypeOverride(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 			},
 			expectedRows: []map[string]any{
@@ -122,7 +122,7 @@ func TestTypeOverride(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 			},
 			expectedRows: []map[string]any{

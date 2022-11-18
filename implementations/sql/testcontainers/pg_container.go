@@ -40,7 +40,7 @@ type PostgresContainer struct {
 
 // NewPostgresContainer creates new Postgres test container if PG_TEST_PORT is not defined. Otherwise uses db at defined port. This logic is required
 // for running test at CI environment
-func NewPostgresContainer(ctx context.Context, hostPort string) (*PostgresContainer, error) {
+func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 	if os.Getenv(envPostgresPortVariable) != "" {
 		port, err := strconv.Atoi(os.Getenv(envPostgresPortVariable))
 		if err != nil {
@@ -77,9 +77,6 @@ func NewPostgresContainer(ctx context.Context, hostPort string) (*PostgresContai
 	}
 
 	exposedPort := pgDefaultPort
-	if hostPort != "" {
-		exposedPort = fmt.Sprintf("%s:%s", hostPort, pgDefaultPort)
-	}
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{

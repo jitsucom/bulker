@@ -20,6 +20,9 @@ func Run() {
 	signal.Notify(exitChannel, os.Interrupt, os.Kill, syscall.SIGTERM)
 
 	appConfig, err := InitAppConfig()
+	if err != nil {
+		panic(err)
+	}
 	kafkaConfig := appConfig.GetKafkaConfig()
 
 	if err != nil {

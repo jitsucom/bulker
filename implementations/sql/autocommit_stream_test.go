@@ -25,7 +25,7 @@ func TestAutocommitStream(t *testing.T) {
 			modes:               []bulker.BulkMode{bulker.AutoCommit},
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added2.ndjson",
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				Columns: justColumns("_timestamp", "column1", "column2", "column3", "column4", "column5", "id", "name"),
 			},
 			expectedRows: []map[string]any{

@@ -149,7 +149,9 @@ func (sc *StreamConsumer) start() {
 						sc.postEventsLog(message.Value, nil, nil, err)
 						sc.Errorf("Failed to parse event from message: %s: %w", message.Value, err)
 					} else {
-						state, processedObjects, err := (*sc.stream.Load()).Consume(context.Background(), obj)
+						var state bulker.State
+						var processedObjects []types.Object
+						state, processedObjects, err = (*sc.stream.Load()).Consume(context.Background(), obj)
 						sc.postEventsLog(message.Value, state.Representation, processedObjects, err)
 						if err != nil {
 							sc.Errorf("Failed to inject event to bulker stream: %v", err)

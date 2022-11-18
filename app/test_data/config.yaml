@@ -5,7 +5,7 @@ destinations:
     batch_size: 10
     destination_config:
       host: localhost
-      port: 65432
+      port: [[POSTGRES_PORT]]
       database: test
       username: test
       password: test
@@ -17,7 +17,7 @@ destinations:
     stream_mode: "stream"
     destination_config:
       host: localhost
-      port: 65432
+      port: [[POSTGRES_PORT]]
       database: test
       username: test
       password: test

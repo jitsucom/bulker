@@ -33,7 +33,7 @@ func TestMillionRows(t *testing.T) {
 		{
 			name:  "one_million_rows",
 			modes: []bulker.BulkMode{bulker.Transactional},
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				Columns: justColumns("_timestamp", "id", "name"),
 			},
 			expectedState: &bulker.State{
@@ -160,7 +160,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 	}
 	CheckError("state_lasterror", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, state.LastError)
 
-	if testConfig.expectedTable != nil {
+	if len(testConfig.expectedTable.Columns) > 0 {
 		//Check table schema
 		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
 		CheckError("get_table", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)

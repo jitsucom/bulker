@@ -66,7 +66,7 @@ func init() {
 		configRegistry[SnowflakeBulkerTypeId] = TestConfig{BulkerType: SnowflakeBulkerTypeId, Config: snowflakeConfig}
 	}
 
-	postgresContainer, err := testcontainers.NewPostgresContainer(context.Background(), "")
+	postgresContainer, err := testcontainers.NewPostgresContainer(context.Background())
 	if err != nil {
 		panic(err)
 	}
@@ -140,7 +140,7 @@ type bulkerTestConfig struct {
 	//expected state of stream Complete() call
 	expectedState *bulker.State
 	//schema of the table expected as result of complete test run
-	expectedTable *ExpectedTable
+	expectedTable ExpectedTable
 	//control whether to check types of columns fow expectedTable. For test that run against multiple bulker types is required to leave 'false'
 	expectedTableTypeChecking bool
 	//control whether to check character case of table and columns names
@@ -174,7 +174,7 @@ func TestStreams(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/columns_added.ndjson",
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				Columns: justColumns("_timestamp", "column1", "column2", "column3", "id", "name"),
 			},
 			expectedRowsCount: 6,
@@ -194,7 +194,7 @@ func TestStreams(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 			},
 			expectedRows: []map[string]any{
@@ -210,7 +210,7 @@ func TestStreams(t *testing.T) {
 		//	modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 		//	expectPartitionId: true,
 		//	dataFile:          "test_data/types2.ndjson",
-		//	expectedTable: &ExpectedTable{
+		//	expectedTable: ExpectedTable{
 		//		Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
 		//	},
 		//	expectedRows: []map[string]any{
@@ -256,7 +256,7 @@ func TestStreams(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/repeated_ids.ndjson",
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				PKFields: utils.Set[string]{},
 				Columns:  justColumns("_timestamp", "id", "name"),
 			},
@@ -284,7 +284,7 @@ func TestStreams(t *testing.T) {
 				ProcessedRows:  8,
 				SuccessfulRows: 8,
 			},
-			expectedTable: &ExpectedTable{
+			expectedTable: ExpectedTable{
 				PKFields: utils.NewSet("id"),
 				Columns:  justColumns("_timestamp", "id", "name"),
 			},
@@ -326,8 +326,10 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 			testConfig := testConfigRaw.(TestConfig)
 			newTd.config = &bulker.Config{Id: testConfigId, BulkerType: testConfig.BulkerType, DestinationConfig: testConfig.Config}
 			for _, mode := range newTd.modes {
+				tc := newTd
+				mode := mode
 				t.Run(string(mode)+"_"+testConfigId+"_"+newTd.name, func(t *testing.T) {
-					testFunc(t, newTd, mode)
+					testFunc(t, tc, mode)
 				})
 			}
 		}
@@ -407,8 +409,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		return
 	}
 	CheckError("state_lasterror", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, state.LastError)
-
-	if testConfig.expectedTable != nil {
+	if len(testConfig.expectedTable.Columns) > 0 {
 		//Check table schema
 		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
 		CheckError("get_table", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
@@ -495,7 +496,7 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 			newOptions = append(newOptions, WithPartition(partitionId))
 			testConfig.streamOptions = newOptions
 			//add partition id column to expectedTable
-			if testConfig.expectedTable != nil {
+			if len(testConfig.expectedTable.Columns) > 0 {
 				textColumn, ok := testConfig.expectedTable.Columns["name"]
 				if !ok {
 					textColumn, ok = testConfig.expectedTable.Columns["NAME"]
@@ -505,7 +506,7 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 				}
 				newExpectedTable := ExpectedTable{Columns: testConfig.expectedTable.Columns.Clone(), PKFields: testConfig.expectedTable.PKFields.Clone()}
 				newExpectedTable.Columns[PartitonIdKeyword] = textColumn
-				testConfig.expectedTable = &newExpectedTable
+				testConfig.expectedTable = newExpectedTable
 			}
 			//add partition id value to all expected rows
 			if testConfig.expectedRows != nil {
