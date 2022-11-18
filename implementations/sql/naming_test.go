@@ -7,6 +7,7 @@ import (
 )
 
 func TestNaming(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:                      "naming_test1",

@@ -279,11 +279,6 @@ func TestStreams(t *testing.T) {
 			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/repeated_ids.ndjson",
-			expectedState: &bulker.State{
-				Status:         bulker.Completed,
-				ProcessedRows:  8,
-				SuccessfulRows: 8,
-			},
 			expectedTable: ExpectedTable{
 				PKFields: utils.NewSet("id"),
 				Columns:  justColumns("_timestamp", "id", "name"),
@@ -300,7 +295,9 @@ func TestStreams(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			runTestConfig(t, tt, testStream)
 		})
 	}

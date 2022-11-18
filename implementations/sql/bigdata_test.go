@@ -36,17 +36,14 @@ func TestMillionRows(t *testing.T) {
 			expectedTable: ExpectedTable{
 				Columns: justColumns("_timestamp", "id", "name"),
 			},
-			expectedState: &bulker.State{
-				Status:         bulker.Completed,
-				ProcessedRows:  eventsCount,
-				SuccessfulRows: eventsCount,
-			},
 			expectedRowsCount: eventsCount,
 			configIds:         configIds,
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			runTestConfig(t, tt, testLotOfEvents)
 		})
 	}
@@ -76,7 +73,9 @@ func TestMillionRowsBatched(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			runTestConfig(t, tt, testLotOfEvents)
 		})
 	}

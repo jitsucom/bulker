@@ -8,6 +8,7 @@ import (
 
 // TestReplacePartitionStream sequentially runs 3 replace partition streams without dropping table in between
 func TestReplacePartitionStream(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:                "first_partition",

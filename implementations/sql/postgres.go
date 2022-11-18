@@ -170,11 +170,11 @@ func (p *Postgres) InitDatabase(ctx context.Context) error {
 	query := fmt.Sprintf(pgCreateDbSchemaIfNotExistsTemplate, p.config.Schema)
 
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-		return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Schema:    p.config.Schema,
-				Statement: query,
-			})
+		//return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
+		//	WithProperty(errorj.DBInfo, &types.ErrorPayload{
+		//		Schema:    p.config.Schema,
+		//		Statement: query,
+		//	})
 	}
 
 	return nil

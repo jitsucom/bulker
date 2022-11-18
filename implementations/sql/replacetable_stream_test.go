@@ -8,6 +8,7 @@ import (
 
 // TestReplaceTableStream sequentially runs 3 replace table streams without dropping table in between
 func TestReplaceTableStream(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:                "first_run",

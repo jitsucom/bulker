@@ -7,6 +7,7 @@ import (
 )
 
 func TestExistingTable1(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:                "existing_table1_create_table",
@@ -54,6 +55,7 @@ func TestExistingTable1(t *testing.T) {
 }
 
 func TestExistingTable2(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:                "existing_table2_create_table",

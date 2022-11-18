@@ -9,6 +9,7 @@ import (
 // TestAutocommitStream sequentially runs autocommit stream without dropping table in between.
 // just to make sure that Complete() logic works fine
 func TestAutocommitStream(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:                "added_columns_first_run",

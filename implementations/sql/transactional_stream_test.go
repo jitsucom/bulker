@@ -8,6 +8,7 @@ import (
 
 // TestTransactionalStream sequentially runs  transactional stream without dropping table in between
 func TestTransactionalSequentialAddColumns(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:                "added_columns_first_run",
@@ -60,6 +61,7 @@ func TestTransactionalSequentialAddColumns(t *testing.T) {
 }
 
 func TestTransactionalSequentialRepeatPK(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:                "first_run_batch",
