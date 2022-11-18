@@ -389,7 +389,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		decoder.UseNumber()
 		err = decoder.Decode(&obj)
 		CheckError("decode_json", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
-		err = stream.Consume(ctx, obj)
+		_, _, err = stream.Consume(ctx, obj)
 		CheckError(fmt.Sprintf("consume_object_%d", i), testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 		if err != nil && !testConfig.ignoreConsumeErrors {
 			return

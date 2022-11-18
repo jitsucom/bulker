@@ -22,22 +22,27 @@ func newAutoCommitStream(id string, p SQLAdapter, tableName string, streamOption
 	return &ps, nil
 }
 
-func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (err error) {
+func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects []types.Object, err error) {
 	defer func() {
 		err = ps.postConsume(err)
+		state = ps.state
 	}()
 	if err = ps.init(ctx); err != nil {
-		return err
+		return
 	}
 	table, processedObjects, err := ps.preprocess(object)
 	if err != nil {
-		return err
+		ps.updateRepresentationTable(table)
+		return
 	}
-	table, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, table)
+	dstTable, err := ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, table)
 	if err != nil {
-		return errorj.Decorate(err, "failed to ensure table")
+		ps.updateRepresentationTable(table)
+		err = errorj.Decorate(err, "failed to ensure table")
+		return
 	}
-	return ps.sqlAdapter.Insert(ctx, table, ps.merge, processedObjects)
+	ps.updateRepresentationTable(dstTable)
+	return ps.state, processedObjects, ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObjects)
 }
 
 func (ps *AutoCommitStream) Complete(ctx context.Context) (state bulker.State, err error) {

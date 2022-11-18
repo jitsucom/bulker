@@ -40,12 +40,13 @@ type TopicManager struct {
 	batchConsumers  map[string][]*BatchConsumer
 	streamConsumers map[string][]*StreamConsumer
 
-	bulkerProducer *Producer
-	closed         chan struct{}
+	bulkerProducer   *Producer
+	eventsLogService EventsLogService
+	closed           chan struct{}
 }
 
 // NewTopicManager returns TopicManager
-func NewTopicManager(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repository, cron *Cron, bulkerProducer *Producer) (*TopicManager, error) {
+func NewTopicManager(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repository, cron *Cron, bulkerProducer *Producer, eventsLogService EventsLogService) (*TopicManager, error) {
 	base := objects.NewServiceBase("topic-manager")
 	admin, err := kafka.NewAdminClient(kafkaConfig)
 	if err != nil {
@@ -61,6 +62,7 @@ func NewTopicManager(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository
 		kafkaBootstrapServer: config.KafkaBootstrapServers,
 		topics:               make(map[string]utils.Set[string]),
 		bulkerProducer:       bulkerProducer,
+		eventsLogService:     eventsLogService,
 		batchConsumers:       make(map[string][]*BatchConsumer),
 		streamConsumers:      make(map[string][]*StreamConsumer),
 		abanonedTopics:       utils.NewSet[string](),
@@ -168,14 +170,14 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 			}
 			switch mode {
 			case "stream":
-				streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.bulkerProducer)
+				streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.bulkerProducer, tm.eventsLogService)
 				if err != nil {
 					tm.SystemErrorf("Failed to create consumer for destination topic: %s: %v", topic, err)
 					continue
 				}
 				tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
 			case "batch":
-				batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, destination.config.BatchPeriodSec, topic, tm.config, tm.kafkaConfig)
+				batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, destination.config.BatchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
 				if err != nil {
 					tm.Errorf("Failed to create batch consumer for destination topic: %s: %v", topic, err)
 					continue
@@ -197,7 +199,7 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 			set.Put(topic)
 		}
 	}
-	tm.Infof("[topic-manager] Refreshed metadata in %v", time.Since(start))
+	tm.Debugf("[topic-manager] Refreshed metadata in %v", time.Since(start))
 	tm.ready = true
 }
 
@@ -301,13 +303,13 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 	}
 	switch mode {
 	case "stream":
-		streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.bulkerProducer)
+		streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.bulkerProducer, tm.eventsLogService)
 		if err != nil {
 			return tm.NewError("Failed to create consumer for destination topic: %s: %v", topic, err)
 		}
 		tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
 	case "batch":
-		batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, destination.config.BatchPeriodSec, topic, tm.config, tm.kafkaConfig)
+		batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, destination.config.BatchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
 		if err != nil {
 			return tm.NewError("Failed to create batch consumer for destination topic: %s: %v", topic, err)
 		}

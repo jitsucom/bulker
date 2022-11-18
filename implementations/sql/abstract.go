@@ -77,7 +77,7 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, []types.Ob
 func (ps *AbstractSQLStream) postConsume(err error) error {
 	if err != nil {
 		ps.state.ErrorRowIndex = ps.state.ProcessedRows
-		ps.state.LastError = err
+		ps.state.SetError(err)
 		return err
 	} else {
 		ps.state.SuccessfulRows++
@@ -87,7 +87,7 @@ func (ps *AbstractSQLStream) postConsume(err error) error {
 
 func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 	if err != nil {
-		ps.state.LastError = err
+		ps.state.SetError(err)
 		ps.state.Status = bulker.Failed
 	} else {
 		ps.state.Status = bulker.Completed
@@ -106,4 +106,26 @@ func (ps *AbstractSQLStream) init(ctx context.Context) error {
 	}
 	ps.inited = true
 	return nil
+}
+
+func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
+	if ps.state.Representation == nil ||
+		ps.state.Representation.(RepresentationTable).Name != table.Name ||
+		len(ps.state.Representation.(RepresentationTable).Schema) != len(table.Columns) {
+		ps.state.Representation = RepresentationTable{
+			Name:             table.Name,
+			Schema:           table.Columns,
+			PrimaryKeyFields: table.PKFields.ToSlice(),
+			PrimaryKeyName:   table.PrimaryKeyName,
+			Temporary:        table.Temporary,
+		}
+	}
+}
+
+type RepresentationTable struct {
+	Name             string   `json:"name"`
+	Schema           Columns  `json:"schema"`
+	PrimaryKeyFields []string `json:"primaryKeyFields,omitempty"`
+	PrimaryKeyName   string   `json:"primaryKeyName,omitempty"`
+	Temporary        bool     `json:"temporary,omitempty"`
 }

@@ -58,7 +58,7 @@ type Bulker interface {
 type BulkerStream interface {
 	//Consume - put object to the stream. If stream is in AutoCommit mode it will be immediately committed to the database.
 	//Otherwise, it will be buffered and committed on Complete call.
-	Consume(ctx context.Context, object types.Object) error
+	Consume(ctx context.Context, object types.Object) (state State, processedObjects []types.Object, err error)
 	//Abort - abort stream and rollback all uncommitted objects. For stream in AutoCommit mode does nothing.
 	//Returns stream statistics. BulkerStream cannot be used after Abort call.
 	Abort(ctx context.Context) (State, error)
@@ -105,22 +105,31 @@ type Status string
 
 const (
 	//Completed - stream was completed successfully
-	Completed Status = "Completed"
+	Completed Status = "COMPLETED"
 	//Aborted - stream was aborted by user
-	Aborted Status = "Aborted"
+	Aborted Status = "ABORTED"
 	//Failed - failed to complete stream
-	Failed Status = "Failed"
+	Failed Status = "FAILED"
 	//Active - stream is active
-	Active Status = "Active"
+	Active Status = "ACTIVE"
 )
 
 // State is used as a Batch storing result
 type State struct {
-	Status         Status
-	LastError      error
-	ProcessedRows  int
-	SuccessfulRows int
-	ErrorRowIndex  int
+	//Representation of message processing. For SQL warehouses it is table schema
+	Representation any    `json:"representation"`
+	Status         Status `json:"status"`
+	LastError      error  `json:"-"`
+	LastErrorText  string `json:"error,omitempty"`
+	ProcessedRows  int    `json:"processedRows"`
+	SuccessfulRows int    `json:"successfulRows"`
+	ErrorRowIndex  int    `json:"errorRowIndex,omitempty"`
+}
+
+// SetError sets error to the state
+func (s *State) SetError(err error) {
+	s.LastError = err
+	s.LastErrorText = err.Error()
 }
 
 type LogLevel int

@@ -8,29 +8,35 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hjson/hjson-go/v4"
 	"github.com/jitsucom/bulker/base/objects"
+	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
 	jsoniter "github.com/json-iterator/go"
 	"io"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
+var TimestampPattern = regexp.MustCompile(`^\d{13}$`)
+
 type Router struct {
 	objects.ServiceBase
-	engine       *gin.Engine
-	config       *AppConfig
-	kafkaConfig  *kafka.ConfigMap
-	repository   *Repository
-	topicManager *TopicManager
-	producer     *Producer
-	authTokens   []string
-	tokenSecrets []string
-	noAuthPaths  []string
+	engine           *gin.Engine
+	config           *AppConfig
+	kafkaConfig      *kafka.ConfigMap
+	repository       *Repository
+	topicManager     *TopicManager
+	producer         *Producer
+	eventsLogService EventsLogService
+	authTokens       []string
+	tokenSecrets     []string
+	noAuthPaths      []string
 }
 
-func NewRouter(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repository, topicManager *TopicManager, producer *Producer) *Router {
+func NewRouter(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repository, topicManager *TopicManager, producer *Producer, eventsLogService EventsLogService) *Router {
 	base := objects.NewServiceBase("router")
 	authTokens := strings.Split(config.AuthTokens, ",")
 	if len(authTokens) == 1 && authTokens[0] == "" {
@@ -40,20 +46,23 @@ func NewRouter(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repo
 	tokenSecrets := strings.Split(config.TokenSecrets, ",")
 
 	router := &Router{
-		ServiceBase:  base,
-		authTokens:   authTokens,
-		config:       config,
-		kafkaConfig:  kafkaConfig,
-		repository:   repository,
-		topicManager: topicManager,
-		producer:     producer,
-		tokenSecrets: tokenSecrets,
-		noAuthPaths:  []string{"/ready"},
+		ServiceBase:      base,
+		authTokens:       authTokens,
+		config:           config,
+		kafkaConfig:      kafkaConfig,
+		repository:       repository,
+		topicManager:     topicManager,
+		producer:         producer,
+		eventsLogService: eventsLogService,
+		tokenSecrets:     tokenSecrets,
+		noAuthPaths:      []string{"/ready"},
 	}
 	engine := gin.New()
 	engine.Use(router.AuthMiddleware)
 	engine.POST("/post/:destinationId", router.EventsHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
+	engine.GET("/log/:eventType/:actorId", router.EventsLogHandler)
+
 	engine.GET("/ready", func(c *gin.Context) {
 		if router.topicManager.IsReady() {
 			c.Status(http.StatusOK)
@@ -172,6 +181,55 @@ func (r *Router) FailedHandler(c *gin.Context) {
 	_ = consumer.Close()
 }
 
+// EventsLogHandler - gets events log by EventType, actor id. Filtered by date range and cursorId
+func (r *Router) EventsLogHandler(c *gin.Context) {
+	eventType := c.Param("eventType")
+	actorId := c.Param("actorId")
+	beforeId := c.Query("beforeId")
+	start := c.Query("start")
+	end := c.Query("end")
+	limit := c.Query("limit")
+
+	var err error
+	eventsLogFilter := &EventsLogFilter{}
+	eventsLogFilter.Start, err = parseDateQueryParam(start)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "'start' parameter must be either unix timestamp or date in '2006-01-02' format"})
+		return
+	}
+	eventsLogFilter.End, err = parseDateQueryParam(end)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "'end' parameter must be either unix timestamp or date in '2006-01-02' format"})
+		return
+	}
+	iLimit := 100
+	if limit != "" {
+		iLimit2, err := strconv.Atoi(limit)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "'limit' parameter must be an integer number"})
+			return
+		}
+		if iLimit2 < 1000 {
+			iLimit = iLimit2
+		}
+	}
+	eventsLogFilter.BeforeId = EventsLogRecordId(beforeId)
+	records, err := r.eventsLogService.GetEvents(EventType(eventType), actorId, eventsLogFilter, iLimit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get events log: " + err.Error()})
+		return
+	}
+	c.Header("Content-Type", "application/x-ndjson")
+	for _, record := range records {
+		bytes, err := jsoniter.Marshal(record)
+		if err != nil {
+			bytes = []byte(fmt.Sprintf(`{"EVENTS_LOG_ERROR": "Failed to marshal event log record: %s", "OBJECT": "%+v"}`, err.Error(), record))
+		}
+		_, _ = c.Writer.Write(bytes)
+		_, _ = c.Writer.Write([]byte("\n"))
+	}
+}
+
 func (r *Router) AuthMiddleware(c *gin.Context) {
 	if len(r.authTokens) == 0 {
 		return
@@ -208,6 +266,18 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 	}
 	c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token: " + token})
 	return
+}
+
+func parseDateQueryParam(param string) (time.Time, error) {
+	if param != "" {
+		if TimestampPattern.MatchString(param) {
+			startTs, _ := strconv.Atoi(param)
+			return time.UnixMilli(int64(startTs)), nil
+		} else {
+			return time.Parse(timestamp.DashDayLayout, param)
+		}
+	}
+	return time.Time{}, nil
 }
 
 func hashToken(token string, salt string, secret string) string {

@@ -26,24 +26,23 @@ const (
 	EventTypeProcessedAll   EventType = "processed.all"
 	EventTypeProcessedError EventType = "processed.error"
 
-	EventTypeBatchAll   EventType = "processed.all"
-	EventTypeBatchError EventType = "processed.error"
+	EventTypeBatchAll   EventType = "batch.all"
+	EventTypeBatchError EventType = "batch.error"
 )
 
-var redisStreamIdTimestampPart = regexp.MustCompile(`^\d+`)
+var redisStreamIdTimestampPart = regexp.MustCompile(`^\d{13}`)
 
 type EventsLogFilter struct {
-	start    time.Time
-	end      time.Time
-	beforeId EventsLogRecordId
-	filter   func(event any) bool
+	Start    time.Time
+	End      time.Time
+	BeforeId EventsLogRecordId
+	Filter   func(event any) bool
 }
 
 type EventsLogRecord struct {
-	Id        EventsLogRecordId
-	EventType EventType
-	Date      time.Time
-	Content   any
+	Id      EventsLogRecordId `json:"id"`
+	Date    time.Time         `json:"date"`
+	Content any               `json:"content"`
 }
 
 type EventsLogService interface {
@@ -60,10 +59,10 @@ type RedisEventsLog struct {
 	maxSize   int
 }
 
-func NewRedisEventsLog(config *AppConfig, redisURL string) (*RedisEventsLog, error) {
+func NewRedisEventsLog(config *AppConfig) (*RedisEventsLog, error) {
 	base := objects.NewServiceBase(redisEventsLogServiceName)
-	base.Debugf("Creating RedisEventsLog with redisURL: %s", redisURL)
-	redisPool := newPool(redisURL)
+	base.Debugf("Creating RedisEventsLog with redisURL: %s", config.EventsLogRedisURL)
+	redisPool := newPool(config.EventsLogRedisURL)
 	r := RedisEventsLog{
 		ServiceBase: base,
 		redisPool:   redisPool,
@@ -125,12 +124,11 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *
 		if err != nil {
 			return nil, r.NewError("failed to parse timestamp from id [%s]: %w", id, err)
 		}
-		if (filter == nil || filter.filter == nil) || filter.filter(event) {
+		if (filter == nil || filter.Filter == nil) || filter.Filter(event) {
 			results = append(results, EventsLogRecord{
-				Id:        EventsLogRecordId(id),
-				EventType: eventType,
-				Content:   event,
-				Date:      date,
+				Id:      EventsLogRecordId(id),
+				Content: event,
+				Date:    date,
 			})
 		}
 
@@ -146,21 +144,21 @@ func (f *EventsLogFilter) GetStartAndEndIds() (start, end string, err error) {
 		return
 	}
 	var endTime int64
-	if f.beforeId != "" {
-		end = fmt.Sprintf("(%s", f.beforeId)
-		tsTime, err := parseTimestamp(string(f.beforeId))
+	if f.BeforeId != "" {
+		end = fmt.Sprintf("(%s", f.BeforeId)
+		tsTime, err := parseTimestamp(string(f.BeforeId))
 		if err != nil {
 			return "", "", err
 		}
 		endTime = tsTime.UnixMilli()
 	}
-	if !f.end.IsZero() {
-		if endTime == 0 || f.end.UnixMilli() < endTime {
-			end = fmt.Sprint(f.end.UnixMilli())
+	if !f.End.IsZero() {
+		if endTime == 0 || f.End.UnixMilli() < endTime {
+			end = fmt.Sprint(f.End.UnixMilli())
 		}
 	}
-	if !f.start.IsZero() {
-		start = fmt.Sprint(f.start.UnixMilli())
+	if !f.Start.IsZero() {
+		start = fmt.Sprint(f.Start.UnixMilli())
 	}
 
 	return
@@ -175,17 +173,12 @@ func parseTimestamp(id string) (time.Time, error) {
 	return time.UnixMilli(ts), nil
 }
 
-//// DeleteSignature deletes source collection signature from Redis
-//func (r *Redis) DeleteSignature(sourceID, collection string) error {
-//	key := "source#" + sourceID + ":collection#" + collection + ":chunks"
-//	connection := r.pool.Get()
-//	defer connection.Close()
-//
-//	_, err := connection.Do("DEL", key)
-//	if err != nil && err != redis.ErrNil {
-//		r.errorMetrics.NoticeError(err)
-//		return err
-//	}
-//
-//	return nil
-//}
+type DummyEventsLogService struct{}
+
+func (d *DummyEventsLogService) PostEvent(eventType EventType, actorId string, event any) (id EventsLogRecordId, err error) {
+	return "", nil
+}
+
+func (d *DummyEventsLogService) GetEvents(eventType EventType, actorId string, filter *EventsLogFilter, limit int) ([]EventsLogRecord, error) {
+	return nil, nil
+}

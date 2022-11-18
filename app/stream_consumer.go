@@ -24,8 +24,9 @@ type StreamConsumer struct {
 	consumerConfig kafka.ConfigMap
 	consumer       *kafka.Consumer
 	//it is not allowed to close consumer twice
-	consumerClosed bool
-	bulkerProducer *Producer
+	consumerClosed   bool
+	bulkerProducer   *Producer
+	eventsLogService EventsLogService
 
 	topicId   string
 	tableName string
@@ -33,7 +34,7 @@ type StreamConsumer struct {
 	closed chan struct{}
 }
 
-func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *AppConfig, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer) (*StreamConsumer, error) {
+func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *AppConfig, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService EventsLogService) (*StreamConsumer, error) {
 	base := objects.NewServiceBase(topicId)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
@@ -65,16 +66,17 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 	//}
 
 	sc := &StreamConsumer{
-		ServiceBase:    base,
-		config:         config,
-		repository:     repository,
-		destination:    destination,
-		topicId:        topicId,
-		tableName:      tableName,
-		consumerConfig: consumerConfig,
-		consumer:       consumer,
-		bulkerProducer: bulkerProducer,
-		closed:         make(chan struct{}),
+		ServiceBase:      base,
+		config:           config,
+		repository:       repository,
+		destination:      destination,
+		topicId:          topicId,
+		tableName:        tableName,
+		consumerConfig:   consumerConfig,
+		consumer:         consumer,
+		bulkerProducer:   bulkerProducer,
+		eventsLogService: eventsLogService,
+		closed:           make(chan struct{}),
 	}
 	bulkerStream, err := sc.destination.bulker.CreateStream(sc.topicId, sc.tableName, bulker.AutoCommit, sc.destination.streamOptions...)
 	if err != nil {
@@ -144,9 +146,11 @@ func (sc *StreamConsumer) start() {
 					dec.UseNumber()
 					err := dec.Decode(&obj)
 					if err != nil {
+						sc.postEventsLog(message.Value, nil, nil, err)
 						sc.Errorf("Failed to parse event from message: %s: %w", message.Value, err)
 					} else {
-						err = (*sc.stream.Load()).Consume(context.Background(), obj)
+						state, processedObjects, err := (*sc.stream.Load()).Consume(context.Background(), obj)
+						sc.postEventsLog(message.Value, state.Representation, processedObjects, err)
 						if err != nil {
 							sc.Errorf("Failed to inject event to bulker stream: %v", err)
 						}
@@ -201,4 +205,30 @@ func (sc *StreamConsumer) UpdateDestination(destination *Destination) error {
 
 	sc.destination = destination
 	return nil
+}
+
+func (sc *StreamConsumer) postEventsLog(message []byte, representation any, processedObjects []types.Object, processedErr error) {
+	object := map[string]any{
+		"original": string(message),
+		"status":   "SUCCESS",
+	}
+	if representation != nil {
+		object["representation"] = representation
+	}
+	if len(processedObjects) > 0 {
+		object["mappedData"] = processedObjects
+	}
+
+	if processedErr != nil {
+		object["error"] = processedErr.Error()
+		object["status"] = "FAILED"
+		_, err := sc.eventsLogService.PostEvent(EventTypeProcessedError, sc.destination.Id(), object)
+		if err != nil {
+			sc.Errorf("Failed to post event to events log service: %w", err)
+		}
+	}
+	_, err := sc.eventsLogService.PostEvent(EventTypeProcessedAll, sc.destination.Id(), object)
+	if err != nil {
+		sc.Errorf("Failed to post event to events log service: %w", err)
+	}
 }

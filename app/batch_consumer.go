@@ -29,13 +29,13 @@ type BatchConsumer struct {
 	consumerConfig kafka.ConfigMap
 	consumer       *kafka.Consumer
 	//it is not allowed to close consumer twice
-	consumerClosed bool
-	failedProducer *kafka.Producer
-
-	topicId         string
-	tableName       string
-	waitForMessages time.Duration
-	closed          chan struct{}
+	consumerClosed   bool
+	failedProducer   *kafka.Producer
+	eventsLogService EventsLogService
+	topicId          string
+	tableName        string
+	waitForMessages  time.Duration
+	closed           chan struct{}
 
 	//BatchConsumer marked as no longer needed. We cannot close it immediately because it can be in the middle of processing batch
 	retired atomic.Bool
@@ -46,7 +46,7 @@ type BatchConsumer struct {
 	resumeChannel chan struct{}
 }
 
-func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *AppConfig, kafkaConfig *kafka.ConfigMap) (*BatchConsumer, error) {
+func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *AppConfig, kafkaConfig *kafka.ConfigMap, eventsLogService EventsLogService) (*BatchConsumer, error) {
 	base := objects.NewServiceBase(topicId)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
@@ -103,19 +103,20 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %w", err)
 	}
 	bc := &BatchConsumer{
-		ServiceBase:     base,
-		config:          config,
-		repository:      repository,
-		destinationId:   destinationId,
-		tableName:       tableName,
-		batchPeriodSec:  batchPeriodSec,
-		topicId:         topicId,
-		consumerConfig:  consumerConfig,
-		consumer:        consumer,
-		failedProducer:  failedProducer,
-		waitForMessages: time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
-		closed:          make(chan struct{}),
-		resumeChannel:   make(chan struct{}),
+		ServiceBase:      base,
+		config:           config,
+		repository:       repository,
+		destinationId:    destinationId,
+		tableName:        tableName,
+		batchPeriodSec:   batchPeriodSec,
+		topicId:          topicId,
+		consumerConfig:   consumerConfig,
+		consumer:         consumer,
+		failedProducer:   failedProducer,
+		eventsLogService: eventsLogService,
+		waitForMessages:  time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
+		closed:           make(chan struct{}),
+		resumeChannel:    make(chan struct{}),
 	}
 	bc.pause()
 
@@ -237,6 +238,7 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 	// we collect batchSize of messages but no longer than for waitForMessages period
 	timeEnd := time.Now().Add(bc.waitForMessages)
 	latestPosition := kafka.TopicPartition{}
+	var processedObjectsSample []types.Object
 	for ; i < batchSize; i++ {
 		//TODO: do we heed to interrupt batch on close?
 
@@ -261,11 +263,12 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 		dec.UseNumber()
 		err = dec.Decode(&obj)
 		if err == nil {
-			err = bulkerStream.Consume(context.Background(), obj)
+			_, processedObjectsSample, err = bulkerStream.Consume(context.Background(), obj)
 		}
 		if err != nil {
 			failedPosition = &latestPosition
-			_, _ = bulkerStream.Abort(context.Background())
+			state, _ := bulkerStream.Abort(context.Background())
+			bc.postEventsLog(state, processedObjectsSample, err)
 			return 0, bc.NewError("Failed to process event to bulker stream: %w", err)
 		}
 	}
@@ -275,7 +278,9 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 		bc.pause()
 
 		bc.Infof("Committing %d events to destination.", i)
-		_, err = bulkerStream.Complete(context.Background())
+		var state bulker.State
+		state, err = bulkerStream.Complete(context.Background())
+		bc.postEventsLog(state, processedObjectsSample, err)
 		if err != nil {
 			failedPosition = &latestPosition
 			return 0, bc.NewError("Failed to commit bulker stream: %w", err)
@@ -511,4 +516,26 @@ func (bc *BatchConsumer) resume() (err error) {
 func (bc *BatchConsumer) Retire() {
 	bc.Infof("Retiring batch consumer")
 	bc.retired.Store(true)
+}
+
+func (bc *BatchConsumer) postEventsLog(state bulker.State, processedObjectsSample []types.Object, batchErr error) {
+	if batchErr != nil && state.LastError == nil {
+		state.SetError(batchErr)
+	}
+	batchState := BatchState{State: state, LastMappedRow: processedObjectsSample}
+	_, err2 := bc.eventsLogService.PostEvent(EventTypeBatchAll, bc.destinationId, batchState)
+	if err2 != nil {
+		bc.Errorf("Failed to post event to events log service: %w", err2)
+	}
+	if batchErr != nil {
+		_, err2 = bc.eventsLogService.PostEvent(EventTypeBatchError, bc.destinationId, batchState)
+		if err2 != nil {
+			bc.Errorf("Failed to post event to events log service: %w", err2)
+		}
+	}
+}
+
+type BatchState struct {
+	bulker.State  `json:",inline"`
+	LastMappedRow []types.Object `json:"lastMappedRow"`
 }

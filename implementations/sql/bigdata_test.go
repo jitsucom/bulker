@@ -140,7 +140,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 			startTime = timestamp.Now()
 		}
 		obj := types.Object{"_timestamp": constantTime, "id": i, "name": "test"}
-		err = stream.Consume(ctx, obj)
+		_, _, err = stream.Consume(ctx, obj)
 		CheckError(fmt.Sprintf("consume_object_%d", i), testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
 		if err != nil && !testConfig.ignoreConsumeErrors {
 			return

@@ -40,7 +40,15 @@ func Run() {
 	}
 	producer.Start()
 
-	topicManager, err := NewTopicManager(appConfig, kafkaConfig, repository, cron, producer)
+	var eventsLogService EventsLogService = &DummyEventsLogService{}
+	if appConfig.EventsLogRedisURL != "" {
+		eventsLogService, err = NewRedisEventsLog(appConfig)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	topicManager, err := NewTopicManager(appConfig, kafkaConfig, repository, cron, producer, eventsLogService)
 	if err != nil {
 		panic(err)
 	}
@@ -49,7 +57,7 @@ func Run() {
 	//batchRunner := NewBatchRunner(appConfig, kafkaConfig, repository, topicManager)
 	//batchRunner.Start()
 
-	router := NewRouter(appConfig, kafkaConfig, repository, topicManager, producer)
+	router := NewRouter(appConfig, kafkaConfig, repository, topicManager, producer, eventsLogService)
 	server := &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", appConfig.HTTPPort),
 		Handler:           router.GetEngine(),

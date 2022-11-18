@@ -20,7 +20,8 @@ func TestEventsLog(t *testing.T) {
 	//1668686118735
 	appConfig := AppConfig{}
 	appConfig.EventsLogMaxSize = 1000
-	redisEl, err := NewRedisEventsLog(&appConfig, redis.URL())
+	appConfig.EventsLogRedisURL = redis.URL()
+	redisEl, err := NewRedisEventsLog(&appConfig)
 	reqr.NoError(err)
 
 	var tsStart, tsEnd time.Time
@@ -61,7 +62,7 @@ func TestEventsLog(t *testing.T) {
 	beforeId := lastEvent.Id
 	lastEventId := lastEvent.Content.(map[string]any)["id"].(float64)
 	//test beforeId filter
-	events, err = redisEl.GetEvents(EventTypeIncomingAll, "test", &EventsLogFilter{beforeId: beforeId}, 10)
+	events, err = redisEl.GetEvents(EventTypeIncomingAll, "test", &EventsLogFilter{BeforeId: beforeId}, 10)
 	reqr.NoError(err)
 	reqr.Len(events, 10)
 	event := events[0]
@@ -71,7 +72,7 @@ func TestEventsLog(t *testing.T) {
 
 	// Test interval filter
 	logging.Infof("Test interval filter from %d to %d", tsStart.UnixMilli(), tsEnd.UnixMilli())
-	events, err = redisEl.GetEvents(EventTypeIncomingAll, "test", &EventsLogFilter{start: tsStart, end: tsEnd}, 0)
+	events, err = redisEl.GetEvents(EventTypeIncomingAll, "test", &EventsLogFilter{Start: tsStart, End: tsEnd}, 0)
 	reqr.NoError(err)
 	reqr.Len(events, 31)
 	firstEventId = events[0].Content.(map[string]any)["id"].(float64)
@@ -81,7 +82,7 @@ func TestEventsLog(t *testing.T) {
 
 	// Test interval filter with beforeId
 	logging.Infof("Test interval filter from %d to %d", tsStart.UnixMilli(), tsEnd.UnixMilli())
-	events, err = redisEl.GetEvents(EventTypeIncomingAll, "test", &EventsLogFilter{start: tsStart, end: tsEnd, beforeId: idBefore}, 0)
+	events, err = redisEl.GetEvents(EventTypeIncomingAll, "test", &EventsLogFilter{Start: tsStart, End: tsEnd, BeforeId: idBefore}, 0)
 	reqr.NoError(err)
 	reqr.Len(events, 20)
 	firstEventId = events[0].Content.(map[string]any)["id"].(float64)

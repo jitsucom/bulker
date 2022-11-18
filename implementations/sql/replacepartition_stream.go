@@ -41,23 +41,28 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 			}
 		}
 		tmpTableName := fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8])
+		pkName := ""
+		if len(dstTable.PKFields) > 0 {
+			pkName = BuildConstraintName(tmpTableName)
+		}
 		return &Table{
 			Name:           tmpTableName,
 			Columns:        dstTable.Columns,
 			PKFields:       dstTable.PKFields,
-			PrimaryKeyName: BuildConstraintName(tmpTableName),
+			PrimaryKeyName: pkName,
 			Temporary:      true,
 		}
 	}
 	return &ps, nil
 }
 
-func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Object) (err error) {
+func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects []types.Object, err error) {
 	defer func() {
 		err = ps.postConsume(err)
+		state = ps.state
 	}()
 	if err = ps.init(ctx); err != nil {
-		return err
+		return
 	}
 
 	//mark rows by setting __partition_id column with value of partitionId option
@@ -65,13 +70,15 @@ func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Obje
 	//type mapping, flattening => table schema
 	tableForObject, processedObjects, err := ps.preprocess(object)
 	if err != nil {
-		return err
+		ps.updateRepresentationTable(tableForObject)
+		return
 	}
 	if ps.batchFile != nil {
-		return ps.writeToBatchFile(ctx, tableForObject, processedObjects)
+		err = ps.writeToBatchFile(ctx, tableForObject, processedObjects)
 	} else {
-		return ps.insert(ctx, tableForObject, processedObjects)
+		err = ps.insert(ctx, tableForObject, processedObjects)
 	}
+	return
 }
 
 func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -98,10 +105,13 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 			}
 			//ensure that dstTable contains all columns from tmpTable
 			ps.dstTable.Columns = ps.tmpTable.Columns
-			ps.dstTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.dstTable)
+			dstTable, err := ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.dstTable)
 			if err != nil {
+				ps.updateRepresentationTable(ps.dstTable)
 				return ps.state, errorj.Decorate(err, "failed to ensure destination table")
 			}
+			ps.dstTable = dstTable
+			ps.updateRepresentationTable(ps.dstTable)
 			//copy data from tmp table to destination table
 			err = ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.merge)
 			if err != nil {

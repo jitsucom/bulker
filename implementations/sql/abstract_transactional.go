@@ -268,6 +268,7 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 	} else {
 		ps.tmpTable.Columns = utils.MapPutAll(targetTable.Columns, ps.tmpTable.Columns)
 	}
+	ps.updateRepresentationTable(ps.tmpTable)
 	ps.marshaller.Init(ps.batchFile, targetTable.SortedColumnNames())
 	for _, obj := range processedObjects {
 		if ps.merge {
@@ -301,6 +302,7 @@ func (ps *AbstractTransactionalSQLStream) insert(ctx context.Context, targetTabl
 	} else {
 		ps.tmpTable.Columns = utils.MapPutAll(targetTable.Columns, ps.tmpTable.Columns)
 	}
+	ps.updateRepresentationTable(ps.tmpTable)
 	ps.tmpTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.tmpTable)
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure table")

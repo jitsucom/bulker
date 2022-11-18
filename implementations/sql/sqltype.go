@@ -3,9 +3,9 @@ package sql
 type SQLTypes map[string]SQLColumn
 
 type SQLColumn struct {
-	Type     string
-	DdlType  string
-	Override bool
+	Type     string `json:"type,omitempty"`
+	DdlType  string `json:"ddlType,omitempty"`
+	Override bool   `json:"override,omitempty"`
 }
 
 func (c SQLColumn) GetDDLType() string {

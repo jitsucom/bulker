@@ -35,23 +35,26 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 	return &ps, nil
 }
 
-func (ps *ReplaceTableStream) Consume(ctx context.Context, object types.Object) (err error) {
+func (ps *ReplaceTableStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects []types.Object, err error) {
 	defer func() {
 		err = ps.postConsume(err)
+		state = ps.state
 	}()
 	if err = ps.init(ctx); err != nil {
-		return err
+		return
 	}
 	//type mapping, flattening => table schema
 	tableForObject, processedObjects, err := ps.preprocess(object)
 	if err != nil {
-		return err
+		ps.updateRepresentationTable(tableForObject)
+		return
 	}
 	if ps.batchFile != nil {
-		return ps.writeToBatchFile(ctx, tableForObject, processedObjects)
+		err = ps.writeToBatchFile(ctx, tableForObject, processedObjects)
 	} else {
-		return ps.insert(ctx, tableForObject, processedObjects)
+		err = ps.insert(ctx, tableForObject, processedObjects)
 	}
+	return
 }
 
 func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State, err error) {
