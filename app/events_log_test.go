@@ -54,7 +54,7 @@ func TestEventsLog(t *testing.T) {
 	reqr.NoError(err)
 	reqr.Len(events, 10)
 	for _, event := range events {
-		logging.Infof("Id: %s Type: %s Content: %+v Date: %s", event.Id, event.EventType, event.Content, event.Date)
+		logging.Infof("Id: %s Content: %+v Date: %s", event.Id, event.Content, event.Date)
 	}
 
 	// Get consequent 10 events
@@ -67,7 +67,7 @@ func TestEventsLog(t *testing.T) {
 	reqr.Len(events, 10)
 	event := events[0]
 	firstEventId := event.Content.(map[string]any)["id"].(float64)
-	logging.Infof("BeforeId filter => Id: %s Type: %s Content: %+v Date: %s", event.Id, event.EventType, event.Content, event.Date)
+	logging.Infof("BeforeId filter => Id: %s Content: %+v Date: %s", event.Id, event.Content, event.Date)
 	reqr.Equal(lastEventId-1, firstEventId)
 
 	// Test interval filter
