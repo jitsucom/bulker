@@ -40,22 +40,18 @@ var testConfigSource string
 //go:embed test_data/bulker.env
 var testBulkerEnv string
 
-var inited bool
-var postgresContainer *testcontainers.PostgresContainer
-
-func initContainers(t *testing.T) {
-	if inited {
-		return
+func initContainers(t *testing.T) *testcontainers.PostgresContainer {
+	var err error
+	postgresContainer, err := testcontainers.NewPostgresContainer(context.Background())
+	if err != nil {
+		t.Fatalf("could not start postgres container: %v", err)
 	}
-	_, err := kafka.NewKafkaContainer(context.Background())
+
+	_, err = kafka.NewKafkaContainer(context.Background())
 	if err != nil {
 		t.Fatalf("could not start kafka container: %v", err)
 	}
 
-	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background())
-	if err != nil {
-		t.Fatalf("could not start postgres container: %v", err)
-	}
 	dir, _ := os.MkdirTemp("", "bulker")
 	cfg := strings.ReplaceAll(testConfigSource, "[[POSTGRES_PORT]]", fmt.Sprint(postgresContainer.Port))
 	err = os.WriteFile(path.Join(dir, "config.yaml"), []byte(cfg), 0644)
@@ -85,15 +81,14 @@ func initContainers(t *testing.T) {
 	}
 	if !ready {
 		t.Fatalf("bulker is not ready")
-	} else {
-		inited = true
 	}
+	return postgresContainer
 }
 
 // Test BulkerApp
 func TestBulkerApp(t *testing.T) {
 	t.Parallel()
-	initContainers(t)
+	postgresContainer := initContainers(t)
 	defer Exit()
 	tests := []AppTestConfig{
 		{
