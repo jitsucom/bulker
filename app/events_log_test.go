@@ -10,6 +10,7 @@ import (
 )
 
 func TestEventsLog(t *testing.T) {
+	t.Parallel()
 	reqr := require.New(t)
 
 	redis, err := testcontainers.NewRedisContainer(context.Background())

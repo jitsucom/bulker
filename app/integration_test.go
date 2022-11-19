@@ -92,6 +92,7 @@ func initContainers(t *testing.T) {
 
 // Test BulkerApp
 func TestBulkerApp(t *testing.T) {
+	t.Parallel()
 	initContainers(t)
 	defer Exit()
 	tests := []AppTestConfig{

@@ -11,6 +11,7 @@ env:
   BULKER_TEST_REDSHIFT_SERVERLESS: ${{ secrets.BULKER_TEST_REDSHIFT_SERVERLESS }}
   BULKER_TEST_SNOWFLAKE: ${{ secrets.BULKER_TEST_SNOWFLAKE }}
   BULKER_TEST_MILLION_ROWS_BATCHED: redshift_serverless
+  TESTCONTAINERS_RYUK_DISABLED: true
 
 jobs:
   bulker-test:
@@ -32,7 +33,7 @@ jobs:
 
     - name: Bulker Test
       run: |
-        go test -timeout 60m -json ./... > test_report.json
+        go test -parallel=8 -timeout 60m -json ./... > test_report.json
 
     - name: Test Report
       if: ${{ always() }}
