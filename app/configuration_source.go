@@ -53,8 +53,8 @@ func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
 			return nil, fmt.Errorf("❗error creating yaml configuration source from config file: %s: %v", filePath, err)
 		}
 		return cfgSrc, nil
-	} else if strings.HasPrefix(config.ConfigSource, "redis://") {
-		redisConfigSource, err := NewRedisConfigurationSource(config.ConfigSource)
+	} else if strings.HasPrefix(config.ConfigSource, "redis://") || strings.HasPrefix(config.ConfigSource, "rediss://") {
+		redisConfigSource, err := NewRedisConfigurationSource(config)
 		if err != nil {
 			return nil, fmt.Errorf("❗️error while init redis configuration source: %s: %w", config.ConfigSource, err)
 		}

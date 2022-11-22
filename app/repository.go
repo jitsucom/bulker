@@ -215,6 +215,12 @@ func (d *Destination) TopicId(tableName string) (string, error) {
 func (d *Destination) Id() string {
 	return d.config.Id()
 }
+
+// Mode returns destination mode
+func (d *Destination) Mode() bulker.BulkMode {
+	return d.config.StreamConfig.BulkMode
+}
+
 func (d *Destination) retire() error {
 	d.retired = true
 	if d.leasesCount == 0 {

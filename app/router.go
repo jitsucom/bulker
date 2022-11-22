@@ -7,11 +7,13 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gin-gonic/gin"
 	"github.com/hjson/hjson-go/v4"
+	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/penglongli/gin-metrics/ginmetrics"
 	"io"
 	"net/http"
 	"regexp"
@@ -58,6 +60,15 @@ func NewRouter(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repo
 		noAuthPaths:      []string{"/ready"},
 	}
 	engine := gin.New()
+	// get global Monitor object
+	m := ginmetrics.GetMonitor()
+	m.SetSlowTime(1)
+	// set request duration, default {0.1, 0.3, 1.2, 5, 10}
+	// used to p95, p99
+	m.SetDuration([]float64{0.01, 0.05, 0.1, 0.3, 1.0, 2.0, 3.0, 10})
+	m.SetMetricPath("/metrics")
+	m.Use(engine)
+
 	engine.Use(router.AuthMiddleware)
 	engine.POST("/post/:destinationId", router.EventsHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
@@ -82,25 +93,37 @@ func (r *Router) GetEngine() *gin.Engine {
 func (r *Router) EventsHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
+	errorType := ""
+	defer func() {
+		if errorType != "" {
+			metrics.EventsHandlerError.WithLabelValues(destinationId, tableName, errorType).Inc()
+		} else {
+			metrics.EventsHandlerSuccess.WithLabelValues(destinationId, tableName).Inc()
+		}
+	}()
 	if tableName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "tableName query parameter is required"})
+		errorType = "tableName query parameter is required"
+		c.JSON(http.StatusBadRequest, gin.H{"error": errorType})
 		return
 	}
 	destination := r.repository.GetDestination(destinationId)
 	if destination == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "destination not found"})
+		errorType = "destination not found"
+		c.JSON(http.StatusNotFound, gin.H{"error": errorType})
 		return
 	}
 	topicId, err := destination.TopicId(tableName)
 	if err != nil {
-		err = fmt.Errorf("couldn't create topic: %w", err)
+		errorType = "couldn't generate topicId"
+		err = fmt.Errorf("%s: %w", errorType, err)
 		r.Errorf(err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	err = r.topicManager.EnsureTopic(destination, topicId)
 	if err != nil {
-		err = fmt.Errorf("couldn't create topic: %s : %w", topicId, err)
+		errorType = "couldn't create topic"
+		err = fmt.Errorf("%s: %s : %w", errorType, topicId, err)
 		r.Errorf(err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -108,12 +131,15 @@ func (r *Router) EventsHandler(c *gin.Context) {
 
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		r.Infof("error reading HTTP body: %v\n", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Errorf("error reading HTTP body: %w", err).Error()})
+		errorType = "error reading HTTP body"
+		r.Infof("%s: %v\n", errorType, err)
+		err = fmt.Errorf("%s: %w", errorType, err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	err = r.producer.ProduceAsync(topicId, body)
 	if err != nil {
+		errorType = "producer error"
 		errorID := uuid.NewLettersNumbers()
 		err = fmt.Errorf("error# %s: couldn't produce message for kafka topic: %s : %w", errorID, topicId, err)
 		r.Errorf(err.Error())

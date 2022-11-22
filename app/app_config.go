@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/hjson/hjson-go/v4"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/spf13/viper"
@@ -21,14 +22,14 @@ type AppConfig struct {
 
 	ConfigSource string `mapstructure:"CONFIG_SOURCE"`
 
+	RedisTLSCA string `mapstructure:"REDIS_TLS_CA"`
+
 	KafkaBootstrapServers string `mapstructure:"KAFKA_BOOTSTRAP_SERVERS" default:"127.0.0.1:9092"`
-	KafkaSecurityProtocol string `mapstructure:"KAFKA_SECURITY_PROTOCOL"`
-	KafkaSaslMechanism    string `mapstructure:"KAFKA_SASL_MECHANISM"`
-	KafkaSaslUsername     string `mapstructure:"KAFKA_SASL_USERNAME"`
-	KafkaSaslPassword     string `mapstructure:"KAFKA_SASL_PASSWORD"`
+	KafkaSSL              string `mapstructure:"KAFKA_SSL"`
+	KafkaSASL             string `mapstructure:"KAFKA_SASL"`
 
 	KafkaTopicRetentionHours       int `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
-	KafkaFailedTopicRetentionHours int `mapstructure:"KAFKA_FAILED_TOPIC_RETENTION_HOURS" default:"720"`
+	KafkaFailedTopicRetentionHours int `mapstructure:"KAFKA_FAILED_TOPIC_RETENTION_HOURS" default:"168"`
 
 	KafkaTopicReplicationFactor              int    `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR" default:"1"`
 	KafkaAdminMetadataTimeoutMs              int    `mapstructure:"KAFKA_ADMIN_METADATA_TIMEOUT_MS" default:"1000"`
@@ -45,6 +46,8 @@ type AppConfig struct {
 
 	EventsLogRedisURL string `mapstructure:"EVENTS_LOG_REDIS_URL"`
 	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
+
+	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`
 }
 
 func init() {
@@ -103,17 +106,23 @@ func (ac *AppConfig) GetKafkaConfig() *kafka.ConfigMap {
 		"reconnect.backoff.ms":     1000,
 		"reconnect.backoff.max.ms": 10000,
 	}
-	if ac.KafkaSecurityProtocol != "" {
-		_ = kafkaConfig.SetKey("security.protocol", ac.KafkaSecurityProtocol)
+	if ac.KafkaSSL == "true" {
+		if ac.KafkaSASL != "" {
+			_ = kafkaConfig.SetKey("security.protocol", "SASL_SSL")
+		} else {
+			_ = kafkaConfig.SetKey("security.protocol", "SSL")
+		}
 	}
-	if ac.KafkaSaslMechanism != "" {
-		_ = kafkaConfig.SetKey("sasl.mechanism", ac.KafkaSaslMechanism)
+	if ac.KafkaSASL != "" {
+		sasl := map[string]interface{}{}
+		err := hjson.Unmarshal([]byte(ac.KafkaSASL), &sasl)
+		if err != nil {
+			panic(fmt.Errorf("error parsing Kafka SASL config: %w", err))
+		}
+		for k, v := range sasl {
+			_ = kafkaConfig.SetKey("sasl."+k, v)
+		}
 	}
-	if ac.KafkaSaslUsername != "" {
-		_ = kafkaConfig.SetKey("sasl.username", ac.KafkaSaslUsername)
-	}
-	if ac.KafkaSaslPassword != "" {
-		_ = kafkaConfig.SetKey("sasl.password", ac.KafkaSaslPassword)
-	}
+
 	return kafkaConfig
 }

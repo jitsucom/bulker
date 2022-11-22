@@ -127,6 +127,7 @@ func (sc *StreamConsumer) start() {
 			select {
 			case <-sc.closed:
 				if !sc.consumerClosed {
+					sc.consumerClosed = true
 					_ = sc.consumer.Close()
 				}
 				var state bulker.State

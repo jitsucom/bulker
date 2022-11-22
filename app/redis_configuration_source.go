@@ -1,6 +1,8 @@
 package app
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"github.com/gomodule/redigo/redis"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/utils"
@@ -23,10 +25,10 @@ type RedisConfigurationSource struct {
 	destinations map[string]*DestinationConfig
 }
 
-func NewRedisConfigurationSource(redisURL string) (*RedisConfigurationSource, error) {
+func NewRedisConfigurationSource(appconfig *AppConfig) (*RedisConfigurationSource, error) {
 	base := objects.NewServiceBase(redisConfigurationSourceServiceName)
-	base.Debugf("Creating RedisConfigurationSource with redisURL: %s", redisURL)
-	redisPool := newPool(redisURL)
+	base.Debugf("Creating RedisConfigurationSource with redisURL: %s", appconfig.ConfigSource)
+	redisPool := newPool(appconfig.ConfigSource, appconfig.RedisTLSCA)
 	r := RedisConfigurationSource{
 		ServiceBase:  base,
 		redisPool:    redisPool,
@@ -47,7 +49,7 @@ func (rcs *RedisConfigurationSource) init() error {
 	defer conn.Close()
 	_, err := conn.Do("CONFIG", "SET", "notify-keyspace-events", "Kg")
 	if err != nil {
-		return rcs.NewError("failed to set 'notify-keyspace-events' config setting: %w", err)
+		rcs.Warnf("failed to set 'notify-keyspace-events' config setting: %w", err)
 	}
 	err = rcs.load(false)
 	if err != nil {
@@ -120,7 +122,7 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 	defer conn.Close()
 	configsById, err := redis.StringMap(conn.Do("HGETALL", redisDestinationsKey))
 	if err != nil {
-		return rcs.NewError("failed to set 'notify-keyspace-events' config setting: %v", err)
+		return rcs.NewError("failed to load destinations by key: %s : %v", redisDestinationsKey, err)
 	}
 	newHash, err := utils.HashAny(configsById)
 	if err != nil {
@@ -137,6 +139,7 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 		if err != nil {
 			rcs.Errorf("failed to parse config for destination %s: %s: %v", id, config, err)
 		} else {
+			dstCfg.Config.Id = id
 			rcs.Infof("parsed config for destination %s: %+v", id, dstCfg)
 			newDsts[id] = &dstCfg
 		}
@@ -156,12 +159,23 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 	return nil
 }
 
-func newPool(redisURL string) *redis.Pool {
+func newPool(redisURL string, ca string) *redis.Pool {
+	opts := make([]redis.DialOption, 0)
+	if ca != "" {
+		rootCAs, _ := x509.SystemCertPool()
+		if rootCAs == nil {
+			rootCAs = x509.NewCertPool()
+		}
+		rootCAs.AppendCertsFromPEM([]byte(ca))
+		tlsConfig := tls.Config{RootCAs: rootCAs, InsecureSkipVerify: true}
+		opts = append(opts, redis.DialUseTLS(true), redis.DialTLSConfig(&tlsConfig))
+	}
+
 	return &redis.Pool{
 		MaxIdle:     3,
 		IdleTimeout: 240 * time.Second,
 		// Dial or DialContext must be set. When both are set, DialContext takes precedence over Dial.
-		Dial: func() (redis.Conn, error) { return redis.DialURL(redisURL) },
+		Dial: func() (redis.Conn, error) { return redis.DialURL(redisURL, opts...) },
 	}
 }
 

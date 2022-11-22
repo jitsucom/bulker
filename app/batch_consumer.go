@@ -182,23 +182,18 @@ func (bc *BatchConsumer) ConsumeAll() (consumed int, err error) {
 		maxBatchSize = bc.config.BatchRunnerDefaultBatchSize
 	}
 	for {
-		select {
-		case <-bc.closed:
-			return consumed, nil
-		default:
-			var batchSize int
-			batchSize, err = bc.processBatch(destination, maxBatchSize)
-			if err != nil {
-				return
-			}
-			consumed += batchSize
-			if batchSize < maxBatchSize {
-				//we've consumed fewer events than batch size. It means that there are no more events in topic
-				return
-			}
-			if bc.retired.Load() {
-				return
-			}
+		if bc.retired.Load() {
+			return
+		}
+		var batchSize int
+		batchSize, err = bc.processBatch(destination, maxBatchSize)
+		if err != nil {
+			return
+		}
+		consumed += batchSize
+		if batchSize < maxBatchSize {
+			//we've consumed fewer events than batch size. It means that there are no more events in topic
+			return
 		}
 	}
 }
@@ -240,8 +235,10 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 	latestPosition := kafka.TopicPartition{}
 	var processedObjectsSample []types.Object
 	for ; i < batchSize; i++ {
-		//TODO: do we heed to interrupt batch on close?
-
+		if bc.retired.Load() {
+			_, _ = bulkerStream.Abort(context.Background())
+			return
+		}
 		wait := timeEnd.Sub(time.Now())
 		if wait <= 0 {
 			break
@@ -279,6 +276,7 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 
 		bc.Infof("Committing %d events to destination.", i)
 		var state bulker.State
+		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(context.Background())
 		bc.postEventsLog(state, processedObjectsSample, err)
 		if err != nil {

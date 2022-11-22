@@ -62,7 +62,7 @@ type RedisEventsLog struct {
 func NewRedisEventsLog(config *AppConfig) (*RedisEventsLog, error) {
 	base := objects.NewServiceBase(redisEventsLogServiceName)
 	base.Debugf("Creating RedisEventsLog with redisURL: %s", config.EventsLogRedisURL)
-	redisPool := newPool(config.EventsLogRedisURL)
+	redisPool := newPool(config.EventsLogRedisURL, config.RedisTLSCA)
 	r := RedisEventsLog{
 		ServiceBase: base,
 		redisPool:   redisPool,

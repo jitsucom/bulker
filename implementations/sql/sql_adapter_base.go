@@ -35,7 +35,7 @@ const (
 
 var (
 	sqlIdentifierUnsupportedCharacters = regexp.MustCompile(`[^\p{L}_\d $-]`)
-	sqlUnquotedIdentifierPattern       = regexp.MustCompile(`^[a-zA-Z_][0-9A-Za-z_]*$`)
+	sqlUnquotedIdentifierPattern       = regexp.MustCompile(`^[a-z_][0-9a-z_]*$`)
 
 	insertQueryTemplate, _                              = template.New("insertQuery").Parse(insertQuery)
 	insertFromSelectQueryTemplate, _                    = template.New("insertFromSelectQuery").Parse(insertFromSelectQuery)

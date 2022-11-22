@@ -5,7 +5,7 @@ RUN apt-get install -y ca-certificates
 
 ENV TZ=UTC
 
-FROM golang:1.19.2-bullseye as build
+FROM golang:1.19.3-bullseye as build
 
 RUN apt-get install gcc libc6-dev
 
@@ -16,11 +16,14 @@ RUN apt-get install gcc libc6-dev
 #RUN apt-get install -y librdkafka1 librdkafka-dev
 
 RUN mkdir /app
-ADD . /app
-
 WORKDIR /app
 
+COPY go.mod .
+COPY go.sum .
+
 RUN go mod download
+
+COPY . .
 
 # Build bulker
 RUN go build -o bulkerapp
