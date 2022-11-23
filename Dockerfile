@@ -37,6 +37,6 @@ WORKDIR /app
 
 # Copy bulkerapp
 COPY --from=build /app/bulkerapp ./bulkerapp
-COPY ./config.yaml ./
+#COPY ./config.yaml ./
 
 CMD ["/app/bulkerapp"]

@@ -46,12 +46,22 @@ jobs:
         name: test-report
         path: |
           test_report.html
- 
-#    - name: Notify to Slack on Errors
-#      uses: rtCamp/action-slack-notify@v2.2.0
-#      if: ${{ failure() && (steps.go-change.outputs.server == 1 || steps.go-change.outputs.backend == 1) && (github.ref_name == 'beta' || github.ref_name == 'master' ) }}
-#      env:
-#        SLACK_COLOR: ${{ job.status }} # or a specific color like 'good' or '#ff00ff'
-#        SLACK_ICON_EMOJI: 👿
-#        SLACK_WEBHOOK: ${{ secrets.SLACK_CI_BACKEND_WEBHOOK }}
-#        SLACK_FOOTER: ""
+
+  docker:
+    needs: bulker-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          push: true
+          tags: jitsucom/bulker:latest
