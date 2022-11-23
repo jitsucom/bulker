@@ -6,6 +6,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/utils"
+	"strings"
 	"sync"
 	"time"
 )
@@ -161,13 +162,16 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 
 func newPool(redisURL string, ca string) *redis.Pool {
 	opts := make([]redis.DialOption, 0)
-	if ca != "" {
-		rootCAs, _ := x509.SystemCertPool()
-		if rootCAs == nil {
-			rootCAs = x509.NewCertPool()
+	if ca != "" || strings.HasPrefix(redisURL, "rediss://") {
+		tlsConfig := tls.Config{InsecureSkipVerify: true}
+		if ca != "" {
+			rootCAs, _ := x509.SystemCertPool()
+			if rootCAs == nil {
+				rootCAs = x509.NewCertPool()
+			}
+			rootCAs.AppendCertsFromPEM([]byte(ca))
+			tlsConfig.RootCAs = rootCAs
 		}
-		rootCAs.AppendCertsFromPEM([]byte(ca))
-		tlsConfig := tls.Config{RootCAs: rootCAs, InsecureSkipVerify: true}
 		opts = append(opts, redis.DialUseTLS(true), redis.DialTLSConfig(&tlsConfig))
 	}
 
