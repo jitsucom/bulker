@@ -76,6 +76,10 @@ func Run() {
 		cron.Close()
 		_ = repository.Close()
 		_ = configurationSource.Close()
+		if appConfig.ShutdownExtraDelay > 0 {
+			logging.Infof("Waiting %d seconds before http server shutdown...", appConfig.ShutdownExtraDelay)
+			time.Sleep(time.Duration(appConfig.ShutdownExtraDelay) * time.Second)
+		}
 		_ = server.Shutdown(context.Background())
 		os.Exit(0)
 	}()

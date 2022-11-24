@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"github.com/gomodule/redigo/redis"
+	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/objects"
 	jsoniter "github.com/json-iterator/go"
 	"regexp"
@@ -74,6 +75,7 @@ func NewRedisEventsLog(config *AppConfig) (*RedisEventsLog, error) {
 func (r *RedisEventsLog) PostEvent(eventType EventType, actorId string, event any) (id EventsLogRecordId, err error) {
 	serialized, err := jsoniter.Marshal(event)
 	if err != nil {
+		metrics.EventsLogError("marshal_error").Inc()
 		return "", r.NewError("failed to serialize event entity [%v]: %w", event, err)
 	}
 
@@ -84,6 +86,7 @@ func (r *RedisEventsLog) PostEvent(eventType EventType, actorId string, event an
 
 	idString, err := redis.String(connection.Do("XADD", streamKey, "MAXLEN", "~", r.maxSize, "*", "event", serialized))
 	if err != nil {
+		metrics.EventsLogError(RedisError(err)).Inc()
 		return "", r.NewError("failed to post event to stream [%s]: %w", streamKey, err)
 	}
 	return EventsLogRecordId(idString), nil
@@ -94,6 +97,7 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *
 
 	start, end, err := filter.GetStartAndEndIds()
 	if err != nil {
+		metrics.EventsLogError("filter_error").Inc()
 		return nil, r.NewError("%w", err)
 	}
 	args := []interface{}{streamKey, end, start}
@@ -105,6 +109,7 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *
 
 	recordsRaw, err := connection.Do("XREVRANGE", args...)
 	if err != nil {
+		metrics.EventsLogError(RedisError(err)).Inc()
 		return nil, r.NewError("failed to get events from stream [%s]: %w", streamKey, err)
 	}
 	records := recordsRaw.([]any)
@@ -118,10 +123,12 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *
 		var event map[string]interface{}
 		err = jsoniter.Unmarshal([]byte(mp["event"]), &event)
 		if err != nil {
+			metrics.EventsLogError("unmarshal_error").Inc()
 			return nil, r.NewError("failed to unmarshal event from stream [%s] %s: %w", streamKey, mp["event"], err)
 		}
 		date, err := parseTimestamp(id)
 		if err != nil {
+			metrics.EventsLogError("parse_timestamp_error").Inc()
 			return nil, r.NewError("failed to parse timestamp from id [%s]: %w", id, err)
 		}
 		if (filter == nil || filter.Filter == nil) || filter.Filter(event) {

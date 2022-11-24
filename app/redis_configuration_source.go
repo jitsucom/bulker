@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"github.com/gomodule/redigo/redis"
+	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/utils"
 	"strings"
@@ -123,10 +124,12 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 	defer conn.Close()
 	configsById, err := redis.StringMap(conn.Do("HGETALL", redisDestinationsKey))
 	if err != nil {
+		metrics.RedisConfigurationSourceError(RedisError(err)).Inc()
 		return rcs.NewError("failed to load destinations by key: %s : %v", redisDestinationsKey, err)
 	}
 	newHash, err := utils.HashAny(configsById)
 	if err != nil {
+		metrics.RedisConfigurationSourceError("hash_error").Inc()
 		return rcs.NewError("failed generate hash of redis config: %v", err)
 	}
 	if newHash == rcs.currentHash {
@@ -138,6 +141,7 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 		dstCfg := DestinationConfig{}
 		err := utils.ParseObject(config, &dstCfg)
 		if err != nil {
+			metrics.RedisConfigurationSourceError("parse_error").Inc()
 			rcs.Errorf("failed to parse config for destination %s: %s: %v", id, config, err)
 		} else {
 			dstCfg.Config.Id = id
@@ -145,6 +149,7 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 			newDsts[id] = &dstCfg
 		}
 	}
+	metrics.RedisConfigurationSourceDestinations.Set(float64(len(newDsts)))
 	rcs.Lock()
 	rcs.destinations = newDsts
 	rcs.currentHash = newHash
@@ -212,4 +217,19 @@ func (rcs *RedisConfigurationSource) Close() error {
 
 func (rcs *RedisConfigurationSource) ChangesChannel() <-chan bool {
 	return rcs.changesChan
+}
+
+func RedisError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if err == redis.ErrPoolExhausted {
+		return "redis error: ERR_POOL_EXHAUSTED"
+	} else if err == redis.ErrNil {
+		return "redis error: ERR_NIL"
+	} else if strings.Contains(strings.ToLower(err.Error()), "timeout") {
+		return "redis error: ERR_TIMEOUT"
+	} else {
+		return "redis error: UNKNOWN"
+	}
 }

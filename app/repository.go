@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/bulker"
@@ -83,6 +84,9 @@ func (r *Repository) init() error {
 			repositoryChange.AddedDestinations = append(repositoryChange.AddedDestinations, dst)
 		}
 	}
+	metrics.RepositoryAddedDestinations.Add(float64(len(repositoryChange.AddedDestinations)))
+	metrics.RepositoryChangedDestinations.Add(float64(len(repositoryChange.ChangedDestinations)))
+	metrics.RepositoryRemovedDestinations.Add(float64(len(repositoryChange.RemovedDestinationIds)))
 	select {
 	case r.changesChan <- repositoryChange:
 	default:
@@ -135,6 +139,7 @@ func (r *repositoryInternal) init(configurationSource ConfigurationSource) error
 	for _, cfg := range configurationSource.GetDestinationConfigs() {
 		bulkerInstance, err := bulker.CreateBulker(cfg.Config)
 		if err != nil {
+			metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
 			r.Errorf("failed to init destination %s: %v", cfg.Id(), err)
 			continue
 		}
@@ -142,7 +147,9 @@ func (r *repositoryInternal) init(configurationSource ConfigurationSource) error
 		for name, serializedOption := range cfg.StreamConfig.Options {
 			opt, err := bulker.ParseOption(name, serializedOption)
 			if err != nil {
-				return err
+				metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
+				r.Errorf("failed to parse option %s=%s for destination %s: %v", name, serializedOption, cfg.Id(), err)
+				continue
 			}
 			options = append(options, opt)
 		}

@@ -75,7 +75,7 @@ func NewTopicManager(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository
 func (tm *TopicManager) Start() {
 	metadata, err := tm.kaftaAdminClient.GetMetadata(nil, true, tm.config.KafkaAdminMetadataTimeoutMs)
 	if err != nil {
-		metrics.TopicManagerError.WithLabelValues("load_metadata_error").Inc()
+		metrics.TopicManagerError("load_metadata_error").Inc()
 		tm.Errorf("Error getting metadata: %v", err)
 	} else {
 		tm.loadMetadata(metadata)
@@ -96,7 +96,7 @@ func (tm *TopicManager) Start() {
 							consumer.batchPeriodSec = changedDst.config.BatchPeriodSec
 							_, err := tm.cron.ReplaceBatchConsumer(consumer)
 							if err != nil {
-								metrics.TopicManagerError.WithLabelValues("reschedule_batch_consumer_error").Inc()
+								metrics.TopicManagerError("reschedule_batch_consumer_error").Inc()
 								consumer.Retire()
 								tm.SystemErrorf("Failed to re-schedule consumer for destination topic: %s: %v", consumer.topicId, err)
 								continue
@@ -107,7 +107,7 @@ func (tm *TopicManager) Start() {
 					for _, consumer := range tm.streamConsumers[changedDst.Id()] {
 						err = consumer.UpdateDestination(changedDst)
 						if err != nil {
-							metrics.TopicManagerError.WithLabelValues("update_stream_consumer_error").Inc()
+							metrics.TopicManagerError("update_stream_consumer_error").Inc()
 							tm.SystemErrorf("Failed to re-create consumer for destination topic: %s: %v", consumer.topicId, err)
 							continue
 						}
@@ -137,7 +137,7 @@ func (tm *TopicManager) Start() {
 				//start := time.Now()
 				metadata, err = tm.kaftaAdminClient.GetMetadata(nil, true, tm.config.KafkaAdminMetadataTimeoutMs)
 				if err != nil {
-					metrics.TopicManagerError.WithLabelValues("load_metadata_error").Inc()
+					metrics.TopicManagerError("load_metadata_error").Inc()
 					tm.Errorf("Error getting metadata: %v", err)
 					continue
 				}
@@ -217,10 +217,10 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 		}
 	}
 	for mode, count := range topicsCountByMode {
-		metrics.TopicManagerDestinationTopics.WithLabelValues(mode).Set(count)
+		metrics.TopicManagerDestinationTopics(mode).Set(count)
 	}
 	for mode, count := range topicsErrorsByMode {
-		metrics.TopicManagerDestinationsError.WithLabelValues(mode).Set(count)
+		metrics.TopicManagerDestinationsError(mode).Set(count)
 	}
 	metrics.TopicManagerAbandonedTopics.Set(abandonedTopicsCount)
 	metrics.TopicManagerOtherTopics.Set(otherTopicsCount)
@@ -287,7 +287,7 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 	errorType := ""
 	defer func() {
 		if errorType != "" {
-			metrics.TopicManagerCreateError.WithLabelValues(errorType).Inc()
+			metrics.TopicManagerCreateError(errorType).Inc()
 		} else {
 			metrics.TopicManagerCreateSuccess.Inc()
 		}

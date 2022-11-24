@@ -47,10 +47,10 @@ func (p *Producer) Start() {
 			case *kafka.Message:
 				if ev.TopicPartition.Error != nil {
 					//TODO: check for retrieable errors
-					metrics.ProducerDeliveryErrors.WithLabelValues(ProducerLabels(*ev.TopicPartition.Topic, metrics.KafkaErrorCode(ev.TopicPartition.Error))...).Inc()
+					metrics.ProducerDeliveryErrors(ProducerLabelsWithErr(*ev.TopicPartition.Topic, metrics.KafkaErrorCode(ev.TopicPartition.Error))).Inc()
 					p.Errorf("Error sending message to kafka topic %s: %w", ev.TopicPartition.Topic, ev.TopicPartition.Error)
 				} else {
-					metrics.ProducerMessagesProduced.WithLabelValues(ProducerLabels(*ev.TopicPartition.Topic, "")...).Inc()
+					metrics.ProducerMessagesDelivered(ProducerLabels(*ev.TopicPartition.Topic, "")).Inc()
 					p.Infof("Message delivered to topic %s [%d] at offset %v", *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 				}
 				//case kafka.Error:
@@ -89,10 +89,10 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 			Value:          event,
 		}, deliveryChan)
 		if err != nil {
-			metrics.ProducerProduceErrors.WithLabelValues(ProducerLabels(topic, metrics.KafkaErrorCode(err))...).Inc()
+			metrics.ProducerProduceErrors(ProducerLabelsWithErr(topic, metrics.KafkaErrorCode(err))).Inc()
 			errors.Errors = append(errors.Errors, err)
 		} else {
-			metrics.ProducerMessagesProduced.WithLabelValues(ProducerLabels(topic, "")...).Inc()
+			metrics.ProducerMessagesProduced(ProducerLabels(topic, "")).Inc()
 			sent++
 		}
 	}
@@ -106,15 +106,15 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 			case e := <-deliveryChan:
 				m := e.(*kafka.Message)
 				if m.TopicPartition.Error != nil {
-					metrics.ProducerDeliveryErrors.WithLabelValues(ProducerLabels(topic, metrics.KafkaErrorCode(m.TopicPartition.Error))...).Inc()
+					metrics.ProducerDeliveryErrors(ProducerLabelsWithErr(topic, metrics.KafkaErrorCode(m.TopicPartition.Error))).Inc()
 					p.Errorf("Error sending message to kafka topic %s: %v", topic, m.TopicPartition.Error)
 					errors.Errors = append(errors.Errors, m.TopicPartition.Error)
 				} else {
-					metrics.ProducerMessagesDelivered.WithLabelValues(ProducerLabels(topic, "")...).Inc()
+					metrics.ProducerMessagesDelivered(ProducerLabels(topic, "")).Inc()
 					p.Infof("Message delivered to topic %s [%d] at offset %v", *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
 				}
 			case <-until:
-				metrics.ProducerDeliveryErrors.WithLabelValues(ProducerLabels(topic, "sync_delivery_timeout")...).Inc()
+				metrics.ProducerDeliveryErrors(ProducerLabelsWithErr(topic, "sync_delivery_timeout")).Inc()
 				p.Errorf("Timeout waiting for delivery")
 				errors.Errors = append(errors.Errors, fmt.Errorf("timeout waiting for delivery"))
 				break loop
@@ -138,10 +138,10 @@ func (p *Producer) ProduceAsync(topic string, events ...[]byte) error {
 			Value:          event,
 		}, nil)
 		if err != nil {
-			metrics.ProducerProduceErrors.WithLabelValues(ProducerLabels(topic, metrics.KafkaErrorCode(err))...).Inc()
+			metrics.ProducerProduceErrors(ProducerLabelsWithErr(topic, metrics.KafkaErrorCode(err))).Inc()
 			errors.Errors = append(errors.Errors, err)
 		} else {
-			metrics.ProducerMessagesProduced.WithLabelValues(ProducerLabels(topic, "")...).Inc()
+			metrics.ProducerMessagesProduced(ProducerLabels(topic, "")).Inc()
 		}
 	}
 	return errors.ErrorOrNil()
@@ -172,16 +172,20 @@ func (p *Producer) isClosed() bool {
 	}
 }
 
-func ProducerLabels(topic string, errText string) []string {
+func ProducerLabels(topic string, errText string) (destinationId, mode, tableName string) {
 	destinationId, mode, tableName, topicErr := ParseTopicId(topic)
-	labels := make([]string, 0, 4)
 	if topicErr != nil {
-		labels = append(labels, "INVALID_TOPIC", "", "INVALID_TOPIC:"+topic)
+		return "INVALID_TOPIC", "", "INVALID_TOPIC:" + topic
 	} else {
-		labels = append(labels, destinationId, mode, tableName)
+		return destinationId, mode, tableName
 	}
-	if errText != "" {
-		labels = append(labels, errText)
+}
+
+func ProducerLabelsWithErr(topic string, errText string) (destinationId, mode, tableName, err string) {
+	destinationId, mode, tableName, topicErr := ParseTopicId(topic)
+	if topicErr != nil {
+		return "INVALID_TOPIC", "", "INVALID_TOPIC:" + topic, errText
+	} else {
+		return destinationId, mode, tableName, errText
 	}
-	return labels
 }

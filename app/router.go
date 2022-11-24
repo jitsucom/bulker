@@ -96,9 +96,9 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	errorType := ""
 	defer func() {
 		if errorType != "" {
-			metrics.EventsHandlerError.WithLabelValues(destinationId, tableName, errorType).Inc()
+			metrics.EventsHandlerError(destinationId, tableName, errorType).Inc()
 		} else {
-			metrics.EventsHandlerSuccess.WithLabelValues(destinationId, tableName).Inc()
+			metrics.EventsHandlerSuccess(destinationId, tableName).Inc()
 		}
 	}()
 	if tableName == "" {
@@ -122,11 +122,16 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	}
 	err = r.topicManager.EnsureTopic(destination, topicId)
 	if err != nil {
-		errorType = "couldn't create topic"
-		err = fmt.Errorf("%s: %s : %w", errorType, topicId, err)
-		r.Errorf(err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		kafkaErr, ok := err.(kafka.Error)
+		if !(ok && kafkaErr.Code() == kafka.ErrTopicAlreadyExists) {
+			errorType = "couldn't create topic"
+			err = fmt.Errorf("%s: %s : %w", errorType, topicId, err)
+			r.Errorf(err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		} else {
+			r.Warnf("Topic %s already exists", topicId)
+		}
 	}
 
 	body, err := io.ReadAll(c.Request.Body)
