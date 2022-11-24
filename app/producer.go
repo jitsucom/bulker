@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/hashicorp/go-multierror"
+	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/utils"
 	"time"
@@ -15,7 +16,7 @@ type Producer struct {
 
 	asyncDeliveryChannel chan kafka.Event
 	waitForDelivery      time.Duration
-	closed               bool
+	closed               chan struct{}
 }
 
 // NewProducer creates new Producer
@@ -34,6 +35,7 @@ func NewProducer(config *AppConfig, kafkaConfig *kafka.ConfigMap) (*Producer, er
 		ServiceBase:          base,
 		producer:             producer,
 		asyncDeliveryChannel: make(chan kafka.Event, 1000),
+		closed:               make(chan struct{}),
 		waitForDelivery:      time.Millisecond * time.Duration(config.ProducerWaitForDeliveryMs),
 	}, nil
 }
@@ -45,8 +47,10 @@ func (p *Producer) Start() {
 			case *kafka.Message:
 				if ev.TopicPartition.Error != nil {
 					//TODO: check for retrieable errors
+					metrics.ProducerDeliveryErrors.WithLabelValues(ProducerLabels(*ev.TopicPartition.Topic, metrics.KafkaErrorCode(ev.TopicPartition.Error))...).Inc()
 					p.Errorf("Error sending message to kafka topic %s: %w", ev.TopicPartition.Topic, ev.TopicPartition.Error)
 				} else {
+					metrics.ProducerMessagesProduced.WithLabelValues(ProducerLabels(*ev.TopicPartition.Topic, "")...).Inc()
 					p.Infof("Message delivered to topic %s [%d] at offset %v", *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 				}
 				//case kafka.Error:
@@ -55,12 +59,24 @@ func (p *Producer) Start() {
 		}
 		p.Infof("Producer closed")
 	}()
+	// report size metrics
+	go func() {
+		ticker := time.NewTicker(time.Second * 15)
+		for {
+			select {
+			case <-p.closed:
+				return
+			case <-ticker.C:
+				metrics.ProducerQueueLength.Set(float64(len(p.producer.ProduceChannel())))
+			}
+		}
+	}()
 }
 
 // ProduceSync TODO: transactional delivery?
 // produces messages to kafka
 func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
-	if p.closed {
+	if p.isClosed() {
 		return p.NewError("producer is closed")
 	}
 	started := time.Now()
@@ -73,8 +89,10 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 			Value:          event,
 		}, deliveryChan)
 		if err != nil {
+			metrics.ProducerProduceErrors.WithLabelValues(ProducerLabels(topic, metrics.KafkaErrorCode(err))...).Inc()
 			errors.Errors = append(errors.Errors, err)
 		} else {
+			metrics.ProducerMessagesProduced.WithLabelValues(ProducerLabels(topic, "")...).Inc()
 			sent++
 		}
 	}
@@ -88,12 +106,15 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 			case e := <-deliveryChan:
 				m := e.(*kafka.Message)
 				if m.TopicPartition.Error != nil {
+					metrics.ProducerDeliveryErrors.WithLabelValues(ProducerLabels(topic, metrics.KafkaErrorCode(m.TopicPartition.Error))...).Inc()
 					p.Errorf("Error sending message to kafka topic %s: %v", topic, m.TopicPartition.Error)
 					errors.Errors = append(errors.Errors, m.TopicPartition.Error)
 				} else {
+					metrics.ProducerMessagesDelivered.WithLabelValues(ProducerLabels(topic, "")...).Inc()
 					p.Infof("Message delivered to topic %s [%d] at offset %v", *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
 				}
 			case <-until:
+				metrics.ProducerDeliveryErrors.WithLabelValues(ProducerLabels(topic, "sync_delivery_timeout")...).Inc()
 				p.Errorf("Timeout waiting for delivery")
 				errors.Errors = append(errors.Errors, fmt.Errorf("timeout waiting for delivery"))
 				break loop
@@ -107,7 +128,7 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 // ProduceAsync TODO: transactional delivery?
 // produces messages to kafka
 func (p *Producer) ProduceAsync(topic string, events ...[]byte) error {
-	if p.closed {
+	if p.isClosed() {
 		return p.NewError("producer is closed")
 	}
 	errors := multierror.Error{}
@@ -117,7 +138,10 @@ func (p *Producer) ProduceAsync(topic string, events ...[]byte) error {
 			Value:          event,
 		}, nil)
 		if err != nil {
+			metrics.ProducerProduceErrors.WithLabelValues(ProducerLabels(topic, metrics.KafkaErrorCode(err))...).Inc()
 			errors.Errors = append(errors.Errors, err)
+		} else {
+			metrics.ProducerMessagesProduced.WithLabelValues(ProducerLabels(topic, "")...).Inc()
 		}
 	}
 	return errors.ErrorOrNil()
@@ -125,7 +149,7 @@ func (p *Producer) ProduceAsync(topic string, events ...[]byte) error {
 
 // Close closes producer
 func (p *Producer) Close() error {
-	if p.closed {
+	if p.isClosed() {
 		return nil
 	}
 	notProduced := p.producer.Flush(3000)
@@ -133,8 +157,31 @@ func (p *Producer) Close() error {
 		p.Errorf("%d message left unsent in producer queue.", notProduced)
 		//TODO: suck p.producer.ProduceChannel() and store to fallback file or some retry queue
 	}
-	p.closed = true
+	close(p.closed)
 	p.producer.Close()
 	close(p.asyncDeliveryChannel)
 	return nil
+}
+
+func (p *Producer) isClosed() bool {
+	select {
+	case <-p.closed:
+		return true
+	default:
+		return false
+	}
+}
+
+func ProducerLabels(topic string, errText string) []string {
+	destinationId, mode, tableName, topicErr := ParseTopicId(topic)
+	labels := make([]string, 0, 4)
+	if topicErr != nil {
+		labels = append(labels, "INVALID_TOPIC", "", "INVALID_TOPIC:"+topic)
+	} else {
+		labels = append(labels, destinationId, mode, tableName)
+	}
+	if errText != "" {
+		labels = append(labels, errText)
+	}
+	return labels
 }

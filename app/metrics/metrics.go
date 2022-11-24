@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"fmt"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -59,4 +61,112 @@ var (
 		Name:      "other_topics",
 		Help:      "Number of other topics. Other topics are any kafka topics not managed by the topic manager",
 	})
+
+	ProducerMessagesProduced = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "producer",
+		Name:      "messages_produced",
+	}, []string{"destinationId", "mode", "tableName"})
+
+	ProducerMessagesDelivered = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "producer",
+		Name:      "messages_delivered",
+	}, []string{"destinationId", "mode", "tableName"})
+
+	ProducerProduceErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "producer",
+		Name:      "produce_error",
+	}, []string{"destinationId", "mode", "tableName", "errorType"})
+
+	ProducerDeliveryErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "producer",
+		Name:      "delivery_error",
+	}, []string{"destinationId", "mode", "tableName", "errorType"})
+
+	ProducerQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "producer",
+		Name:      "queue_length",
+	})
+
+	StreamConsumerMessageConsumed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "stream_consumer",
+		Name:      "message_consumed",
+	}, []string{"destinationId", "tableName"})
+
+	StreamConsumerMessageErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "stream_consumer",
+		Name:      "message_error",
+	}, []string{"destinationId", "tableName", "errorType"})
+
+	StreamConsumerErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "stream_consumer",
+		Name:      "error",
+	}, []string{"destinationId", "tableName", "errorType"})
+
+	BatchConsumerMessageConsumed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "batch_consumer",
+		Name:      "message_consumed",
+	}, []string{"destinationId", "tableName"})
+
+	BatchConsumerMessageErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "batch_consumer",
+		Name:      "message_error",
+	}, []string{"destinationId", "tableName", "errorType"})
+
+	BatchConsumerErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "batch_consumer",
+		Name:      "error",
+	}, []string{"destinationId", "tableName", "errorType"})
+
+	BatchConsumerBatchSuccesses = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "batch_consumer",
+		Name:      "batch_success",
+	}, []string{"destinationId", "tableName"})
+
+	BatchConsumerBatchMessages = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "batch_consumer",
+		Name:      "messages",
+	}, []string{"destinationId", "tableName"})
+
+	BatchConsumerBatchFailedMessages = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "batch_consumer",
+		Name:      "failed_messages",
+	}, []string{"destinationId", "tableName"})
+
+	BatchConsumerBatchFailedMessagesRelocated = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "batch_consumer",
+		Name:      "failed_messages_relocated",
+	}, []string{"destinationId", "tableName"})
+
+	BatchConsumerBatchFails = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "batch_consumer",
+		Name:      "batch_fail",
+	}, []string{"destinationId", "tableName"})
 )
+
+func KafkaErrorCode(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	if kafkaError, ok := err.(kafka.Error); ok {
+		return fmt.Sprintf("kafka error %d", kafkaError.Code())
+	}
+
+	return "kafka_error"
+}
