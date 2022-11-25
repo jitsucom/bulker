@@ -52,7 +52,7 @@ var (
 type ColumnNameFunction func(columnName string) string
 
 // ColumnDDLFunction generate column DDL for CREATE TABLE statement based on type (SQLColumn) and whether it is used for PK
-type ColumnDDLFunction func(name string, column SQLColumn, pkFields utils.Set[string]) string
+type ColumnDDLFunction func(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string
 
 // ValueMappingFunction maps object value to database value. For cases such default value substitution for null or missing values
 type ValueMappingFunction func(value any, valuePresent bool, column SQLColumn) any
@@ -144,7 +144,7 @@ func (b *SQLAdapterBase[T]) Select(ctx context.Context, tableName string, whenCo
 }
 func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	quotedTableName := b.quotedTableName(tableName)
-	whenCondition, values := ToWhenConditions(whenConditions, b.parameterPlaceholder, 0)
+	whenCondition, values := b.ToWhenConditions(whenConditions, b.parameterPlaceholder, 0)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
 	}
@@ -222,7 +222,7 @@ func (b *SQLAdapterBase[T]) Count(ctx context.Context, tableName string, whenCon
 func (b *SQLAdapterBase[T]) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {
 	quotedTableName := b.quotedTableName(tableName)
 
-	deleteCondition, values := ToWhenConditions(deleteConditions, b.parameterPlaceholder, 0)
+	deleteCondition, values := b.ToWhenConditions(deleteConditions, b.parameterPlaceholder, 0)
 	query := fmt.Sprintf(deleteQueryTemplate, quotedTableName, deleteCondition)
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query, values...); err != nil {
@@ -240,7 +240,7 @@ func (b *SQLAdapterBase[T]) Delete(ctx context.Context, tableName string, delete
 func (b *SQLAdapterBase[T]) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error {
 	quotedTableName := b.quotedTableName(tableName)
 
-	updateCondition, updateValues := ToWhenConditions(whenConditions, b.parameterPlaceholder, len(object))
+	updateCondition, updateValues := b.ToWhenConditions(whenConditions, b.parameterPlaceholder, len(object))
 
 	columns := make([]string, len(object), len(object))
 	values := make([]any, len(object)+len(updateValues), len(object)+len(updateValues))
@@ -614,8 +614,8 @@ func (b *SQLAdapterBase[T]) quotedColumnName(columnName string) string {
 }
 
 func (b *SQLAdapterBase[T]) columnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
-	quoted, _ := b.adaptSqlIdentifier(name)
-	return b._columnDDLFunc(quoted, column, pkFields)
+	quoted, unquoted := b.adaptSqlIdentifier(name)
+	return b._columnDDLFunc(unquoted, quoted, column, pkFields)
 }
 
 // adaptSqlIdentifier adapts the given identifier to basic rules derived from the SQL standard and injection protection:
@@ -648,6 +648,34 @@ func (b *SQLAdapterBase[T]) ColumnName(identifier string) string {
 func (b *SQLAdapterBase[T]) TableName(identifier string) string {
 	_, unquoted := b.adaptSqlIdentifier(identifier)
 	return unquoted
+}
+
+// ToWhenConditions generates WHEN clause for SQL query based on provided WhenConditions
+//
+// paramExpression - SQLParameterExpression function that produce parameter placeholder for parametrized query,
+// depending on database can be: IndexParameterPlaceholder, QuestionMarkParameterPlaceholder, NamedParameterPlaceholder
+//
+// valuesShift - for parametrized query index of first when clause value in all values provided to query
+// (for UPDATE queries 'valuesShift' = len(object fields))
+func (b *SQLAdapterBase[T]) ToWhenConditions(conditions *WhenConditions, paramExpression ParameterPlaceholder, valuesShift int) (string, []any) {
+	if conditions == nil {
+		return "", []any{}
+	}
+	var queryConditions []string
+	var values []any
+
+	for i, condition := range conditions.Conditions {
+		switch strings.ToLower(condition.Clause) {
+		case "is null":
+		case "is not null":
+			queryConditions = append(queryConditions, b.quotedColumnName(condition.Field)+" "+condition.Clause)
+		default:
+			queryConditions = append(queryConditions, b.quotedColumnName(condition.Field)+" "+condition.Clause+" "+paramExpression(i+valuesShift+1, condition.Field))
+			values = append(values, types.ReformatValue(condition.Value))
+		}
+	}
+
+	return strings.Join(queryConditions, " "+conditions.JoinCondition+" "), values
 }
 
 func checkNotExistErr(err error) error {

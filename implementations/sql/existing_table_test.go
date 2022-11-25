@@ -10,6 +10,15 @@ func TestExistingTable1(t *testing.T) {
 	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
+			//delete any table leftovers from previous tests
+			name:           "existing_table1_cleanup",
+			tableName:      "existing_table1_test",
+			modes:          []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
+			dataFile:       "test_data/empty.ndjson",
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+		},
+		{
 			name:                "existing_table1_create_table",
 			tableName:           "existing_table1_test",
 			modes:               []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
@@ -57,6 +66,15 @@ func TestExistingTable1(t *testing.T) {
 func TestExistingTable2(t *testing.T) {
 	t.Parallel()
 	tests := []bulkerTestConfig{
+		{
+			//delete any table leftovers from previous tests
+			name:           "existing_table2_cleanup",
+			tableName:      "existing_table2_test",
+			modes:          []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
+			dataFile:       "test_data/empty.ndjson",
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+		},
 		{
 			name:                "existing_table2_create_table",
 			tableName:           "existing_table2_test",

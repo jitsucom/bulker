@@ -827,9 +827,9 @@ func (bq *BigQuery) toWhenConditions(conditions *WhenConditions) (string, []bigq
 		switch strings.ToLower(condition.Clause) {
 		case "is null":
 		case "is not null":
-			queryConditions = append(queryConditions, condition.Field+" "+condition.Clause)
+			queryConditions = append(queryConditions, bq.ColumnName(condition.Field)+" "+condition.Clause)
 		default:
-			queryConditions = append(queryConditions, condition.Field+" "+condition.Clause+" @when_"+condition.Field)
+			queryConditions = append(queryConditions, bq.ColumnName(condition.Field)+" "+condition.Clause+" @when_"+condition.Field)
 			values = append(values, bigquery.QueryParameter{Name: "when_" + condition.Field, Value: types.ReformatValue(condition.Value)})
 		}
 	}

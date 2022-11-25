@@ -444,8 +444,8 @@ func (s *Snowflake) ReplaceTable(ctx context.Context, targetTableName string, re
 }
 
 // columnDDLsfColumnDDL returns column DDL (column name, mapped sql type)
-func sfColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
-	return fmt.Sprintf(`%s %s`, sfReformatIdentifier(name), column.GetDDLType())
+func sfColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
+	return fmt.Sprintf(`%s %s`, sfReformatIdentifier(quotedName), column.GetDDLType())
 }
 
 func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {

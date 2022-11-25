@@ -11,6 +11,14 @@ func TestTransactionalSequentialAddColumns(t *testing.T) {
 	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
+			//deletes any table leftovers from previous tests
+			name:      "dummy_test_table_cleanup",
+			tableName: "transactional_test",
+			modes:     []bulker.BulkMode{bulker.Transactional},
+			dataFile:  "test_data/empty.ndjson",
+			configIds: allBulkerConfigs,
+		},
+		{
 			name:                "added_columns_first_run",
 			tableName:           "transactional_test",
 			modes:               []bulker.BulkMode{bulker.Transactional},
@@ -63,6 +71,16 @@ func TestTransactionalSequentialAddColumns(t *testing.T) {
 func TestTransactionalSequentialRepeatPK(t *testing.T) {
 	t.Parallel()
 	tests := []bulkerTestConfig{
+		{
+			//deletes any table leftovers from previous tests
+			name:           "dummy_test_table_cleanup",
+			tableName:      "transactional_test_pk",
+			modes:          []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
+			dataFile:       "test_data/empty.ndjson",
+			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+		},
 		{
 			name:                "first_run_batch",
 			tableName:           "transactional_test_pk",

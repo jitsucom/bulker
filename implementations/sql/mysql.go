@@ -455,7 +455,7 @@ func mySQLDriverConnectionString(config *DataSourceConfig) string {
 }
 
 // mySQLColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func mySQLColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
+func mySQLColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
 	sqlType := column.GetDDLType()
 
 	//map special types for primary keys (text -> varchar)
@@ -466,7 +466,7 @@ func mySQLColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) s
 		}
 	}
 
-	return fmt.Sprintf("%s %s", name, sqlType)
+	return fmt.Sprintf("%s %s", quotedName, sqlType)
 }
 
 func mySQLMapColumnValue(value any, valuePresent bool, column SQLColumn) any {

@@ -91,9 +91,9 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	r.maxIdentifierLength = 127
 	r.temporaryTables = true
 	r._columnDDLFunc = redshiftColumnDDL
-	// Redshift is case insensitive by default
-	r._columnNameFunc = strings.ToLower
-	r._tableNameFunc = func(config *DataSourceConfig, tableName string) string { return strings.ToLower(tableName) }
+	//// Redshift is case insensitive by default
+	//r._columnNameFunc = strings.ToLower
+	//r._tableNameFunc = func(config *DataSourceConfig, tableName string) string { return tableName }
 	return r, nil
 }
 
@@ -335,7 +335,7 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 }
 
 // redshiftColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func redshiftColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
+func redshiftColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
 	var columnConstaints string
 	var columnAttributes string
 
@@ -348,5 +348,5 @@ func redshiftColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]
 		}
 	}
 
-	return fmt.Sprintf(`%s %s%s%s`, strings.ToLower(name), sqlType, columnAttributes, columnConstaints)
+	return fmt.Sprintf(`%s %s%s%s`, quotedName, sqlType, columnAttributes, columnConstaints)
 }

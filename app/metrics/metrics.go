@@ -32,7 +32,7 @@ var (
 		Namespace: "bulkerapp",
 		Subsystem: "topic_manager",
 		Name:      "create_success",
-	}, []string{"destinationId", "mode", "tableName", "errorType"})
+	}, []string{"destinationId", "mode", "tableName"})
 	TopicManagerCreateSuccess = func(destinationId, mode, tableName string) prometheus.Counter {
 		return topicManagerCreateSuccess.WithLabelValues(destinationId, mode, tableName)
 	}

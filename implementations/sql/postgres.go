@@ -339,7 +339,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 }
 
 // pgColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func pgColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
+func pgColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
 	var notNullClause string
 	sqlType := column.GetDDLType()
 
@@ -348,7 +348,7 @@ func pgColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) stri
 		notNullClause = " not null " + getDefaultValueStatement(sqlType)
 	}
 
-	return fmt.Sprintf(`%s %s%s`, name, sqlType, notNullClause)
+	return fmt.Sprintf(`%s %s%s`, quotedName, sqlType, notNullClause)
 }
 
 // return default value statement for creating column

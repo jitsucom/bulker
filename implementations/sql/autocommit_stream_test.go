@@ -12,6 +12,14 @@ func TestAutocommitStream(t *testing.T) {
 	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
+			//deletes any table leftovers from previous tests
+			name:      "dummy_test_table_cleanup",
+			tableName: "autocommit_test",
+			modes:     []bulker.BulkMode{bulker.AutoCommit},
+			dataFile:  "test_data/empty.ndjson",
+			configIds: exceptBigquery,
+		},
+		{
 			name:                "added_columns_first_run",
 			tableName:           "autocommit_test",
 			modes:               []bulker.BulkMode{bulker.AutoCommit},

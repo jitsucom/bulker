@@ -11,6 +11,14 @@ func TestReplaceTableStream(t *testing.T) {
 	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
+			//delete any table leftovers from previous tests
+			name:      "dummy_test_table_cleanup",
+			tableName: "replace_table_test",
+			modes:     []bulker.BulkMode{bulker.ReplaceTable},
+			dataFile:  "test_data/empty.ndjson",
+			configIds: allBulkerConfigs,
+		},
+		{
 			name:                "first_run",
 			tableName:           "replace_table_test",
 			modes:               []bulker.BulkMode{bulker.ReplaceTable},

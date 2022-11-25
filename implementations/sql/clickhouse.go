@@ -187,8 +187,8 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Engine != nil {
 		nullableFields = config.Engine.NullableFields
 	}
-	columnDDlFunc := func(name string, column SQLColumn, pkFields utils.Set[string]) string {
-		return chColumnDDL(name, column, pkFields, nullableFields)
+	columnDDlFunc := func(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
+		return chColumnDDL(name, quotedName, column, pkFields, nullableFields)
 	}
 	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	sqlAdapterBase := newSQLAdapterBase(ClickHouseBulkerTypeId, config, dataSource,
@@ -623,7 +623,7 @@ func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, source
 }
 
 func (ch *ClickHouse) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {
-	deleteCondition, values := ToWhenConditions(deleteConditions, ch.parameterPlaceholder, 0)
+	deleteCondition, values := ch.ToWhenConditions(deleteConditions, ch.parameterPlaceholder, 0)
 	deleteQuery := fmt.Sprintf(chDeleteQueryTemplate, ch.quotedTableName(tableName), ch.getOnClusterClause(), deleteCondition)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, deleteQuery, values...); err != nil {
@@ -823,7 +823,7 @@ func convertType(value any, column SQLColumn) (any, error) {
 }
 
 // chColumnDDL returns column DDL (column name, mapped sql type)
-func chColumnDDL(name string, column SQLColumn, pkFields utils.Set[string], nullableFields []string) string {
+func chColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string], nullableFields []string) string {
 	//get sql type
 	columnSQLType := column.GetDDLType()
 
@@ -835,7 +835,7 @@ func chColumnDDL(name string, column SQLColumn, pkFields utils.Set[string], null
 		columnTypeDDL = columnSQLType
 	}
 
-	return fmt.Sprintf(`%s %s`, name, columnTypeDDL)
+	return fmt.Sprintf(`%s %s`, quotedName, columnTypeDDL)
 }
 
 // chTypecastFunc returns "?" placeholder or with typecast
