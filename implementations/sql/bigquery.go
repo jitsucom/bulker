@@ -690,7 +690,7 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types.O
 	values := make([]bigquery.QueryParameter, len(object)+len(updateValues), len(object)+len(updateValues))
 	i := 0
 	for name, value := range object {
-		columns[i] = name + "= @" + name
+		columns[i] = bq.ColumnName(name) + "= @" + name
 		values[i] = bigquery.QueryParameter{Name: name, Value: value}
 		i++
 	}

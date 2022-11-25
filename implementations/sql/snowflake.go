@@ -40,6 +40,7 @@ const (
 )
 
 var (
+	sfReservedWords         = [...]string{"all", "alter", "and", "any", "as", "between", "by", "case", "cast", "check", "column", "connect", "constraint", "create", "cross", "current", "current_date", "current_time", "current_timestamp", "current_user", "delete", "distinct", "drop", "else", "exists", "false", "following", "for", "from", "full", "grant", "group", "having", "ilike", "in", "increment", "inner", "insert", "intersect", "into", "is", "join", "lateral", "left", "like", "localtime", "localtimestamp", "minus", "natural", "not", "null", "of", "on", "or", "order", "qualify", "regexp", "revoke", "right", "rlike", "row", "rows", "sample", "select", "set", "some", "start", "table", "tablesample", "then", "to", "trigger", "true", "try_cast", "union", "unique", "update", "using", "values", "when", "whenever", "where", "with"}
 	sfMergeQueryTemplate, _ = template.New("snowflakeMergeQuery").Parse(sfMergeStatement)
 
 	SchemaToSnowflake = map[types.DataType]string{
@@ -87,7 +88,7 @@ func (sc *SnowflakeConfig) Validate() error {
 		sc.Parameters = map[string]*string{}
 	}
 
-	sc.Schema = sfReformatIdentifier(sc.Schema)
+	sc.Schema = sfQuoteReservedWords(sc.Schema)
 	return nil
 }
 
@@ -102,8 +103,8 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
-	_, config.Schema = adaptSqlIdentifier(config.Schema, 255, 0)
-	config.Schema = sfReformatIdentifier(config.Schema)
+	_, config.Schema = adaptSqlIdentifier(config.Schema, 255, 0, sqlUnquotedIdentifierPattern)
+	config.Schema = sfQuoteReservedWords(config.Schema)
 	cfg := &sf.Config{
 		Account:   config.Account,
 		User:      config.Username,
@@ -138,9 +139,10 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	s := &Snowflake{newSQLAdapterBase(SnowflakeBulkerTypeId, config, dataSource, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)}
 	s._tableNameFunc = func(config *SnowflakeConfig, tableName string) string {
-		return sfReformatIdentifier(tableName)
+		return sfQuoteReservedWords(tableName)
 	}
-	s._columnNameFunc = sfReformatIdentifier
+	s._columnNameFunc = sfQuoteReservedWords
+	s.sqlUnquotedIdentifierPattern = sqlUnquotedIdentifierPattern
 	s.batchFileFormat = implementations.CSV
 	s.maxIdentifierLength = 255
 	return s, nil
@@ -445,7 +447,7 @@ func (s *Snowflake) ReplaceTable(ctx context.Context, targetTableName string, re
 
 // columnDDLsfColumnDDL returns column DDL (column name, mapped sql type)
 func sfColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
-	return fmt.Sprintf(`%s %s`, sfReformatIdentifier(quotedName), column.GetDDLType())
+	return fmt.Sprintf(`%s %s`, sfQuoteReservedWords(quotedName), column.GetDDLType())
 }
 
 func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
@@ -453,23 +455,21 @@ func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions
 	return s.SQLAdapterBase.Select(ctx, tableName, whenConditions, orderBy)
 }
 
-// Snowflake accepts names (identifiers) started with '_' or letter
-// also names can contain only '_', letters, numbers, '$'
-// otherwise double quote them
-// https://docs.snowflake.com/en/sql-reference/identifiers-syntax.html#unquoted-identifiers
-func sfReformatIdentifier(value string) string {
-	if value == "default" {
-		return `"DEFAULT"`
+func sfQuoteReservedWords(value string) string {
+	for _, reserved := range sfReservedWords {
+		if value == reserved {
+			return fmt.Sprintf(`"%s"`, strings.ToUpper(value))
+		}
 	}
 	return value
 }
 
-func (s *Snowflake) ColumnName(identifier string) string {
-	_, unquoted := s.adaptSqlIdentifier(identifier)
-	return unquoted
-}
-
-func (s *Snowflake) TableName(identifier string) string {
-	_, unquoted := s.adaptSqlIdentifier(identifier)
-	return unquoted
-}
+//func (s *Snowflake) ColumnName(identifier string) string {
+//	_, unquoted := s.adaptSqlIdentifier(identifier)
+//	return unquoted
+//}
+//
+//func (s *Snowflake) TableName(identifier string) string {
+//	_, unquoted := s.adaptSqlIdentifier(identifier)
+//	return unquoted
+//}

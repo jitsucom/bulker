@@ -75,15 +75,16 @@ type SQLAdapterBase[T any] struct {
 	batchFileFormat implementations.FileFormat
 	temporaryTables bool
 
-	maxIdentifierLength  int
-	identifierQuoteChar  rune
-	parameterPlaceholder ParameterPlaceholder
-	typecastFunc         TypeCastFunction
-	_tableNameFunc       TableNameFunction[T]
-	_columnNameFunc      ColumnNameFunction
-	_columnDDLFunc       ColumnDDLFunction
-	valueMappingFunction ValueMappingFunction
-	checkErrFunc         ErrorAdapter
+	maxIdentifierLength          int
+	identifierQuoteChar          rune
+	sqlUnquotedIdentifierPattern *regexp.Regexp
+	parameterPlaceholder         ParameterPlaceholder
+	typecastFunc                 TypeCastFunction
+	_tableNameFunc               TableNameFunction[T]
+	_columnNameFunc              ColumnNameFunction
+	_columnDDLFunc               ColumnDDLFunction
+	valueMappingFunction         ValueMappingFunction
+	checkErrFunc                 ErrorAdapter
 }
 
 func newSQLAdapterBase[T any](typeId string, config *T, dataSource *sql.DB, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) SQLAdapterBase[T] {
@@ -246,7 +247,7 @@ func (b *SQLAdapterBase[T]) Update(ctx context.Context, tableName string, object
 	values := make([]any, len(object)+len(updateValues), len(object)+len(updateValues))
 	i := 0
 	for name, value := range object {
-		columns[i] = name + "= " + b.parameterPlaceholder(i+1, name) //$0 - wrong
+		columns[i] = b.quotedColumnName(name) + "= " + b.parameterPlaceholder(i+1, name) //$0 - wrong
 		values[i] = value
 		i++
 	}
@@ -622,22 +623,22 @@ func (b *SQLAdapterBase[T]) columnDDL(name string, column SQLColumn, pkFields ut
 // - must only contain letters, numbers, underscores, hyphen, and spaces - all other characters are removed
 // - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
 func (b *SQLAdapterBase[T]) adaptSqlIdentifier(identifier string) (quotedIfNeeded string, unquoted string) {
-	return adaptSqlIdentifier(identifier, b.maxIdentifierLength, b.identifierQuoteChar)
+	return adaptSqlIdentifier(identifier, b.maxIdentifierLength, b.identifierQuoteChar, b.sqlUnquotedIdentifierPattern)
 }
 
-func adaptSqlIdentifier(identifier string, maxIdentifierLength int, identifierQuoteChar rune) (quotedIfNeeded string, unquoted string) {
+func adaptSqlIdentifier(identifier string, maxIdentifierLength int, identifierQuoteChar rune, sqlUnquotedIdentifierPattern *regexp.Regexp) (quotedIfNeeded string, unquoted string) {
 	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "")
 	result := utils.ShortenString(cleanIdentifier, maxIdentifierLength)
 	if result == "" {
 		result = fmt.Sprintf("column_%x", utils.HashString(identifier))
 		return result, result
 	}
-	//m := sqlUnquotedIdentifierPattern.MatchString(result)
-	//if !m && identifierQuoteChar != rune(0) {
-	return fmt.Sprintf(`%c%s%c`, identifierQuoteChar, result, identifierQuoteChar), result
-	//} else {
-	//	return result, result
-	//}
+	if identifierQuoteChar != rune(0) &&
+		(sqlUnquotedIdentifierPattern == nil || !sqlUnquotedIdentifierPattern.MatchString(result)) {
+		return fmt.Sprintf(`%c%s%c`, identifierQuoteChar, result, identifierQuoteChar), result
+	} else {
+		return result, result
+	}
 }
 
 func (b *SQLAdapterBase[T]) ColumnName(identifier string) string {
