@@ -78,6 +78,7 @@ type SQLAdapterBase[T any] struct {
 	maxIdentifierLength          int
 	identifierQuoteChar          rune
 	sqlUnquotedIdentifierPattern *regexp.Regexp
+	toUpper                      bool
 	parameterPlaceholder         ParameterPlaceholder
 	typecastFunc                 TypeCastFunction
 	_tableNameFunc               TableNameFunction[T]
@@ -623,20 +624,26 @@ func (b *SQLAdapterBase[T]) columnDDL(name string, column SQLColumn, pkFields ut
 // - must only contain letters, numbers, underscores, hyphen, and spaces - all other characters are removed
 // - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
 func (b *SQLAdapterBase[T]) adaptSqlIdentifier(identifier string) (quotedIfNeeded string, unquoted string) {
-	return adaptSqlIdentifier(identifier, b.maxIdentifierLength, b.identifierQuoteChar, b.sqlUnquotedIdentifierPattern)
+	return adaptSqlIdentifier(identifier, b.maxIdentifierLength, b.identifierQuoteChar, b.sqlUnquotedIdentifierPattern, b.toUpper)
 }
 
-func adaptSqlIdentifier(identifier string, maxIdentifierLength int, identifierQuoteChar rune, sqlUnquotedIdentifierPattern *regexp.Regexp) (quotedIfNeeded string, unquoted string) {
+func adaptSqlIdentifier(identifier string, maxIdentifierLength int, identifierQuoteChar rune, sqlUnquotedIdentifierPattern *regexp.Regexp, toUpper bool) (quotedIfNeeded string, unquoted string) {
 	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "")
 	result := utils.ShortenString(cleanIdentifier, maxIdentifierLength)
 	if result == "" {
 		result = fmt.Sprintf("column_%x", utils.HashString(identifier))
+		if toUpper {
+			result = strings.ToUpper(result)
+		}
 		return result, result
 	}
 	if identifierQuoteChar != rune(0) &&
 		(sqlUnquotedIdentifierPattern == nil || !sqlUnquotedIdentifierPattern.MatchString(result)) {
 		return fmt.Sprintf(`%c%s%c`, identifierQuoteChar, result, identifierQuoteChar), result
 	} else {
+		if toUpper {
+			result = strings.ToUpper(result)
+		}
 		return result, result
 	}
 }

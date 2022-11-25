@@ -78,7 +78,7 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Port == 0 {
 		config.Port = 5439
 	}
-	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0, nil)
+	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0, nil, false)
 
 	bulkerConfig.DestinationConfig = config.DataSourceConfig
 	postgres, err := NewPostgres(bulkerConfig)

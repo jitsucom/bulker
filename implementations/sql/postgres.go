@@ -84,7 +84,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
-	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0, nil)
+	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0, nil, false)
 	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
 		config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
 	//concat provided connection parameters

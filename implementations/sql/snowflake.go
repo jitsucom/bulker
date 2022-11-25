@@ -40,7 +40,8 @@ const (
 )
 
 var (
-	sfReservedWords         = [...]string{"all", "alter", "and", "any", "as", "between", "by", "case", "cast", "check", "column", "connect", "constraint", "create", "cross", "current", "current_date", "current_time", "current_timestamp", "current_user", "delete", "distinct", "drop", "else", "exists", "false", "following", "for", "from", "full", "grant", "group", "having", "ilike", "in", "increment", "inner", "insert", "intersect", "into", "is", "join", "lateral", "left", "like", "localtime", "localtimestamp", "minus", "natural", "not", "null", "of", "on", "or", "order", "qualify", "regexp", "revoke", "right", "rlike", "row", "rows", "sample", "select", "set", "some", "start", "table", "tablesample", "then", "to", "trigger", "true", "try_cast", "union", "unique", "update", "using", "values", "when", "whenever", "where", "with"}
+	sfReservedWords         = []string{"all", "alter", "and", "any", "as", "between", "by", "case", "cast", "check", "column", "connect", "constraint", "create", "cross", "current", "current_date", "current_time", "current_timestamp", "current_user", "delete", "distinct", "drop", "else", "exists", "false", "following", "for", "from", "full", "grant", "group", "having", "ilike", "in", "increment", "inner", "insert", "intersect", "into", "is", "join", "lateral", "left", "like", "localtime", "localtimestamp", "minus", "natural", "not", "null", "of", "on", "or", "order", "qualify", "regexp", "revoke", "right", "rlike", "row", "rows", "sample", "select", "set", "some", "start", "table", "tablesample", "then", "to", "trigger", "true", "try_cast", "union", "unique", "update", "using", "values", "when", "whenever", "where", "with"}
+	sfReservedWordsSet      = utils.NewSet(sfReservedWords...)
 	sfMergeQueryTemplate, _ = template.New("snowflakeMergeQuery").Parse(sfMergeStatement)
 
 	SchemaToSnowflake = map[types.DataType]string{
@@ -103,7 +104,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
-	_, config.Schema = adaptSqlIdentifier(config.Schema, 255, 0, sqlUnquotedIdentifierPattern)
+	_, config.Schema = adaptSqlIdentifier(config.Schema, 255, 0, sqlUnquotedIdentifierPattern, true)
 	config.Schema = sfQuoteReservedWords(config.Schema)
 	cfg := &sf.Config{
 		Account:   config.Account,
@@ -145,6 +146,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	s.sqlUnquotedIdentifierPattern = sqlUnquotedIdentifierPattern
 	s.batchFileFormat = implementations.CSV
 	s.maxIdentifierLength = 255
+	s.toUpper = true
 	return s, nil
 }
 func (s *Snowflake) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -203,7 +205,7 @@ func (s *Snowflake) InitDatabase(ctx context.Context) error {
 // GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
 func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
 	tableName = s.TableName(tableName)
-	quotedTableName := s.quotedColumnName(tableName)
+	quotedTableName := s.quotedTableName(tableName)
 	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.NewSet[string]()}
 
 	countReqRows, err := s.txOrDb(ctx).QueryContext(ctx, sfTableExistenceQuery, s.config.Schema, tableName)
@@ -456,10 +458,8 @@ func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions
 }
 
 func sfQuoteReservedWords(value string) string {
-	for _, reserved := range sfReservedWords {
-		if value == reserved {
-			return fmt.Sprintf(`"%s"`, strings.ToUpper(value))
-		}
+	if sfReservedWordsSet.Contains(value) {
+		return fmt.Sprintf(`"%s"`, strings.ToUpper(value))
 	}
 	return value
 }
