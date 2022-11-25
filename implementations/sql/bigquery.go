@@ -44,6 +44,8 @@ const (
 )
 
 var (
+	bigqueryReservedPrefixes = [...]string{"_table_", "_file_", "_partition", "_row_timestamp", "__root__", "_colidentifier"}
+
 	bigqueryColumnUnsupportedCharacters = regexp.MustCompile(`[^0-9A-Za-z_]`)
 
 	//SchemaToBigQueryString is mapping between JSON types and BigQuery types
@@ -886,7 +888,12 @@ func (bq *BigQuery) ColumnName(identifier string) string {
 	if utils.IsNumber(int32(result[0])) {
 		result = "_" + result
 	}
-	return utils.ShortenString(strings.ToLower(result), 300)
+	for _, reserved := range bigqueryReservedPrefixes {
+		if strings.HasPrefix(strings.ToLower(result), reserved) {
+			result = "_" + result
+		}
+	}
+	return utils.ShortenString(result, 300)
 }
 
 func (bq *BigQuery) TableName(identifier string) string {
@@ -901,7 +908,7 @@ func (bq *BigQuery) adaptSqlIdentifier(identifier string, maxIdentifierLength in
 	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "")
 	result := utils.ShortenString(cleanIdentifier, maxIdentifierLength)
 	if result == "" {
-		result = fmt.Sprintf("column_%x", utils.HashString(identifier))
+		result = fmt.Sprintf("bulker_table_%x", utils.HashString(identifier))
 		return result, result
 	}
 	m := sqlUnquotedIdentifierPattern.MatchString(result)

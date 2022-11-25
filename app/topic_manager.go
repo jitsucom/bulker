@@ -283,13 +283,13 @@ func (tm *TopicManager) EnsureTopic(destination *Destination, topicId string) er
 
 // CreateTopic creates topic for destinationId
 func (tm *TopicManager) createTopic(destination *Destination, topic string) error {
-	_, mode, tableName, err := ParseTopicId(topic)
+	id, mode, tableName, err := ParseTopicId(topic)
 	errorType := ""
 	defer func() {
 		if errorType != "" {
-			metrics.TopicManagerCreateError(errorType).Inc()
+			metrics.TopicManagerCreateError(id, mode, tableName, errorType).Inc()
 		} else {
-			metrics.TopicManagerCreateSuccess.Inc()
+			metrics.TopicManagerCreateSuccess(id, mode, tableName).Inc()
 		}
 	}()
 	if err != nil {

@@ -627,12 +627,12 @@ func adaptSqlIdentifier(identifier string, maxIdentifierLength int, identifierQu
 		result = fmt.Sprintf("column_%x", utils.HashString(identifier))
 		return result, result
 	}
-	m := sqlUnquotedIdentifierPattern.MatchString(result)
-	if !m && identifierQuoteChar != rune(0) {
-		return fmt.Sprintf(`%c%s%c`, identifierQuoteChar, result, identifierQuoteChar), result
-	} else {
-		return result, result
-	}
+	//m := sqlUnquotedIdentifierPattern.MatchString(result)
+	//if !m && identifierQuoteChar != rune(0) {
+	return fmt.Sprintf(`%c%s%c`, identifierQuoteChar, result, identifierQuoteChar), result
+	//} else {
+	//	return result, result
+	//}
 }
 
 func (b *SQLAdapterBase[T]) ColumnName(identifier string) string {

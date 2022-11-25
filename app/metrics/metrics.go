@@ -28,18 +28,21 @@ var (
 		return eventsHandlerSuccess.WithLabelValues(destinationId, tableName)
 	}
 
-	TopicManagerCreateSuccess = promauto.NewCounter(prometheus.CounterOpts{
+	topicManagerCreateSuccess = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "topic_manager",
 		Name:      "create_success",
-	})
+	}, []string{"destinationId", "mode", "tableName", "errorType"})
+	TopicManagerCreateSuccess = func(destinationId, mode, tableName string) prometheus.Counter {
+		return topicManagerCreateSuccess.WithLabelValues(destinationId, mode, tableName)
+	}
 
 	topicManagerCreateError = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "topic_manager",
 		Name:      "create_error",
-	}, []string{"errorType"})
-	TopicManagerCreateError = func(errorType string) prometheus.Counter {
+	}, []string{"destinationId", "mode", "tableName", "errorType"})
+	TopicManagerCreateError = func(destinationId, mode, tableName, errorType string) prometheus.Counter {
 		return topicManagerCreateError.WithLabelValues(errorType)
 	}
 

@@ -461,27 +461,15 @@ func sfReformatIdentifier(value string) string {
 	if value == "default" {
 		return `"DEFAULT"`
 	}
-	m := sqlUnquotedIdentifierPattern.MatchString(strings.Trim(value, `"`))
-	if m {
-		return strings.ToUpper(value)
-	}
 	return value
 }
 
 func (s *Snowflake) ColumnName(identifier string) string {
-	quoted, unquoted := s.adaptSqlIdentifier(identifier)
-	if quoted == unquoted {
-		//unquoted identifier needs to be uppercase
-		return strings.ToUpper(unquoted)
-	}
+	_, unquoted := s.adaptSqlIdentifier(identifier)
 	return unquoted
 }
 
 func (s *Snowflake) TableName(identifier string) string {
-	quoted, unquoted := s.adaptSqlIdentifier(identifier)
-	if quoted == unquoted {
-		//unquoted identifier needs to be uppercase
-		return strings.ToUpper(unquoted)
-	}
+	_, unquoted := s.adaptSqlIdentifier(identifier)
 	return unquoted
 }
