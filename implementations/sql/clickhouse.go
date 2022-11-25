@@ -395,7 +395,7 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 	return nil
 }
 
-func (ch *ClickHouse) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+func (ch *ClickHouse) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	tableName = ch.TableName(tableName)
 	table, err := ch.GetTableSchema(ctx, tableName)
 	if err != nil {
@@ -426,9 +426,9 @@ func (ch *ClickHouse) Count(ctx context.Context, tableName string, whenCondition
 	}
 	var res []map[string]any
 	if len(table.PKFields) > 0 {
-		res, err = ch.selectFrom(ctx, chSelectFinalStatement, tableName, "count(*) as jitsu_count", whenConditions, "")
+		res, err = ch.selectFrom(ctx, chSelectFinalStatement, tableName, "count(*) as jitsu_count", whenConditions, nil)
 	} else {
-		res, err = ch.selectFrom(ctx, selectQueryTemplate, tableName, "count(*) as jitsu_count", whenConditions, "")
+		res, err = ch.selectFrom(ctx, selectQueryTemplate, tableName, "count(*) as jitsu_count", whenConditions, nil)
 	}
 	if err != nil {
 		return -1, err

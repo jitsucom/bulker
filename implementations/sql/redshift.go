@@ -153,7 +153,7 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 				pkMatchConditions = pkMatchConditions.Add(pkColumn, "=", value)
 			}
 		}
-		res, err := p.Select(ctx, table.Name, pkMatchConditions, "")
+		res, err := p.Select(ctx, table.Name, pkMatchConditions, nil)
 		if err != nil {
 			return errorj.ExecuteInsertError.Wrap(err, "failed check primary key collision").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{

@@ -407,7 +407,7 @@ func (s *Snowflake) Insert(ctx context.Context, table *Table, merge bool, object
 				pkMatchConditions = pkMatchConditions.Add(pkColumn, "=", value)
 			}
 		}
-		res, err := s.SQLAdapterBase.Select(ctx, table.Name, pkMatchConditions, "")
+		res, err := s.SQLAdapterBase.Select(ctx, table.Name, pkMatchConditions, nil)
 		if err != nil {
 			return errorj.ExecuteInsertError.Wrap(err, "failed check primary key collision").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
@@ -448,7 +448,7 @@ func sfColumnDDL(name string, column SQLColumn, pkFields utils.Set[string]) stri
 	return fmt.Sprintf(`%s %s`, sfReformatIdentifier(name), column.GetDDLType())
 }
 
-func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	ctx = sf.WithHigherPrecision(ctx)
 	return s.SQLAdapterBase.Select(ctx, tableName, whenConditions, orderBy)
 }

@@ -40,7 +40,7 @@ type SQLAdapter interface {
 	DropTable(ctx context.Context, tableName string, ifExists bool) error
 	ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) error
 
-	Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error)
+	Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error)
 	Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error)
 
 	// ColumnName adapts column name to sql identifier rules of database
@@ -134,9 +134,9 @@ func (tx *TxSQLAdapter) ReplaceTable(ctx context.Context, targetTableName string
 	return tx.sqlAdapter.ReplaceTable(ctx, targetTableName, replacementTable, dropOldTable)
 }
 
-func (tx *TxSQLAdapter) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+func (tx *TxSQLAdapter) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.Select(ctx, tableName, whenConditions, "")
+	return tx.sqlAdapter.Select(ctx, tableName, whenConditions, orderBy)
 }
 func (tx *TxSQLAdapter) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)

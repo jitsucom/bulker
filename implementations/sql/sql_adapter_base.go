@@ -139,21 +139,26 @@ func (b *SQLAdapterBase[T]) txOrDb(ctx context.Context) TxOrDB {
 	return txOrDb
 }
 
-func (b *SQLAdapterBase[T]) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+func (b *SQLAdapterBase[T]) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	return b.selectFrom(ctx, selectQueryTemplate, tableName, "*", whenConditions, orderBy)
 }
-func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	quotedTableName := b.quotedTableName(tableName)
 	whenCondition, values := ToWhenConditions(whenConditions, b.parameterPlaceholder, 0)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
 	}
-	if orderBy != "" {
-		orderBy = " ORDER BY " + orderBy
+	orderByClause := ""
+	if len(orderBy) > 0 {
+		quotedOrderByColumns := make([]string, len(orderBy))
+		for i, col := range orderBy {
+			quotedOrderByColumns[i] = fmt.Sprintf("%s asc", b.quotedColumnName(col))
+		}
+		orderByClause = " ORDER BY " + strings.Join(quotedOrderByColumns, ", ")
 	}
 	var rows *sql.Rows
 	var err error
-	query := fmt.Sprintf(statement, selectExpression, quotedTableName, whenCondition, orderBy)
+	query := fmt.Sprintf(statement, selectExpression, quotedTableName, whenCondition, orderByClause)
 	if b.typeId == MySQLBulkerTypeId {
 		//For MySQL using Prepared statement switches mySQL to use Binary protocol that preserves types information
 		var stmt *sql.Stmt
@@ -203,7 +208,7 @@ func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, ta
 }
 
 func (b *SQLAdapterBase[T]) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
-	res, err := b.selectFrom(ctx, selectQueryTemplate, tableName, "count(*) as jitsu_count", whenConditions, "")
+	res, err := b.selectFrom(ctx, selectQueryTemplate, tableName, "count(*) as jitsu_count", whenConditions, nil)
 	if err != nil {
 		return -1, err
 	}

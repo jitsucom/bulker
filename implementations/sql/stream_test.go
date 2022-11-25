@@ -148,7 +148,7 @@ type bulkerTestConfig struct {
 	//for configs that runs for multiple modes including bulker.ReplacePartition automatically adds WithPartition to streamOptions and partition id column to expectedTable and expectedRows for that particular mode
 	expectPartitionId bool
 	//orderBy clause for select query to check expectedTable (default: id asc)
-	orderBy string
+	orderBy []string
 	//rows count expected in resulting table. don't use with expectedRows. any type to allow nil value meaning not set
 	expectedRowsCount any
 	//rows data expected in resulting table
@@ -270,7 +270,7 @@ func TestStreams(t *testing.T) {
 				{"_timestamp": constantTime, "id": 4, "name": "test4"},
 				{"_timestamp": constantTime, "id": 4, "name": "test5"},
 			},
-			orderBy:        "id asc, name asc",
+			orderBy:        []string{"id", "name"},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
 		},
@@ -481,8 +481,8 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 // adaptConfig since we can use a single config for many modes and db types we may need to
 // apply changes for specific modes of dbs
 func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMode) {
-	if testConfig.orderBy == "" {
-		testConfig.orderBy = "id asc"
+	if len(testConfig.orderBy) == 0 {
+		testConfig.orderBy = []string{"id"}
 	}
 	switch mode {
 	case bulker.ReplacePartition:

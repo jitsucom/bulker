@@ -727,19 +727,24 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types.O
 	return status.Err()
 }
 
-func (bq *BigQuery) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy string) ([]map[string]any, error) {
+func (bq *BigQuery) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	return bq.selectFrom(ctx, tableName, "*", whenConditions, orderBy)
 }
-func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy string) (res []map[string]any, err error) {
+func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy []string) (res []map[string]any, err error) {
 	tableName = bq.TableName(tableName)
 	whenCondition, values := bq.toWhenConditions(whenConditions)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
 	}
-	if orderBy != "" {
-		orderBy = " ORDER BY " + orderBy
+	orderByClause := ""
+	if len(orderBy) > 0 {
+		quotedOrderByColumns := make([]string, len(orderBy))
+		for i, col := range orderBy {
+			quotedOrderByColumns[i] = fmt.Sprintf("%s asc", bq.ColumnName(col))
+		}
+		orderByClause = " ORDER BY " + strings.Join(quotedOrderByColumns, ", ")
 	}
-	selectQuery := fmt.Sprintf(bigquerySelectTemplate, selectExpression, bq.fullTableName(tableName), whenCondition, orderBy)
+	selectQuery := fmt.Sprintf(bigquerySelectTemplate, selectExpression, bq.fullTableName(tableName), whenCondition, orderByClause)
 	bq.queryLogger.LogQuery(selectQuery, nil)
 
 	defer func() {
@@ -801,7 +806,7 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 }
 
 func (bq *BigQuery) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
-	res, err := bq.selectFrom(ctx, tableName, "count(*) as jitsu_count", whenConditions, "")
+	res, err := bq.selectFrom(ctx, tableName, "count(*) as jitsu_count", whenConditions, nil)
 	if err != nil {
 		return -1, err
 	}

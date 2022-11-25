@@ -46,7 +46,6 @@ func TestNaming(t *testing.T) {
 			dataFile:                  "test_data/identifiers.ndjson",
 			expectPartitionId:         true,
 			expectedTableCaseChecking: true,
-			orderBy:                   "\"id\" asc",
 			expectedRowsCount:         1,
 			expectedTable: ExpectedTable{
 				Columns: justColumns("id", "name", "column_12b241e808ae6c964a5bb9f1c012e63d", "1test_name", "2", "column_c16da609b86c01f16a2c609eac4ccb0c", "Test Name", "Test Name DROP DATABASE public SELECT 1 from DUAL", "Université Français", "_timestamp", "_unnamed", "lorem_ipsum_dolor_sit_amet_consectetur_adipiscing_elit_sed_do_eiusmod_tempor_incididunt_ut_labore_et_dolore_magna_aliqua_ut_enim_ad_minim_veniam_quis_nostrud_exercitation_ullamco_laboris_nisi_ut_aliquip_ex_ea_commodo_consequat", "Странное Имя", "秒速センチメートル", "camelCase", "int", "user", "select", "__ROOT__"),
@@ -71,7 +70,6 @@ func TestNaming(t *testing.T) {
 			tableName:         "Université Français",
 			modes:             []bulker.BulkMode{bulker.Transactional},
 			dataFile:          "test_data/simple.ndjson",
-			orderBy:           "\"id\" asc",
 			expectedRowsCount: 3,
 			expectedTable: ExpectedTable{
 				Name:    "Université Français_batch",
