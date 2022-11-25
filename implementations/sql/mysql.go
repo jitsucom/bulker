@@ -80,7 +80,6 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		// similar to postgres default value of sslmode option
 		config.Parameters["tls"] = "preferred"
 	}
-	config.Db, _ = adaptSqlIdentifier(config.Db, 63, '`')
 
 	connectionString := mySQLDriverConnectionString(config)
 	dataSource, err := sql.Open("mysql", connectionString)
@@ -156,14 +155,14 @@ func (m *MySQL) validateOptions(streamOptions []bulker.StreamOption) error {
 
 // InitDatabase creates database instance if doesn't exist
 func (m *MySQL) InitDatabase(ctx context.Context) error {
-	query := fmt.Sprintf(mySQLCreateDBIfNotExistsTemplate, m.config.Db)
-	if _, err := m.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-		return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Database:  m.config.Db,
-				Statement: query,
-			})
-	}
+	//query := fmt.Sprintf(mySQLCreateDBIfNotExistsTemplate, m.config.Db)
+	//if _, err := m.txOrDb(ctx).ExecContext(ctx, query); err != nil {
+	//	return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
+	//		WithProperty(errorj.DBInfo, &types.ErrorPayload{
+	//			Database:  m.config.Db,
+	//			Statement: query,
+	//		})
+	//}
 
 	return nil
 }
