@@ -2,18 +2,20 @@ package app
 
 import (
 	"fmt"
+	"github.com/hjson/hjson-go/v4"
+	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
 	"io"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 )
 
 const destinationsKey = "destinations"
+const defaultEnvDestinationPrefix = "BULKER_DESTINATION"
 
 type DestinationConfig struct {
 	UpdatedAt      time.Time `mapstructure:"updated_at" json:"updated_at"`
@@ -39,7 +41,8 @@ type ConfigurationSource interface {
 
 func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
 	if config.ConfigSource == "" {
-		return nil, fmt.Errorf("❗️it is required to set Configuration Source using BULKER_CONFIG_SOURCE environement variable")
+		logging.Infof("BULKER_CONFIG_SOURCE is not set. Using environment variables configuration source with prefix: %s", defaultEnvDestinationPrefix)
+		return NewEnvConfigurationSource(defaultEnvDestinationPrefix), nil
 	}
 
 	if strings.HasPrefix(config.ConfigSource, "file://") || !strings.Contains(config.ConfigSource, "://") {
@@ -59,6 +62,9 @@ func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
 			return nil, fmt.Errorf("❗️error while init redis configuration source: %s: %w", config.ConfigSource, err)
 		}
 		return redisConfigSource, nil
+	} else if strings.HasPrefix(config.ConfigSource, "env://BULKER_DESTINATION") {
+		envPrefix := strings.TrimPrefix(config.ConfigSource, "env://")
+		return NewEnvConfigurationSource(envPrefix), nil
 	} else {
 		return nil, fmt.Errorf("❗unsupported configuration source: %s", config.ConfigSource)
 	}
@@ -135,13 +141,13 @@ func (ycp *YamlConfigurationSource) GetValue(key string) any {
 	return ycp.config[key]
 }
 
-func (ycp *YamlConfigurationSource) Equals(other ConfigurationSource) bool {
-	o, ok := other.(*YamlConfigurationSource)
-	if !ok {
-		return false
-	}
-	return reflect.DeepEqual(ycp.config, o.config)
-}
+//func (ycp *YamlConfigurationSource) Equals(other ConfigurationSource) bool {
+//	o, ok := other.(*YamlConfigurationSource)
+//	if !ok {
+//		return false
+//	}
+//	return reflect.DeepEqual(ycp.config, o.config)
+//}
 
 func (ycp *YamlConfigurationSource) ChangesChannel() <-chan bool {
 	return ycp.changesChan
@@ -149,5 +155,73 @@ func (ycp *YamlConfigurationSource) ChangesChannel() <-chan bool {
 
 func (ycp *YamlConfigurationSource) Close() error {
 	close(ycp.changesChan)
+	return nil
+}
+
+type EnvConfigurationSource struct {
+	objects.ServiceBase
+
+	changesChan chan bool
+
+	destinations map[string]*DestinationConfig
+}
+
+func NewEnvConfigurationSource(prefix string) *EnvConfigurationSource {
+	base := objects.NewServiceBase("env_configuration")
+	results := make(map[string]*DestinationConfig)
+	envs := os.Environ()
+	for _, env := range envs {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		id := parts[0]
+		if !strings.HasPrefix(id, prefix) {
+			continue
+		}
+		id = strings.TrimPrefix(id, prefix+"_")
+		value := parts[1]
+		cfg := &DestinationConfig{}
+		err := hjson.Unmarshal([]byte(value), &cfg)
+		if err != nil {
+			base.Errorf("Failed to parse destination config %s: %v:\n%s", id, err, value)
+			continue
+		}
+		cfg.Config.Id = id
+		base.Infof("parsed config for destination %s: %+v", id, cfg)
+		results[id] = cfg
+	}
+	y := &EnvConfigurationSource{
+		ServiceBase:  base,
+		changesChan:  make(chan bool),
+		destinations: results,
+	}
+	return y
+}
+
+func (ecs *EnvConfigurationSource) GetDestinationConfigs() []*DestinationConfig {
+	results := make([]*DestinationConfig, len(ecs.destinations))
+	i := 0
+	for _, destination := range ecs.destinations {
+		results[i] = destination
+		i++
+	}
+	return results
+}
+
+func (ecs *EnvConfigurationSource) GetDestinationConfig(id string) *DestinationConfig {
+	return ecs.destinations[id]
+}
+
+func (ecs *EnvConfigurationSource) GetValue(key string) any {
+	return nil
+}
+
+func (ecs *EnvConfigurationSource) ChangesChannel() <-chan bool {
+	return ecs.changesChan
+}
+
+func (ecs *EnvConfigurationSource) Close() error {
+	close(ecs.changesChan)
 	return nil
 }

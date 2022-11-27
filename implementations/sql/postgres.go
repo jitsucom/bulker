@@ -123,7 +123,10 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		}
 		return value
 	}
-	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
+	var queryLogger *logging.QueryLogger
+	if bulkerConfig.LogLevel == bulker.Verbose {
+		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
+	}
 	p := &Postgres{newSQLAdapterBase(PostgresBulkerTypeId, config, dataSource, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)}
 
 	return p, nil

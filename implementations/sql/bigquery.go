@@ -88,8 +88,11 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Error creating BigQuery client: %v", err)
 	}
-
-	return &BigQuery{client: client, config: config, queryLogger: logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)}, nil
+	var queryLogger *logging.QueryLogger
+	if bulkerConfig.LogLevel == bulker.Verbose {
+		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
+	}
+	return &BigQuery{client: client, config: config, queryLogger: queryLogger}, nil
 }
 
 func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -644,17 +647,19 @@ func (bq *BigQuery) toDeleteQuery(conditions *WhenConditions) string {
 }
 
 func (bq *BigQuery) logQuery(messageTemplate string, entity any, err error) {
-	entityString := ""
-	if entity != nil {
-		entityJSON, err := jsoniter.Marshal(entity)
-		if err != nil {
-			entityString = fmt.Sprintf("[failed to marshal query entity: %v]", err)
-			logging.Warnf("Failed to serialize entity for logging: %s", fmt.Sprint(entity))
-		} else {
-			entityString = string(entityJSON)
+	if bq.queryLogger != nil {
+		entityString := ""
+		if entity != nil {
+			entityJSON, err := jsoniter.Marshal(entity)
+			if err != nil {
+				entityString = fmt.Sprintf("[failed to marshal query entity: %v]", err)
+				logging.Warnf("Failed to serialize entity for logging: %s", fmt.Sprint(entity))
+			} else {
+				entityString = string(entityJSON)
+			}
 		}
+		bq.queryLogger.LogQuery(messageTemplate+entityString, err)
 	}
-	bq.queryLogger.LogQuery(messageTemplate+entityString, err)
 }
 
 func (bq *BigQuery) Close() error {
@@ -745,7 +750,7 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 		orderByClause = " ORDER BY " + strings.Join(quotedOrderByColumns, ", ")
 	}
 	selectQuery := fmt.Sprintf(bigquerySelectTemplate, selectExpression, bq.fullTableName(tableName), whenCondition, orderByClause)
-	bq.queryLogger.LogQuery(selectQuery, nil)
+	bq.logQuery(selectQuery, nil, nil)
 
 	defer func() {
 		v := make([]any, len(values))

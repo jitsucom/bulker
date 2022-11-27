@@ -190,7 +190,10 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	columnDDlFunc := func(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
 		return chColumnDDL(name, quotedName, column, pkFields, nullableFields)
 	}
-	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
+	var queryLogger *logging.QueryLogger
+	if bulkerConfig.LogLevel == bulker.Verbose {
+		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
+	}
 	sqlAdapterBase := newSQLAdapterBase(ClickHouseBulkerTypeId, config, dataSource,
 		queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr)
 	sqlAdapterBase.batchFileFormat = implementations.JSON

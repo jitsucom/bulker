@@ -113,7 +113,10 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	typecastFunc := func(placeholder string, column SQLColumn) string {
 		return placeholder
 	}
-	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
+	var queryLogger *logging.QueryLogger
+	if bulkerConfig.LogLevel == bulker.Verbose {
+		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
+	}
 	m := &MySQL{
 		SQLAdapterBase: newSQLAdapterBase(MySQLBulkerTypeId, config, dataSource, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr),
 		infileEnabled:  infileEnabled,

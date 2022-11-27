@@ -137,7 +137,10 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		}
 		return placeholder
 	}
-	queryLogger := logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
+	var queryLogger *logging.QueryLogger
+	if bulkerConfig.LogLevel == bulker.Verbose {
+		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
+	}
 	s := &Snowflake{newSQLAdapterBase(SnowflakeBulkerTypeId, config, dataSource, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)}
 	s._tableNameFunc = func(config *SnowflakeConfig, tableName string) string {
 		return sfQuoteReservedWords(tableName)
