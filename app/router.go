@@ -46,7 +46,7 @@ func NewRouter(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repo
 		authTokens = nil
 		base.Warnf("⚠️ No auth tokens provided. All requests will be allowed")
 	}
-	tokenSecrets := strings.Split(config.TokenSecrets, ",")
+	tokenSecrets := strings.Split(config.TokenSecret, ",")
 
 	router := &Router{
 		ServiceBase:      base,
