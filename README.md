@@ -39,16 +39,19 @@ Coming soon
 
 <p align="center"><b>
 S3 • GCS
-</p></b>
+</b></p>
 
 
 Not all features supported by all databases. See [DB Feature Matrix](.docs/db-feature-matrix.md) for details.
 
 ## Documentation
 
-* [How to use Bulker as HTTP Service](./.docs/server-howto.md)
-* [How to use bulker as Go-lib](./.docs/golib-howto.md)
+* [How to use Bulker as HTTP Service](./.docs/server-config.md)
+  * [Server Configuration](./.docs/server-config.md)  
+  * [HTTP API](./.docs/http-api.md)
+* How to use bulker as Go-lib *(coming soon)*
+
 
 ## Dependencies
 
-Bulker depends on Kafka for messaging and Redis for coordination and caching.
+Bulker depends on Kafka for messaging. Optionally it uses Redis for logging progressed events.
