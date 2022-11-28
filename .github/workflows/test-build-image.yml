@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'main'
+  workflow_dispatch:
 
 env:
   BULKER_TEST_BIGQUERY: ${{ secrets.BULKER_TEST_BIGQUERY }}

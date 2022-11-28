@@ -1,9 +1,9 @@
 destinations:
   batch_postgres:
     type: "postgres"
-    stream_mode: "batch"
+    mode: "batch"
     batch_size: 10
-    destination_config:
+    credentials:
       host: localhost
       port: [[POSTGRES_PORT]]
       database: test
@@ -14,8 +14,8 @@ destinations:
         sslmode: disable
   stream_postgres:
     type: "postgres"
-    stream_mode: "stream"
-    destination_config:
+    mode: "stream"
+    credentials:
       host: localhost
       port: [[POSTGRES_PORT]]
       database: test
