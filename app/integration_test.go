@@ -138,6 +138,7 @@ func TestBulkerApp(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			reqr := require.New(t)
 
@@ -165,7 +166,7 @@ func TestBulkerApp(t *testing.T) {
 				}
 				i++
 			}
-			time.Sleep(15 * time.Second)
+			time.Sleep(20 * time.Second)
 			rowsCount, err := postgresContainer.CountRows(fmt.Sprintf("%s.%s", postgresContainer.Schema, tt.name))
 			CheckError("count_rows", reqr, tt.expectedErrors, err)
 			logging.Infof("rows count: %d", rowsCount)

@@ -12,7 +12,7 @@ import (
 )
 
 type AppConfig struct {
-	ClusterId  string `mapstructure:"CLUSTER_ID" default:"bulker_cluster"`
+	// TODO: persist on disk
 	InstanceId string `mapstructure:"INSTANCE_ID"`
 
 	HTTPPort int `mapstructure:"HTTP_PORT"`
