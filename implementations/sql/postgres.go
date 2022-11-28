@@ -139,9 +139,9 @@ func (p *Postgres) CreateStream(id, tableName string, mode bulker.BulkMode, stre
 		return nil, err
 	}
 	switch mode {
-	case bulker.AutoCommit:
+	case bulker.Stream:
 		return newAutoCommitStream(id, p, tableName, streamOptions...)
-	case bulker.Transactional:
+	case bulker.Batch:
 		return newTransactionalStream(id, p, tableName, streamOptions...)
 	case bulker.ReplaceTable:
 		return newReplaceTableStream(id, p, tableName, streamOptions...)

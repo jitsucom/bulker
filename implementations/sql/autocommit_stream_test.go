@@ -15,14 +15,14 @@ func TestAutocommitStream(t *testing.T) {
 			//deletes any table leftovers from previous tests
 			name:      "dummy_test_table_cleanup",
 			tableName: "autocommit_test",
-			modes:     []bulker.BulkMode{bulker.AutoCommit},
+			modes:     []bulker.BulkMode{bulker.Stream},
 			dataFile:  "test_data/empty.ndjson",
 			configIds: exceptBigquery,
 		},
 		{
 			name:                "added_columns_first_run",
 			tableName:           "autocommit_test",
-			modes:               []bulker.BulkMode{bulker.AutoCommit},
+			modes:               []bulker.BulkMode{bulker.Stream},
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added.ndjson",
 			expectedRowsCount:   6,
@@ -31,7 +31,7 @@ func TestAutocommitStream(t *testing.T) {
 		{
 			name:                "added_columns_second_run",
 			tableName:           "autocommit_test",
-			modes:               []bulker.BulkMode{bulker.AutoCommit},
+			modes:               []bulker.BulkMode{bulker.Stream},
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added2.ndjson",
 			expectedTable: ExpectedTable{
@@ -52,7 +52,7 @@ func TestAutocommitStream(t *testing.T) {
 		{
 			name:      "dummy_test_table_cleanup",
 			tableName: "autocommit_test",
-			modes:     []bulker.BulkMode{bulker.AutoCommit},
+			modes:     []bulker.BulkMode{bulker.Stream},
 			dataFile:  "test_data/empty.ndjson",
 			configIds: exceptBigquery,
 		},

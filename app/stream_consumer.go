@@ -82,7 +82,7 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 		eventsLogService: eventsLogService,
 		closed:           make(chan struct{}),
 	}
-	bulkerStream, err := sc.destination.bulker.CreateStream(sc.topicId, sc.tableName, bulker.AutoCommit, sc.destination.streamOptions...)
+	bulkerStream, err := sc.destination.bulker.CreateStream(sc.topicId, sc.tableName, bulker.Stream, sc.destination.streamOptions...)
 	if err != nil {
 		metrics.StreamConsumerErrors(destination.Id(), tableName, "failed to create bulker stream").Inc()
 		return nil, base.NewError("Failed to create bulker stream: %w", err)
@@ -208,7 +208,7 @@ func (sc *StreamConsumer) UpdateDestination(destination *Destination) error {
 	destination.Lease()
 
 	//create new stream
-	bulkerStream, err := destination.bulker.CreateStream(sc.topicId, sc.tableName, bulker.AutoCommit, destination.streamOptions...)
+	bulkerStream, err := destination.bulker.CreateStream(sc.topicId, sc.tableName, bulker.Stream, destination.streamOptions...)
 	if err != nil {
 		return sc.NewError("Failed to create bulker stream: %w", err)
 	}

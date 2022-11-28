@@ -12,7 +12,7 @@ func TestNaming(t *testing.T) {
 		{
 			name:                      "naming_test1",
 			tableName:                 "Strange Table Name; DROP DATABASE public;",
-			modes:                     []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:                     []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			dataFile:                  "test_data/identifiers.ndjson",
 			expectPartitionId:         true,
 			expectedRowsCount:         1,
@@ -25,7 +25,7 @@ func TestNaming(t *testing.T) {
 		{
 			name:              "naming_test1_case_redshift",
 			tableName:         "Strange Table Name; DROP DATABASE public;",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			dataFile:          "test_data/identifiers.ndjson",
 			expectPartitionId: true,
 			// Redshift is case insensitive by default. During creation it changes all created identifiers to lowercase.
@@ -42,7 +42,7 @@ func TestNaming(t *testing.T) {
 		{
 			name:                      "naming_test1_case_snowflake",
 			tableName:                 "Strange Table Name; DROP DATABASE public;",
-			modes:                     []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable},
+			modes:                     []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable},
 			dataFile:                  "test_data/identifiers.ndjson",
 			expectPartitionId:         true,
 			expectedTableCaseChecking: true,
@@ -55,7 +55,7 @@ func TestNaming(t *testing.T) {
 		{
 			name:                      "naming_test1_case_bigquery",
 			tableName:                 "Strange Table Name; DROP DATABASE public;",
-			modes:                     []bulker.BulkMode{bulker.Transactional, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:                     []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
 			dataFile:                  "test_data/identifiers.ndjson",
 			expectPartitionId:         true,
 			expectedTableCaseChecking: true,
@@ -68,7 +68,7 @@ func TestNaming(t *testing.T) {
 		{
 			name:              "naming_test2",
 			tableName:         "Université Français",
-			modes:             []bulker.BulkMode{bulker.Transactional},
+			modes:             []bulker.BulkMode{bulker.Batch},
 			dataFile:          "test_data/simple.ndjson",
 			expectedRowsCount: 3,
 			expectedTable: ExpectedTable{

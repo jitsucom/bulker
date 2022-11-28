@@ -210,9 +210,9 @@ func (ch *ClickHouse) CreateStream(id, tableName string, mode bulker.BulkMode, s
 	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s", utils.SanitizeString(id))))
 
 	switch mode {
-	case bulker.AutoCommit:
+	case bulker.Stream:
 		return newAutoCommitStream(id, ch, tableName, streamOptions...)
-	case bulker.Transactional:
+	case bulker.Batch:
 		return newTransactionalStream(id, ch, tableName, streamOptions...)
 	case bulker.ReplaceTable:
 		return newReplaceTableStream(id, ch, tableName, streamOptions...)

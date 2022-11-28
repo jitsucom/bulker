@@ -17,7 +17,7 @@ var (
 			case string:
 				return withPrimaryKey(o, v), nil
 			default:
-				return nil, fmt.Errorf("failed to parse 'primary_ke'y' option: %v incorrect type: %T expected string or []string", v, v)
+				return nil, fmt.Errorf("failed to parse 'primary_key' option: %v incorrect type: %T expected string or []string", v, v)
 			}
 		},
 	}
@@ -188,7 +188,7 @@ func WithColumnTypeDDL(columnName, sqlType, ddlType string) bulker.StreamOption 
 	return withColumnTypes(&ColumnTypesOption, SQLTypes{}.WithDDL(columnName, sqlType, ddlType))
 }
 
-// WithLocalBatchFile setting for all modes except bulker.AutoCommit
+// WithLocalBatchFile setting for all modes except bulker.Stream
 // Not every database solution supports this option
 // fileName - name of tmp file that will be used to collection event batches before sending them to destination
 func withLocalBatchFile(fileName string) bulker.StreamOption {

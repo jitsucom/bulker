@@ -171,7 +171,7 @@ func TestStreams(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
 			name:              "added_columns",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/columns_added.ndjson",
 			expectedTable: ExpectedTable{
@@ -191,7 +191,7 @@ func TestStreams(t *testing.T) {
 		},
 		{
 			name:              "types",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
@@ -207,7 +207,7 @@ func TestStreams(t *testing.T) {
 		},
 		//{
 		//	name:              "types2",
-		//	modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+		//	modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 		//	expectPartitionId: true,
 		//	dataFile:          "test_data/types2.ndjson",
 		//	expectedTable: ExpectedTable{
@@ -223,7 +223,7 @@ func TestStreams(t *testing.T) {
 		//},
 		{
 			name:              "types_collision_stream",
-			modes:             []bulker.BulkMode{bulker.AutoCommit},
+			modes:             []bulker.BulkMode{bulker.Stream},
 			expectPartitionId: true,
 			dataFile:          "test_data/types_collision.ndjson",
 			expectedErrors: map[string]any{
@@ -238,7 +238,7 @@ func TestStreams(t *testing.T) {
 		},
 		{
 			name:              "types_collision_other",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types_collision.ndjson",
 			expectedErrors: map[string]any{
@@ -253,7 +253,7 @@ func TestStreams(t *testing.T) {
 		},
 		{
 			name:              "repeated_ids_no_pk",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/repeated_ids.ndjson",
 			expectedTable: ExpectedTable{
@@ -276,7 +276,7 @@ func TestStreams(t *testing.T) {
 		},
 		{
 			name:              "repeated_ids_pk",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/repeated_ids.ndjson",
 			expectedTable: ExpectedTable{

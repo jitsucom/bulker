@@ -22,7 +22,7 @@ type TransactionalStream struct {
 func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	ps := TransactionalStream{}
 	var err error
-	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, tableName, bulker.Transactional, streamOptions...)
+	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, tableName, bulker.Batch, streamOptions...)
 	if err != nil {
 		return nil, err
 	}

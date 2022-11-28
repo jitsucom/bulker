@@ -14,14 +14,14 @@ func TestTransactionalSequentialAddColumns(t *testing.T) {
 			//deletes any table leftovers from previous tests
 			name:      "dummy_test_table_cleanup",
 			tableName: "transactional_test",
-			modes:     []bulker.BulkMode{bulker.Transactional},
+			modes:     []bulker.BulkMode{bulker.Batch},
 			dataFile:  "test_data/empty.ndjson",
 			configIds: allBulkerConfigs,
 		},
 		{
 			name:                "added_columns_first_run",
 			tableName:           "transactional_test",
-			modes:               []bulker.BulkMode{bulker.Transactional},
+			modes:               []bulker.BulkMode{bulker.Batch},
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added.ndjson",
 			expectedRowsCount:   6,
@@ -30,7 +30,7 @@ func TestTransactionalSequentialAddColumns(t *testing.T) {
 		{
 			name:                "added_columns_second_run",
 			tableName:           "transactional_test",
-			modes:               []bulker.BulkMode{bulker.Transactional},
+			modes:               []bulker.BulkMode{bulker.Batch},
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added2.ndjson",
 			expectedTable: ExpectedTable{
@@ -51,7 +51,7 @@ func TestTransactionalSequentialAddColumns(t *testing.T) {
 		{
 			name:      "dummy_test_table_cleanup",
 			tableName: "transactional_test",
-			modes:     []bulker.BulkMode{bulker.Transactional},
+			modes:     []bulker.BulkMode{bulker.Batch},
 			dataFile:  "test_data/empty.ndjson",
 			configIds: allBulkerConfigs,
 		},
@@ -75,7 +75,7 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 			//deletes any table leftovers from previous tests
 			name:           "dummy_test_table_cleanup",
 			tableName:      "transactional_test_pk",
-			modes:          []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
+			modes:          []bulker.BulkMode{bulker.Batch, bulker.Stream},
 			dataFile:       "test_data/empty.ndjson",
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
@@ -84,7 +84,7 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 		{
 			name:                "first_run_batch",
 			tableName:           "transactional_test_pk",
-			modes:               []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
+			modes:               []bulker.BulkMode{bulker.Batch, bulker.Stream},
 			leaveResultingTable: true,
 			dataFile:            "test_data/repeated_ids.ndjson",
 			expectedRows: []map[string]any{
@@ -100,7 +100,7 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 		{
 			name:                "second_run_batch",
 			tableName:           "transactional_test_pk",
-			modes:               []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
+			modes:               []bulker.BulkMode{bulker.Batch, bulker.Stream},
 			leaveResultingTable: true,
 			dataFile:            "test_data/repeated_ids2.ndjson",
 			expectedRows: []map[string]any{
@@ -117,7 +117,7 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 		{
 			name:           "dummy_test_table_cleanup",
 			tableName:      "transactional_test_pk",
-			modes:          []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit},
+			modes:          []bulker.BulkMode{bulker.Batch, bulker.Stream},
 			dataFile:       "test_data/empty.ndjson",
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},

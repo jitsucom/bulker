@@ -3,7 +3,7 @@ name: Bulker Test
 on:
   push:
     branches:
-      - '**'
+      - 'main'
 
 env:
   BULKER_TEST_BIGQUERY: ${{ secrets.BULKER_TEST_BIGQUERY }}

@@ -13,7 +13,7 @@ func TestTypeOverride(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
 			name:              "types_override_postgres",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
@@ -34,7 +34,7 @@ func TestTypeOverride(t *testing.T) {
 		},
 		{
 			name:              "types_override_redshift",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
@@ -55,7 +55,7 @@ func TestTypeOverride(t *testing.T) {
 		},
 		{
 			name:              "types_override_bigquery",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
@@ -77,7 +77,7 @@ func TestTypeOverride(t *testing.T) {
 		},
 		{
 			name:              "types_override_snowflake",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
@@ -98,7 +98,7 @@ func TestTypeOverride(t *testing.T) {
 		},
 		{
 			name:              "types_override_mysql",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
@@ -119,7 +119,7 @@ func TestTypeOverride(t *testing.T) {
 		},
 		{
 			name:              "types_override_clickhouse",
-			modes:             []bulker.BulkMode{bulker.Transactional, bulker.AutoCommit, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{

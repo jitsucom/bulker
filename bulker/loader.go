@@ -35,22 +35,22 @@ package bulker
 //	return stream.Complete()
 //}
 //
-//// NewAutoCommitLoader helper method that creates Loader for bulker BulkerStream in AutoCommit mode
+//// NewAutoCommitLoader helper method that creates Loader for bulker BulkerStream in Stream mode
 //func NewAutoCommitLoader(bulker Bulker, options ...StreamOption) *Loader {
 //	bulkLoader := &Loader{
 //		bulker:  bulker,
 //		options: options,
-//		mode:    AutoCommit,
+//		mode:    Stream,
 //	}
 //	return bulkLoader
 //}
 //
-//// NewTransactionalLoader helper method that creates Loader for bulker BulkerStream in Transactional mode
+//// NewTransactionalLoader helper method that creates Loader for bulker BulkerStream in Batch mode
 //func NewTransactionalLoader(bulker Bulker, options ...StreamOption) *Loader {
 //	bulkLoader := &Loader{
 //		bulker:  bulker,
 //		options: options,
-//		mode:    Transactional,
+//		mode:    Batch,
 //	}
 //	return bulkLoader
 //}

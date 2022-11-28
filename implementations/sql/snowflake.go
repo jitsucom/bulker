@@ -159,9 +159,9 @@ func (s *Snowflake) CreateStream(id, tableName string, mode bulker.BulkMode, str
 		return nil, err
 	}
 	switch mode {
-	case bulker.AutoCommit:
+	case bulker.Stream:
 		return newAutoCommitStream(id, s, tableName, streamOptions...)
-	case bulker.Transactional:
+	case bulker.Batch:
 		return newTransactionalStream(id, s, tableName, streamOptions...)
 	case bulker.ReplaceTable:
 		return newReplaceTableStream(id, s, tableName, streamOptions...)
