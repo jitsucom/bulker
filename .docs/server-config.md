@@ -24,7 +24,7 @@
 *Optional, default value: `random uuid`*
 
 ID of bulker instance. It is used for identifying Kafka consumers. If is not set,
-instance id will be generated and persisted to disk (`/var/bulker/instance_id`) and
+instance id will be generated and persisted to disk (`~/.bulkerapp/instance_id`) and
 reused on next restart.
 
 ### `BULKER_HTTP_PORT`
@@ -163,7 +163,7 @@ Maximum number of events in each `events_log:*` stream
 
 ## Defining destinations
 
-Bulker operates with destinations. Each destination is a connectio to database or storage services (GCS, S3, etc).
+Bulker operates with destinations. Each destination is a connection to database or storage services (GCS, S3, etc).
 
 Each destination is a JSON-object 
 
@@ -180,7 +180,7 @@ BULKER_DESTINATION_POSTGRES="{id: 'postgres', }"
 
 ### With Redis
 
-Set `BULKER_CONFIG_SOURCE_SOURCE` to `redis://...` or `rediss://...` and Bulker will read destinations from Redis `bulkerExportDestinations` key.
+Set `BULKER_CONFIG_SOURCE` to `redis://...` or `rediss://...` and Bulker will read destinations from Redis `bulkerExportDestinations` key.
 
 
 ### Destination parameters

@@ -77,7 +77,7 @@ func initContainers(t *testing.T) *testcontainers.PostgresContainer {
 			logging.Infof("bulker is ready")
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(1000 * time.Millisecond)
 	}
 	if !ready {
 		t.Fatalf("bulker is not ready")
