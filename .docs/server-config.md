@@ -18,6 +18,7 @@
 
 ## Common parameters
 
+
 ### `BULKER_INSTANCE_ID`
 
 *Optional, default value: `random uuid`*
@@ -47,8 +48,21 @@ A list of auth tokens that authorizes user in HTTP interface separated by comma.
 
 See above. A secret that is used for hashing tokens.
 
-## Connection to Kafka
+### `BULKER_MODE`
 
+>**Note:** 
+> Not available yet
+
+*Optional, default: `two-way`*
+
+How this particular instance of Bulker should work. Possible values:
+
+* `producer` - this instance will only listen to [HTTP requests](./http-api.md) and send data to Kafka. It won't consume from Kafka
+* `consumer` - this instance will only consume from Kafka. It won't listen to [HTTP requests](./http-api.md), except for `/ready` and `/metrics` endpoints
+* `two-way` - this instance will both listen produce messages from [HTTP requests](./http-api.md) and consume from Kafka
+
+
+## Connection to Kafka
 
 ### `BULKER_KAFKA_BROKERS`
 
