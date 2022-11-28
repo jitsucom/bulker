@@ -88,19 +88,19 @@ one is for failed events that should be retried. The topic names start with `in.
 
 Parameters above define how topics are created
 
-### `KAFKA_TOPIC_RETENTION_HOURS`
+### `BULKER_KAFKA_TOPIC_RETENTION_HOURS`
 
 *Optional, default value: `168` (7 days)*
 
 Main topic retention time in hours.
 
-### `KAFKA_FAILED_TOPIC_RETENTION_HOURS`
+### `BULKER_KAFKA_FAILED_TOPIC_RETENTION_HOURS`
 
 *Optional, default value: `168` (7 days)*
 
 Topic for failed events retention time in hours.
 
-### `KAFKA_TOPIC_REPLICATION_FACTOR`
+### `BULKER_KAFKA_TOPIC_REPLICATION_FACTOR`
 
 *Optional, default value: `1`*
 
@@ -109,20 +109,20 @@ Replication factor for topics.
 > **Note**
 > For production, it should be set to at least 2.
 
-### `PRODUCER_WAIT_FOR_DELIVERY_MS`
+### `BULKER_PRODUCER_WAIT_FOR_DELIVERY_MS`
 
 *Optional, default value: `1000`*
 
 Wait for delivery confirmation
 
-### `BATCH_RUNNER_DEFAULT_PERIOD_SEC`
+### `BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC`
 
 *Optional, default value: `300` (5 min)*
 
 Default period for batch processing for destinations where `batch_period_sec` is not set explicitly.
 Read more about batch processing configuration [below](#defining-destinations)
 
-### `BATCH_RUNNER_DEFAULT_BATCH_SIZE`
+### `BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE`
 
 *Optional, default value: `10000`*
 
@@ -131,7 +131,7 @@ Read more about batch processing configuration [below](#defining-destinations)
 
 ## Connection to Redis (optional)
 
-If BULKER_REDIS_URL is set, Bulker will use Redis for storing a history of processed events
+If `BULKER_REDIS_URL` is set, Bulker will use Redis for storing a history of processed events
 in following format:
 
  * `events_log:processed.all:<destination-id>` - all events that have been sent to `<destination-id>` in streaming mode. Includes failed events too
@@ -180,7 +180,7 @@ BULKER_DESTINATION_POSTGRES="{id: 'postgres', }"
 
 ### With Redis
 
-Set `CONFIG_SOURCE_SOURCE` to `redis://...` or `rediss://...` and Bulker will read destinations from Redis `bulkerExportDestinations` key.
+Set `BULKER_CONFIG_SOURCE_SOURCE` to `redis://...` or `rediss://...` and Bulker will read destinations from Redis `bulkerExportDestinations` key.
 
 
 ### Destination parameters
@@ -197,10 +197,10 @@ Each destination is a JSON object:
   //optional (time in ISO8601 format) when destination has been updated
   mode: "string", // "stream" or "batch"
   updated_at: "2020-01-01T00:00:00Z",
-  //maximum batch size. If not set, value of BATCH_RUNNER_DEFAULT_BATCH_SIZE is used
+  //maximum batch size. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE is used
   //see "Batching strategy" section below
   batch_size: 10000,
-  //maximum batch period in seconds. If not set, value of BATCH_RUNNER_DEFAULT_PERIOD_SEC is used
+  //maximum batch period in seconds. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC is used
   //see "Batching strategy" section below
   batch_period_sec: 300, // optional, default value: 300,
   //how to connect to destination. Values are destination specific. See 
