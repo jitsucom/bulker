@@ -18,7 +18,7 @@ type AppConfig struct {
 	HTTPPort int `mapstructure:"HTTP_PORT"`
 
 	AuthTokens   string `mapstructure:"AUTH_TOKENS"`
-	TokenSecrets string `mapstructure:"TOKEN_SECRETS"`
+	TokenSecrets string `mapstructure:"TOKEN_SECRET"`
 
 	ConfigSource string `mapstructure:"CONFIG_SOURCE"`
 
