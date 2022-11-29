@@ -15,28 +15,28 @@ var BulkerRegistry = make(map[string]InitFunction)
 type BulkMode string
 
 const (
-	//AutoCommit - bulker stream immediately commits each consumed object to the database
+	//Stream - bulker stream immediately commits each consumed object to the database
 	//Useful when working with live stream of objects
-	AutoCommit BulkMode = "stream"
+	Stream BulkMode = "stream"
 
-	//Transactional - bulker stream commits all consumed object on Complete call
+	//Batch - bulker stream commits all consumed object on Complete call
 	//Useful when working with large number of objects or to optimize performance or costs using batch processing
 	//Any error with just one object will fail the whole transaction and no objects will be written to the database
-	Transactional BulkMode = "batch"
+	Batch BulkMode = "batch"
 
 	//ReplacePartition stream replaces all rows associated with the chosen partition column value in a single transaction (where applicable).
 	//It is useful when it is required to reprocess all objects associates with specific partition id.
 	//E.g. for processing and reprocessing one day of reporting data
 	//If data of your stream may be reprocessed in some point in time it is recommended to always use ReplacePartition mode for that stream
 	//
-	//ReplacePartition implies Transactional, meaning that the new data will be available only after BulkerStream.complete() call
+	//ReplacePartition implies Batch, meaning that the new data will be available only after BulkerStream.complete() call
 	ReplacePartition BulkMode = "replace_partition"
 
 	//ReplaceTable - atomically replaces target table with a new one filled with the object injected to current stream.
-	//To sync entire collection of object at once without leaving target table in unfinished state
+	//To sync entire collection of objects at once without leaving target table in unfinished state
 	//Useful when collection contains finite number of object, and when it is required that target table always represent complete state for some point of time.
 	//
-	//ReplaceTable implies Transactional, meaning that the new data will be available only after BulkerStream.complete() call
+	//ReplaceTable implies Batch, meaning that the new data will be available only after BulkerStream.complete() call
 	ReplaceTable BulkMode = "replace_table"
 )
 
@@ -56,13 +56,13 @@ type Bulker interface {
 
 // TODO: Commit() method that commits transaction and start new one ??
 type BulkerStream interface {
-	//Consume - put object to the stream. If stream is in AutoCommit mode it will be immediately committed to the database.
+	//Consume - put object to the stream. If stream is in Stream mode it will be immediately committed to the database.
 	//Otherwise, it will be buffered and committed on Complete call.
 	Consume(ctx context.Context, object types.Object) (state State, processedObjects []types.Object, err error)
-	//Abort - abort stream and rollback all uncommitted objects. For stream in AutoCommit mode does nothing.
+	//Abort - abort stream and rollback all uncommitted objects. For stream in Stream mode does nothing.
 	//Returns stream statistics. BulkerStream cannot be used after Abort call.
 	Abort(ctx context.Context) (State, error)
-	//Complete - commit all uncommitted objects to the database. For stream in AutoCommit mode does nothing.
+	//Complete - commit all uncommitted objects to the database. For stream in Stream mode does nothing.
 	//Returns stream statistics. BulkerStream cannot be used after Complete call.
 	Complete(ctx context.Context) (State, error)
 
@@ -75,7 +75,7 @@ type Config struct {
 	//bulkerType - type of bulker implementation will stream data to
 	BulkerType string `mapstructure:"type" json:"type"`
 	//destinationConfig - config of destination - may be struct type supported by destination implementation of map[string]any
-	DestinationConfig any `mapstructure:"destination_config" json:"destination_config"`
+	DestinationConfig any `mapstructure:"credentials" json:"credentials"`
 	//TODO: think about logging approach for library
 	LogLevel LogLevel `mapstructure:"log_level,omitempty"`
 }
@@ -83,7 +83,7 @@ type Config struct {
 type StreamConfig struct {
 	TableName string `mapstructure:"default_table_name"`
 	//bulkerType - type of bulker implementation will stream data to
-	BulkMode BulkMode `mapstructure:"stream_mode" json:"stream_mode"`
+	BulkMode BulkMode `mapstructure:"mode" json:"mode"`
 	//Options by option name (key) in serialized form
 	Options map[string]any `mapstructure:"options" json:"options"`
 }

@@ -40,13 +40,16 @@ type ConfigurationSource interface {
 }
 
 func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
-	if config.ConfigSource == "" {
+	cfgSource := config.ConfigSource
+	if cfgSource == "" {
 		logging.Infof("BULKER_CONFIG_SOURCE is not set. Using environment variables configuration source with prefix: %s", defaultEnvDestinationPrefix)
 		return NewEnvConfigurationSource(defaultEnvDestinationPrefix), nil
+	} else if cfgSource == "redis" {
+		cfgSource = config.RedisURL
 	}
 
-	if strings.HasPrefix(config.ConfigSource, "file://") || !strings.Contains(config.ConfigSource, "://") {
-		filePath := strings.TrimPrefix(config.ConfigSource, "file://")
+	if strings.HasPrefix(cfgSource, "file://") || !strings.Contains(cfgSource, "://") {
+		filePath := strings.TrimPrefix(cfgSource, "file://")
 		yamlConfig, err := os.ReadFile(filePath)
 		if err != nil {
 			return nil, fmt.Errorf("❗️error reading yaml config file: %s: %w", filePath, err)
@@ -56,17 +59,17 @@ func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
 			return nil, fmt.Errorf("❗error creating yaml configuration source from config file: %s: %v", filePath, err)
 		}
 		return cfgSrc, nil
-	} else if strings.HasPrefix(config.ConfigSource, "redis://") || strings.HasPrefix(config.ConfigSource, "rediss://") {
+	} else if strings.HasPrefix(cfgSource, "redis://") || strings.HasPrefix(cfgSource, "rediss://") {
 		redisConfigSource, err := NewRedisConfigurationSource(config)
 		if err != nil {
-			return nil, fmt.Errorf("❗️error while init redis configuration source: %s: %w", config.ConfigSource, err)
+			return nil, fmt.Errorf("❗️error while init redis configuration source: %s: %w", cfgSource, err)
 		}
 		return redisConfigSource, nil
-	} else if strings.HasPrefix(config.ConfigSource, "env://BULKER_DESTINATION") {
-		envPrefix := strings.TrimPrefix(config.ConfigSource, "env://")
+	} else if strings.HasPrefix(cfgSource, "env://BULKER_DESTINATION") {
+		envPrefix := strings.TrimPrefix(cfgSource, "env://")
 		return NewEnvConfigurationSource(envPrefix), nil
 	} else {
-		return nil, fmt.Errorf("❗unsupported configuration source: %s", config.ConfigSource)
+		return nil, fmt.Errorf("❗unsupported configuration source: %s", cfgSource)
 	}
 }
 

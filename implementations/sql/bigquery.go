@@ -99,10 +99,10 @@ func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, str
 	bq.validateOptions(streamOptions)
 	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s", utils.SanitizeString(id))))
 	switch mode {
-	case bulker.AutoCommit:
+	case bulker.Stream:
 		return nil, errors.New(BigQueryAutocommitUnsupported)
 		//return newAutoCommitStream(id, bq, tableName, streamOptions...)
-	case bulker.Transactional:
+	case bulker.Batch:
 		return newTransactionalStream(id, bq, tableName, streamOptions...)
 	case bulker.ReplaceTable:
 		return newReplaceTableStream(id, bq, tableName, streamOptions...)

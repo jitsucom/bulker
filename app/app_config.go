@@ -4,12 +4,17 @@ import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/hjson/hjson-go/v4"
+	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/spf13/viper"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 )
+
+const instanceIdFilePath = "~/.bulkerapp/instance_id"
 
 type AppConfig struct {
 	// TODO: persist on disk
@@ -17,8 +22,8 @@ type AppConfig struct {
 
 	HTTPPort int `mapstructure:"HTTP_PORT"`
 
-	AuthTokens  string `mapstructure:"AUTH_TOKENS"`
-	TokenSecret string `mapstructure:"TOKEN_SECRET"`
+	AuthTokens   string `mapstructure:"AUTH_TOKENS"`
+	TokenSecrets string `mapstructure:"TOKEN_SECRET"`
 
 	ConfigSource string `mapstructure:"CONFIG_SOURCE"`
 
@@ -40,12 +45,14 @@ type AppConfig struct {
 
 	ProducerWaitForDeliveryMs int `mapstructure:"PRODUCER_WAIT_FOR_DELIVERY_MS" default:"1000"`
 
-	BatchRunnerPeriodSec          int `mapstructure:"BATCH_RUNNER_PERIOD_SEC" default:"300"`
-	BatchRunnerDefaultBatchSize   int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"1000"`
+	BatchRunnerPeriodSec          int `mapstructure:"BATCH_RUNNER_DEFAULT_PERIOD_SEC" default:"300"`
+	BatchRunnerDefaultBatchSize   int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"10000"`
 	BatchRunnerWaitForMessagesSec int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"1"`
 
+	// Redis URL that will be used by default by services that need Redis
+	RedisURL          string `mapstructure:"REDIS_URL"`
 	EventsLogRedisURL string `mapstructure:"EVENTS_LOG_REDIS_URL"`
-	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
+	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"100000"`
 
 	//Timeout that give running batch tasks time to finish during shutdown.
 	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`
@@ -55,8 +62,9 @@ type AppConfig struct {
 
 func init() {
 	initViperVariables()
-	viper.SetDefault("INSTANCE_ID", uuid.New())
 	viper.SetDefault("HTTP_PORT", utils.NvlString(os.Getenv("PORT"), "3042"))
+	viper.SetDefault("REDIS_URL", os.Getenv("REDIS_URL"))
+	viper.SetDefault("EVENTS_LOG_REDIS_URL", utils.NvlString(os.Getenv("BULKER_REDIS_URL"), os.Getenv("REDIS_URL")))
 }
 
 func initViperVariables() {
@@ -98,6 +106,25 @@ func InitAppConfig() (*AppConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("❗error unmarshalling config: %s", err)
 	}
+	if appConfig.InstanceId == "" {
+		instId, _ := os.ReadFile(instanceIdFilePath)
+		if len(instId) > 0 {
+			appConfig.InstanceId = string(instId)
+			logging.Infof("Loaded instance id from file: %s", appConfig.InstanceId)
+		} else {
+			appConfig.InstanceId = uuid.New()
+			_ = os.MkdirAll(filepath.Dir(instanceIdFilePath), 0755)
+			err = os.WriteFile(instanceIdFilePath, []byte(appConfig.InstanceId), 0644)
+			if err != nil {
+				logging.Errorf("error persisting instance id file: %s", err)
+			}
+		}
+	} else if strings.HasPrefix(appConfig.InstanceId, "env://") {
+		env := appConfig.InstanceId[len("env://"):]
+		appConfig.InstanceId = os.Getenv(env)
+		logging.Infof("Loading instance id from env %s: %s", env, appConfig.InstanceId)
+	}
+
 	return &appConfig, nil
 }
 

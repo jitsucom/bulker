@@ -14,7 +14,7 @@ type AutoCommitStream struct {
 func newAutoCommitStream(id string, p SQLAdapter, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	ps := AutoCommitStream{}
 	var err error
-	ps.AbstractSQLStream, err = newAbstractStream(id, p, tableName, bulker.AutoCommit, streamOptions...)
+	ps.AbstractSQLStream, err = newAbstractStream(id, p, tableName, bulker.Stream, streamOptions...)
 	if err != nil {
 		return nil, err
 	}

@@ -136,9 +136,9 @@ func (m *MySQL) CreateStream(id, tableName string, mode bulker.BulkMode, streamO
 		return nil, err
 	}
 	switch mode {
-	case bulker.AutoCommit:
+	case bulker.Stream:
 		return newAutoCommitStream(id, m, tableName, streamOptions...)
-	case bulker.Transactional:
+	case bulker.Batch:
 		return newTransactionalStream(id, m, tableName, streamOptions...)
 	case bulker.ReplaceTable:
 		return newReplaceTableStream(id, m, tableName, streamOptions...)

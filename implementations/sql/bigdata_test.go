@@ -32,7 +32,7 @@ func TestMillionRows(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
 			name:  "one_million_rows",
-			modes: []bulker.BulkMode{bulker.Transactional},
+			modes: []bulker.BulkMode{bulker.Batch},
 			expectedTable: ExpectedTable{
 				Columns: justColumns("_timestamp", "id", "name"),
 			},
@@ -64,7 +64,7 @@ func TestMillionRowsBatched(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
 			name:                "one_million_rows_batched",
-			modes:               []bulker.BulkMode{bulker.Transactional},
+			modes:               []bulker.BulkMode{bulker.Batch},
 			batchSize:           100_000,
 			expectedRowsCount:   eventsCount,
 			leaveResultingTable: false,
