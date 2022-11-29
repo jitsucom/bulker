@@ -74,8 +74,9 @@ List of Kafka brokers separated by comma. Each broker should be in format `host:
 
 If SSL should be enabled
 
-> **Note**: 
-> At the moment, Bulker do not verify SSL certificates 
+### `BULKER_KAFKA_SSL_SKIP_VERIFY`
+
+Skip SSL verification of kafka server certificate.
 
 ### `BULKER_KAFKA_SASL` (aka Kafka auth)
 

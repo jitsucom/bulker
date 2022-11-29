@@ -30,8 +30,10 @@ type AppConfig struct {
 	RedisTLSCA string `mapstructure:"REDIS_TLS_CA"`
 
 	KafkaBootstrapServers string `mapstructure:"KAFKA_BOOTSTRAP_SERVERS" default:"127.0.0.1:9092"`
-	KafkaSSL              string `mapstructure:"KAFKA_SSL"`
-	KafkaSASL             string `mapstructure:"KAFKA_SASL"`
+	KafkaSSL              bool   `mapstructure:"KAFKA_SSL" default:"false"`
+	KafkaSSLSkipVerify    bool   `mapstructure:"KAFKA_SSL_SKIP_VERIFY" default:"false"`
+
+	KafkaSASL string `mapstructure:"KAFKA_SASL"`
 
 	KafkaTopicRetentionHours       int `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
 	KafkaFailedTopicRetentionHours int `mapstructure:"KAFKA_FAILED_TOPIC_RETENTION_HOURS" default:"168"`
@@ -136,11 +138,14 @@ func (ac *AppConfig) GetKafkaConfig() *kafka.ConfigMap {
 		"reconnect.backoff.ms":     1000,
 		"reconnect.backoff.max.ms": 10000,
 	}
-	if ac.KafkaSSL == "true" {
+	if ac.KafkaSSL {
 		if ac.KafkaSASL != "" {
 			_ = kafkaConfig.SetKey("security.protocol", "SASL_SSL")
 		} else {
 			_ = kafkaConfig.SetKey("security.protocol", "SSL")
+		}
+		if ac.KafkaSSLSkipVerify {
+			_ = kafkaConfig.SetKey("enable.ssl.certificate.verification", false)
 		}
 	}
 	if ac.KafkaSASL != "" {

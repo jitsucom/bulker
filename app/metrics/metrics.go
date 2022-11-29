@@ -43,7 +43,7 @@ var (
 		Name:      "create_error",
 	}, []string{"destinationId", "mode", "tableName", "errorType"})
 	TopicManagerCreateError = func(destinationId, mode, tableName, errorType string) prometheus.Counter {
-		return topicManagerCreateError.WithLabelValues(errorType)
+		return topicManagerCreateError.WithLabelValues(destinationId, mode, tableName, errorType)
 	}
 
 	topicManagerError = promauto.NewCounterVec(prometheus.CounterOpts{
