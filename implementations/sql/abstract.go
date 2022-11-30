@@ -41,10 +41,6 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 		return AbstractSQLStream{}, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	var customFields = ColumnTypesOption.Get(&ps.options)
-	adaptedCustomFields := make(SQLTypes, len(customFields))
-	for k, v := range customFields {
-		adaptedCustomFields[p.ColumnName(k)] = v
-	}
 	adaptedPkColumns := utils.NewSet[string]()
 	for k, _ := range pkColumns {
 		adaptedPkColumns.Put(p.ColumnName(k))
@@ -53,7 +49,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	//TODO: max column?
 	ps.tableHelper = NewTableHelper(p, coordination.DummyCoordinationService{}, ps.pkColumns, 1000)
 	ps.state = bulker.State{Status: bulker.Active}
-	ps.customTypes = adaptedCustomFields
+	ps.customTypes = customFields
 	return ps, nil
 }
 
@@ -61,13 +57,9 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, []types.Ob
 	if ps.state.Status != bulker.Active {
 		return nil, nil, fmt.Errorf("stream is not active. Status: %s", ps.state.Status)
 	}
-	batchHeader, processedObjects, err := ProcessEvents(ps.tableName, []types.Object{object}, ps.sqlAdapter)
+	batchHeader, processedObjects, err := ProcessEvents(ps.tableName, []types.Object{object}, ps.sqlAdapter, ps.customTypes)
 	if err != nil {
 		return nil, nil, err
-	}
-	if len(ps.customTypes) > 0 {
-		// enrich overridden schema types
-		batchHeader.Fields.OverrideTypes(ps.customTypes)
 	}
 	table := ps.tableHelper.MapTableSchema(batchHeader)
 	ps.state.ProcessedRows++

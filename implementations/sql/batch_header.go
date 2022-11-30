@@ -40,13 +40,12 @@ func (f Fields) Clone() Fields {
 	return clone
 }
 
-// OverrideTypes check if field exists in other then put its type
-func (f Fields) OverrideTypes(other SQLTypes) {
-	for otherName, otherField := range other {
-		if currentField, ok := f[otherName]; ok {
+func (f Fields) OverrideTypes(newTypes SQLTypes) {
+	for column, newType := range newTypes {
+		if currentField, ok := f[column]; ok {
 			//override type occurrences
-			currentField.sqlTypeSuggestion = NewSQLTypeSuggestion(otherField, map[string]SQLColumn{})
-			f[otherName] = currentField
+			currentField.suggestedType = &newType
+			f[column] = currentField
 		}
 	}
 }
@@ -70,24 +69,10 @@ func (f Fields) Header() (header []string) {
 	return
 }
 
-// SQLTypeSuggestion is a struct which keeps certain SQL types per certain destination type
-type SQLTypeSuggestion struct {
-	sqlType               SQLColumn
-	sqlTypePerDestination map[string]SQLColumn
-}
-
-// NewSQLTypeSuggestion returns configured SQLTypeSuggestion instance
-func NewSQLTypeSuggestion(sqlType SQLColumn, sqlTypePerDestination map[string]SQLColumn) *SQLTypeSuggestion {
-	return &SQLTypeSuggestion{
-		sqlType:               sqlType,
-		sqlTypePerDestination: sqlTypePerDestination,
-	}
-}
-
-// Field is a data type holder with occurrences
+// Field is a data type holder with sql type suggestion
 type Field struct {
-	dataType          *types.DataType
-	sqlTypeSuggestion *SQLTypeSuggestion
+	dataType      *types.DataType
+	suggestedType *SQLColumn
 }
 
 // NewField returns Field instance
@@ -98,25 +83,17 @@ func NewField(t types.DataType) Field {
 }
 
 // NewFieldWithSQLType returns Field instance with configured suggested sql types
-func NewFieldWithSQLType(t types.DataType, sqlTypeSuggestion *SQLTypeSuggestion) Field {
+func NewFieldWithSQLType(t types.DataType, suggestedType *SQLColumn) Field {
 	return Field{
-		dataType:          &t,
-		sqlTypeSuggestion: sqlTypeSuggestion,
+		dataType:      &t,
+		suggestedType: suggestedType,
 	}
 }
 
 // GetSuggestedSQLType returns suggested SQL type if configured
-// is used in case when source overrides destination type
-func (f Field) GetSuggestedSQLType(destinationType string) (SQLColumn, bool) {
-	if f.sqlTypeSuggestion != nil {
-		sqlType, ok := f.sqlTypeSuggestion.sqlTypePerDestination[destinationType]
-		if !ok && f.sqlTypeSuggestion.sqlType.Type != "" {
-			sqlType = f.sqlTypeSuggestion.sqlType
-			ok = true
-		}
-		if ok {
-			return SQLColumn{Type: sqlType.Type, DdlType: sqlType.DdlType, Override: true}, ok
-		}
+func (f Field) GetSuggestedSQLType() (SQLColumn, bool) {
+	if f.suggestedType != nil {
+		return SQLColumn{Type: f.suggestedType.Type, DdlType: f.suggestedType.DdlType, Override: true}, true
 	}
 
 	return SQLColumn{}, false

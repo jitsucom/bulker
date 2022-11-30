@@ -1,6 +1,9 @@
 package utils
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
 
@@ -49,4 +52,30 @@ func IsNumber(symbol int32) bool {
 // SanitizeString returns string with only alphanumeric characters and underscores
 func SanitizeString(str string) string {
 	return nonAlphanumericRegex.ReplaceAllString(str, "_")
+}
+
+// JoinNonEmptyStrings joins strings with separator, but ignoring empty strings
+func JoinNonEmptyStrings(sep string, elems ...string) string {
+	switch len(elems) {
+	case 0:
+		return ""
+	case 1:
+		return elems[0]
+	}
+	n := len(sep) * (len(elems) - 1)
+	for i := 0; i < len(elems); i++ {
+		n += len(elems[i])
+	}
+
+	var b strings.Builder
+	b.Grow(n)
+	for _, s := range elems {
+		if len(s) > 0 {
+			if b.Len() > 0 {
+				b.WriteString(sep)
+			}
+			b.WriteString(s)
+		}
+	}
+	return b.String()
 }

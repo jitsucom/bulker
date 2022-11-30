@@ -1,0 +1,1 @@
+{"id": 1, "time1": "2022-08-18T14:17:22Z", "name": "a", "int1": "27", "__sql_type_int1":  "bigint","__sql_type_nested_json2": "json","__sql_type_nested_json3_nested_json_nested": "json", "nested_json1": {"a": 1, "__sql_type": "json" }, "nested_json2": {"a": "2", "__sql_type_a": "bigint"}, "nested_json3": {"a": 2, "nested_json_nested": {"a": 3}}, "nested_json4": {"a": "4"}}

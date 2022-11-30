@@ -22,7 +22,7 @@ per second for most databases
 bulker, it will make sure that there is a column `a_b` in the table (and will create it)
 * 📌 **Implicit typing** - Bulker infers types of columns from JSON-data.
 * 📌 **Explicit typing** - Explicit types can be by type hints that are placed in JSON. Example: for event `{"a": "test", "__sql_type_a": "varchar(4)"}`
-Bulker wukk make sure that there is a column `a_b`, and it's type is `varchar(4)`.
+Bulker will make sure that there is a column `a`, and it's type is `varchar(4)`.
 * 📈 **Horizontal Scaling**. Bulker scales horizontally. Too much data? No problem, just add Bulker instances!
 * 📦 **Dockerized** - Bulker is dockerized and can be deployed to any cloud provider and k8s. 
 * ☁️ **Cloud Native** - each Bulker instance is stateless and is configured by only few environment variables. 

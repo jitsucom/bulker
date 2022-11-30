@@ -330,13 +330,13 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 	if err != nil {
 		errorType = "kafka error"
 		if err, ok := err.(kafka.Error); ok {
-			errorType = fmt.Sprintf("kafka error %d", err.Code())
+			errorType = metrics.KafkaErrorCode(err)
 		}
 		return tm.NewError("Error creating topic %s: %w", topic, err)
 	}
 	for _, res := range topicRes {
 		if res.Error.Code() != kafka.ErrNoError {
-			errorType = fmt.Sprintf("kafka error %d", res.Error.Code())
+			errorType = metrics.KafkaErrorCode(res.Error)
 			return tm.NewError("Error creating topic %s: %w", res.Topic, res.Error)
 		}
 	}

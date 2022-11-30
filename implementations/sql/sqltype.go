@@ -23,9 +23,9 @@ func (s SQLTypes) WithDDL(name, sqlType, ddlType string) SQLTypes {
 	if sqlType == "" {
 		return s
 	} else if ddlType == "" {
-		s[name] = SQLColumn{Type: sqlType, DdlType: sqlType}
+		s[name] = SQLColumn{Type: sqlType, DdlType: sqlType, Override: true}
 	} else {
-		s[name] = SQLColumn{Type: sqlType, DdlType: ddlType}
+		s[name] = SQLColumn{Type: sqlType, DdlType: ddlType, Override: true}
 	}
 	return s
 }

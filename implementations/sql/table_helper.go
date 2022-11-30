@@ -66,7 +66,7 @@ func (th *TableHelper) MapTableSchema(batchHeader *BatchHeader) *Table {
 	}
 
 	for fieldName, field := range batchHeader.Fields {
-		suggestedSQLType, ok := field.GetSuggestedSQLType(th.destinationType)
+		suggestedSQLType, ok := field.GetSuggestedSQLType()
 		if ok {
 			table.Columns[fieldName] = suggestedSQLType
 			continue

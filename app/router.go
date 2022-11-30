@@ -124,16 +124,16 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	}
 	err = r.topicManager.EnsureTopic(destination, topicId)
 	if err != nil {
-		//kafkaErr, ok := err.(kafka.Error)
-		//if ok && kafkaErr.Code() == kafka.ErrTopicAlreadyExists {
-		//	r.Warnf("Topic %s already exists", topicId)
-		//} else {
-		errorType = "couldn't create topic"
-		err = fmt.Errorf("%s: %s : %w", errorType, topicId, err)
-		r.Errorf(err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-		//}
+		kafkaErr, ok := err.(kafka.Error)
+		if ok && kafkaErr.Code() == kafka.ErrTopicAlreadyExists {
+			r.Warnf("Topic %s already exists", topicId)
+		} else {
+			errorType = "couldn't create topic"
+			err = fmt.Errorf("%s: %s : %w", errorType, topicId, err)
+			r.Errorf(err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	body, err := io.ReadAll(c.Request.Body)

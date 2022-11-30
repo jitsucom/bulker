@@ -293,7 +293,7 @@ func KafkaErrorCode(err error) string {
 	}
 
 	if kafkaError, ok := err.(kafka.Error); ok {
-		return fmt.Sprintf("kafka error %d", kafkaError.Code())
+		return fmt.Sprintf("kafka error: %s", kafkaError.Code().String())
 	}
 
 	return "kafka_error"
