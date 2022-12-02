@@ -64,7 +64,7 @@ How this particular instance of Bulker should work. Possible values:
 
 ## Connection to Kafka
 
-### `BULKER_KAFKA_BROKERS`
+### `BULKER_KAFKA_BOOTSTRAP_SERVERS`
 
 **Required**
 
