@@ -60,6 +60,7 @@ func NewRouter(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repo
 		tokenSecrets:     tokenSecrets,
 		noAuthPaths:      []string{"/ready"},
 	}
+	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	// get global Monitor object
 	m := ginmetrics.GetMonitor()

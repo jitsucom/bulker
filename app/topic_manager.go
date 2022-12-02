@@ -76,7 +76,7 @@ func (tm *TopicManager) Start() {
 	metadata, err := tm.kaftaAdminClient.GetMetadata(nil, true, tm.config.KafkaAdminMetadataTimeoutMs)
 	if err != nil {
 		metrics.TopicManagerError("load_metadata_error").Inc()
-		tm.Errorf("Error getting metadata: %v", err)
+		tm.Errorf("Error getting metadata from brokers [%s]: %v", tm.kafkaBootstrapServer, err)
 	} else {
 		tm.loadMetadata(metadata)
 	}

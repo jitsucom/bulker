@@ -1,6 +1,6 @@
 # Database Feature Matrix
 
-## Glossary
+## Features
 
 * 🚿**Stream** — a mode when Bulker inserts data to a destination on per record basis. Usually,
 databases don't like when a large amount of data is streamed. Don't use at production scale (more than 10-100 records per minute, 
@@ -12,22 +12,25 @@ a record with the same primary key values, the old one will be replaced. Bulker 
 May comes with performance tradeoffs.
 
 
-### Advanced features
+|                       | Redshift                                              | BigQuery                                                               | ClickHouse                                                                    | Snowflake                                        | Postgres                                        | MySQL                                        | S3 (coming soon) |
+|-----------------------|-------------------------------------------------------|------------------------------------------------------------------------|-------------------------------------------------------------------------------|--------------------------------------------------|-------------------------------------------------|----------------------------------------------|------------------|
+| Stream                | ✅&nbsp;[Supported](#redshift-stream)<br/>⚠️&nbsp;Slow | ❌&nbsp;[Not supported](#bigquery-stream)                               | ✅&nbsp;[Supported](#clickhouse-stream)                                        | ✅&nbsp;[Supported](#snowflake-stream)            | ✅&nbsp;[Supported](#postgres-stream)            | ✅&nbsp;[Supported](#mysql-stream)            |                  |
+| Batch                 | ✅&nbsp;[Supported](#redshift-batch)                   | ✅&nbsp;[Supported](#bigquery-batch)                                    | ✅&nbsp;[Supported](#clickhouse-batch)                                         | ✅&nbsp;[Supported](#snowflake-batch)             | ✅&nbsp;[Supported](#postgres-batch)             | ✅&nbsp;[Supported](#mysql-batch)             |                  |
+| Primary key           | ✅&nbsp;[Supported](#redshift-primary-key)             | ℹ️&nbsp;[Emulated](#bigquery-primary-key)                              | ✅️&nbsp;[Supported](#clickhouse-primary-key)                                  | ✅️ [Supported](#snowflake-primary-key)           | ✅️&nbsp;[Supported](#postgres-primary-key)      | ✅️&nbsp;[Supported](#mysql-primary-key)      |                  |
+| Deduplication         | ✅&nbsp;[Supported](#redshift-deduplication)           | ✅&nbsp;[Supported](#bigquery-deduplication)                            | ✅&nbsp;[Supported](#clickhouse-deduplication)<br/>⚠️&nbsp;Eventual&nbsp;dedup | ✅&nbsp;[Supported](#snowflake-deduplication)     | ✅&nbsp;[Supported](#postgres-deduplication)     | ✅&nbsp;[Supported](#mysql-deduplication)     |                  |
+
+## Advanced features
 
 Those features are not exposed as HTTP API and supported only on Go-lib API level.
 
 * **Replace Table** - a special version of batch mode that assumes that a single batch contains all data for a table. Depending on database implementation bulker tries to atomically replace old table with a new one.
 * **Replace Partition** - a special version of batch mode that replaces a part of target table. Part of table to replace is defined by 'partition' stream option. Each batch loads data for virtual partition identified by 'partition' option value. If table already contains data for provided 'partition', this data will be deleted and replaced with new data from current batch. Enabled via stream options.
 
-|                        | Redshift                                   | BigQuery                                                    | ClickHouse                                                            | Snowflake                                   | Postgres                                   | MySQL                                   | S3 (coming soon) |     |
-|------------------------|--------------------------------------------|-------------------------------------------------------------|-----------------------------------------------------------------------|---------------------------------------------|--------------------------------------------|-----------------------------------------|------------------|-----|
-| Stream                 | ✅ [Supported](#redshift-stream)<br/>⚠️Slow | ❌ [Not supported](#bigquery-stream)                         | ✅ [Supported](#clickhouse-stream)                                     | ✅ [Supported](#snowflake-stream)            | ✅ [Supported](#postgres-stream)            | ✅ [Supported](#mysql-stream)            |                  |     |
-| Batch                  | ✅ [Supported](#redshift-batch)             | ✅ [Supported](#bigquery-batch)                              | ✅ [Supported](#clickhouse-batch)                                      | ✅ [Supported](#snowflake-batch)             | ✅ [Supported](#postgres-batch)             | ✅ [Supported](#mysql-batch)             |                  |     |
-| Deduplication          | ✅ [Supported](#redshift-deduplication)     | ✅ [Supported](#bigquery-deduplication)                      | ✅ [Supported](#clickhouse-deduplication)<br/>⚠️Eventual deduplication | ✅ [Supported](#snowflake-deduplication)     | ✅ [Supported](#postgres-deduplication)     | ✅ [Supported](#mysql-deduplication)     |                  |     |
-| Primary key            | ✅ [Supported](#redshift-primary-key)       | ℹ️ [Emulated](#bigquery-primary-key)                        | ✅️ [Supported](#clickhouse-primary-key)                               | ✅️ [Supported](#snowflake-primary-key)      | ✅️ [Supported](#postgres-primary-key)      | ✅️ [Supported](#mysql-primary-key)      |                  |     |
-| **Advanced features:** |                                            |                                                             |                                                                       |                                             |                                            |                                         |                  |     |
-| Replace Table          | ✅ [Supported](#redshift-replace-table)     | ✅ [Supported](#bigquery-replace-table)                      | ✅ [Supported](#clickhouse-replace-table)                              | ✅ [Supported](#snowflake-replace-table)     | ✅ [Supported](#postgres-replace-table)     | ✅ [Supported](#mysql-replace-table)     |                  |     |
-| Replace Partition      | ✅ [Supported](#redshift-replace-partition) | ✅ [Supported](#bigquery-replace-partition)<br/>⚠️Not atomic | ✅ [Supported](#clickhouse-replace-partition)                          | ✅ [Supported](#snowflake-replace-partition) | ✅ [Supported](#postgres-replace-partition) | ✅ [Supported](#mysql-replace-partition) |                  |     |
+
+|                       | Redshift                                              | BigQuery                                                               | ClickHouse                                                                    | Snowflake                                        | Postgres                                        | MySQL                                        | S3 (coming soon) |
+|-----------------------|-------------------------------------------------------|------------------------------------------------------------------------|-------------------------------------------------------------------------------|--------------------------------------------------|-------------------------------------------------|----------------------------------------------|------------------|
+| Replace Table         | ✅&nbsp;[Supported](#redshift-replace-table)           | ✅&nbsp;[Supported](#bigquery-replace-table)                            | ✅&nbsp;[Supported](#clickhouse-replace-table)                                 | ✅&nbsp;[Supported](#snowflake-replace-table)     | ✅&nbsp;[Supported](#postgres-replace-table)     | ✅&nbsp;[Supported](#mysql-replace-table)     |                  |
+| Replace Partition     | ✅&nbsp;[Supported](#redshift-replace-partition)       | ✅&nbsp;[Supported](#bigquery-replace-partition)<br/>⚠️&nbsp;Not atomic | ✅&nbsp;[Supported](#clickhouse-replace-partition)                             | ✅&nbsp;[Supported](#snowflake-replace-partition) | ✅&nbsp;[Supported](#postgres-replace-partition) | ✅&nbsp;[Supported](#mysql-replace-partition) |                  |
 
 
 
@@ -35,7 +38,7 @@ Those features are not exposed as HTTP API and supported only on Go-lib API leve
 
 ### Redshift Stream
 
-✅Supported
+> ✅ Supported
 
 ⚠️Performance considerations
 
@@ -43,7 +46,7 @@ Supported as plain insert statements. Don't use at production scale (more than 1
 
 ### Redshift Batch
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 
@@ -56,7 +59,7 @@ Algorithm:
 
 ### Redshift Deduplication
 
-✅Supported
+> ✅ Supported
 
 For batch mode the following algorithm is used:
 
@@ -75,7 +78,7 @@ For stream mode:
 
 ### Redshift Primary Key
 
-✅Supported
+> ✅ Supported
 
 In Redshift primary keys doesn’t enforce uniqueness.
 Bulker performs deduplication itself when deduplication option is enabled and primary key is specified.
@@ -84,7 +87,7 @@ If primary key consists of a single column, that column will also be selected as
 
 ### Redshift Replace Table
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - Write to tmp file
@@ -98,7 +101,7 @@ Algorithm:
 
 ### Redshift Replace Partition
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - Write to tmp file
@@ -112,11 +115,13 @@ Algorithm:
 
 ### BigQuery Stream
 
-❌ Not supported, though it's possible to implement.
+> ❌ Not supported 
+
+It's possible to implement, but without deduplication, so we decided not to. 
 
 ### BigQuery Batch
 
-✅Supported
+> ✅ Supported
 
 - Write to tmp file
 - Use Loader API to load to tmp_table from tmp file
@@ -124,7 +129,7 @@ Algorithm:
 
 ### BigQuery Deduplication
 
-✅Supported
+> ✅ Supported
 
 Algorithm for batch mode:
 - Write to tmp file
@@ -139,7 +144,7 @@ Primary keys columns meta information stored in table labels.
 
 ### BigQuery Replace Table
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - Write to tmp file
@@ -149,8 +154,9 @@ Algorithm:
 
 ### BigQuery Replace Partition
 
-✅Supported
-⚠️Not atomic – during completion of bulker stream it is possible that target table will be missing some data for specified 'partiton' for a short period of time.
+> ✅ Supported
+> 
+> ⚠️ Not atomic – during completion of bulker stream it is possible that target table will be missing some data for specified 'partiton' for a short period of time.
 
 Algorithm:
 - `DELETE from target_table where partition_id=` partition option value
@@ -161,7 +167,7 @@ Algorithm:
 
 ### ClickHouse Stream
 
-✅Supported
+> ✅ Supported
 
 For single node instance:
 
@@ -173,7 +179,7 @@ For cluster bulker insert into distributed table so data evenly distributed acro
 
 ### ClickHouse Batch
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - Write to tmp file
@@ -182,13 +188,13 @@ Algorithm:
 
 ### ClickHouse Deduplication
 
-✅Supported 
+> ✅ Supported 
 
 Bulker clickhouse implementation relies on clickhouse [ReplacingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree/)
 engine to perform deduplication.
 Primary key columns are used as primary key as well as sorting keys (`ORDER BY`) for ReplacingMergeTree engine.
 
-⚠️Eventual deduplication
+> ⚠️ Eventual deduplication
 
 ReplacingMergeTree engine performs deduplication in background during some time after insertion
 So it's still possible to get rows with duplicated primary key columns using ordinary `SELECT`.
@@ -199,13 +205,13 @@ To make sure that no duplicates are present in query results use [FINAL](https:/
 
 ### ClickHouse Primary Key
 
-✅Supported
+> ✅ Supported
 
 Primary keys columns also used as sorting key for ReplacingMergeTree engine.
 
 ### ClickHouse Replace Table
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - Write to tmp file
@@ -214,7 +220,7 @@ Algorithm:
 
 ### ClickHouse Replace Partition
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - Write to tmp file
@@ -226,13 +232,13 @@ Algorithm:
 
 ### Snowflake Stream
 
-✅Supported
+> ✅ Supported
 
 `INSERT INTO target_table (...) VALUES (..)`
 
 ### Snowflake Batch
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 
@@ -245,7 +251,7 @@ Algorithm:
 
 ### Snowflake Deduplication
 
-✅Supported
+> ✅ Supported
 
 For batch mode the following algorithm is used:
 
@@ -263,14 +269,14 @@ For stream mode:
 
 ### Snowflake Primary Key
 
-✅Supported
+> ✅ Supported
 
 In Snowflake primary keys doesn’t enforce uniqueness.
 Bulker performs deduplication itself when deduplication option is enabled and primary key is specified.
 
 ### Snowflake Replace Table
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - Write to tmp file
@@ -284,7 +290,7 @@ Algorithm:
 
 ### Snowflake Replace Partition
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - Write to tmp file
@@ -298,13 +304,13 @@ Algorithm:
 
 ### Postgres Stream
 
-✅Supported
+> ✅ Supported
 
 `INSERT INTO target_table (...) VALUES (..)`
 
 ### Postgres Batch
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 
@@ -316,7 +322,7 @@ Algorithm:
 
 ### Postgres Deduplication
 
-✅Supported
+> ✅ Supported
 
 For batch mode the following algorithm is used:
 
@@ -333,11 +339,11 @@ For stream mode:
 
 ### Postgres Primary Key
 
-✅Supported
+> ✅ Supported
 
 ### Postgres Replace Table
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - Write to tmp file
@@ -350,7 +356,7 @@ Algorithm:
 
 ### Postgres Replace Partition
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - Write to tmp file
@@ -363,13 +369,13 @@ Algorithm:
 
 ### MySQL Stream
 
-✅Supported
+> ✅ Supported
 
 `INSERT INTO target_table (...) VALUES (..)`
 
 ### MySQL Batch
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 
@@ -380,7 +386,7 @@ Algorithm:
 
 ### MySQL Deduplication
 
-✅Supported
+> ✅ Supported
 
 For batch mode the following algorithm is used:
 
@@ -395,12 +401,12 @@ For stream mode:
 
 ### MySQL Primary Key
 
-✅Supported
+> ✅ Supported
 
 
 ### MySQL Replace Table
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - `BEGIN TRANSACTION`
@@ -412,7 +418,7 @@ Algorithm:
 
 ### MySQL Replace Partition
 
-✅Supported
+> ✅ Supported
 
 Algorithm:
 - `BEGIN TRANSACTION`

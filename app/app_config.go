@@ -29,7 +29,7 @@ type AppConfig struct {
 
 	RedisTLSCA string `mapstructure:"REDIS_TLS_CA"`
 
-	KafkaBootstrapServers string `mapstructure:"KAFKA_BOOTSTRAP_SERVERS" default:"127.0.0.1:9092"`
+	KafkaBootstrapServers string `mapstructure:"KAFKA_BOOTSTRAP_SERVERS"`
 	KafkaSSL              bool   `mapstructure:"KAFKA_SSL" default:"false"`
 	KafkaSSLSkipVerify    bool   `mapstructure:"KAFKA_SSL_SKIP_VERIFY" default:"false"`
 
@@ -54,7 +54,7 @@ type AppConfig struct {
 	// Redis URL that will be used by default by services that need Redis
 	RedisURL          string `mapstructure:"REDIS_URL"`
 	EventsLogRedisURL string `mapstructure:"EVENTS_LOG_REDIS_URL"`
-	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"100000"`
+	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"10000"`
 
 	//Timeout that give running batch tasks time to finish during shutdown.
 	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`
@@ -132,6 +132,9 @@ func InitAppConfig() (*AppConfig, error) {
 
 // GetKafkaConfig returns kafka config
 func (ac *AppConfig) GetKafkaConfig() *kafka.ConfigMap {
+	if ac.KafkaBootstrapServers == "" {
+		panic("❗️Kafka bootstrap servers are not set. Please set BULKER_KAFKA_BOOTSTRAP_SERVERS env variable")
+	}
 	kafkaConfig := &kafka.ConfigMap{
 		"client.id":                "bulkerapp",
 		"bootstrap.servers":        ac.KafkaBootstrapServers,
