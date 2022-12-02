@@ -16,8 +16,17 @@
 
 ## Running Bulker
 
-## Common parameters
+The best way to run Bulker is to use [docker image](https://hub.docker.com/r/jitsucom/bulker).
 
+ * Use `jitsucom/bulker:latest` for the last stable version
+ * Use `jitsucom/bulker:canary` for the last build
+
+Alternatively, you can build your own binary by running `go mod download && go build -o bulker`
+
+Bulker is configured via environment variables. All variables are prefixed with
+`BULKER_`. See the list of available variables below.
+
+## Common parameters
 
 ### `BULKER_INSTANCE_ID`
 
@@ -40,7 +49,6 @@ A list of auth tokens that authorizes user in HTTP interface separated by comma.
  * `${token}` un-encrypted token value
  * `${salt}.${hash}` hashed token. `${salt}` should be random string. Hash is `base64(sha512($token + $salt + $BULKER_TOKEN_SECRET)`.
  * Token is `[0-9a-zA-Z_\-]` (only letters, digits, underscore and dash)
- 
 
 ### `BULKER_TOKEN_SECRET`
 
@@ -51,7 +59,7 @@ See above. A secret that is used for hashing tokens.
 ### `BULKER_MODE`
 
 >**Note:** 
-> Not available yet
+> Not available yet. At the moment Bulker is always running in `two-way` mode.
 
 *Optional, default: `two-way`*
 
