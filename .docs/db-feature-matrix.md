@@ -188,13 +188,13 @@ Algorithm:
 
 ### ClickHouse Deduplication
 
-> ✅ Supported 
-
-Bulker clickhouse implementation relies on clickhouse [ReplacingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree/)
-engine to perform deduplication.
-Primary key columns are used as primary key as well as sorting keys (`ORDER BY`) for ReplacingMergeTree engine.
-
+> ✅ Supported
 > ⚠️ Eventual deduplication
+
+Bulker relies on underlying table engine. Unless table created prior to Bulker,
+[ReplacingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree/) will be used.
+
+Primary key column configured for destination will be used both as `PRIMARY KEY` and `ORDER BY`.
 
 ReplacingMergeTree engine performs deduplication in background during some time after insertion
 So it's still possible to get rows with duplicated primary key columns using ordinary `SELECT`.
@@ -202,6 +202,10 @@ So it's still possible to get rows with duplicated primary key columns using ord
 To make sure that no duplicates are present in query results use [FINAL](https://clickhouse.com/docs/en/sql-reference/statements/select/from/#final-modifier) modifier, e.g:
 
 `SELECT * FROM target_table FINAL`.
+
+> Note**
+> `ReplacingMergeTree` is not only way to deduplicate data in ClickHouse. There other [approaches too](https://kb.altinity.com/altinity-kb-schema-design/row-level-deduplication/).
+> To implement them, create destination table before Bulker starts inserting the data. In this case Bulker will respect table engine and primary key columns you specified.
 
 ### ClickHouse Primary Key
 
