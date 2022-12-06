@@ -20,7 +20,7 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 	ps := ReplacePartitionStream{}
 	so := bulker.StreamOptions{}
 	for _, opt := range streamOptions {
-		opt(&so)
+		so.Add(opt)
 	}
 	partitionId := PartitionIdOption.Get(&so)
 	if partitionId == "" {

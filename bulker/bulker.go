@@ -77,11 +77,11 @@ type Config struct {
 	//destinationConfig - config of destination - may be struct type supported by destination implementation of map[string]any
 	DestinationConfig any `mapstructure:"credentials" json:"credentials"`
 	//TODO: think about logging approach for library
-	LogLevel LogLevel `mapstructure:"log_level,omitempty"`
+	LogLevel LogLevel `mapstructure:"logLevel,omitempty"`
 }
 
 type StreamConfig struct {
-	TableName string `mapstructure:"default_table_name"`
+	TableName string `mapstructure:"defaultTableName" json:"defaultTableName"`
 	//bulkerType - type of bulker implementation will stream data to
 	BulkMode BulkMode `mapstructure:"mode" json:"mode"`
 	//Options by option name (key) in serialized form

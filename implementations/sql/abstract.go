@@ -33,7 +33,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	ps := AbstractSQLStream{id: id, sqlAdapter: p, tableName: tableName, mode: mode}
 	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {
-		option(&ps.options)
+		ps.options.Add(option)
 	}
 	ps.merge = MergeRowsOption.Get(&ps.options)
 	pkColumns := PrimaryKeyOption.Get(&ps.options)

@@ -119,7 +119,7 @@ func (bq *BigQuery) GetBatchFileFormat() implementations.FileFormat {
 func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
 	options := &bulker.StreamOptions{}
 	for _, option := range streamOptions {
-		option(options)
+		options.Add(option)
 	}
 	return nil
 }

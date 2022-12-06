@@ -59,7 +59,7 @@ var (
 
 type RedshiftConfig struct {
 	DataSourceConfig `mapstructure:",squash"`
-	*S3OptionConfig  `mapstructure:"s3_config,omitempty" json:"s3_config,omitempty" yaml:"s3_config,omitempty"`
+	*S3OptionConfig  `mapstructure:"s3Config,omitempty" json:"s3Config,omitempty" yaml:"s3Config,omitempty"`
 }
 
 // Redshift adapter for creating,patching (schema or table), inserting and copying data from s3 to redshift
@@ -121,7 +121,7 @@ func (p *Redshift) CreateStream(id, tableName string, mode bulker.BulkMode, stre
 func (p *Redshift) validateOptions(streamOptions []bulker.StreamOption) error {
 	options := &bulker.StreamOptions{}
 	for _, option := range streamOptions {
-		option(options)
+		options.Add(option)
 	}
 	return nil
 }

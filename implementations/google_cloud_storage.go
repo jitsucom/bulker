@@ -23,10 +23,10 @@ import (
 var ErrMalformedBQDataset = errors.New("bq_dataset must be alphanumeric (plus underscores) and must be at most 1024 characters long")
 
 type GoogleConfig struct {
-	Bucket  string     `mapstructure:"gcs_bucket,omitempty" json:"gcs_bucket,omitempty" yaml:"gcs_bucket,omitempty"`
+	Bucket  string     `mapstructure:"gcsBucket,omitempty" json:"gcsBucket,omitempty" yaml:"gcsBucket,omitempty"`
 	Project string     `mapstructure:"project,omitempty" json:"project,omitempty" yaml:"project,omitempty"`
-	Dataset string     `mapstructure:"bq_dataset,omitempty" json:"bq_dataset,omitempty" yaml:"bq_dataset,omitempty"`
-	KeyFile any        `mapstructure:"key_file,omitempty" json:"key_file,omitempty" yaml:"key_file,omitempty"`
+	Dataset string     `mapstructure:"bqDataset,omitempty" json:"bqDataset,omitempty" yaml:"bqDataset,omitempty"`
+	KeyFile any        `mapstructure:"keyFile,omitempty" json:"keyFile,omitempty" yaml:"keyFile,omitempty"`
 	Format  FileFormat `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
 
 	//will be set on validation

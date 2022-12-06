@@ -1,8 +1,8 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/hjson/hjson-go/v4"
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
 )
@@ -30,7 +30,7 @@ func ParseObject[K any](inputObject any, result *K) error {
 			return fmt.Errorf("failed to parse. input string is empty")
 		}
 		if cfg[0] == '{' {
-			if err := hjson.Unmarshal([]byte(cfg), result); err != nil {
+			if err := json.Unmarshal([]byte(cfg), result); err != nil {
 				return fmt.Errorf("failed to parse json as %T : %w", result, err)
 			}
 		} else {

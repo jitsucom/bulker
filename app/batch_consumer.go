@@ -186,7 +186,7 @@ func (bc *BatchConsumer) ConsumeAll() (consumed int, err error) {
 	defer func() {
 		destination.Release()
 	}()
-	maxBatchSize := destination.config.BatchSize
+	maxBatchSize := bulker.BatchSizeOption.Get(destination.streamOptions)
 	if maxBatchSize <= 0 {
 		maxBatchSize = bc.config.BatchRunnerDefaultBatchSize
 	}
@@ -224,7 +224,7 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 		err = bc.NewError("failed to resume kafka consumer to process batch: %w", err)
 		return
 	}
-	bulkerStream, err := destination.bulker.CreateStream(bc.topicId, bc.tableName, bulker.Batch, destination.streamOptions...)
+	bulkerStream, err := destination.bulker.CreateStream(bc.topicId, bc.tableName, bulker.Batch, destination.streamOptions.Options...)
 	if err != nil {
 		metrics.BatchConsumerErrors(bc.destinationId, bc.tableName, "failed to create bulker stream").Inc()
 		return 0, bc.NewError("Failed to create bulker stream: %w", err)

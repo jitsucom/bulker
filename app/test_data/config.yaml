@@ -2,14 +2,15 @@ destinations:
   batch_postgres:
     type: "postgres"
     mode: "batch"
-    batch_size: 10
+    options:
+      batchSize: 10
     credentials:
       host: localhost
       port: [[POSTGRES_PORT]]
       database: test
       username: test
       password: test
-      default_schema: bulker
+      defaultSchema: bulker
       parameters:
         sslmode: disable
   stream_postgres:
@@ -21,7 +22,7 @@ destinations:
       database: test
       username: test
       password: test
-      default_schema: bulker
+      defaultSchema: bulker
       parameters:
         sslmode: disable
 

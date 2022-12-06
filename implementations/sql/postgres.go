@@ -154,7 +154,7 @@ func (p *Postgres) CreateStream(id, tableName string, mode bulker.BulkMode, stre
 func (p *Postgres) validateOptions(streamOptions []bulker.StreamOption) error {
 	options := &bulker.StreamOptions{}
 	for _, option := range streamOptions {
-		option(options)
+		options.Add(option)
 	}
 	return nil
 }

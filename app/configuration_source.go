@@ -18,9 +18,7 @@ const destinationsKey = "destinations"
 const defaultEnvDestinationPrefix = "BULKER_DESTINATION"
 
 type DestinationConfig struct {
-	UpdatedAt      time.Time `mapstructure:"updated_at" json:"updated_at"`
-	BatchSize      int       `mapstructure:"batch_size" json:"batch_size"`
-	BatchPeriodSec int       `mapstructure:"batch_period_sec" json:"batch_period_sec"`
+	UpdatedAt time.Time `mapstructure:"updatedAt" json:"updatedAt"`
 
 	bulker.Config       `mapstructure:",squash"`
 	bulker.StreamConfig `mapstructure:",squash"`
@@ -45,6 +43,7 @@ func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
 		logging.Infof("BULKER_CONFIG_SOURCE is not set. Using environment variables configuration source with prefix: %s", defaultEnvDestinationPrefix)
 		return NewEnvConfigurationSource(defaultEnvDestinationPrefix), nil
 	} else if cfgSource == "redis" {
+		config.ConfigSource = config.RedisURL
 		cfgSource = config.RedisURL
 	}
 

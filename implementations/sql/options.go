@@ -8,34 +8,29 @@ import (
 
 var (
 	PrimaryKeyOption = bulker.ImplementationOption[utils.Set[string]]{
-		Key:          "primary_key",
+		Key:          "primaryKey",
 		DefaultValue: utils.Set[string]{},
-		ParseFunc: func(o *bulker.ImplementationOption[utils.Set[string]], serializedValue any) (bulker.StreamOption, error) {
+		AdvancedParseFunc: func(o *bulker.ImplementationOption[utils.Set[string]], serializedValue any) (bulker.StreamOption, error) {
 			switch v := serializedValue.(type) {
 			case []string:
 				return withPrimaryKey(o, v...), nil
 			case string:
 				return withPrimaryKey(o, v), nil
 			default:
-				return nil, fmt.Errorf("failed to parse 'primary_key' option: %v incorrect type: %T expected string or []string", v, v)
+				return nil, fmt.Errorf("failed to parse 'primaryKey' option: %v incorrect type: %T expected string or []string", v, v)
 			}
 		},
 	}
 	MergeRowsOption = bulker.ImplementationOption[bool]{
 		Key:          "deduplicate",
 		DefaultValue: false,
-		ParseFunc: func(o *bulker.ImplementationOption[bool], serializedValue any) (bulker.StreamOption, error) {
-			b, err := utils.ParseBool(serializedValue)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse 'deduplicate' option: %v", err)
-			}
-			return withMergeRows(o, b), nil
-		},
+		ParseFunc:    utils.ParseBool,
 	}
+
 	ColumnTypesOption = bulker.ImplementationOption[SQLTypes]{
-		Key:          "column_types",
+		Key:          "columnTypes",
 		DefaultValue: SQLTypes{},
-		ParseFunc: func(o *bulker.ImplementationOption[SQLTypes], serializedValue any) (bulker.StreamOption, error) {
+		AdvancedParseFunc: func(o *bulker.ImplementationOption[SQLTypes], serializedValue any) (bulker.StreamOption, error) {
 			switch v := serializedValue.(type) {
 			case map[string]any:
 				sqlTypes := SQLTypes{}
@@ -49,39 +44,25 @@ var (
 						} else if len(t) == 2 {
 							sqlTypes.WithDDL(key, t[0], t[1])
 						} else {
-							return nil, fmt.Errorf("failed to parse 'column_types' option: %v incorrect number of elements. expected 1 or 2", v)
+							return nil, fmt.Errorf("failed to parse 'columnTypes' option: %v incorrect number of elements. expected 1 or 2", v)
 						}
 					}
 				}
 				return withColumnTypes(o, sqlTypes), nil
 			default:
-				return nil, fmt.Errorf("failed to parse 'column_types' option: %v incorrect type: %T expected map[string]any", v, v)
+				return nil, fmt.Errorf("failed to parse 'columnTypes' option: %v incorrect type: %T expected map[string]any", v, v)
 			}
 		},
 	}
 	PartitionIdOption = bulker.ImplementationOption[string]{
-		Key: "partition_id",
-		ParseFunc: func(o *bulker.ImplementationOption[string], serializedValue any) (bulker.StreamOption, error) {
-			switch v := serializedValue.(type) {
-			case string:
-				return withPartition(o, v), nil
-			default:
-				return nil, fmt.Errorf("failed to parse 'partition_id' option: %v incorrect type: %T expected string", v, v)
-			}
-		},
+		Key:       "partitionId",
+		ParseFunc: utils.ParseString,
 	}
-	//BatchSizeOption = bulker.ImplementationOption[int]{
-	//	Key:          "batch_size",
-	//	DefaultValue: 10_000,
-	//	ParseFunc: func(o *bulker.ImplementationOption[int], serializedValue any) (bulker.StreamOption, error) {
-	//		switch v := serializedValue.(type) {
-	//		case int:
-	//			return withBatchSize(o, v), nil
-	//		default:
-	//			return nil, fmt.Errorf("failed to parse 'partition_id' option: %v incorrect type: %T expected int", v, v)
-	//		}
-	//	},
-	//}
+
+	TimestampOption = bulker.ImplementationOption[string]{
+		Key:       "timestamp",
+		ParseFunc: utils.ParseString,
+	}
 
 	localBatchFileOption = bulker.ImplementationOption[string]{Key: "BULKER_OPTION_LOCAL_BATCH_FILE"}
 
@@ -93,13 +74,13 @@ func init() {
 	bulker.RegisterOption(&MergeRowsOption)
 	bulker.RegisterOption(&ColumnTypesOption)
 	bulker.RegisterOption(&PartitionIdOption)
-	//bulker.RegisterOption(&BatchSizeOption)
+	bulker.RegisterOption(&TimestampOption)
 
 }
 
 type S3OptionConfig struct {
-	AccessKeyID string `mapstructure:"access_key_id,omitempty" json:"access_key_id,omitempty" yaml:"access_key_id,omitempty"`
-	SecretKey   string `mapstructure:"secret_access_key,omitempty" json:"secret_access_key,omitempty" yaml:"secret_access_key,omitempty"`
+	AccessKeyID string `mapstructure:"accessKeyId,omitempty" json:"accessKeyId,omitempty" yaml:"accessKeyId,omitempty"`
+	SecretKey   string `mapstructure:"secretAccessKey,omitempty" json:"secretAccessKey,omitempty" yaml:"secretAccessKey,omitempty"`
 	Bucket      string `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
 	Region      string `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
 	Folder      string `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`

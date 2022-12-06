@@ -205,21 +205,21 @@ Each destination is a JSON object:
   type: "string", // destination type, see below
   //optional (time in ISO8601 format) when destination has been updated
   mode: "string", // "stream" or "batch"
-  updated_at: "2020-01-01T00:00:00Z",
-  //maximum batch size. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE is used
-  //see "Batching strategy" section below
-  batch_size: 10000,
-  //maximum batch period in seconds. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC is used
-  //see "Batching strategy" section below
-  batch_period_sec: 300, // optional, default value: 300,
+  updatedAt: "2020-01-01T00:00:00Z",
   //how to connect to destination. Values are destination specific. See 
   credentials: {},
   options: {
+    //maximum batch size. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE is used
+    //see "Batching strategy" section below
+    batchSize: 10000,
+    //maximum batch period in seconds. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC is used
+    //see "Batching strategy" section below
+    batchPeriodSec: 300, // optional, default value: 300,
     //(optional) mame of the field that contains unique event id. "id" by default
-    "primary_key": "id",
+    "primaryKey": "id",
     //field that contains timestamp of an event. If not set, bulker won't treat
     //events as time series
-    "timestamp_field": "timestamp",
+    "timestamp": "timestamp",
   },
 }
 ```
@@ -251,20 +251,20 @@ Postrgres, MySQL, Redshift and Snowflake `credentials` shares same configuration
   host: "string",
   port: 5432,
   database: "string",
-  default_schema: "",
+  defaultSchema: "",
   username: "string",
   password: "string",
   //custom SQL connection parameters
   parameters: {},
   //Only for Redshift. Intermediate S3 bucket for uploading data
-  s3_config: {
+  s3Config: {
     //bucket name
     bucket: "string",
     //bucker region. Seehttps://docs.aws.amazon.com/general/latest/gr/s3.html
     region: "string",
     //access credentials
-    access_key_id: "string",
-    secret_access_key: "string",
+    accessKeyId: "string",
+    secretAccessKey: "string",
     //(optional) Folder inside bucker
     folder: "",
   }
@@ -298,9 +298,9 @@ Postrgres, MySQL, Redshift and Snowflake `credentials` shares same configuration
   //Google Cloud project ID
   project: "string",
   //key file. Either JSON object or path to local file
-  key_file: "string",
+  keyFile: "string",
   //BigQuery dataset name
-  bq_dataset: "string",
+  bqDataset: "string",
 }
 ```
 

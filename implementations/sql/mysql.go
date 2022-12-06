@@ -151,7 +151,7 @@ func (m *MySQL) CreateStream(id, tableName string, mode bulker.BulkMode, streamO
 func (m *MySQL) validateOptions(streamOptions []bulker.StreamOption) error {
 	options := &bulker.StreamOptions{}
 	for _, option := range streamOptions {
-		option(options)
+		options.Add(option)
 	}
 	return nil
 }

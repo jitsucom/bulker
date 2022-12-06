@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -78,4 +79,14 @@ func JoinNonEmptyStrings(sep string, elems ...string) string {
 		}
 	}
 	return b.String()
+}
+
+// ParseString parses value of string - effectively strict type checking.
+func ParseString(value any) (string, error) {
+	switch v := value.(type) {
+	case string:
+		return v, nil
+	default:
+		return "", fmt.Errorf("ParseString: invalid value type %T", value)
+	}
 }

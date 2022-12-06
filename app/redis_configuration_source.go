@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const redisDestinationsKey = "bulkerExportDestinations"
+const redisDestinationsKey = "enrichedConnections"
 const redisConfigurationSourceServiceName = "redis_configuration"
 
 type RedisConfigurationSource struct {

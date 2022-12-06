@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/utils"
+	"github.com/jitsucom/bulker/bulker"
 	"regexp"
 	"sync"
 	"time"
@@ -92,8 +93,8 @@ func (tm *TopicManager) Start() {
 				for _, changedDst := range changes.ChangedDestinations {
 					tm.Lock()
 					for _, consumer := range tm.batchConsumers[changedDst.Id()] {
-						if consumer.batchPeriodSec != changedDst.config.BatchPeriodSec {
-							consumer.batchPeriodSec = changedDst.config.BatchPeriodSec
+						if consumer.batchPeriodSec != bulker.BatchPeriodOption.Get(changedDst.streamOptions) {
+							consumer.batchPeriodSec = bulker.BatchPeriodOption.Get(changedDst.streamOptions)
 							_, err := tm.cron.ReplaceBatchConsumer(consumer)
 							if err != nil {
 								metrics.TopicManagerError("reschedule_batch_consumer_error").Inc()
@@ -190,7 +191,7 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 				}
 				tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
 			case "batch":
-				batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, destination.config.BatchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
+				batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, bulker.BatchPeriodOption.Get(destination.streamOptions), topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
 				if err != nil {
 					topicsErrorsByMode[mode]++
 					tm.Errorf("Failed to create batch consumer for destination topic: %s: %v", topic, err)
@@ -349,7 +350,7 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 		}
 		tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
 	case "batch":
-		batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, destination.config.BatchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
+		batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, bulker.BatchPeriodOption.Get(destination.streamOptions), topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
 		if err != nil {
 			errorType = "cannot create batch consumer"
 			return tm.NewError("Failed to create batch consumer for destination topic: %s: %v", topic, err)

@@ -143,7 +143,7 @@ func (r *repositoryInternal) init(configurationSource ConfigurationSource) error
 			r.Errorf("failed to init destination %s: %v", cfg.Id(), err)
 			continue
 		}
-		options := make([]bulker.StreamOption, 0, len(cfg.StreamConfig.Options))
+		options := bulker.StreamOptions{}
 		for name, serializedOption := range cfg.StreamConfig.Options {
 			opt, err := bulker.ParseOption(name, serializedOption)
 			if err != nil {
@@ -151,9 +151,9 @@ func (r *repositoryInternal) init(configurationSource ConfigurationSource) error
 				r.Errorf("failed to parse option %s=%s for destination %s: %v", name, serializedOption, cfg.Id(), err)
 				continue
 			}
-			options = append(options, opt)
+			options.Add(opt)
 		}
-		r.destinations[cfg.Id()] = &Destination{config: cfg, bulker: bulkerInstance, streamOptions: options, owner: r}
+		r.destinations[cfg.Id()] = &Destination{config: cfg, bulker: bulkerInstance, streamOptions: &options, owner: r}
 		r.Infof("destination %s initialized. Ver: %s", cfg.Id(), cfg.UpdatedAt)
 	}
 	return nil
@@ -203,7 +203,7 @@ type Destination struct {
 	sync.Mutex
 	config        *DestinationConfig
 	bulker        bulker.Bulker
-	streamOptions []bulker.StreamOption
+	streamOptions *bulker.StreamOptions
 
 	owner       *repositoryInternal
 	retired     bool
