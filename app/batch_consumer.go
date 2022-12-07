@@ -281,11 +281,14 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 		dec.UseNumber()
 		err = dec.Decode(&obj)
 		if err == nil {
-			metrics.BatchConsumerMessageErrors(bc.destinationId, bc.tableName, "parse_event_error").Inc()
 			_, processedObjectsSample, err = bulkerStream.Consume(context.Background(), obj)
+			if err != nil {
+				metrics.BatchConsumerMessageErrors(bc.destinationId, bc.tableName, "bulker_stream_error").Inc()
+			}
+		} else {
+			metrics.BatchConsumerMessageErrors(bc.destinationId, bc.tableName, "parse_event_error").Inc()
 		}
 		if err != nil {
-			metrics.BatchConsumerMessageErrors(bc.destinationId, bc.tableName, "bulker_stream_error").Inc()
 			failedPosition = &latestPosition
 			state, _ := bulkerStream.Abort(context.Background())
 			bc.postEventsLog(state, processedObjectsSample, err)

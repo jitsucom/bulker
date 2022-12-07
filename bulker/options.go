@@ -23,11 +23,7 @@ var (
 	}
 
 	// FrequencyOption [[IGNORED]] is the same as BatchPeriodOption but in minutes.
-	FrequencyOption = ImplementationOption[int]{
-		Key:          "frequency",
-		DefaultValue: 0,
-		ParseFunc:    utils.ParseInt,
-	}
+	FrequencyOption = ImplementationOption[int]{Key: "frequency", ParseFunc: utils.ParseInt}
 )
 
 func init() {

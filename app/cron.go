@@ -44,6 +44,10 @@ func (c *Cron) ReplaceBatchConsumer(batchConsumer *BatchConsumer) (*gocron.Job, 
 		Do(batchConsumer.RunJob)
 }
 
+func (c *Cron) RemoveBatchConsumer(batchConsumer *BatchConsumer) error {
+	return c.scheduler.RemoveByTag(batchConsumer.topicId)
+}
+
 // Close scheduler
 func (c *Cron) Close() {
 	stopped := make(chan struct{})

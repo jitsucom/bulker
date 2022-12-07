@@ -118,6 +118,7 @@ func (tm *TopicManager) Start() {
 				for _, deletedDstId := range changes.RemovedDestinationIds {
 					for _, consumer := range tm.batchConsumers[deletedDstId] {
 						tm.Lock()
+						_ = tm.cron.RemoveBatchConsumer(consumer)
 						consumer.Retire()
 						delete(tm.batchConsumers, deletedDstId)
 						tm.Unlock()

@@ -23,6 +23,7 @@ type TableField struct {
 type Table struct {
 	Name      string
 	Temporary bool
+	Cached    bool
 
 	Columns        Columns
 	PKFields       utils.Set[string]
