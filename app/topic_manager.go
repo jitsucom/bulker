@@ -36,8 +36,10 @@ type TopicManager struct {
 	repository *Repository
 	cron       *Cron
 	//topics by destinationId
-	topics         map[string]utils.Set[string]
-	abanonedTopics utils.Set[string]
+	topics          map[string]utils.Set[string]
+	abandonedTopics utils.Set[string]
+	allTopics       utils.Set[string]
+
 	//batch consumers by destinationId
 	batchConsumers  map[string][]*BatchConsumer
 	streamConsumers map[string][]*StreamConsumer
@@ -48,26 +50,27 @@ type TopicManager struct {
 }
 
 // NewTopicManager returns TopicManager
-func NewTopicManager(config *AppConfig, kafkaConfig *kafka.ConfigMap, repository *Repository, cron *Cron, bulkerProducer *Producer, eventsLogService EventsLogService) (*TopicManager, error) {
+func NewTopicManager(appContext *AppContext) (*TopicManager, error) {
 	base := objects.NewServiceBase("topic-manager")
-	admin, err := kafka.NewAdminClient(kafkaConfig)
+	admin, err := kafka.NewAdminClient(appContext.kafkaConfig)
 	if err != nil {
 		return nil, base.NewError("Error creating kafka admin client: %w", err)
 	}
 	return &TopicManager{
 		ServiceBase:          base,
-		config:               config,
-		kafkaConfig:          kafkaConfig,
-		repository:           repository,
-		cron:                 cron,
+		config:               appContext.config,
+		kafkaConfig:          appContext.kafkaConfig,
+		repository:           appContext.repository,
+		cron:                 appContext.cron,
 		kaftaAdminClient:     admin,
-		kafkaBootstrapServer: config.KafkaBootstrapServers,
+		kafkaBootstrapServer: appContext.config.KafkaBootstrapServers,
 		topics:               make(map[string]utils.Set[string]),
-		bulkerProducer:       bulkerProducer,
-		eventsLogService:     eventsLogService,
+		bulkerProducer:       appContext.producer,
+		eventsLogService:     appContext.eventsLogService,
 		batchConsumers:       make(map[string][]*BatchConsumer),
 		streamConsumers:      make(map[string][]*StreamConsumer),
-		abanonedTopics:       utils.NewSet[string](),
+		abandonedTopics:      utils.NewSet[string](),
+		allTopics:            utils.NewSet[string](),
 		closed:               make(chan struct{}),
 	}, nil
 }
@@ -80,6 +83,11 @@ func (tm *TopicManager) Start() {
 		tm.Errorf("Error getting metadata from brokers [%s]: %v", tm.kafkaBootstrapServer, err)
 	} else {
 		tm.loadMetadata(metadata)
+		err = tm.EnsureTopic(tm.config.KafkaDestinationsTopicName)
+		if err != nil {
+			metrics.TopicManagerError("destination-topic_error").Inc()
+			tm.Errorf("Failed to create destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
+		}
 	}
 	// refresh metadata every 10 seconds
 	go func() {
@@ -132,7 +140,7 @@ func (tm *TopicManager) Start() {
 				}
 				if len(changes.AddedDestinations) > 0 {
 					tm.Lock()
-					tm.abanonedTopics.Clear()
+					tm.abandonedTopics.Clear()
 					tm.Unlock()
 				}
 			case <-ticker.C:
@@ -144,6 +152,11 @@ func (tm *TopicManager) Start() {
 					continue
 				}
 				tm.loadMetadata(metadata)
+				err = tm.EnsureTopic(tm.config.KafkaDestinationsTopicName)
+				if err != nil {
+					metrics.TopicManagerError("destination-topic_error").Inc()
+					tm.Errorf("Failed to create destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
+				}
 			}
 		}
 	}()
@@ -159,7 +172,8 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 	topicsErrorsByMode := make(map[string]float64)
 
 	for topic, _ := range metadata.Topics {
-		if tm.abanonedTopics.Contains(topic) {
+		tm.allTopics.Put(topic)
+		if tm.abandonedTopics.Contains(topic) {
 			abandonedTopicsCount++
 			continue
 		}
@@ -179,7 +193,7 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 			destination := tm.repository.GetDestination(destinationId)
 			if destination == nil {
 				tm.Warnf("No destination found for topic: %s", topic)
-				tm.abanonedTopics.Put(topic)
+				tm.abandonedTopics.Put(topic)
 				continue
 			}
 			switch mode {
@@ -257,13 +271,23 @@ func (tm *TopicManager) IsReady() bool {
 //	return nil
 //}
 
-// EnsureTopic creates topic if it doesn't exist
-func (tm *TopicManager) EnsureTopic(destination *Destination, topicId string) error {
+// EnsureDestinationTopic creates destination topic if it doesn't exist
+func (tm *TopicManager) EnsureDestinationTopic(destination *Destination, topicId string) error {
 	tm.Lock()
 	defer tm.Unlock()
 	set := tm.topics[destination.Id()]
 	if !set.Contains(topicId) {
-		return tm.createTopic(destination, topicId)
+		return tm.createDestinationTopic(destination, topicId)
+	}
+	return nil
+}
+
+// EnsureTopic creates topic if it doesn't exist
+func (tm *TopicManager) EnsureTopic(topicId string) error {
+	tm.Lock()
+	defer tm.Unlock()
+	if !tm.allTopics.Contains(topicId) {
+		return tm.createTopic(topicId)
 	}
 	return nil
 }
@@ -283,8 +307,8 @@ func (tm *TopicManager) EnsureTopic(destination *Destination, topicId string) er
 //	}
 //}
 
-// CreateTopic creates topic for destinationId
-func (tm *TopicManager) createTopic(destination *Destination, topic string) error {
+// createDestinationTopic creates topic for destination
+func (tm *TopicManager) createDestinationTopic(destination *Destination, topic string) error {
 	id, mode, tableName, err := ParseTopicId(topic)
 	errorType := ""
 	defer func() {
@@ -370,6 +394,31 @@ func (tm *TopicManager) createTopic(destination *Destination, topic string) erro
 	tm.Infof("Created topic %s", topic)
 	tm.Infof("Created topic %s", failedTopic)
 
+	return nil
+}
+
+// createTopic creates topic for destination
+func (tm *TopicManager) createTopic(topic string) error {
+	topicRes, err := tm.kaftaAdminClient.CreateTopics(context.Background(), []kafka.TopicSpecification{
+		{
+			Topic:         topic,
+			NumPartitions: 1,
+			//TODO  get broker count from admin
+			ReplicationFactor: tm.config.KafkaTopicReplicationFactor,
+			Config: map[string]string{
+				"retention.ms": fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
+			},
+		},
+	})
+	if err != nil {
+		return tm.NewError("Error creating topic %s: %w", topic, err)
+	}
+	for _, res := range topicRes {
+		if res.Error.Code() != kafka.ErrNoError {
+			return tm.NewError("Error creating topic %s: %w", res.Topic, res.Error)
+		}
+	}
+	tm.allTopics.Put(topic)
 	return nil
 }
 

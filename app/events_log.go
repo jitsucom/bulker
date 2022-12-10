@@ -6,6 +6,7 @@ import (
 	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/objects"
 	jsoniter "github.com/json-iterator/go"
+	"io"
 	"regexp"
 	"strconv"
 	"time"
@@ -47,6 +48,7 @@ type EventsLogRecord struct {
 }
 
 type EventsLogService interface {
+	io.Closer
 	// PostEvent posts event to the events log
 	// actorId – id of entity of event origin. E.g. for 'incoming' event - id of site, for 'processed' event - id of destination
 	PostEvent(eventType EventType, actorId string, event any) (id EventsLogRecordId, err error)
@@ -171,6 +173,11 @@ func (f *EventsLogFilter) GetStartAndEndIds() (start, end string, err error) {
 	return
 }
 
+func (r *RedisEventsLog) Close() error {
+	r.redisPool.Close()
+	return nil
+}
+
 func parseTimestamp(id string) (time.Time, error) {
 	match := redisStreamIdTimestampPart.FindStringSubmatch(id)
 	if match == nil {
@@ -188,4 +195,8 @@ func (d *DummyEventsLogService) PostEvent(eventType EventType, actorId string, e
 
 func (d *DummyEventsLogService) GetEvents(eventType EventType, actorId string, filter *EventsLogFilter, limit int) ([]EventsLogRecord, error) {
 	return nil, nil
+}
+
+func (d *DummyEventsLogService) Close() error {
+	return nil
 }

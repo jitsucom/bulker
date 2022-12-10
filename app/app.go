@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/jitsucom/bulker/base/logging"
 	"net/http"
 	"os"
@@ -13,80 +14,108 @@ import (
 
 var exitChannel = make(chan os.Signal, 1)
 
+type AppContext struct {
+	config              *AppConfig
+	kafkaConfig         *kafka.ConfigMap
+	configurationSource ConfigurationSource
+	repository          *Repository
+	cron                *Cron
+	producer            *Producer
+	eventsLogService    EventsLogService
+	topicManager        *TopicManager
+	fastStore           *FastStore
+	server              *http.Server
+}
+
 // TODO: graceful shutdown and cleanups. Flush producer
 func Run() {
 	logging.LogLevel = logging.INFO
 
 	signal.Notify(exitChannel, os.Interrupt, os.Kill, syscall.SIGTERM)
 
-	appConfig, err := InitAppConfig()
-	if err != nil {
-		panic(err)
-	}
-	kafkaConfig := appConfig.GetKafkaConfig()
+	appContext := InitAppContext()
 
-	if err != nil {
-		panic(err)
-	}
-	configurationSource, err := InitConfigurationSource(appConfig)
-	if err != nil {
-		panic(err)
-	}
-	repository, err := NewRepository(appConfig, configurationSource)
-	if err != nil {
-		panic(err)
-	}
-	cron := NewCron(appConfig)
-	producer, err := NewProducer(appConfig, kafkaConfig)
-	if err != nil {
-		panic(err)
-	}
-	producer.Start()
-
-	var eventsLogService EventsLogService = &DummyEventsLogService{}
-	if appConfig.EventsLogRedisURL != "" {
-		eventsLogService, err = NewRedisEventsLog(appConfig)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	topicManager, err := NewTopicManager(appConfig, kafkaConfig, repository, cron, producer, eventsLogService)
-	if err != nil {
-		panic(err)
-	}
-	topicManager.Start()
-
-	//batchRunner := NewBatchRunner(appConfig, kafkaConfig, repository, topicManager)
-	//batchRunner.Start()
-
-	router := NewRouter(appConfig, kafkaConfig, repository, topicManager, producer, eventsLogService)
-	server := &http.Server{
-		Addr:              fmt.Sprintf("0.0.0.0:%d", appConfig.HTTPPort),
-		Handler:           router.GetEngine(),
-		ReadTimeout:       time.Second * 60,
-		ReadHeaderTimeout: time.Second * 60,
-		IdleTimeout:       time.Second * 65,
-	}
 	go func() {
 		signal := <-exitChannel
 		logging.Infof("Received signal: %s. Shutting down...", signal)
-		_ = producer.Close()
-		_ = topicManager.Close()
-		cron.Close()
-		_ = repository.Close()
-		_ = configurationSource.Close()
-		if appConfig.ShutdownExtraDelay > 0 {
-			logging.Infof("Waiting %d seconds before http server shutdown...", appConfig.ShutdownExtraDelay)
-			time.Sleep(time.Duration(appConfig.ShutdownExtraDelay) * time.Second)
-		}
-		_ = server.Shutdown(context.Background())
+		appContext.Shutdown()
 		os.Exit(0)
 	}()
-	logging.Info(server.ListenAndServe())
+	logging.Info(appContext.server.ListenAndServe())
 }
 
 func Exit() {
 	logging.Infof("App Triggered Exit...")
 	exitChannel <- os.Interrupt
+}
+
+func InitAppContext() *AppContext {
+	appContext := AppContext{}
+	var err error
+	appContext.config, err = InitAppConfig()
+	if err != nil {
+		panic(err)
+	}
+	appContext.kafkaConfig = appContext.config.GetKafkaConfig()
+
+	if err != nil {
+		panic(err)
+	}
+	appContext.configurationSource, err = InitConfigurationSource(appContext.config)
+	if err != nil {
+		panic(err)
+	}
+	appContext.repository, err = NewRepository(appContext.config, appContext.configurationSource)
+	if err != nil {
+		panic(err)
+	}
+	appContext.cron = NewCron(appContext.config)
+	appContext.producer, err = NewProducer(appContext.config, appContext.kafkaConfig)
+	if err != nil {
+		panic(err)
+	}
+	appContext.producer.Start()
+
+	appContext.eventsLogService = &DummyEventsLogService{}
+	if appContext.config.EventsLogRedisURL != "" {
+		appContext.eventsLogService, err = NewRedisEventsLog(appContext.config)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	appContext.topicManager, err = NewTopicManager(&appContext)
+	if err != nil {
+		panic(err)
+	}
+	appContext.topicManager.Start()
+
+	appContext.fastStore, err = NewFastStore(appContext.config)
+	if err != nil {
+		panic(err)
+	}
+
+	router := NewRouter(&appContext)
+	appContext.server = &http.Server{
+		Addr:              fmt.Sprintf("0.0.0.0:%d", appContext.config.HTTPPort),
+		Handler:           router.GetEngine(),
+		ReadTimeout:       time.Second * 60,
+		ReadHeaderTimeout: time.Second * 60,
+		IdleTimeout:       time.Second * 65,
+	}
+	return &appContext
+}
+
+func (a *AppContext) Shutdown() {
+	_ = a.producer.Close()
+	_ = a.topicManager.Close()
+	a.cron.Close()
+	_ = a.repository.Close()
+	_ = a.configurationSource.Close()
+	if a.config.ShutdownExtraDelay > 0 {
+		logging.Infof("Waiting %d seconds before http server shutdown...", a.config.ShutdownExtraDelay)
+		time.Sleep(time.Duration(a.config.ShutdownExtraDelay) * time.Second)
+	}
+	_ = a.server.Shutdown(context.Background())
+	_ = a.eventsLogService.Close()
 }

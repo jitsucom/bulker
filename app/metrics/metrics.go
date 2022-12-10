@@ -8,6 +8,25 @@ import (
 )
 
 var (
+	ingestHandlerError = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "ingest_handler",
+		Name:      "error",
+		Help:      "Ingest handler errors by destination Id",
+	}, []string{"slug", "errorType"})
+	IngestHandlerError = func(slug, errorType string) prometheus.Counter {
+		return ingestHandlerError.WithLabelValues(slug, errorType)
+	}
+	ingestHandlerSuccess = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "ingest_handler",
+		Name:      "success",
+		Help:      "Ingest handler successes by stream Id",
+	}, []string{"slug"})
+	IngestHandlerSuccess = func(slug string) prometheus.Counter {
+		return ingestHandlerSuccess.WithLabelValues(slug)
+	}
+
 	eventsHandlerError = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "events_handler",

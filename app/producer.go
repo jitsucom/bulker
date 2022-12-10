@@ -48,7 +48,7 @@ func (p *Producer) Start() {
 				if ev.TopicPartition.Error != nil {
 					//TODO: check for retrieable errors
 					metrics.ProducerDeliveryErrors(ProducerLabelsWithErr(*ev.TopicPartition.Topic, metrics.KafkaErrorCode(ev.TopicPartition.Error))).Inc()
-					p.Errorf("Error sending message to kafka topic %s: %w", ev.TopicPartition.Topic, ev.TopicPartition.Error)
+					p.Errorf("Error sending message to kafka topic %s: %s", ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
 				} else {
 					metrics.ProducerMessagesDelivered(ProducerLabels(*ev.TopicPartition.Topic, "")).Inc()
 					p.Infof("Message delivered to topic %s [%d] at offset %v", *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)

@@ -138,7 +138,7 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 				switch ev := e.(type) {
 				case *kafka.Message:
 					if ev.TopicPartition.Error != nil {
-						bc.Errorf("Error sending message to kafka topic %s: %w", ev.TopicPartition.Topic, ev.TopicPartition.Error)
+						bc.Errorf("Error sending message to kafka topic %s: %s", ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
 					} else {
 						bc.Infof("Message delivered to topic %s [%d] at offset %v", *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 					}
