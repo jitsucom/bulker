@@ -9,7 +9,7 @@ import (
 
 const fastStoreServiceName = "fast_store"
 
-const fastStoreStreamKeysKey = "streamKeys"
+const fastStoreStreamIdsKey = "streamIds"
 const fastStoreStreamDomainsKey = "streamDomains"
 
 type FastStore struct {
@@ -74,11 +74,11 @@ func NewFastStore(config *AppConfig) (*FastStore, error) {
 	return &fs, nil
 }
 
-func (fs *FastStore) GetStreamByKey(slug string) (*StreamWithDestinations, error) {
+func (fs *FastStore) GetStreamById(slug string) (*StreamWithDestinations, error) {
 	connection := fs.redisPool.Get()
 	defer connection.Close()
 
-	streamBytes, err := redis.Bytes(connection.Do("HGET", fastStoreStreamKeysKey, slug))
+	streamBytes, err := redis.Bytes(connection.Do("HGET", fastStoreStreamIdsKey, slug))
 	if err == redis.ErrNil {
 		return nil, nil
 	}

@@ -25,6 +25,9 @@ type AppConfig struct {
 	AuthTokens   string `mapstructure:"AUTH_TOKENS"`
 	TokenSecrets string `mapstructure:"TOKEN_SECRET"`
 
+	GlobalHashSecret  string `mapstructure:"GLOBAL_HASH_SECRET" default:"dea42a58-acf4-45af-85bb-e77e94bd5025"`
+	GlobalHashSecrets []string
+
 	ConfigSource string `mapstructure:"CONFIG_SOURCE"`
 
 	RedisTLSCA string `mapstructure:"REDIS_TLS_CA"`
@@ -128,7 +131,7 @@ func InitAppConfig() (*AppConfig, error) {
 		appConfig.InstanceId = os.Getenv(env)
 		logging.Infof("Loading instance id from env %s: %s", env, appConfig.InstanceId)
 	}
-
+	appConfig.GlobalHashSecrets = strings.Split(appConfig.GlobalHashSecret, ",")
 	return &appConfig, nil
 }
 

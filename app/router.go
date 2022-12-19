@@ -170,15 +170,31 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	r.Infof("[ingest] Message ID: %s Origin: %s", ingestMessage.MessageId, utils.Nvl(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain))
 
 	var stream *StreamWithDestinations
-	if ingestMessage.WriteKey != "" {
-		stream, err = r.fastStore.GetStreamByKey(ingestMessage.WriteKey)
-	} else if ingestMessage.Origin.Slug != "" {
-		stream, err = r.fastStore.GetStreamByKey(ingestMessage.Origin.Slug)
+	if ingestMessage.Origin.Slug != "" {
+		stream, err = r.fastStore.GetStreamById(ingestMessage.Origin.Slug)
 	} else if ingestMessage.Origin.Domain != "" {
 		var streams []StreamWithDestinations
 		streams, err = r.fastStore.GetStreamsByDomain(ingestMessage.Origin.Domain)
 		if len(streams) > 1 {
-			errorType = r.ResponseError(c, http.StatusBadRequest, "error getting stream", false, fmt.Errorf("multiple streams found for domain %s. Please use 'writeKey' message property to select a concrete stream", ingestMessage.Origin.Domain))
+			if ingestMessage.WriteKey == "" {
+				errorType = r.ResponseError(c, http.StatusBadRequest, "error getting stream", false, fmt.Errorf("multiple streams found for domain %s. Please use 'writeKey' message property to select a concrete stream", ingestMessage.Origin.Domain))
+				return
+			}
+			writeKey := ingestMessage.WriteKey
+			for _, s := range streams {
+				for _, k := range s.Stream.PublicKeys {
+					key := strings.SplitN(k.Hash, ".", 2)
+					salt := key[0]
+					hash := key[1]
+					for _, globalSecret := range r.config.GlobalHashSecrets {
+						if hash == hashApiKey(writeKey, salt, globalSecret) {
+							stream = &s
+							break
+						}
+					}
+				}
+			}
+
 		} else if len(streams) == 1 {
 			stream = &streams[0]
 		}
@@ -188,7 +204,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	if stream == nil {
-		errorType = r.ResponseError(c, http.StatusNotFound, "stream not found", false, fmt.Errorf("stream not found by slug: %s or domain: %s", ingestMessage.Origin.Slug, ingestMessage.Origin.Domain))
+		errorType = r.ResponseError(c, http.StatusNotFound, "stream not found", false, fmt.Errorf("stream not found by writeKey: %s and domain: %s", utils.NvlString(ingestMessage.WriteKey, ingestMessage.Origin.Slug), ingestMessage.Origin.Domain))
 		return
 	}
 	if len(stream.AsynchronousDestinations) == 0 {
@@ -400,6 +416,13 @@ func hashToken(token string, salt string, secret string) string {
 	hash := sha512.New()
 	hash.Write([]byte(token + salt + secret))
 	return base64.RawStdEncoding.EncodeToString(hash.Sum(nil))
+}
+
+func hashApiKey(token string, salt string, secret string) string {
+	hash := sha512.New()
+	hash.Write([]byte(token + salt + secret))
+	res := hash.Sum(nil)
+	return fmt.Sprintf("%x", res)
 }
 
 type IngestMessageOrigin struct {
