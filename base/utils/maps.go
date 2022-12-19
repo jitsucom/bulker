@@ -32,3 +32,21 @@ func MapPutIfAbsent[K comparable, V any](mp map[K]V, key K, value V) {
 		mp[key] = value
 	}
 }
+
+func MapNVL[K comparable, V any](mp map[K]V, key K, defaultValue V) V {
+	if value, ok := mp[key]; ok {
+		return value
+	}
+	return defaultValue
+}
+
+// MapNVLKeys returns value by first key that exists or empty value of V type if no keys exist
+func MapNVLKeys[K comparable, V any](mp map[K]V, keys ...K) V {
+	for _, key := range keys {
+		if value, ok := mp[key]; ok {
+			return value
+		}
+	}
+	var defaultValue V
+	return defaultValue
+}

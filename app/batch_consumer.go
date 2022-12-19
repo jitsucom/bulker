@@ -162,7 +162,7 @@ func (bc *BatchConsumer) ConsumeAll() (consumed int, err error) {
 		bc.Errorf("No messages were consumed. Consumer is closed.")
 		return 0, bc.NewError("Consumer is closed")
 	}
-	bc.Infof("Starting consuming messages from topic")
+	bc.Debugf("Starting consuming messages from topic")
 	metrics.BatchConsumerBatchRuns(bc.destinationId, bc.tableName).Inc()
 	bc.idle.Store(false)
 	defer func() {
@@ -275,12 +275,12 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 			return 0, bc.NewError("Failed to consume event from topic. Retryable: %t: %w", kafkaErr.IsRetriable(), kafkaErr)
 		}
 		latestPosition = message.TopicPartition
-		bc.Infof("%d. Message claimed: offset = %s, partition = %d, timestamp = %v, topic = %s", i, latestPosition.Offset.String(), latestPosition.Partition, message.Timestamp, *latestPosition.Topic)
 		obj := types.Object{}
 		dec := jsoniter.NewDecoder(bytes.NewReader(message.Value))
 		dec.UseNumber()
 		err = dec.Decode(&obj)
 		if err == nil {
+			bc.Infof("%d. Message ID: %s Offset: %s", i, obj.Id(), message.TopicPartition.Offset.String())
 			_, processedObjectsSample, err = bulkerStream.Consume(context.Background(), obj)
 			if err != nil {
 				metrics.BatchConsumerMessageErrors(bc.destinationId, bc.tableName, "bulker_stream_error").Inc()
@@ -439,7 +439,7 @@ func (bc *BatchConsumer) pause() {
 			select {
 			case <-bc.resumeChannel:
 				bc.paused = false
-				bc.Infof("Consumer resumed.")
+				bc.Debugf("Consumer resumed.")
 				break loop
 			default:
 			}
@@ -527,7 +527,7 @@ func (bc *BatchConsumer) pauseKafkaConsumer() {
 		bc.SystemErrorf("Failed to pause kafka consumer: %w", err)
 	} else {
 		if len(partitions) > 0 {
-			bc.Infof("Consumer paused.")
+			bc.Debugf("Consumer paused.")
 		}
 	}
 }

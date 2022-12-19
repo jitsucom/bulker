@@ -98,7 +98,7 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 	}
 	if sent > 0 {
 		p.producer.Flush(2)
-		p.Infof("Sent %d messages to kafka topic %s in %s", sent, topic, time.Since(started))
+		p.Debugf("Sent %d messages to kafka topic %s in %s", sent, topic, time.Since(started))
 		until := time.After(p.waitForDelivery)
 	loop:
 		for i := 0; i < sent; i++ {
@@ -111,7 +111,7 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 					errors.Errors = append(errors.Errors, m.TopicPartition.Error)
 				} else {
 					metrics.ProducerMessagesDelivered(ProducerLabels(topic, "")).Inc()
-					p.Infof("Message delivered to topic %s [%d] at offset %v", *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
+					p.Debugf("Message delivered to topic %s [%d] at offset %v", *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
 				}
 			case <-until:
 				metrics.ProducerDeliveryErrors(ProducerLabelsWithErr(topic, "sync_delivery_timeout")).Inc()
@@ -175,7 +175,7 @@ func (p *Producer) isClosed() bool {
 func ProducerLabels(topic string, errText string) (destinationId, mode, tableName string) {
 	destinationId, mode, tableName, topicErr := ParseTopicId(topic)
 	if topicErr != nil {
-		return "INVALID_TOPIC", "", "INVALID_TOPIC:" + topic
+		return topic, "", ""
 	} else {
 		return destinationId, mode, tableName
 	}
@@ -184,7 +184,7 @@ func ProducerLabels(topic string, errText string) (destinationId, mode, tableNam
 func ProducerLabelsWithErr(topic string, errText string) (destinationId, mode, tableName, err string) {
 	destinationId, mode, tableName, topicErr := ParseTopicId(topic)
 	if topicErr != nil {
-		return "INVALID_TOPIC", "", "INVALID_TOPIC:" + topic, errText
+		return topic, "", "", errText
 	} else {
 		return destinationId, mode, tableName, errText
 	}

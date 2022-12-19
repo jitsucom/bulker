@@ -9,7 +9,7 @@ import (
 
 const fastStoreServiceName = "fast_store"
 
-const fastStoreStreamSlugsKey = "streamSlugs"
+const fastStoreStreamKeysKey = "streamKeys"
 const fastStoreStreamDomainsKey = "streamDomains"
 
 type FastStore struct {
@@ -46,9 +46,15 @@ type StreamConfig struct {
 }
 
 type ShortDestinationConfig struct {
+	TagDestinationConfig
 	Id              string `json:"id"`
 	ConnectionId    string `json:"connectionId"`
 	DestinationType string `json:"destinationType"`
+}
+
+type TagDestinationConfig struct {
+	Mode string `json:"mode"`
+	Code string `json:"code"`
 }
 
 type StreamWithDestinations struct {
@@ -68,11 +74,11 @@ func NewFastStore(config *AppConfig) (*FastStore, error) {
 	return &fs, nil
 }
 
-func (fs *FastStore) GetStreamBySlug(slug string) (*StreamWithDestinations, error) {
+func (fs *FastStore) GetStreamByKey(slug string) (*StreamWithDestinations, error) {
 	connection := fs.redisPool.Get()
 	defer connection.Close()
 
-	streamBytes, err := redis.Bytes(connection.Do("HGET", fastStoreStreamSlugsKey, slug))
+	streamBytes, err := redis.Bytes(connection.Do("HGET", fastStoreStreamKeysKey, slug))
 	if err == redis.ErrNil {
 		return nil, nil
 	}
@@ -87,7 +93,7 @@ func (fs *FastStore) GetStreamBySlug(slug string) (*StreamWithDestinations, erro
 	return &stream, nil
 }
 
-func (fs *FastStore) GetStreamByDomain(domain string) (*StreamWithDestinations, error) {
+func (fs *FastStore) GetStreamsByDomain(domain string) ([]StreamWithDestinations, error) {
 	connection := fs.redisPool.Get()
 	defer connection.Close()
 
@@ -100,12 +106,12 @@ func (fs *FastStore) GetStreamByDomain(domain string) (*StreamWithDestinations, 
 	if err != nil {
 		return nil, fs.NewError("failed to get stream by domain [%s]: %w", domain, err)
 	}
-	stream := StreamWithDestinations{}
+	stream := make([]StreamWithDestinations, 0, 2)
 	err = json.Unmarshal(streamBytes, &stream)
 	if err != nil {
 		return nil, fs.NewError("failed to unmarshal stream bytes for domain [%s]: %w: %s", domain, err, string(streamBytes))
 	}
-	return &stream, nil
+	return stream, nil
 }
 
 func (fs *FastStore) Close() error {

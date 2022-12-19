@@ -161,19 +161,27 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		errorType = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err)
 		return
 	}
-	logging.Infof("IngestHandler: %s", string(body))
 	ingestMessage := IngestMessage{}
 	err = json.Unmarshal(body, &ingestMessage)
 	if err != nil {
-		errorType = r.ResponseError(c, http.StatusBadRequest, "error parsing IngestMessage", false, err)
+		errorType = r.ResponseError(c, http.StatusBadRequest, "error parsing IngestMessage", false, fmt.Errorf("%w: %s", err, string(body)))
 		return
 	}
+	r.Infof("[ingest] Message ID: %s Origin: %s", ingestMessage.MessageId, utils.Nvl(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain))
 
 	var stream *StreamWithDestinations
-	if ingestMessage.Origin.Slug != "" {
-		stream, err = r.fastStore.GetStreamBySlug(ingestMessage.Origin.Slug)
+	if ingestMessage.WriteKey != "" {
+		stream, err = r.fastStore.GetStreamByKey(ingestMessage.WriteKey)
+	} else if ingestMessage.Origin.Slug != "" {
+		stream, err = r.fastStore.GetStreamByKey(ingestMessage.Origin.Slug)
 	} else if ingestMessage.Origin.Domain != "" {
-		stream, err = r.fastStore.GetStreamByDomain(ingestMessage.Origin.Domain)
+		var streams []StreamWithDestinations
+		streams, err = r.fastStore.GetStreamsByDomain(ingestMessage.Origin.Domain)
+		if len(streams) > 1 {
+			errorType = r.ResponseError(c, http.StatusBadRequest, "error getting stream", false, fmt.Errorf("multiple streams found for domain %s. Please use 'writeKey' message property to select a concrete stream", ingestMessage.Origin.Domain))
+		} else if len(streams) == 1 {
+			stream = &streams[0]
+		}
 	}
 	if err != nil {
 		errorType = r.ResponseError(c, http.StatusInternalServerError, "error getting stream", false, err)
@@ -191,7 +199,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		messageCopy := ingestMessage
 		messageCopy.ConnectionId = destination.ConnectionId
 		payload, err := json.Marshal(messageCopy)
-		r.Infof("IngestHandler producing message: %s", string(payload))
+		r.Infof("[ingest] Message ID: %s Producing to: %s", messageCopy.MessageId, destination.ConnectionId)
 		if err != nil {
 			errorType = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err)
 			return
@@ -202,7 +210,15 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			return
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "ok"})
+	if len(stream.SynchronousDestinations) == 0 {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
+	tags := make(map[string]TagDestinationConfig, len(stream.SynchronousDestinations))
+	for _, destination := range stream.SynchronousDestinations {
+		tags[destination.Id] = destination.TagDestinationConfig
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "tags": tags})
 }
 
 func (r *Router) FailedHandler(c *gin.Context) {
@@ -395,6 +411,7 @@ type IngestMessageOrigin struct {
 type IngestMessage struct {
 	ConnectionId   string              `json:"connectionId"`
 	MessageCreated time.Time           `json:"messageCreated"`
+	WriteKey       string              `json:"writeKey"`
 	MessageId      string              `json:"messageId"`
 	Type           string              `json:"type"`
 	Origin         IngestMessageOrigin `json:"origin"`
