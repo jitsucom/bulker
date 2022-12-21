@@ -276,9 +276,9 @@ Postrgres, MySQL, Redshift and Snowflake `credentials` shares same configuration
 ```json5
 {
   //list of Clickhouse nodes. See https://github.com/ClickHouse/clickhouse-go#dsn  
-  dsns: ["string"],
+  datasources: ["string"],
   //name of the database
-  db: "string",
+  database: "string",
   //cluster name
   cluster: "string",
   //clickhouse engine settings. Defines how new tables are created in clickhouse

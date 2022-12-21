@@ -170,9 +170,12 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	r.Infof("[ingest] Message ID: %s Origin: %s", ingestMessage.MessageId, utils.Nvl(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain))
 
 	var stream *StreamWithDestinations
-	if ingestMessage.Origin.Slug != "" {
+	if ingestMessage.WriteKey != "" {
+		stream, err = r.fastStore.GetStreamById(ingestMessage.WriteKey)
+	} else if ingestMessage.Origin.Slug != "" {
 		stream, err = r.fastStore.GetStreamById(ingestMessage.Origin.Slug)
-	} else if ingestMessage.Origin.Domain != "" {
+	}
+	if stream == nil && ingestMessage.Origin.Domain != "" {
 		var streams []StreamWithDestinations
 		streams, err = r.fastStore.GetStreamsByDomain(ingestMessage.Origin.Domain)
 		if len(streams) > 1 {

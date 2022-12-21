@@ -41,7 +41,7 @@ type AppConfig struct {
 	KafkaTopicRetentionHours       int `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
 	KafkaFailedTopicRetentionHours int `mapstructure:"KAFKA_FAILED_TOPIC_RETENTION_HOURS" default:"168"`
 
-	KafkaTopicReplicationFactor              int    `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR" default:"1"`
+	KafkaTopicReplicationFactor              int    `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR"`
 	KafkaAdminMetadataTimeoutMs              int    `mapstructure:"KAFKA_ADMIN_METADATA_TIMEOUT_MS" default:"1000"`
 	KafkaConsumerPartitionsAssigmentStrategy string `mapstructure:"KAFKA_CONSUMER_PARTITIONS_ASSIGMENT_STRATEGY" default:"cooperative-sticky"`
 	//TODO: max.poll.interval.ms

@@ -107,8 +107,8 @@ var (
 
 // ClickHouseConfig dto for deserialized clickhouse config
 type ClickHouseConfig struct {
-	Dsns     []string          `mapstructure:"dsns,omitempty" json:"dsns,omitempty" yaml:"dsns,omitempty"`
-	Database string            `mapstructure:"db,omitempty" json:"db,omitempty" yaml:"db,omitempty"`
+	Dsns     []string          `mapstructure:"datasources,omitempty" json:"datasources,omitempty" yaml:"datasources,omitempty"`
+	Database string            `mapstructure:"database,omitempty" json:"database,omitempty" yaml:"database,omitempty"`
 	TLS      map[string]string `mapstructure:"tls,omitempty" json:"tls,omitempty" yaml:"tls,omitempty"`
 	Cluster  string            `mapstructure:"cluster,omitempty" json:"cluster,omitempty" yaml:"cluster,omitempty"`
 	Engine   *EngineConfig     `mapstructure:"engine,omitempty" json:"engine,omitempty" yaml:"engine,omitempty"`
@@ -141,6 +141,10 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &ClickHouseConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
+	}
+	err := config.Validate()
+	if err != nil {
+		return nil, err
 	}
 	httpMode := false
 	if strings.HasPrefix(config.Dsns[0], "http") {
@@ -197,6 +201,8 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	sqlAdapterBase := newSQLAdapterBase(ClickHouseBulkerTypeId, config, dataSource,
 		queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr)
 	sqlAdapterBase.batchFileFormat = implementations.JSON
+	sqlAdapterBase.identifierQuoteChar = '`'
+
 	c := &ClickHouse{
 		SQLAdapterBase:        sqlAdapterBase,
 		tableStatementFactory: tableStatementFactory,
@@ -901,25 +907,21 @@ func (chc *ClickHouseConfig) Validate() error {
 	}
 
 	if len(chc.Dsns) == 0 {
-		return errors.New("dsn is required parameter")
+		return errors.New("databases is required parameter")
 	}
 
 	for _, dsn := range chc.Dsns {
 		if dsn == "" {
 			return errors.New("DSNs values can't be empty")
 		}
-
-		if !strings.HasPrefix(strings.TrimSpace(dsn), "http") {
-			return errors.New("DSNs must have http:// or https:// prefix")
-		}
 	}
 
 	if chc.Cluster == "" && len(chc.Dsns) > 1 {
-		return errors.New("cluster is required parameter when dsns count > 1")
+		return errors.New("cluster is required parameter when datasources count > 1")
 	}
 
 	if chc.Database == "" {
-		return errors.New("db is required parameter")
+		return errors.New("database is required parameter")
 	}
 
 	return nil
