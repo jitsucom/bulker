@@ -28,8 +28,9 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 			Name:           fmt.Sprintf("%s_tmp_%s", ps.tableName, timestamp.Now().Format("060102_150405")),
 			PrimaryKeyName: tableForObject.PrimaryKeyName,
 			//PrimaryKeyName: fmt.Sprintf("%s_%s", tableForObject.PrimaryKeyName, timestamp.Now().Format("060102_150405")),
-			PKFields: tableForObject.PKFields,
-			Columns:  tableForObject.Columns,
+			PKFields:        tableForObject.PKFields,
+			Columns:         tableForObject.Columns,
+			TimestampColumn: tableForObject.TimestampColumn,
 		}
 	}
 	return &ps, nil

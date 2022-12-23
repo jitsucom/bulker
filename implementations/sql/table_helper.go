@@ -26,6 +26,7 @@ type TableHelper struct {
 	tables              map[string]*Table
 
 	pkFields           utils.Set[string]
+	timestampColumn    string
 	columnTypesMapping map[types.DataType]string
 
 	destinationType string
@@ -36,13 +37,14 @@ type TableHelper struct {
 // NewTableHelper returns configured TableHelper instance
 // Note: columnTypesMapping must be not empty (or fields will be ignored)
 func NewTableHelper(sqlAdapter SQLAdapter, coordinationService coordination.Service, pkFields utils.Set[string],
-	maxColumns int) *TableHelper {
+	timestampColumn string, maxColumns int) *TableHelper {
 	return &TableHelper{
 		sqlAdapter:          sqlAdapter,
 		coordinationService: coordinationService,
 		tables:              map[string]*Table{},
 
 		pkFields:           pkFields,
+		timestampColumn:    timestampColumn,
 		columnTypesMapping: sqlAdapter.GetTypesMapping(),
 
 		destinationType: sqlAdapter.Type(),
@@ -54,10 +56,11 @@ func NewTableHelper(sqlAdapter SQLAdapter, coordinationService coordination.Serv
 // applies column types mapping
 func (th *TableHelper) MapTableSchema(batchHeader *BatchHeader) *Table {
 	table := &Table{
-		Name:      th.sqlAdapter.TableName(batchHeader.TableName),
-		Columns:   Columns{},
-		Partition: batchHeader.Partition,
-		PKFields:  th.pkFields,
+		Name:            th.sqlAdapter.TableName(batchHeader.TableName),
+		Columns:         Columns{},
+		Partition:       batchHeader.Partition,
+		PKFields:        th.pkFields,
+		TimestampColumn: th.timestampColumn,
 	}
 
 	//pk fields from the configuration

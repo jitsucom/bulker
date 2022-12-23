@@ -59,6 +59,7 @@ var (
 		ParseFunc: utils.ParseString,
 	}
 
+	// TimestampOption - field name that contains timestamp. For creating sorting indexes or partitions by that field in destination tables
 	TimestampOption = bulker.ImplementationOption[string]{
 		Key:       "timestamp",
 		ParseFunc: utils.ParseString,
@@ -129,6 +130,10 @@ func withPartition(o *bulker.ImplementationOption[string], partitionId string) b
 // TODO: For bigquery require string in special format
 func WithPartition(partitionId string) bulker.StreamOption {
 	return withPartition(&PartitionIdOption, partitionId)
+}
+
+func WithTimestamp(timestampField string) bulker.StreamOption {
+	return withPartition(&TimestampOption, timestampField)
 }
 
 //func withBatchSize(o *bulker.ImplementationOption[int], batchSize int) bulker.StreamOption {

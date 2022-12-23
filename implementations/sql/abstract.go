@@ -46,8 +46,12 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 		adaptedPkColumns.Put(p.ColumnName(k))
 	}
 	ps.pkColumns = adaptedPkColumns
+	timestampColumn := TimestampOption.Get(&ps.options)
+	if timestampColumn != "" {
+		timestampColumn = p.ColumnName(timestampColumn)
+	}
 	//TODO: max column?
-	ps.tableHelper = NewTableHelper(p, coordination.DummyCoordinationService{}, ps.pkColumns, 1000)
+	ps.tableHelper = NewTableHelper(p, coordination.DummyCoordinationService{}, ps.pkColumns, timestampColumn, 1000)
 	ps.state = bulker.State{Status: bulker.Active}
 	ps.customTypes = customFields
 	return ps, nil

@@ -92,7 +92,7 @@ func NewMySQLContainer(ctx context.Context) (*MySQLContainer, error) {
 		container.Terminate(ctx)
 		return nil, err
 	}
-	_, err = container.Exec(context.Background(), []string{"mysql", "-uroot", "-p" + mySQLRootPassword, "-Bse", "CREATE USER 'root'@'%' IDENTIFIED BY '" + mySQLRootPassword + "';GRANT ALL ON *.* TO 'root'@'%';FLUSH PRIVILEGES;"})
+	_, _, err = container.Exec(context.Background(), []string{"mysql", "-uroot", "-p" + mySQLRootPassword, "-Bse", "CREATE USER 'root'@'%' IDENTIFIED BY '" + mySQLRootPassword + "';GRANT ALL ON *.* TO 'root'@'%';FLUSH PRIVILEGES;"})
 	//logging.Infof("Exec result: %v err: %v", res, err)
 	// [user[:password]@][net[(addr)]]/dbname[?param1=value1&paramN=valueN]
 	connectionString := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",

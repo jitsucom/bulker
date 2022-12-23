@@ -12,6 +12,7 @@ import (
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/implementations/sql/testcontainers"
 	"github.com/jitsucom/bulker/implementations/sql/testcontainers/clickhouse"
+	"github.com/jitsucom/bulker/implementations/sql/testcontainers/clickhouse_noshards"
 	"github.com/jitsucom/bulker/types"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/require"
@@ -110,6 +111,16 @@ func init() {
 		Dsns:     clickhouseClusterContainer.Dsns,
 		Database: clickhouseClusterContainer.Database,
 		Cluster:  clickhouseClusterContainer.Cluster,
+	}}
+	clickhouseClusterContainerNoShards, err := clickhouse_noshards.NewClickHouseClusterContainerNoShards(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	configRegistry[ClickHouseBulkerTypeId+"_cluster_noshards"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
+		//also test HTTP mode with this config
+		Dsns:     clickhouseClusterContainerNoShards.DsnsHTTP,
+		Database: clickhouseClusterContainerNoShards.Database,
+		Cluster:  clickhouseClusterContainerNoShards.Cluster,
 	}}
 
 	allBulkerConfigs = make([]string, 0, len(configRegistry))
@@ -231,7 +242,7 @@ func TestStreams(t *testing.T) {
 				"consume_object_1_redshift":     "cause: pq: 22P02 invalid input syntax for integer: \"a\"",
 				"consume_object_1_mysql":        "cause: Error 1366: Incorrect integer value: 'a' for column 'int_1' at row 1",
 				"consume_object_1_snowflake":    "cause: 100038 (22018): Numeric value 'a' is not recognized",
-				"consume_object_1_clickhouse":   "cause: error converting string to int",
+				"consume_object_1_clickhouse":   []string{"cause: error converting string to int", "Cannot parse string 'a' as Int64"},
 				"create_stream_bigquery_stream": BigQueryAutocommitUnsupported,
 			},
 			configIds: allBulkerConfigs,
@@ -292,6 +303,24 @@ func TestStreams(t *testing.T) {
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
 			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
+		},
+		{
+			name:              "timestamp_option",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/simple.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("_timestamp", "id", "name", "extra"),
+			},
+			expectedRowsCount: 6,
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "test", "extra": nil},
+				{"_timestamp": constantTime, "id": 2, "name": "test", "extra": nil},
+				{"_timestamp": constantTime, "id": 3, "name": "test2", "extra": "extra"},
+			},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+			streamOptions:  []bulker.StreamOption{WithTimestamp("_timestamp")},
 		},
 	}
 	for _, tt := range tests {
@@ -529,8 +558,19 @@ func CheckError(step string, bulkerType string, mode bulker.BulkMode, reqr *requ
 		}
 	}
 	switch target := expectedError.(type) {
+	case []string:
+		contains := false
+		for _, t := range target {
+			if strings.Contains(err.Error(), t) {
+				contains = true
+				break
+			}
+		}
+		if !contains {
+			reqr.Fail(fmt.Sprintf("%s", err), "error in step %s doesn't contain one of expected value: %+v", step, target)
+		}
 	case string:
-		reqr.Containsf(fmt.Sprintf("%v", err), target, "error in step %s doesn't contain expected value: %s", step, target)
+		reqr.ErrorContainsf(err, target, "error in step %s doesn't contain expected value: %s", step, target)
 	case error:
 		reqr.ErrorIs(err, target, "error in step %s doesn't match expected error: %s", step, target)
 	case nil:

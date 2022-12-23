@@ -93,8 +93,8 @@ func TestExistingTable2(t *testing.T) {
 			expectedErrors: map[string]any{
 				"consume_object_0_postgres_stream":   "pq: 22P02 invalid input syntax for type bigint: \"string_id\"",
 				"stream_complete_postgres_batch":     "pq: 22P02 invalid input syntax for type bigint: \"string_id\"",
-				"consume_object_0_clickhouse_stream": "error converting string to int",
-				"stream_complete_clickhouse_batch":   "error converting string to int",
+				"consume_object_0_clickhouse_stream": []string{"error converting string to int", "Cannot parse string 'string_id' as Int64"},
+				"stream_complete_clickhouse_batch":   []string{"error converting string to int", "Cannot parse string 'string_id' as Int64"},
 				"consume_object_0_redshift_stream":   "pq: 22P02 invalid input syntax for integer: \"string_id\"",
 				"stream_complete_redshift_batch":     "system table for details",
 				"consume_object_0_mysql_stream":      "Error 1366: Incorrect integer value: 'string_id' for column 'id' at row 1",

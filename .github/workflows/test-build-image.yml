@@ -47,6 +47,7 @@ jobs:
         name: test-report
         path: |
           test_report.html
+          test_report.json
 
   docker:
     needs: bulker-test

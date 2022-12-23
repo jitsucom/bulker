@@ -1,0 +1,44 @@
+version: '3.5'
+services:
+  zookeeper2:
+    image: zookeeper:3.7
+    container_name: zookeeper2
+    hostname: zookeeper
+    networks:
+      clickhouse-network2:
+        ipv4_address: 172.24.0.10
+  clickhouse2_01:
+    image: clickhouse/clickhouse-server:22.8-alpine
+    container_name: clickhouse2_01
+    hostname: clickhouse01
+    networks:
+      clickhouse-network2:
+        ipv4_address: 172.24.0.11
+    ports:
+      - "8133:8123"
+      - "9010:9000"
+    volumes:
+      - ${PWD}/testcontainers/clickhouse_noshards/clickhouse01:/etc/clickhouse-server
+    depends_on:
+      - zookeeper2
+  clickhouse2_02:
+    image: clickhouse/clickhouse-server:22.8-alpine
+    container_name: clickhouse2_02
+    hostname: clickhouse02
+    networks:
+      clickhouse-network2:
+        ipv4_address: 172.24.0.12
+    ports:
+      - "8134:8123"
+      - "9011:9000"
+    volumes:
+      - ${PWD}/testcontainers/clickhouse_noshards/clickhouse02:/etc/clickhouse-server
+    depends_on:
+      - zookeeper2
+
+networks:
+  clickhouse-network2:
+    name: clickhouse-network2
+    ipam:
+      config:
+        - subnet: 172.24.0.0/24

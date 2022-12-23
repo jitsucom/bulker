@@ -1,4 +1,4 @@
-package clickhouse
+package clickhouse_noshards
 
 import (
 	"context"
@@ -12,12 +12,12 @@ import (
 const (
 	chClusterDatabase               = "default"
 	chClusterCluster                = "company_cluster"
-	chClusterDatasourceTemplateHttp = "http://default:@localhost:8123,localhost:8124,localhost:8125,localhost:8126/default?read_timeout=5m&mutations_sync=2&connection_open_strategy=round_robin"
-	chClusterDatasourceTemplate     = "clickhouse://default:@localhost:9000,localhost:9001,localhost:9002,localhost:9003/default?read_timeout=5m&mutations_sync=2&connection_open_strategy=round_robin"
+	chClusterDatasourceTemplateHttp = "http://default:@localhost:8133,localhost:8134/default?read_timeout=5m&mutations_sync=2&connection_open_strategy=round_robin"
+	chClusterDatasourceTemplate     = "clickhouse://default:@localhost:9010,localhost:9011/default?read_timeout=5m&mutations_sync=2&connection_open_strategy=round_robin"
 )
 
-// ClickHouseClusterContainer is a ClickHouse testcontainer
-type ClickHouseClusterContainer struct {
+// ClickHouseClusterContainerNoShards is a ClickHouse testcontainer
+type ClickHouseClusterContainerNoShards struct {
 	datasource *sql.DB
 	Container  testcontainers.Container
 	Compose    *testcontainers.LocalDockerCompose
@@ -29,11 +29,11 @@ type ClickHouseClusterContainer struct {
 	Database string
 }
 
-// NewClickhouseClusterContainer creates new Clickhouse test container if CH_TEST_PORT is not defined. Otherwise uses db at defined port.
+// ClickHouseClusterContainerNoShards creates new Clickhouse test container if CH_TEST_PORT is not defined. Otherwise uses db at defined port.
 // This logic is required for running test at CI environment
-func NewClickhouseClusterContainer(ctx context.Context) (*ClickHouseClusterContainer, error) {
-	composeFilePaths := []string{"testcontainers/clickhouse/docker-compose.yml"}
-	identifier := "bulker_clickhouse_cluster_compose"
+func NewClickHouseClusterContainerNoShards(ctx context.Context) (*ClickHouseClusterContainerNoShards, error) {
+	composeFilePaths := []string{"testcontainers/clickhouse_noshards/docker-compose.yml"}
+	identifier := "bulker_clickhouse_cluster_noshards_compose"
 
 	compose := testcontainers.NewLocalDockerCompose(composeFilePaths, identifier)
 	execError := compose.Down()
@@ -45,10 +45,8 @@ func NewClickhouseClusterContainer(ctx context.Context) (*ClickHouseClusterConta
 	compose = testcontainers.NewLocalDockerCompose(composeFilePaths, identifier)
 	execError = compose.
 		WithCommand([]string{"up", "-d"}).
-		WaitForService("clickhouse01", tcWait.ForListeningPort("9000/tcp")).
-		WaitForService("clickhouse02", tcWait.ForListeningPort("9000/tcp")).
-		WaitForService("clickhouse03", tcWait.ForListeningPort("9000/tcp")).
-		WaitForService("clickhouse04", tcWait.ForListeningPort("9000/tcp")).
+		WaitForService("clickhouse2_01", tcWait.ForListeningPort("9000/tcp")).
+		WaitForService("clickhouse2_02", tcWait.ForListeningPort("9000/tcp")).
 		Invoke()
 	err = execError.Error
 	if err != nil {
@@ -65,7 +63,7 @@ func NewClickhouseClusterContainer(ctx context.Context) (*ClickHouseClusterConta
 		return nil, err
 	}
 
-	return &ClickHouseClusterContainer{
+	return &ClickHouseClusterContainerNoShards{
 		datasource: datasource,
 		Compose:    compose,
 		Context:    ctx,
@@ -77,7 +75,7 @@ func NewClickhouseClusterContainer(ctx context.Context) (*ClickHouseClusterConta
 }
 
 // Close terminates underlying docker container
-func (ch *ClickHouseClusterContainer) Close() error {
+func (ch *ClickHouseClusterContainerNoShards) Close() error {
 	if ch.Compose != nil {
 		execError := ch.Compose.Down()
 		err := execError.Error

@@ -25,9 +25,10 @@ type Table struct {
 	Temporary bool
 	Cached    bool
 
-	Columns        Columns
-	PKFields       utils.Set[string]
-	PrimaryKeyName string
+	Columns         Columns
+	PKFields        utils.Set[string]
+	PrimaryKeyName  string
+	TimestampColumn string
 
 	Partition DatePartition
 
