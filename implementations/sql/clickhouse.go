@@ -179,9 +179,9 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	//	Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
 	//	Debug:       true,
 	//})
-	dataSource.SetMaxIdleConns(0)
+	dataSource.SetMaxIdleConns(1)
 	//dataSource.SetMaxOpenConns(10)
-	//dataSource.SetConnMaxLifetime(time.Hour)
+	dataSource.SetConnMaxLifetime(time.Hour)
 
 	//keep select 1 and don't use Ping() because chproxy doesn't support /ping endpoint.
 	if _, err := dataSource.Exec("SELECT 1"); err != nil {
