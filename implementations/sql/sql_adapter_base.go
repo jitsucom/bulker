@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/implementations"
@@ -67,6 +68,7 @@ type TypeCastFunction func(placeholder string, column SQLColumn) string
 type ErrorAdapter func(error) error
 
 type SQLAdapterBase[T any] struct {
+	objects.ServiceBase
 	typeId          string
 	config          *T
 	dataSource      *sql.DB
@@ -88,8 +90,9 @@ type SQLAdapterBase[T any] struct {
 	checkErrFunc                 ErrorAdapter
 }
 
-func newSQLAdapterBase[T any](typeId string, config *T, dataSource *sql.DB, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) SQLAdapterBase[T] {
+func newSQLAdapterBase[T any](id string, typeId string, config *T, dataSource *sql.DB, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) SQLAdapterBase[T] {
 	s := SQLAdapterBase[T]{
+		ServiceBase:          objects.NewServiceBase(id),
 		typeId:               typeId,
 		config:               config,
 		dataSource:           dataSource,

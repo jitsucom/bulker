@@ -100,7 +100,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if !infileEnabled {
 		_, err = dataSource.Exec(mySQLAllowLocalFile)
 		if err != nil {
-			logging.Warnf("Loading tables from local batch file is disabled. Bulk loading will fallback to insert statements. To enable loading from files add to [mysql] and [mysqld] sections of my.cnf file the following line: local-infile=1")
+			logging.Warnf("[%s] Loading tables from local batch file is disabled. Bulk loading will fallback to insert statements. To enable loading from files add to [mysql] and [mysqld] sections of my.cnf file the following line: local-infile=1", bulkerConfig.Id)
 		} else {
 			infileEnabled = true
 		}
@@ -118,7 +118,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
 	m := &MySQL{
-		SQLAdapterBase: newSQLAdapterBase(MySQLBulkerTypeId, config, dataSource, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr),
+		SQLAdapterBase: newSQLAdapterBase(bulkerConfig.Id, MySQLBulkerTypeId, config, dataSource, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr),
 		infileEnabled:  infileEnabled,
 	}
 	m.identifierQuoteChar = '`'
@@ -195,7 +195,6 @@ func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable 
 	}
 }
 
-// TODO: Use prepared statement
 func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
 	quotedTableName := m.quotedTableName(targetTable.Name)
 
@@ -267,7 +266,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 			_ = stmt.Close()
 		}()
 		//f, err := os.ReadFile(loadSource.Path)
-		//logging.Infof("FILE: %s", f)
+		//m.Infof("FILE: %s", f)
 
 		file, err := os.Open(loadSource.Path)
 		if err != nil {

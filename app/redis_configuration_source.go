@@ -143,7 +143,7 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 		if err != nil {
 			metrics.RedisConfigurationSourceError("parse_error").Inc()
 			rcs.Errorf("failed to parse config for destination %s: %s: %v", id, config, err)
-		} else {
+		} else if dstCfg.UsesBulker {
 			dstCfg.Config.Id = id
 			rcs.Infof("parsed config for destination %s: %+v", id, dstCfg)
 			newDsts[id] = &dstCfg

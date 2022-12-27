@@ -137,10 +137,11 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 			case e := <-bc.failedProducer.Events():
 				switch ev := e.(type) {
 				case *kafka.Message:
+					messageId := GetKafkaHeader(ev, MessageIdHeader)
 					if ev.TopicPartition.Error != nil {
-						bc.Errorf("Error sending message to kafka topic %s: %s", ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
+						bc.Errorf("Error sending message (ID: %s) to kafka topic %s: %s", messageId, ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
 					} else {
-						bc.Infof("Message delivered to topic %s [%d] at offset %v", *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
+						bc.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 					}
 					//case kafka.Error:
 					//	bc.Errorf("Producer error: %w", ev)
@@ -236,7 +237,7 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 	defer func() {
 		if err != nil {
 			metrics.BatchConsumerBatchFails(bc.destinationId, bc.tableName).Inc()
-			metrics.BatchConsumerBatchFailedMessages(bc.destinationId, bc.tableName).Add(float64(i))
+			metrics.BatchConsumerBatchFailedMessages(bc.destinationId, bc.tableName).Add(float64(i + 1))
 			if failedPosition != nil {
 				err2 := bc.processFailed(failedPosition)
 				if err2 != nil {
@@ -244,8 +245,7 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 					logging.SystemError(err2)
 				}
 			}
-		}
-		if i > 0 {
+		} else if i > 0 {
 			metrics.BatchConsumerBatchSuccesses(bc.destinationId, bc.tableName).Inc()
 			metrics.BatchConsumerBatchMessages(bc.destinationId, bc.tableName).Add(float64(i))
 		}
@@ -280,7 +280,7 @@ func (bc *BatchConsumer) processBatch(destination *Destination, batchSize int) (
 		dec.UseNumber()
 		err = dec.Decode(&obj)
 		if err == nil {
-			bc.Infof("%d. Message ID: %s Offset: %s", i, obj.Id(), message.TopicPartition.Offset.String())
+			bc.Infof("%d. Consumed Message ID: %s Offset: %s", i, obj.Id(), message.TopicPartition.Offset.String())
 			_, processedObjectsSample, err = bulkerStream.Consume(context.Background(), obj)
 			if err != nil {
 				metrics.BatchConsumerMessageErrors(bc.destinationId, bc.tableName, "bulker_stream_error").Inc()

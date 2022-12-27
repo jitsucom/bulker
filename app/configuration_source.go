@@ -18,8 +18,8 @@ const destinationsKey = "destinations"
 const defaultEnvDestinationPrefix = "BULKER_DESTINATION"
 
 type DestinationConfig struct {
-	UpdatedAt time.Time `mapstructure:"updatedAt" json:"updatedAt"`
-
+	UpdatedAt           time.Time `mapstructure:"updatedAt" json:"updatedAt"`
+	UsesBulker          bool      `mapstructure:"usesBulker" json:"usesBulker"`
 	bulker.Config       `mapstructure:",squash"`
 	bulker.StreamConfig `mapstructure:",squash"`
 }

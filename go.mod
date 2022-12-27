@@ -16,7 +16,6 @@ require (
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/martian v2.1.0+incompatible
 	github.com/google/uuid v1.3.0
-	github.com/gookit/color v1.5.1
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hjson/hjson-go/v4 v4.2.0
 	github.com/joomcode/errorx v1.1.0
@@ -26,6 +25,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/penglongli/gin-metrics v0.1.10
 	github.com/prometheus/client_golang v1.14.0
+	github.com/sirupsen/logrus v1.9.0
 	github.com/snowflakedb/gosnowflake v1.6.13
 	github.com/spf13/viper v1.13.0
 	github.com/stretchr/testify v1.8.1
@@ -117,14 +117,12 @@ require (
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
-	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/afero v1.8.2 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.4.1 // indirect
 	github.com/ugorji/go/codec v1.2.7 // indirect
-	github.com/xo/terminfo v0.0.0-20210125001918-ca9a967f8778 // indirect
 	go.opencensus.io v0.23.0 // indirect
 	go.opentelemetry.io/otel v1.11.1 // indirect
 	go.opentelemetry.io/otel/trace v1.11.1 // indirect

@@ -91,7 +91,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	for k, v := range config.Parameters {
 		connectionString += " " + k + "=" + v + " "
 	}
-	logging.Infof("connecting: %s", connectionString)
+	logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
 
 	dataSource, err := sql.Open("postgres", connectionString)
 	if err != nil {
@@ -127,7 +127,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	p := &Postgres{newSQLAdapterBase(PostgresBulkerTypeId, config, dataSource, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)}
+	p := &Postgres{newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dataSource, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)}
 
 	return p, nil
 }
@@ -205,7 +205,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, tableName string) (*Table
 
 	jitsuPrimaryKeyName := BuildConstraintName(table.Name)
 	if primaryKeyName != "" && primaryKeyName != jitsuPrimaryKeyName {
-		logging.Warnf("table: %s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
+		p.Warnf("table: %s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
 	}
 	return table, nil
 }
@@ -309,7 +309,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		_ = stmt.Close()
 	}()
 	//f, err := os.ReadFile(loadSource.Path)
-	//logging.Infof("FILE: %s", f)
+	//p.Infof("FILE: %s", f)
 
 	file, err := os.Open(loadSource.Path)
 	if err != nil {

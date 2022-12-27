@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
@@ -35,7 +34,8 @@ const (
 
 	chLocalPrefix = "local_"
 
-	chClusterQuery = "SELECT max(shard_num) > 1 FROM system.clusters where cluster = ?"
+	chDatabaseQuery = "SELECT name FROM system.databases where name = ?"
+	chClusterQuery  = "SELECT max(shard_num) > 1 FROM system.clusters where cluster = ?"
 
 	chTableSchemaQuery       = `SELECT name, type, is_in_primary_key FROM system.columns WHERE database = ? and table = ? and default_kind not in ('MATERIALIZED', 'ALIAS', 'EPHEMERAL')`
 	chCreateDatabaseTemplate = `CREATE DATABASE IF NOT EXISTS "%s" %s`
@@ -178,7 +178,7 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	//	Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
 	//	Debug:       true,
 	//})
-	//dataSource.SetMaxIdleConns(5)
+	dataSource.SetMaxIdleConns(0)
 	//dataSource.SetMaxOpenConns(10)
 	//dataSource.SetConnMaxLifetime(time.Hour)
 
@@ -204,8 +204,7 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	sqlAdapterBase := newSQLAdapterBase(ClickHouseBulkerTypeId, config, dataSource,
-		queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr)
+	sqlAdapterBase := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, dataSource, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr)
 	sqlAdapterBase.batchFileFormat = implementations.JSON
 	sqlAdapterBase.identifierQuoteChar = '`'
 
@@ -249,28 +248,32 @@ func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 
 // InitDatabase create database instance if doesn't exist
 func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
-	query := fmt.Sprintf(chCreateDatabaseTemplate, ch.config.Database, ch.getOnClusterClause())
+	var dbname string
+	_ = ch.txOrDb(ctx).QueryRowContext(ctx, chDatabaseQuery, ch.config.Database).Scan(&dbname)
+	if dbname == "" {
+		query := fmt.Sprintf(chCreateDatabaseTemplate, ch.config.Database, ch.getOnClusterClause())
 
-	if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-		return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Database:  ch.config.Database,
-				Cluster:   ch.config.Cluster,
-				Statement: query,
-			})
+		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
+			return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
+				WithProperty(errorj.DBInfo, &types.ErrorPayload{
+					Database:  ch.config.Database,
+					Cluster:   ch.config.Cluster,
+					Statement: query,
+				})
+		}
 	}
 	if ch.config.Cluster != "" {
 		err := ch.txOrDb(ctx).QueryRowContext(ctx, chClusterQuery, ch.config.Cluster).Scan(&ch.distributed)
 		if err != nil {
-			logging.Errorf("failed to get cluster info - assuming distributed mode. error: %v", err)
+			ch.Errorf("failed to get cluster info - assuming distributed mode. error: %v", err)
 			//assuming that cluster exists and has multiple shards
 			ch.distributed = true
 			return nil
 		}
 		if ch.distributed {
-			logging.Infof("cluster %s is distributed", ch.config.Cluster)
+			ch.Infof("cluster `%s` is distributed", ch.config.Cluster)
 		} else {
-			logging.Infof("cluster %s is not distributed", ch.config.Cluster)
+			ch.Infof("cluster `%s` is not distributed", ch.config.Cluster)
 		}
 	}
 	return nil
@@ -413,7 +416,7 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 
 		_, err := ch.txOrDb(ctx).ExecContext(ctx, query)
 		if err != nil {
-			logging.Errorf("Error altering distributed table for [%s] with statement [%s]: %v", patchSchema.Name, query, err)
+			ch.Errorf("Error altering distributed table for [%s] with statement [%s]: %v", patchSchema.Name, query, err)
 			// fallback for older clickhouse versions: drop and create distributed table if ReplicatedMergeTree engine
 			ch.dropTable(ctx, ch.quotedTableName(patchSchema.Name), true)
 			return ch.createDistributedTableInTransaction(ctx, patchSchema)
@@ -516,7 +519,7 @@ func (ch *ClickHouse) Insert(ctx context.Context, targetTable *Table, merge bool
 			if err != nil {
 				return err
 			}
-			//logging.Infof("%s: %v (%T) was %v", v, l, l, object[v])
+			//ch.Infof("%s: %v (%T) was %v", v, l, l, object[v])
 			args[i] = l
 		}
 		if _, err := stmt.ExecContext(ctx, args...); err != nil {
@@ -580,7 +583,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		_ = stmt.Close()
 	}()
 	//f, err := os.ReadFile(loadSource.Path)
-	//logging.Infof("FILE: %s", f)
+	//ch.Infof("FILE: %s", f)
 
 	file, err := os.Open(loadSource.Path)
 	if err != nil {
@@ -601,7 +604,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 			if err != nil {
 				return err
 			}
-			//logging.Infof("%s: %v (%T) was %v", v, l, l, object[v])
+			//ch.Infof("%s: %v (%T) was %v", v, l, l, object[v])
 			args[i] = l
 		}
 		if _, err := stmt.ExecContext(ctx, args...); err != nil {
@@ -767,7 +770,7 @@ func (ch *ClickHouse) localTableName(tableName string) string {
 
 func convertType(value any, column SQLColumn) (any, error) {
 	v := types.ReformatValue(value)
-	//logging.Infof("%v (%T) was %v (%T)", v, v, value, value)
+	//ch.Infof("%v (%T) was %v (%T)", v, v, value, value)
 
 	switch strings.ToLower(column.Type) {
 	case "float64":

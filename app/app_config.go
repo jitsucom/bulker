@@ -25,6 +25,8 @@ type AppConfig struct {
 	AuthTokens   string `mapstructure:"AUTH_TOKENS"`
 	TokenSecrets string `mapstructure:"TOKEN_SECRET"`
 
+	LogFormat string `mapstructure:"LOG_FORMAT"`
+
 	GlobalHashSecret  string `mapstructure:"GLOBAL_HASH_SECRET" default:"dea42a58-acf4-45af-85bb-e77e94bd5025"`
 	GlobalHashSecrets []string
 
@@ -112,6 +114,9 @@ func InitAppConfig() (*AppConfig, error) {
 	err := viper.Unmarshal(&appConfig)
 	if err != nil {
 		return nil, fmt.Errorf("❗error unmarshalling config: %s", err)
+	}
+	if appConfig.LogFormat == "json" {
+		logging.SetJsonFormatter()
 	}
 	if appConfig.InstanceId == "" {
 		instId, _ := os.ReadFile(instanceIdFilePath)

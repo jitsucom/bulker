@@ -3,10 +3,9 @@ package logging
 import (
 	"errors"
 	"fmt"
-	"github.com/gookit/color"
+	"github.com/jitsucom/bulker/base/timestamp"
+	log "github.com/sirupsen/logrus"
 	"io"
-	"log"
-	"strings"
 )
 
 const (
@@ -45,16 +44,14 @@ func (c Config) Validate() error {
 	return nil
 }
 
-//InitGlobalLogger initializes main logger
+// InitGlobalLogger initializes main logger
 func InitGlobalLogger(writer io.Writer, levelStr string) error {
-	dateTimeWriter := DateTimeWriterProxy{
-		writer: writer,
+	level, err := log.ParseLevel(levelStr)
+	if err == nil {
+		log.SetLevel(level)
+	} else {
+		Error(err)
 	}
-	log.SetOutput(dateTimeWriter)
-	log.SetFlags(0)
-
-	LogLevel = ToLevel(levelStr)
-
 	if ConfigErr != "" {
 		Error(ConfigErr)
 	}
@@ -63,6 +60,17 @@ func InitGlobalLogger(writer io.Writer, levelStr string) error {
 		Warn(ConfigWarn)
 	}
 	return nil
+}
+
+func SetJsonFormatter() {
+	log.SetFormatter(&log.JSONFormatter{})
+}
+
+func SetTextFormatter() {
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: timestamp.LogsLayout,
+	})
 }
 
 func SystemErrorf(format string, v ...any) {
@@ -78,61 +86,41 @@ func SystemError(v ...any) {
 }
 
 func Errorf(format string, v ...any) {
-	Error(fmt.Sprintf(format, v...))
+	log.Errorf(format, v...)
 }
 
 func Error(v ...any) {
-	if LogLevel <= ERROR {
-		log.Println(errMsg(v...))
-	}
+	log.Errorln(v...)
 }
 
 func Infof(format string, v ...any) {
-	Info(fmt.Sprintf(format, v...))
+	log.Infof(format, v...)
 }
 
 func Info(v ...any) {
-	if LogLevel <= INFO {
-		log.Println(append([]any{infoPrefix}, v...)...)
-	}
+	log.Infoln(v...)
 }
 
 func Debugf(format string, v ...any) {
-	Debug(fmt.Sprintf(format, v...))
+	log.Debugf(format, v...)
 }
 
 func Debug(v ...any) {
-	if LogLevel <= DEBUG {
-		log.Println(append([]any{debugPrefix}, v...)...)
-	}
+	log.Debug(v...)
 }
 
 func Warnf(format string, v ...any) {
-	Warn(fmt.Sprintf(format, v...))
+	log.Warnf(format, v...)
 }
 
 func Warn(v ...any) {
-	if LogLevel <= WARN {
-		log.Println(append([]any{warnPrefix}, v...)...)
-	}
+	log.Warnln(v...)
 }
 
 func Fatal(v ...any) {
-	if LogLevel <= FATAL {
-		log.Fatal(errMsg(v...))
-	}
+	log.Fatal(v...)
 }
 
 func Fatalf(format string, v ...any) {
-	if LogLevel <= FATAL {
-		log.Fatalf(errMsg(fmt.Sprintf(format, v...)))
-	}
-}
-
-func errMsg(values ...any) string {
-	valuesStr := []string{errPrefix}
-	for _, v := range values {
-		valuesStr = append(valuesStr, fmt.Sprint(v))
-	}
-	return color.Red.Sprint(strings.Join(valuesStr, " "))
+	log.Fatalf(format, v...)
 }

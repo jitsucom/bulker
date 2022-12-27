@@ -167,7 +167,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		errorType = r.ResponseError(c, http.StatusBadRequest, "error parsing IngestMessage", false, fmt.Errorf("%w: %s", err, string(body)))
 		return
 	}
-	r.Infof("[ingest] Message ID: %s Origin: %s", ingestMessage.MessageId, utils.Nvl(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain))
+	r.Infof("[ingest] Message ID: %s Write key: %s Origin: %s", ingestMessage.MessageId, ingestMessage.WriteKey, utils.Nvl(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain))
 
 	var stream *StreamWithDestinations
 	if ingestMessage.WriteKey != "" {

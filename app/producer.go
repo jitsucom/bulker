@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const MessageIdHeader = "message_id"
+
 type Producer struct {
 	objects.ServiceBase
 	producer *kafka.Producer
@@ -45,13 +47,14 @@ func (p *Producer) Start() {
 		for e := range p.producer.Events() {
 			switch ev := e.(type) {
 			case *kafka.Message:
+				messageId := GetKafkaHeader(ev, MessageIdHeader)
 				if ev.TopicPartition.Error != nil {
 					//TODO: check for retrieable errors
 					metrics.ProducerDeliveryErrors(ProducerLabelsWithErr(*ev.TopicPartition.Topic, metrics.KafkaErrorCode(ev.TopicPartition.Error))).Inc()
-					p.Errorf("Error sending message to kafka topic %s: %s", ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
+					p.Errorf("Error sending message (ID: %s) to kafka topic %s: %s", messageId, ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
 				} else {
 					metrics.ProducerMessagesDelivered(ProducerLabels(*ev.TopicPartition.Topic, "")).Inc()
-					p.Infof("Message delivered to topic %s [%d] at offset %v", *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
+					p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 				}
 				//case kafka.Error:
 				//	p.Debugf("Producer error: %w", ev)
@@ -105,13 +108,14 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 			select {
 			case e := <-deliveryChan:
 				m := e.(*kafka.Message)
+				messageId := GetKafkaHeader(m, MessageIdHeader)
 				if m.TopicPartition.Error != nil {
 					metrics.ProducerDeliveryErrors(ProducerLabelsWithErr(topic, metrics.KafkaErrorCode(m.TopicPartition.Error))).Inc()
-					p.Errorf("Error sending message to kafka topic %s: %v", topic, m.TopicPartition.Error)
+					p.Errorf("Error sending message (ID: %s) to kafka topic %s: %v", messageId, topic, m.TopicPartition.Error)
 					errors.Errors = append(errors.Errors, m.TopicPartition.Error)
 				} else {
 					metrics.ProducerMessagesDelivered(ProducerLabels(topic, "")).Inc()
-					p.Debugf("Message delivered to topic %s [%d] at offset %v", *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
+					p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
 				}
 			case <-until:
 				metrics.ProducerDeliveryErrors(ProducerLabelsWithErr(topic, "sync_delivery_timeout")).Inc()
@@ -188,4 +192,13 @@ func ProducerLabelsWithErr(topic string, errText string) (destinationId, mode, t
 	} else {
 		return destinationId, mode, tableName, errText
 	}
+}
+
+func GetKafkaHeader(message *kafka.Message, key string) string {
+	for _, h := range message.Headers {
+		if h.Key == key {
+			return string(h.Value)
+		}
+	}
+	return ""
 }

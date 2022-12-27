@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/implementations"
@@ -61,6 +62,7 @@ var (
 
 // BigQuery adapter for creating,patching (schema or table), inserting and copying data from gcs to BigQuery
 type BigQuery struct {
+	objects.ServiceBase
 	client      *bigquery.Client
 	config      *implementations.GoogleConfig
 	queryLogger *logging.QueryLogger
@@ -92,7 +94,9 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	return &BigQuery{client: client, config: config, queryLogger: queryLogger}, nil
+	return &BigQuery{
+		ServiceBase: objects.NewServiceBase(bulkerConfig.Id),
+		client:      client, config: config, queryLogger: queryLogger}, nil
 }
 
 func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -248,7 +252,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 
 	_, err = bqTable.Metadata(ctx)
 	if err == nil {
-		logging.Info("BigQuery table", tableName, "already exists")
+		bq.Infof("BigQuery table %s already exists", tableName)
 		return nil
 	}
 
@@ -377,11 +381,11 @@ func (bq *BigQuery) DeletePartition(ctx context.Context, tableName string, dateP
 	partitions := GranularityToPartitionIds(datePartiton.Granularity, datePartiton.Value)
 	for _, partition := range partitions {
 		bq.logQuery("DELETE partition "+partition+" in table"+tableName, "", nil)
-		logging.Infof("Deletion partition %s in table %s", partition, tableName)
+		bq.Infof("Deletion partition %s in table %s", partition, tableName)
 		if err := bq.client.Dataset(bq.config.Dataset).Table(tableName + "$" + partition).Delete(ctx); err != nil {
 			gerr, ok := err.(*googleapi.Error)
 			if ok && gerr.Code == 404 {
-				logging.Infof("Partition %s$%s was not found", tableName, partition)
+				bq.Infof("Partition %s$%s was not found", tableName, partition)
 				continue
 			}
 			return errorj.DeleteFromTableError.Wrap(err, "failed to delete partition").
@@ -484,7 +488,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	}()
 	bq.logQuery(fmt.Sprintf("Loading values to table %s from: %s ", targetTable.Name, loadSource.Path), nil, nil)
 	//f, err := os.ReadFile(loadSource.Path)
-	//logging.Infof("FILE: %s", f)
+	//bq.Infof("FILE: %s", f)
 
 	file, err := os.Open(loadSource.Path)
 	if err != nil {
@@ -653,7 +657,7 @@ func (bq *BigQuery) logQuery(messageTemplate string, entity any, err error) {
 			entityJSON, err := jsoniter.Marshal(entity)
 			if err != nil {
 				entityString = fmt.Sprintf("[failed to marshal query entity: %v]", err)
-				logging.Warnf("Failed to serialize entity for logging: %s", fmt.Sprint(entity))
+				bq.Warnf("Failed to serialize entity for logging: %s", fmt.Sprint(entity))
 			} else {
 				entityString = string(entityJSON)
 			}

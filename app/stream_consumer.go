@@ -157,7 +157,7 @@ func (sc *StreamConsumer) start() {
 						sc.postEventsLog(message.Value, nil, nil, err)
 						sc.Errorf("Failed to parse event from message: %s offset: %s: %w", message.Value, message.TopicPartition.Offset.String(), err)
 					} else {
-						sc.Infof("Message ID: %s Offset: %s", obj.Id(), message.TopicPartition.Offset.String())
+						sc.Infof("Consumed Message ID: %s Offset: %s", obj.Id(), message.TopicPartition.Offset.String())
 						var state bulker.State
 						var processedObjects []types.Object
 						state, processedObjects, err = (*sc.stream.Load()).Consume(context.Background(), obj)

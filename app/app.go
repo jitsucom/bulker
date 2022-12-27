@@ -29,7 +29,7 @@ type AppContext struct {
 
 // TODO: graceful shutdown and cleanups. Flush producer
 func Run() {
-	logging.LogLevel = logging.INFO
+	logging.SetTextFormatter()
 
 	signal.Notify(exitChannel, os.Interrupt, os.Kill, syscall.SIGTERM)
 

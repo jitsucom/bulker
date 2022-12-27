@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
-	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
@@ -280,7 +279,7 @@ func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table
 
 	jitsuPrimaryKeyName := BuildConstraintName(table.Name)
 	if primaryKeyName != "" && primaryKeyName != jitsuPrimaryKeyName {
-		logging.Warnf("table: %s.%s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", p.config.Schema, table.Name, primaryKeyName)
+		p.Warnf("table: %s.%s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", p.config.Schema, table.Name, primaryKeyName)
 	}
 	return table, nil
 }
