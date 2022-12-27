@@ -25,6 +25,19 @@ func ParseObject[K any](inputObject any, result *K) error {
 		if err := mapstructure.Decode(cfg, result); err != nil {
 			return fmt.Errorf("failed to parse map as %T : %w", result, err)
 		}
+	case []byte:
+		if len(cfg) == 0 {
+			return fmt.Errorf("failed to parse. input data is empty")
+		}
+		if cfg[0] == '{' {
+			if err := json.Unmarshal(cfg, result); err != nil {
+				return fmt.Errorf("failed to parse json as %T : %w", result, err)
+			}
+		} else {
+			if err := yaml.Unmarshal(cfg, result); err != nil {
+				return fmt.Errorf("failed to parse yaml as %T : %w", result, err)
+			}
+		}
 	case string:
 		if len(cfg) == 0 {
 			return fmt.Errorf("failed to parse. input string is empty")

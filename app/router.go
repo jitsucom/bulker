@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
+	"github.com/jitsucom/bulker/bulker"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/penglongli/gin-metrics/ginmetrics"
 	"io"
@@ -76,6 +78,7 @@ func NewRouter(appContext *AppContext) *Router {
 
 	engine.Use(router.AuthMiddleware)
 	engine.POST("/post/:destinationId", router.EventsHandler)
+	engine.POST("/test", router.TestConnectionHandler)
 	engine.POST("/ingest", router.IngestHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
 	engine.GET("/log/:eventType/:actorId", router.EventsLogHandler)
@@ -293,6 +296,51 @@ func (r *Router) FailedHandler(c *gin.Context) {
 		}
 	}
 	_ = consumer.Close()
+}
+
+func (r *Router) TestConnectionHandler(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		_ = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err)
+		return
+	}
+	dstCfg := DestinationConfig{}
+	err = utils.ParseObject(body, &dstCfg)
+	if err != nil {
+		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "parse failed", false, err)
+		return
+	} else {
+		r.Infof("[test] parsed config for destination %s: %+v", dstCfg.Id(), dstCfg)
+		if !dstCfg.UsesBulker {
+			_ = r.ResponseError(c, http.StatusUnprocessableEntity, "non bulker type", false, nil)
+			return
+		}
+	}
+
+	b, err := bulker.CreateBulker(dstCfg.Config)
+	if err != nil {
+		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "error creating bulker", false, err)
+		return
+	}
+	defer func() { _ = b.Close() }()
+	if dstCfg.StreamConfig.BulkMode != "" || len(dstCfg.StreamConfig.Options) > 0 {
+		options := bulker.StreamOptions{}
+		for name, serializedOption := range dstCfg.StreamConfig.Options {
+			opt, err := bulker.ParseOption(name, serializedOption)
+			if err != nil {
+				_ = r.ResponseError(c, http.StatusUnprocessableEntity, "option parse error", false, err)
+				return
+			}
+			options.Add(opt)
+		}
+		str, err := b.CreateStream(dstCfg.Id(), dstCfg.TableName, dstCfg.BulkMode, options.Options...)
+		if err != nil {
+			_ = r.ResponseError(c, http.StatusUnprocessableEntity, "error creating bulker stream", false, err)
+			return
+		}
+		_, _ = str.Abort(context.Background())
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // EventsLogHandler - gets events log by EventType, actor id. Filtered by date range and cursorId
