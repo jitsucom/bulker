@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
@@ -304,42 +303,44 @@ func (r *Router) TestConnectionHandler(c *gin.Context) {
 		_ = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err)
 		return
 	}
-	dstCfg := DestinationConfig{}
-	err = utils.ParseObject(body, &dstCfg)
+	bulkerCfg := bulker.Config{}
+	destinationConfig := map[string]any{}
+	err = utils.ParseObject(body, &destinationConfig)
 	if err != nil {
 		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "parse failed", false, err)
 		return
 	} else {
-		r.Infof("[test] parsed config for destination %s: %+v", dstCfg.Id(), dstCfg)
-		if !dstCfg.UsesBulker {
-			_ = r.ResponseError(c, http.StatusUnprocessableEntity, "non bulker type", false, nil)
-			return
-		}
+		r.Infof("[test] parsed config for destination %s: %+v", utils.MapNVL(destinationConfig, "id", ""), destinationConfig)
 	}
+	bulkerCfg.DestinationConfig = destinationConfig
+	bulkerCfg.Id = utils.MapNVL(destinationConfig, "id", "").(string)
+	bulkerCfg.BulkerType = utils.MapNVL(destinationConfig, "destinationType", "").(string)
 
-	b, err := bulker.CreateBulker(dstCfg.Config)
+	b, err := bulker.CreateBulker(bulkerCfg)
 	if err != nil {
 		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "error creating bulker", false, err)
 		return
 	}
-	defer func() { _ = b.Close() }()
-	if dstCfg.StreamConfig.BulkMode != "" || len(dstCfg.StreamConfig.Options) > 0 {
-		options := bulker.StreamOptions{}
-		for name, serializedOption := range dstCfg.StreamConfig.Options {
-			opt, err := bulker.ParseOption(name, serializedOption)
-			if err != nil {
-				_ = r.ResponseError(c, http.StatusUnprocessableEntity, "option parse error", false, err)
-				return
-			}
-			options.Add(opt)
-		}
-		str, err := b.CreateStream(dstCfg.Id(), dstCfg.TableName, dstCfg.BulkMode, options.Options...)
-		if err != nil {
-			_ = r.ResponseError(c, http.StatusUnprocessableEntity, "error creating bulker stream", false, err)
-			return
-		}
-		_, _ = str.Abort(context.Background())
-	}
+	_ = b.Close()
+	// test with stream settings
+	//
+	//if bulkerCfg.StreamConfig.BulkMode != "" || len(bulkerCfg.StreamConfig.Options) > 0 {
+	//	options := bulker.StreamOptions{}
+	//	for name, serializedOption := range bulkerCfg.StreamConfig.Options {
+	//		opt, err := bulker.ParseOption(name, serializedOption)
+	//		if err != nil {
+	//			_ = r.ResponseError(c, http.StatusUnprocessableEntity, "option parse error", false, err)
+	//			return
+	//		}
+	//		options.Add(opt)
+	//	}
+	//	str, err := b.CreateStream(bulkerCfg.Id(), bulkerCfg.TableName, bulkerCfg.BulkMode, options.Options...)
+	//	if err != nil {
+	//		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "error creating bulker stream", false, err)
+	//		return
+	//	}
+	//	_, _ = str.Abort(context.Background())
+	//}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
