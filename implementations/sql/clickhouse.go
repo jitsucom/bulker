@@ -179,9 +179,9 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	//	Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
 	//	Debug:       true,
 	//})
-	dataSource.SetMaxIdleConns(1)
+	//dataSource.SetMaxIdleConns(1)
 	//dataSource.SetMaxOpenConns(10)
-	dataSource.SetConnMaxLifetime(time.Hour)
+	dataSource.SetConnMaxIdleTime(time.Minute * 1)
 
 	//keep select 1 and don't use Ping() because chproxy doesn't support /ping endpoint.
 	if _, err := dataSource.Exec("SELECT 1"); err != nil {
@@ -466,69 +466,69 @@ func (ch *ClickHouse) Count(ctx context.Context, tableName string, whenCondition
 }
 
 func (ch *ClickHouse) Insert(ctx context.Context, targetTable *Table, merge bool, objects []types.Object) (err error) {
-	if ch.httpMode {
-		return ch.insert(ctx, targetTable, objects)
-	}
-	tx, err := ch.dataSource.BeginTx(ctx, nil)
-	if err != nil {
-		err = errorj.LoadError.Wrap(err, "failed to open transaction to load table").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Database:    ch.config.Database,
-				Cluster:     ch.config.Cluster,
-				Table:       targetTable.Name,
-				PrimaryKeys: targetTable.GetPKFields(),
-			})
-	}
-
-	columns := targetTable.SortedColumnNames()
-	columnNames := make([]string, len(columns))
-	placeHolders := make([]string, len(columns))
-
-	for i, name := range columns {
-		column := targetTable.Columns[name]
-		columnNames[i] = ch.quotedColumnName(name)
-		placeHolders[i] = ch.typecastFunc(ch.parameterPlaceholder(i, ch.quotedColumnName(name)), column)
-
-	}
-	copyStatement := fmt.Sprintf(chLoadStatement, ch.quotedTableName(targetTable.Name), strings.Join(columnNames, ", "), strings.Join(placeHolders, ", "))
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-			err = errorj.ExecuteInsertError.Wrap(err, "failed to insert to table").
-				WithProperty(errorj.DBInfo, &types.ErrorPayload{
-					Database:    ch.config.Database,
-					Cluster:     ch.config.Cluster,
-					Table:       targetTable.Name,
-					PrimaryKeys: targetTable.GetPKFields(),
-					Statement:   copyStatement,
-				})
-		}
-	}()
-
-	stmt, err := tx.PrepareContext(ctx, copyStatement)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = stmt.Close()
-	}()
-
-	for _, object := range objects {
-		args := make([]any, len(columns))
-		for i, v := range columns {
-			l, err := convertType(object[v], targetTable.Columns[v])
-			if err != nil {
-				return err
-			}
-			//ch.Infof("%s: %v (%T) was %v", v, l, l, object[v])
-			args[i] = l
-		}
-		if _, err := stmt.ExecContext(ctx, args...); err != nil {
-			return checkErr(err)
-		}
-	}
-
-	return tx.Commit()
+	//if ch.httpMode {
+	return ch.insert(ctx, targetTable, objects)
+	//}
+	//tx, err := ch.dataSource.BeginTx(ctx, nil)
+	//if err != nil {
+	//	err = errorj.LoadError.Wrap(err, "failed to open transaction to load table").
+	//		WithProperty(errorj.DBInfo, &types.ErrorPayload{
+	//			Database:    ch.config.Database,
+	//			Cluster:     ch.config.Cluster,
+	//			Table:       targetTable.Name,
+	//			PrimaryKeys: targetTable.GetPKFields(),
+	//		})
+	//}
+	//
+	//columns := targetTable.SortedColumnNames()
+	//columnNames := make([]string, len(columns))
+	//placeHolders := make([]string, len(columns))
+	//
+	//for i, name := range columns {
+	//	column := targetTable.Columns[name]
+	//	columnNames[i] = ch.quotedColumnName(name)
+	//	placeHolders[i] = ch.typecastFunc(ch.parameterPlaceholder(i, ch.quotedColumnName(name)), column)
+	//
+	//}
+	//copyStatement := fmt.Sprintf(chLoadStatement, ch.quotedTableName(targetTable.Name), strings.Join(columnNames, ", "), strings.Join(placeHolders, ", "))
+	//defer func() {
+	//	if err != nil {
+	//		_ = tx.Rollback()
+	//		err = errorj.ExecuteInsertError.Wrap(err, "failed to insert to table").
+	//			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+	//				Database:    ch.config.Database,
+	//				Cluster:     ch.config.Cluster,
+	//				Table:       targetTable.Name,
+	//				PrimaryKeys: targetTable.GetPKFields(),
+	//				Statement:   copyStatement,
+	//			})
+	//	}
+	//}()
+	//
+	//stmt, err := tx.PrepareContext(ctx, copyStatement)
+	//if err != nil {
+	//	return err
+	//}
+	//defer func() {
+	//	_ = stmt.Close()
+	//}()
+	//
+	//for _, object := range objects {
+	//	args := make([]any, len(columns))
+	//	for i, v := range columns {
+	//		l, err := convertType(object[v], targetTable.Columns[v])
+	//		if err != nil {
+	//			return err
+	//		}
+	//		//ch.Infof("%s: %v (%T) was %v", v, l, l, object[v])
+	//		args[i] = l
+	//	}
+	//	if _, err := stmt.ExecContext(ctx, args...); err != nil {
+	//		return checkErr(err)
+	//	}
+	//}
+	//
+	//return tx.Commit()
 }
 
 // LoadTable transfer data from local file to ClickHouse table

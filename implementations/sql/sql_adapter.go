@@ -27,6 +27,7 @@ type SQLAdapter interface {
 	GetBatchFileFormat() implementations.FileFormat
 	OpenTx(ctx context.Context) (*TxSQLAdapter, error)
 	Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error
+	Ping(ctx context.Context) error
 	// InitDatabase setups required db objects like 'schema' or 'dataset' if they don't exist
 	InitDatabase(ctx context.Context) error
 	GetTableSchema(ctx context.Context, tableName string) (*Table, error)
@@ -87,7 +88,10 @@ func (tx *TxSQLAdapter) Insert(ctx context.Context, table *Table, merge bool, ob
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.Insert(ctx, table, merge, objects)
 }
-
+func (tx *TxSQLAdapter) Ping(ctx context.Context) error {
+	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	return tx.sqlAdapter.Ping(ctx)
+}
 func (tx *TxSQLAdapter) InitDatabase(ctx context.Context) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.InitDatabase(ctx)
