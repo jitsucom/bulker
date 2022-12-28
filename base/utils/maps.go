@@ -50,3 +50,11 @@ func MapNVLKeys[K comparable, V any](mp map[K]V, keys ...K) V {
 	var defaultValue V
 	return defaultValue
 }
+
+func MapToSlice[K comparable, V any, R any](mp map[K]V, mappingFunc func(K, V) R) []R {
+	result := make([]R, 0, len(mp))
+	for k, v := range mp {
+		result = append(result, mappingFunc(k, v))
+	}
+	return result
+}

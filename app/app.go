@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/utils"
 	"net/http"
 	"os"
 	"os/signal"
@@ -77,8 +78,9 @@ func InitAppContext() *AppContext {
 	appContext.producer.Start()
 
 	appContext.eventsLogService = &DummyEventsLogService{}
-	if appContext.config.EventsLogRedisURL != "" {
-		appContext.eventsLogService, err = NewRedisEventsLog(appContext.config)
+	eventsLogRedisUrl := utils.NvlString(appContext.config.EventsLogRedisURL, appContext.config.RedisURL)
+	if eventsLogRedisUrl != "" {
+		appContext.eventsLogService, err = NewRedisEventsLog(appContext.config, eventsLogRedisUrl)
 		if err != nil {
 			panic(err)
 		}

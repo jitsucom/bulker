@@ -22,7 +22,7 @@ func TestEventsLog(t *testing.T) {
 	appConfig := AppConfig{}
 	appConfig.EventsLogMaxSize = 1000
 	appConfig.EventsLogRedisURL = redis.URL()
-	redisEl, err := NewRedisEventsLog(&appConfig)
+	redisEl, err := NewRedisEventsLog(&appConfig, redis.URL())
 	reqr.NoError(err)
 
 	var tsStart, tsEnd time.Time

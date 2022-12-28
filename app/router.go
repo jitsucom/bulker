@@ -102,26 +102,26 @@ func (r *Router) GetEngine() *gin.Engine {
 func (r *Router) EventsHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
-	errorType := ""
+	var rError RouterError
 	defer func() {
-		if errorType != "" {
-			metrics.EventsHandlerError(destinationId, tableName, errorType).Inc()
+		if rError.Error != nil {
+			metrics.EventsHandlerError(destinationId, tableName, rError.ErrorType).Inc()
 		} else {
 			metrics.EventsHandlerSuccess(destinationId, tableName).Inc()
 		}
 	}()
 	if tableName == "" {
-		errorType = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"))
+		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), "")
 		return
 	}
 	destination := r.repository.GetDestination(destinationId)
 	if destination == nil {
-		errorType = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId))
+		rError = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId), "")
 		return
 	}
 	topicId, err := destination.TopicId(tableName)
 	if err != nil {
-		errorType = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err)
+		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, "")
 		return
 	}
 	err = r.topicManager.EnsureDestinationTopic(destination, topicId)
@@ -130,46 +130,68 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		if ok && kafkaErr.Code() == kafka.ErrTopicAlreadyExists {
 			r.Warnf("Topic %s already exists", topicId)
 		} else {
-			errorType = r.ResponseError(c, http.StatusInternalServerError, "couldn't create topic", false, fmt.Errorf("topicId %s: %w", topicId, err))
+			rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't create topic", false, fmt.Errorf("topicId %s: %w", topicId, err), "")
 			return
 		}
 	}
 
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		errorType = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err)
+		rError = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, "")
 		return
 	}
 	err = r.producer.ProduceAsync(topicId, body)
 	if err != nil {
-		errorType = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err)
+		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, "")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }
 
 func (r *Router) IngestHandler(c *gin.Context) {
-	slug := ""
-	errorType := ""
+	key := ""
+	var rError RouterError
+	var body []byte
+	var asyncDestinations []string
+	var tagsDestinations []string
+
 	defer func() {
-		if errorType != "" {
-			metrics.IngestHandlerError(slug, errorType).Inc()
+		eventsLogObj := map[string]any{"body": string(body)}
+		if rError.Error != nil {
+			eventsLogObj["error"] = rError.PublicError.Error()
+			eventsLogObj["status"] = "FAILED"
+			_, e := r.eventsLogService.PostEvent(EventTypeIncomingError, utils.NvlString(key, "unknown"), eventsLogObj)
+			if e != nil {
+				r.Errorf("Failed to post event to events log service: %w", e)
+			}
+			metrics.IngestHandlerError(key, rError.ErrorType).Inc()
 		} else {
-			metrics.IngestHandlerSuccess(slug).Inc()
+			eventsLogObj["asyncDestinations"] = asyncDestinations
+			eventsLogObj["tags"] = tagsDestinations
+			eventsLogObj["status"] = "SUCCESS"
+			metrics.IngestHandlerSuccess(key).Inc()
+		}
+		_, e := r.eventsLogService.PostEvent(EventTypeIncomingAll, utils.NvlString(key, "unknown"), eventsLogObj)
+		if e != nil {
+			r.Errorf("Failed to post event to events log service: %w", e)
 		}
 	}()
+	key = c.GetHeader("X-Bulker-Domain")
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		errorType = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err)
+		rError = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, "")
 		return
 	}
 	ingestMessage := IngestMessage{}
 	err = json.Unmarshal(body, &ingestMessage)
 	if err != nil {
-		errorType = r.ResponseError(c, http.StatusBadRequest, "error parsing IngestMessage", false, fmt.Errorf("%w: %s", err, string(body)))
+		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing IngestMessage", false, fmt.Errorf("%w: %s", err, string(body)), "")
 		return
 	}
-	r.Infof("[ingest] Message ID: %s Write key: %s Origin: %s", ingestMessage.MessageId, ingestMessage.WriteKey, utils.Nvl(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain))
+	messageId := ingestMessage.MessageId
+	key = utils.NvlString(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain)
+	r.Debugf("[ingest] Message ID: %s Domain: %s", messageId, key)
+	logFormat := "[ingest] Message ID: %s Domain: %s"
 
 	var stream *StreamWithDestinations
 	if ingestMessage.WriteKey != "" {
@@ -182,15 +204,15 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		streams, err = r.fastStore.GetStreamsByDomain(ingestMessage.Origin.Domain)
 		if len(streams) > 1 {
 			if ingestMessage.WriteKey == "" {
-				errorType = r.ResponseError(c, http.StatusBadRequest, "error getting stream", false, fmt.Errorf("multiple streams found for domain %s. Please use 'writeKey' message property to select a concrete stream", ingestMessage.Origin.Domain))
+				rError = r.ResponseError(c, http.StatusBadRequest, "error getting stream", false, fmt.Errorf("multiple streams found for domain %s. Please use 'writeKey' message property to select a concrete stream", ingestMessage.Origin.Domain), logFormat, messageId, key)
 				return
 			}
 			writeKey := ingestMessage.WriteKey
 			for _, s := range streams {
 				for _, k := range s.Stream.PublicKeys {
-					key := strings.SplitN(k.Hash, ".", 2)
-					salt := key[0]
-					hash := key[1]
+					pk := strings.SplitN(k.Hash, ".", 2)
+					salt := pk[0]
+					hash := pk[1]
 					for _, globalSecret := range r.config.GlobalHashSecrets {
 						if hash == hashApiKey(writeKey, salt, globalSecret) {
 							stream = &s
@@ -205,36 +227,47 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		}
 	}
 	if err != nil {
-		errorType = r.ResponseError(c, http.StatusInternalServerError, "error getting stream", false, err)
+		rError = r.ResponseError(c, http.StatusInternalServerError, "error getting stream", false, err, logFormat, messageId, key)
 		return
 	}
 	if stream == nil {
-		errorType = r.ResponseError(c, http.StatusNotFound, "stream not found", false, fmt.Errorf("stream not found by writeKey: %s and domain: %s", utils.NvlString(ingestMessage.WriteKey, ingestMessage.Origin.Slug), ingestMessage.Origin.Domain))
+		rError = r.ResponseError(c, http.StatusNotFound, "stream not found", false, fmt.Errorf(key), logFormat, messageId, key)
 		return
 	}
 	if len(stream.AsynchronousDestinations) == 0 {
 		c.JSON(http.StatusNoContent, gin.H{"message": "no destinations found for stream"})
 		return
 	}
+	asyncDestinations = utils.ArrayMap(stream.AsynchronousDestinations, func(d ShortDestinationConfig) string { return d.ConnectionId })
+	tagsDestinations = utils.ArrayMap(stream.SynchronousDestinations, func(d ShortDestinationConfig) string { return d.ConnectionId })
+
+	r.Infof("[ingest] Message ID: %s Domain: %s to Connections: [%s] Tags: [%s]", messageId, key,
+		strings.Join(asyncDestinations, ", "), strings.Join(tagsDestinations, ", "))
 	for _, destination := range stream.AsynchronousDestinations {
 		messageCopy := ingestMessage
 		messageCopy.ConnectionId = destination.ConnectionId
 		payload, err := json.Marshal(messageCopy)
-		r.Infof("[ingest] Message ID: %s Producing to: %s", messageCopy.MessageId, destination.ConnectionId)
+		r.Debugf("[ingest] Message ID: %s Producing to: %s", messageId, destination.ConnectionId)
 		if err != nil {
-			errorType = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err, logFormat, messageId, key)
 			return
 		}
 		err = r.producer.ProduceAsync(r.config.KafkaDestinationsTopicName, payload)
 		if err != nil {
-			errorType = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, logFormat, messageId, key)
 			return
 		}
+	}
+	logObj := map[string]any{"body": string(body), "asyncDestinations": asyncDestinations, "tags": tagsDestinations, "status": "SUCCESS"}
+	_, e := r.eventsLogService.PostEvent(EventTypeIncomingAll, key, logObj)
+	if e != nil {
+		r.Errorf("Failed to post event to events log service: %w", e)
 	}
 	if len(stream.SynchronousDestinations) == 0 {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
+
 	tags := make(map[string]TagDestinationConfig, len(stream.SynchronousDestinations))
 	for _, destination := range stream.SynchronousDestinations {
 		tags[destination.Id] = destination.TagDestinationConfig
@@ -263,7 +296,7 @@ func (r *Router) FailedHandler(c *gin.Context) {
 		err = consumer.Assign([]kafka.TopicPartition{{Topic: &topicId, Partition: 0, Offset: kafka.OffsetBeginning}})
 	}
 	if err != nil {
-		r.ResponseError(c, http.StatusInternalServerError, "consumer error", true, err)
+		r.ResponseError(c, http.StatusInternalServerError, "consumer error", true, err, "")
 		return
 	}
 	start := time.Now()
@@ -300,14 +333,14 @@ func (r *Router) FailedHandler(c *gin.Context) {
 func (r *Router) TestConnectionHandler(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		_ = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err)
+		_ = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, "")
 		return
 	}
 	bulkerCfg := bulker.Config{}
 	destinationConfig := map[string]any{}
 	err = utils.ParseObject(body, &destinationConfig)
 	if err != nil {
-		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "parse failed", false, err)
+		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "parse failed", false, err, "")
 		return
 	} else {
 		r.Infof("[test] parsed config for destination %s: %+v", utils.MapNVL(destinationConfig, "id", ""), destinationConfig)
@@ -318,7 +351,7 @@ func (r *Router) TestConnectionHandler(c *gin.Context) {
 
 	b, err := bulker.CreateBulker(bulkerCfg)
 	if err != nil {
-		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "error creating bulker", false, err)
+		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "error creating bulker", false, err, "")
 		return
 	}
 	_ = b.Close()
@@ -431,24 +464,30 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 	return
 }
 
-func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error) string {
-	publicError := err
+func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, logFormat string, logArgs ...any) RouterError {
+	routerError := RouterError{Error: err, ErrorType: errorType}
 	if err != nil {
 		if maskError {
 			errorID := uuid.NewLettersNumbers()
 			err = fmt.Errorf("error# %s: %s: %w", errorID, errorType, err)
-			publicError = fmt.Errorf("error# %s: %s", errorID, errorType)
+			routerError.PublicError = fmt.Errorf("error# %s: %s", errorID, errorType)
 		} else {
 			err = fmt.Errorf("%s: %w", errorType, err)
-			publicError = err
+			routerError.PublicError = err
 		}
 	} else {
 		err = fmt.Errorf(errorType)
-		publicError = err
+		routerError.PublicError = err
 	}
-	r.Errorf("%v", err)
-	c.JSON(code, gin.H{"error": publicError.Error()})
-	return errorType
+	if logFormat == "" {
+		logFormat = "%v"
+	} else {
+		logFormat = logFormat + " %v"
+	}
+	logArgs = append(logArgs, err)
+	r.Errorf(logFormat, logArgs...)
+	c.JSON(code, gin.H{"error": routerError.PublicError.Error()})
+	return routerError
 }
 
 func parseDateQueryParam(param string) (time.Time, error) {
@@ -491,5 +530,11 @@ type IngestMessage struct {
 	Type           string              `json:"type"`
 	Origin         IngestMessageOrigin `json:"origin"`
 	HttpHeaders    map[string]string   `json:"httpHeaders"`
-	HttpPayload    any                 `json:"httpPayload"`
+	HttpPayload    map[string]any      `json:"httpPayload"`
+}
+
+type RouterError struct {
+	Error       error
+	PublicError error
+	ErrorType   string
 }

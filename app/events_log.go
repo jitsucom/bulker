@@ -62,10 +62,10 @@ type RedisEventsLog struct {
 	maxSize   int
 }
 
-func NewRedisEventsLog(config *AppConfig) (*RedisEventsLog, error) {
+func NewRedisEventsLog(config *AppConfig, redisUrl string) (*RedisEventsLog, error) {
 	base := objects.NewServiceBase(redisEventsLogServiceName)
-	base.Debugf("Creating RedisEventsLog with redisURL: %s", config.EventsLogRedisURL)
-	redisPool := newPool(config.EventsLogRedisURL, config.RedisTLSCA)
+	base.Debugf("Creating RedisEventsLog with redisURL: %s", redisUrl)
+	redisPool := newPool(redisUrl, config.RedisTLSCA)
 	r := RedisEventsLog{
 		ServiceBase: base,
 		redisPool:   redisPool,
@@ -75,10 +75,13 @@ func NewRedisEventsLog(config *AppConfig) (*RedisEventsLog, error) {
 }
 
 func (r *RedisEventsLog) PostEvent(eventType EventType, actorId string, event any) (id EventsLogRecordId, err error) {
-	serialized, err := jsoniter.Marshal(event)
-	if err != nil {
-		metrics.EventsLogError("marshal_error").Inc()
-		return "", r.NewError("failed to serialize event entity [%v]: %w", event, err)
+	serialized, ok := event.([]byte)
+	if !ok {
+		serialized, err = jsoniter.Marshal(event)
+		if err != nil {
+			metrics.EventsLogError("marshal_error").Inc()
+			return "", r.NewError("failed to serialize event entity [%v]: %w", event, err)
+		}
 	}
 
 	connection := r.redisPool.Get()

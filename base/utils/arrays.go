@@ -38,3 +38,11 @@ func ArrayIntersection[T comparable](firstArray []T, secondArray []T) []T {
 	}
 	return res
 }
+
+func ArrayMap[V any, R any](arr []V, mappingFunc func(V) R) []R {
+	result := make([]R, len(arr))
+	for i, v := range arr {
+		result[i] = mappingFunc(v)
+	}
+	return result
+}
