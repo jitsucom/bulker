@@ -883,6 +883,10 @@ func (bq *BigQuery) Type() string {
 	return BigqueryBulkerTypeId
 }
 
+func (bq *BigQuery) Ping(ctx context.Context) error {
+	return nil
+}
+
 func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	return &TxSQLAdapter{sqlAdapter: bq, tx: NewDummyTxWrapper(bq.Type())}, nil
 }

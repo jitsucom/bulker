@@ -121,8 +121,8 @@ func (b *SQLAdapterBase[T]) GetBatchFileFormat() implementations.FileFormat {
 	return b.batchFileFormat
 }
 
-func (b *SQLAdapterBase[T]) Ping() error {
-	return b.dataSource.Ping()
+func (b *SQLAdapterBase[T]) Ping(ctx context.Context) error {
+	return b.dataSource.PingContext(ctx)
 }
 
 // Close underlying sql.DB
