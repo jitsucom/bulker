@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/docker/go-connections/nat"
 	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/utils"
 	"github.com/testcontainers/testcontainers-go"
 	tcWait "github.com/testcontainers/testcontainers-go/wait"
 	"os"
@@ -15,11 +16,10 @@ import (
 )
 
 const (
-	pgDefaultPort = "55432:5432"
-	pgUser        = "test"
-	pgPassword    = "test"
-	pgDatabase    = "test"
-	pgSchema      = "bulker"
+	pgUser     = "test"
+	pgPassword = "test"
+	pgDatabase = "test"
+	pgSchema   = "bulker"
 
 	envPostgresPortVariable = "PG_TEST_PORT"
 )
@@ -76,7 +76,7 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 		return fmt.Sprintf("postgres://%s:%s@localhost:%s/%s?sslmode=disable", pgUser, pgPassword, port.Port(), pgDatabase)
 	}
 
-	exposedPort := pgDefaultPort
+	exposedPort := fmt.Sprintf("%d:%d", utils.GetPort(), 5432)
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/docker/go-connections/nat"
 	"github.com/jitsucom/bulker/base/logging"
+	"github.com/jitsucom/bulker/base/utils"
 	"github.com/testcontainers/testcontainers-go"
 	tcWait "github.com/testcontainers/testcontainers-go/wait"
 	"time"
@@ -56,11 +57,13 @@ func NewClickhouseContainer(ctx context.Context) (*ClickHouseContainer, error) {
 		return fmt.Sprintf(chDatasourceTemplate, port.Int())
 	}
 	image := "clickhouse/clickhouse-server:22.8-alpine"
+	exposedPortHttp := fmt.Sprintf("%d:%d", utils.GetPort(), 8123)
+	exposedPortNative := fmt.Sprintf("%d:%d", utils.GetPort(), 9000)
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        image,
-			ExposedPorts: []string{"58123:8123", "59000:9000"},
+			ExposedPorts: []string{exposedPortHttp, exposedPortNative},
 			WaitingFor:   tcWait.ForSQL("9000/tcp", "clickhouse", dbURL).Timeout(time.Second * 60),
 			//WaitingFor:   tcWait.ForListeningPort("8123").WithStartupTimeout(1 * time.Minute),
 		},
