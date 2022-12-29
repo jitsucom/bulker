@@ -157,36 +157,38 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if strings.HasPrefix(config.Dsns[0], "http") {
 		httpMode = true
 	}
-	dataSource, err := sql.Open("clickhouse", config.Dsns[0])
-	if err != nil {
-		return nil, err
-	}
-	//dataSource := clickhouse.OpenDB(&clickhouse.Options{
-	//
-	//	Addr: config.Dsns,
-	//	Auth: clickhouse.Auth{
-	//		Database: config.Database,
-	//	},
-	//	TLS: &tls.Config{
-	//		InsecureSkipVerify: false,
-	//	},
-	//	Settings: clickhouse.Settings{
-	//		"max_execution_time": 60,
-	//		"wait_end_of_query":  1,
-	//	},
-	//	Protocol:    clickhouse.HTTP,
-	//	DialTimeout: 15 * time.Second,
-	//	Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
-	//	Debug:       true,
-	//})
-	//dataSource.SetMaxIdleConns(1)
-	//dataSource.SetMaxOpenConns(10)
-	dataSource.SetConnMaxIdleTime(time.Minute * 1)
+	dbConnectFunction := func(config *ClickHouseConfig) (*sql.DB, error) {
+		dataSource, err := sql.Open("clickhouse", config.Dsns[0])
+		if err != nil {
+			return nil, err
+		}
+		//dataSource := clickhouse.OpenDB(&clickhouse.Options{
+		//
+		//	Addr: config.Dsns,
+		//	Auth: clickhouse.Auth{
+		//		Database: config.Database,
+		//	},
+		//	TLS: &tls.Config{
+		//		InsecureSkipVerify: false,
+		//	},
+		//	Settings: clickhouse.Settings{
+		//		"max_execution_time": 60,
+		//		"wait_end_of_query":  1,
+		//	},
+		//	Protocol:    clickhouse.HTTP,
+		//	DialTimeout: 15 * time.Second,
+		//	Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
+		//	Debug:       true,
+		//})
 
-	//keep select 1 and don't use Ping() because chproxy doesn't support /ping endpoint.
-	if _, err := dataSource.Exec("SELECT 1"); err != nil {
-		dataSource.Close()
-		return nil, err
+		if err := chPing(dataSource, httpMode); err != nil {
+			_ = dataSource.Close()
+			return nil, err
+		}
+
+		dataSource.SetMaxIdleConns(10)
+		dataSource.SetConnMaxIdleTime(time.Minute * 3)
+		return dataSource, nil
 	}
 
 	tableStatementFactory, err := NewTableStatementFactory(config)
@@ -205,7 +207,7 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	sqlAdapterBase := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, dataSource, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr)
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, dbConnectFunction, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr)
 	sqlAdapterBase.batchFileFormat = implementations.JSON
 	sqlAdapterBase.identifierQuoteChar = '`'
 
@@ -214,7 +216,7 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		tableStatementFactory: tableStatementFactory,
 		httpMode:              httpMode,
 	}
-	return c, nil
+	return c, err
 }
 
 func (ch *ClickHouse) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -250,7 +252,10 @@ func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 // InitDatabase create database instance if doesn't exist
 func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 	var dbname string
-	_ = ch.txOrDb(ctx).QueryRowContext(ctx, chDatabaseQuery, ch.config.Database).Scan(&dbname)
+	row := ch.txOrDb(ctx).QueryRowContext(ctx, chDatabaseQuery, ch.config.Database)
+	if row != nil {
+		row.Scan(&dbname)
+	}
 	if dbname == "" {
 		query := fmt.Sprintf(chCreateDatabaseTemplate, ch.config.Database, ch.getOnClusterClause())
 
@@ -727,11 +732,6 @@ func (ch *ClickHouse) ReplaceTable(ctx context.Context, targetTableName string, 
 
 }
 
-// Close underlying sql.DB
-func (ch *ClickHouse) Close() error {
-	return ch.dataSource.Close()
-}
-
 // return ON CLUSTER name clause or "" if config.cluster is empty
 func (ch *ClickHouse) getOnClusterClause() string {
 	if ch.config.Cluster == "" {
@@ -1004,4 +1004,35 @@ func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName
 	}
 	return fmt.Sprintf(chCreateTableTemplate, quotedTableName, tsf.onClusterClause, columnsClause, engineStatement,
 		partitionClause, orderByClause, primaryKeyClause)
+}
+
+func (ch *ClickHouse) Ping(ctx context.Context) error {
+	if ch.dataSource != nil {
+		err := chPing(ch.dataSource, ch.httpMode)
+		if err != nil {
+			dataSource, err := ch.dbConnectFunction(ch.config)
+			if err == nil {
+				_ = ch.dataSource.Close()
+				ch.dataSource = dataSource
+			}
+			return err
+		}
+	} else {
+		var err error
+		ch.dataSource, err = ch.dbConnectFunction(ch.config)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func chPing(db *sql.DB, httpMode bool) error {
+	if httpMode {
+		//keep select 1 and don't use Ping() because chproxy doesn't support /ping endpoint.
+		_, err := db.Exec("SELECT 1")
+		return err
+	} else {
+		return db.Ping()
+	}
 }

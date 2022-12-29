@@ -80,36 +80,37 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		// similar to postgres default value of sslmode option
 		config.Parameters["tls"] = "preferred"
 	}
-
-	connectionString := mySQLDriverConnectionString(config)
-	dataSource, err := sql.Open("mysql", connectionString)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := dataSource.Ping(); err != nil {
-		dataSource.Close()
-		return nil, err
-	}
-	rows, err := dataSource.Query("SHOW GLOBAL VARIABLES LIKE 'local_infile'")
-	infileEnabled := false
-	if err == nil && rows.Next() {
-		varRow, _ := rowToMap(rows)
-		infileEnabled = varRow["value"] == "ON"
-	}
-	if !infileEnabled {
-		_, err = dataSource.Exec(mySQLAllowLocalFile)
+	dbConnectFunction := func(cfg *DataSourceConfig) (*sql.DB, error) {
+		connectionString := mySQLDriverConnectionString(config)
+		dataSource, err := sql.Open("mysql", connectionString)
 		if err != nil {
-			logging.Warnf("[%s] Loading tables from local batch file is disabled. Bulk loading will fallback to insert statements. To enable loading from files add to [mysql] and [mysqld] sections of my.cnf file the following line: local-infile=1", bulkerConfig.Id)
-		} else {
-			infileEnabled = true
+			return nil, err
 		}
+
+		if err := dataSource.Ping(); err != nil {
+			dataSource.Close()
+			return nil, err
+		}
+		//rows, err := dataSource.Query("SHOW GLOBAL VARIABLES LIKE 'local_infile'")
+		//infileEnabled := false
+		//if err == nil && rows.Next() {
+		//	varRow, _ := rowToMap(rows)
+		//	infileEnabled = varRow["value"] == "ON"
+		//}
+		//if !infileEnabled {
+		//	_, err = dataSource.Exec(mySQLAllowLocalFile)
+		//	if err != nil {
+		//		logging.Warnf("[%s] Loading tables from local batch file is disabled. Bulk loading will fallback to insert statements. To enable loading from files add to [mysql] and [mysqld] sections of my.cnf file the following line: local-infile=1", bulkerConfig.Id)
+		//	} else {
+		//		infileEnabled = true
+		//	}
+		//}
+
+		//set default values
+		dataSource.SetConnMaxLifetime(3 * time.Minute)
+		dataSource.SetMaxIdleConns(10)
+		return dataSource, nil
 	}
-
-	//set default values
-	dataSource.SetConnMaxLifetime(3 * time.Minute)
-	dataSource.SetMaxIdleConns(10)
-
 	typecastFunc := func(placeholder string, column SQLColumn) string {
 		return placeholder
 	}
@@ -117,8 +118,11 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
+	// disable infile support for convenience
+	infileEnabled := false
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, MySQLBulkerTypeId, config, dbConnectFunction, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr)
 	m := &MySQL{
-		SQLAdapterBase: newSQLAdapterBase(bulkerConfig.Id, MySQLBulkerTypeId, config, dataSource, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr),
+		SQLAdapterBase: sqlAdapterBase,
 		infileEnabled:  infileEnabled,
 	}
 	m.identifierQuoteChar = '`'
@@ -127,7 +131,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	} else {
 		m.batchFileFormat = implementations.JSON
 	}
-	return m, nil
+	return m, err
 }
 
 func (m *MySQL) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {

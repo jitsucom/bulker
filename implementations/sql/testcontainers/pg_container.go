@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	pgDefaultPort = "5432/tcp"
+	pgDefaultPort = "55432:5432"
 	pgUser        = "test"
 	pgPassword    = "test"
 	pgDatabase    = "test"
@@ -82,8 +82,9 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "postgres:12-alpine",
 			ExposedPorts: []string{exposedPort},
-			Env:          dbSettings,
-			WaitingFor:   tcWait.ForSQL(pgDefaultPort, "postgres", dbURL).Timeout(time.Second * 60),
+
+			Env:        dbSettings,
+			WaitingFor: tcWait.ForSQL("5432", "postgres", dbURL).Timeout(time.Second * 60),
 		},
 		Started: true,
 	})
@@ -209,4 +210,12 @@ func (pgc *PostgresContainer) Close() error {
 	}
 
 	return nil
+}
+
+func (pgc *PostgresContainer) Stop() error {
+	return pgc.Container.Stop(context.Background(), nil)
+}
+
+func (pgc *PostgresContainer) Start() error {
+	return pgc.Container.Start(context.Background())
 }

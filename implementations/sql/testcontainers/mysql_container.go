@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	mySQLDefaultPort  = "3306/tcp"
+	mySQLDefaultPort  = "33306:3306"
 	mySQLRootPassword = "test_root_password"
 	mySQLUser         = "test_user"
 	mySQLPassword     = "test_password"
@@ -195,4 +195,12 @@ func (mc *MySQLContainer) Close() error {
 	}
 
 	return nil
+}
+
+func (mc *MySQLContainer) Stop() error {
+	return mc.Container.Stop(context.Background(), nil)
+}
+
+func (mc *MySQLContainer) Start() error {
+	return mc.Container.Start(context.Background())
 }

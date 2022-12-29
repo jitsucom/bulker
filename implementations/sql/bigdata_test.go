@@ -83,10 +83,10 @@ func TestMillionRowsBatched(t *testing.T) {
 func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode) {
 	reqr := require.New(t)
 	blk, err := bulker.CreateBulker(*testConfig.config)
-	CheckError("create_bulker", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	PostStep("create_bulker", testConfig, mode, reqr, err)
 	defer func() {
 		err = blk.Close()
-		CheckError("bulker_close", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep("bulker_close", testConfig, mode, reqr, err)
 	}()
 	sqlAdapter, ok := blk.(SQLAdapter)
 	reqr.True(ok)
@@ -96,11 +96,11 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 		tableName = testConfig.name + "_test"
 	}
 	err = sqlAdapter.InitDatabase(ctx)
-	CheckError("init_database", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	PostStep("init_database", testConfig, mode, reqr, err)
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		err = sqlAdapter.DropTable(ctx, tableName, true)
-		CheckError("pre_cleanup", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep("pre_cleanup", testConfig, mode, reqr, err)
 	}
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
@@ -109,7 +109,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 		}()
 	}
 	stream, err := blk.CreateStream(t.Name(), tableName, mode, testConfig.streamOptions...)
-	CheckError("create_stream", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	PostStep("create_stream", testConfig, mode, reqr, err)
 	if err != nil {
 		return
 	}
@@ -117,7 +117,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 	defer func() {
 		if err != nil {
 			_, err = stream.Abort(ctx)
-			CheckError("stream_abort", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+			PostStep("stream_abort", testConfig, mode, reqr, err)
 		}
 	}()
 
@@ -126,13 +126,13 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 	for ; i < eventsCount; i++ {
 		if i > 0 && i%testConfig.batchSize == 0 {
 			_, err := stream.Complete(ctx)
-			CheckError("stream_complete", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+			PostStep("stream_complete", testConfig, mode, reqr, err)
 			logging.Infof("%d. batch is completed in %s", i, time.Since(startTime))
 			_ = blk.Close()
 			blk, err = bulker.CreateBulker(*testConfig.config)
-			CheckError("create_bulker", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+			PostStep("create_bulker", testConfig, mode, reqr, err)
 			stream, err = blk.CreateStream(t.Name(), tableName, mode, testConfig.streamOptions...)
-			CheckError("create_stream", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+			PostStep("create_stream", testConfig, mode, reqr, err)
 			if err != nil {
 				return
 			}
@@ -140,7 +140,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 		}
 		obj := types.Object{"_timestamp": constantTime, "id": i, "name": "test"}
 		_, _, err = stream.Consume(ctx, obj)
-		CheckError(fmt.Sprintf("consume_object_%d", i), testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep(fmt.Sprintf("consume_object_%d", i), testConfig, mode, reqr, err)
 		if err != nil && !testConfig.ignoreConsumeErrors {
 			return
 		}
@@ -148,7 +148,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 	//Commit stream
 	state, err := stream.Complete(ctx)
 	sqlAdapter = blk.(SQLAdapter)
-	CheckError("stream_complete", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	PostStep("stream_complete", testConfig, mode, reqr, err)
 	logging.Infof("%d. batch is completed in %s", i, time.Since(startTime))
 
 	if testConfig.expectedState != nil {
@@ -157,19 +157,19 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 	if err != nil {
 		return
 	}
-	CheckError("state_lasterror", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, state.LastError)
+	PostStep("state_lasterror", testConfig, mode, reqr, state.LastError)
 
 	if len(testConfig.expectedTable.Columns) > 0 {
 		//Check table schema
 		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
-		CheckError("get_table", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep("get_table", testConfig, mode, reqr, err)
 		reqr.Equal(testConfig.expectedTable, table)
 	}
 	if testConfig.expectedRowsCount != nil {
 		time.Sleep(1 * time.Second)
 		//Check rows count and rows data when provided
 		count, err := sqlAdapter.Count(ctx, tableName, nil)
-		CheckError("select_count", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep("select_count", testConfig, mode, reqr, err)
 		reqr.Equal(testConfig.expectedRowsCount, count)
 	}
 }

@@ -38,6 +38,8 @@ type TestConfig struct {
 	Config any
 }
 
+type StepFunction func(testConfig bulkerTestConfig, mode bulker.BulkMode) error
+
 var configRegistry = map[string]any{}
 
 type ExpectedTable struct {
@@ -45,6 +47,10 @@ type ExpectedTable struct {
 	PKFields utils.Set[string]
 	Columns  Columns
 }
+
+var postgresContainer *testcontainers.PostgresContainer
+var mysqlContainer *testcontainers.MySQLContainer
+var clickhouseContainer *testcontainers.ClickHouseContainer
 
 func init() {
 	bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
@@ -66,8 +72,8 @@ func init() {
 	if snowflakeConfig != "" {
 		configRegistry[SnowflakeBulkerTypeId] = TestConfig{BulkerType: SnowflakeBulkerTypeId, Config: snowflakeConfig}
 	}
-
-	postgresContainer, err := testcontainers.NewPostgresContainer(context.Background())
+	var err error
+	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background())
 	if err != nil {
 		panic(err)
 	}
@@ -81,7 +87,7 @@ func init() {
 		Parameters: map[string]string{"sslmode": "disable"},
 	}}
 
-	mysqlContainer, err := testcontainers.NewMySQLContainer(context.Background())
+	mysqlContainer, err = testcontainers.NewMySQLContainer(context.Background())
 	if err != nil {
 		panic(err)
 	}
@@ -94,7 +100,7 @@ func init() {
 		Parameters: map[string]string{"tls": "false", "parseTime": "true"},
 	}}
 
-	clickhouseContainer, err := testcontainers.NewClickhouseContainer(context.Background())
+	clickhouseContainer, err = testcontainers.NewClickhouseContainer(context.Background())
 	if err != nil {
 		panic(err)
 	}
@@ -166,6 +172,8 @@ type bulkerTestConfig struct {
 	expectedRows []map[string]any
 	//map of expected errors by step name. May be error type or string. String is used for error message partial matching.
 	expectedErrors map[string]any
+	//map of function to run after each step by step name.
+	postStepFunctions map[string]StepFunction
 	//don't clean up resulting table before and after test run. See also forceLeaveResultingTables
 	leaveResultingTable bool
 	//file with objects to consume in ngjson format
@@ -176,6 +184,16 @@ type bulkerTestConfig struct {
 	streamOptions []bulker.StreamOption
 	//batchSize for bigdata test commit stream every batchSize rows
 	batchSize int
+}
+
+func (c *bulkerTestConfig) getIdAndTableName(mode bulker.BulkMode) (id, tableName string) {
+	tableName = c.tableName
+	if tableName == "" {
+		tableName = c.name
+	}
+	tableName = tableName + "_" + strings.ToLower(string(mode))
+	id = fmt.Sprintf("%s_%s", c.config.BulkerType, tableName)
+	return
 }
 
 func TestStreams(t *testing.T) {
@@ -365,27 +383,23 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode) {
 	reqr := require.New(t)
 	adaptConfig(t, &testConfig, mode)
+	PostStep("init", testConfig, mode, reqr, nil)
 	blk, err := bulker.CreateBulker(*testConfig.config)
-	CheckError("create_bulker", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	PostStep("create_bulker", testConfig, mode, reqr, err)
 	defer func() {
 		err = blk.Close()
-		CheckError("bulker_close", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep("bulker_close", testConfig, mode, reqr, err)
 	}()
 	sqlAdapter, ok := blk.(SQLAdapter)
 	reqr.True(ok)
 	ctx := context.Background()
-	tableName := testConfig.tableName
-	if tableName == "" {
-		tableName = testConfig.name
-	}
-	id := fmt.Sprintf("%s_%s_%s_%s", tableName, testConfig.config.BulkerType, strings.ToLower(string(mode)), uuid.NewLettersNumbers())
-	tableName = tableName + "_" + strings.ToLower(string(mode))
+	id, tableName := testConfig.getIdAndTableName(mode)
 	err = sqlAdapter.InitDatabase(ctx)
-	CheckError("init_database", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	PostStep("init_database", testConfig, mode, reqr, err)
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		err = sqlAdapter.DropTable(ctx, tableName, true)
-		CheckError("pre_cleanup", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep("pre_cleanup", testConfig, mode, reqr, err)
 	}
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
@@ -394,7 +408,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		}()
 	}
 	stream, err := blk.CreateStream(id, tableName, mode, testConfig.streamOptions...)
-	CheckError("create_stream", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	PostStep("create_stream", testConfig, mode, reqr, err)
 	if err != nil {
 		return
 	}
@@ -407,26 +421,38 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	}()
 
 	file, err := os.Open(testConfig.dataFile)
-	CheckError("open_file", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	PostStep("open_file", testConfig, mode, reqr, err)
 
 	scanner := bufio.NewScanner(file)
 	i := 0
+	streamNum := 0
 	for scanner.Scan() {
+		if i > 0 && testConfig.batchSize > 0 && i%testConfig.batchSize == 0 {
+			_, err := stream.Complete(ctx)
+			PostStep(fmt.Sprintf("stream_complete_%d", streamNum), testConfig, mode, reqr, err)
+			streamNum++
+			logging.Infof("%d. batch is completed", i)
+			stream, err = blk.CreateStream(id, tableName, mode, testConfig.streamOptions...)
+			PostStep(fmt.Sprintf("create_stream_%d", streamNum), testConfig, mode, reqr, err)
+			if err != nil {
+				return
+			}
+		}
 		obj := types.Object{}
 		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
 		decoder.UseNumber()
 		err = decoder.Decode(&obj)
-		CheckError("decode_json", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep("decode_json", testConfig, mode, reqr, err)
 		_, _, err = stream.Consume(ctx, obj)
-		CheckError(fmt.Sprintf("consume_object_%d", i), testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep(fmt.Sprintf("consume_object_%d", i), testConfig, mode, reqr, err)
 		if err != nil && !testConfig.ignoreConsumeErrors {
-			return
+			break
 		}
 		i++
 	}
 	//Commit stream
 	state, err := stream.Complete(ctx)
-	CheckError("stream_complete", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+	PostStep("stream_complete", testConfig, mode, reqr, err)
 
 	if testConfig.expectedState != nil {
 		reqr.Equal(*testConfig.expectedState, state)
@@ -434,11 +460,11 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	if err != nil {
 		return
 	}
-	CheckError("state_lasterror", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, state.LastError)
+	//PostStep("state_lasterror", testConfig, mode, reqr, state.LastError)
 	if len(testConfig.expectedTable.Columns) > 0 {
 		//Check table schema
 		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
-		CheckError("get_table", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep("get_table", testConfig, mode, reqr, err)
 		if !testConfig.expectedTableTypeChecking {
 			for k := range testConfig.expectedTable.Columns {
 				testConfig.expectedTable.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
@@ -498,7 +524,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		time.Sleep(1 * time.Second)
 		//Check rows count and rows data when provided
 		rows, err := sqlAdapter.Select(ctx, tableName, nil, testConfig.orderBy)
-		CheckError("select_result", testConfig.config.BulkerType, mode, reqr, testConfig.expectedErrors, err)
+		PostStep("select_result", testConfig, mode, reqr, err)
 		if testConfig.expectedRows == nil {
 			reqr.Equal(testConfig.expectedRowsCount, len(rows))
 		} else {
@@ -549,14 +575,20 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 	}
 }
 
-func CheckError(step string, bulkerType string, mode bulker.BulkMode, reqr *require.Assertions, expectedErrors map[string]any, err error) {
-	expectedError, ok := expectedErrors[step+"_"+bulkerType+"_"+strings.ToLower(string(mode))]
-	if !ok {
-		expectedError, ok = expectedErrors[step+"_"+bulkerType]
-		if !ok {
-			expectedError = expectedErrors[step]
+func PostStep(step string, testConfig bulkerTestConfig, mode bulker.BulkMode, reqr *require.Assertions, err error) {
+	bulkerType := testConfig.config.BulkerType
+	stepLookupKeys := []string{step + "_" + bulkerType + "_" + strings.ToLower(string(mode)), step + "_" + bulkerType, step}
+
+	//run post step function if any
+	stepF := utils.MapNVLKeys(testConfig.postStepFunctions, stepLookupKeys...)
+	if stepF != nil {
+		err1 := stepF(testConfig, mode)
+		if err == nil {
+			err = err1
 		}
 	}
+
+	expectedError := utils.MapNVLKeys(testConfig.expectedErrors, stepLookupKeys...)
 	switch target := expectedError.(type) {
 	case []string:
 		contains := false

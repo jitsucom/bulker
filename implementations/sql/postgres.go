@@ -76,6 +76,7 @@ var (
 // Postgres is adapter for creating,patching (schema or table), inserting data to postgres
 type Postgres struct {
 	SQLAdapterBase[DataSourceConfig]
+	dbConnectFunction DbConnectFunction[DataSourceConfig]
 }
 
 // NewPostgres return configured Postgres bulker.Bulker instance
@@ -85,26 +86,28 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
 	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0, nil, false)
-	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
-		config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
-	//concat provided connection parameters
-	for k, v := range config.Parameters {
-		connectionString += " " + k + "=" + v + " "
-	}
-	logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
 
-	dataSource, err := sql.Open("postgres", connectionString)
-	if err != nil {
-		return nil, err
-	}
+	dbConnectFunction := func(cfg *DataSourceConfig) (*sql.DB, error) {
+		connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
+			config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
+		//concat provided connection parameters
+		for k, v := range config.Parameters {
+			connectionString += " " + k + "=" + v + " "
+		}
+		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
 
-	if err := dataSource.Ping(); err != nil {
-		_ = dataSource.Close()
-		return nil, err
+		dataSource, err := sql.Open("postgres", connectionString)
+		if err != nil {
+			return nil, err
+		}
+		if err := dataSource.Ping(); err != nil {
+			_ = dataSource.Close()
+			return nil, err
+		}
+		dataSource.SetConnMaxIdleTime(3 * time.Minute)
+		dataSource.SetMaxIdleConns(10)
+		return dataSource, nil
 	}
-
-	//set default value
-	dataSource.SetConnMaxLifetime(10 * time.Minute)
 
 	typecastFunc := func(placeholder string, column SQLColumn) string {
 		if column.Override {
@@ -127,9 +130,9 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	p := &Postgres{newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dataSource, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)}
-
-	return p, nil
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dbConnectFunction, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)
+	p := &Postgres{sqlAdapterBase, dbConnectFunction}
+	return p, err
 }
 
 func (p *Postgres) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {

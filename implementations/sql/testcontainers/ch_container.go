@@ -60,7 +60,7 @@ func NewClickhouseContainer(ctx context.Context) (*ClickHouseContainer, error) {
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        image,
-			ExposedPorts: []string{"8123/tcp", "9000/tcp"},
+			ExposedPorts: []string{"58123:8123", "59000:9000"},
 			WaitingFor:   tcWait.ForSQL("9000/tcp", "clickhouse", dbURL).Timeout(time.Second * 60),
 			//WaitingFor:   tcWait.ForListeningPort("8123").WithStartupTimeout(1 * time.Minute),
 		},
@@ -139,4 +139,12 @@ func (ch *ClickHouseContainer) Close() error {
 	}
 
 	return nil
+}
+
+func (ch *ClickHouseContainer) Stop() error {
+	return ch.Container.Stop(context.Background(), nil)
+}
+
+func (ch *ClickHouseContainer) Start() error {
+	return ch.Container.Start(context.Background())
 }

@@ -88,7 +88,7 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("Error creating BigQuery client: %v", err)
+		err = fmt.Errorf("error creating BigQuery client: %w", err)
 	}
 	var queryLogger *logging.QueryLogger
 	if bulkerConfig.LogLevel == bulker.Verbose {
@@ -96,7 +96,7 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	return &BigQuery{
 		ServiceBase: objects.NewServiceBase(bulkerConfig.Id),
-		client:      client, config: config, queryLogger: queryLogger}, nil
+		client:      client, config: config, queryLogger: queryLogger}, err
 }
 
 func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -199,8 +199,25 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 	}
 }
 
-func (bq *BigQuery) Test() error {
+func (bq *BigQuery) Ping(ctx context.Context) error {
+	if bq.client == nil {
+		ctx := context.Background()
+		var err error
+		if bq.config.Credentials == nil {
+			bq.client, err = bigquery.NewClient(ctx, bq.config.Project)
+		} else {
+			bq.client, err = bigquery.NewClient(ctx, bq.config.Project, bq.config.Credentials)
+		}
+		return err
+	}
 	_, err := bq.client.Query("SELECT 1;").Read(context.Background())
+	if err != nil {
+		if bq.config.Credentials == nil {
+			bq.client, err = bigquery.NewClient(ctx, bq.config.Project)
+		} else {
+			bq.client, err = bigquery.NewClient(ctx, bq.config.Project, bq.config.Credentials)
+		}
+	}
 	return err
 }
 
@@ -667,7 +684,10 @@ func (bq *BigQuery) logQuery(messageTemplate string, entity any, err error) {
 }
 
 func (bq *BigQuery) Close() error {
-	return bq.client.Close()
+	if bq.client != nil {
+		return bq.client.Close()
+	}
+	return nil
 }
 
 // Return true if google err is 404
@@ -881,10 +901,6 @@ func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditio
 }
 func (bq *BigQuery) Type() string {
 	return BigqueryBulkerTypeId
-}
-
-func (bq *BigQuery) Ping(ctx context.Context) error {
-	return nil
 }
 
 func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {

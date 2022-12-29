@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
 	"github.com/jitsucom/bulker/base/logging"
 )
@@ -46,6 +47,10 @@ func wrap[R any](ctx context.Context,
 ) (res R, err error) {
 	tx := t.tx
 	if tx == nil {
+		if t.db == nil {
+			err = fmt.Errorf("database connection is not initialized. Run Ping method to attempt reinit connection")
+			return
+		}
 		res, err = queryFunction(t.db, query, args...)
 	} else {
 		res, err = queryFunction(tx, query, args...)

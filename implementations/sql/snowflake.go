@@ -17,6 +17,7 @@ import (
 	"path"
 	"strings"
 	"text/template"
+	"time"
 
 	sf "github.com/snowflakedb/gosnowflake"
 )
@@ -106,30 +107,35 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	_, config.Schema = adaptSqlIdentifier(config.Schema, 255, 0, sqlUnquotedIdentifierPattern, true)
 	config.Schema = sfQuoteReservedWords(config.Schema)
-	cfg := &sf.Config{
-		Account:   config.Account,
-		User:      config.Username,
-		Password:  config.Password,
-		Port:      config.Port,
-		Schema:    config.Schema,
-		Database:  config.Db,
-		Warehouse: config.Warehouse,
-		Params:    config.Parameters,
-	}
+	dbConnectFunction := func(config *SnowflakeConfig) (*sql.DB, error) {
+		cfg := &sf.Config{
+			Account:   config.Account,
+			User:      config.Username,
+			Password:  config.Password,
+			Port:      config.Port,
+			Schema:    config.Schema,
+			Database:  config.Db,
+			Warehouse: config.Warehouse,
+			Params:    config.Parameters,
+		}
 
-	connectionString, err := sf.DSN(cfg)
-	if err != nil {
-		return nil, err
-	}
+		connectionString, err := sf.DSN(cfg)
+		if err != nil {
+			return nil, err
+		}
 
-	dataSource, err := sql.Open("snowflake", connectionString)
-	if err != nil {
-		return nil, err
-	}
+		dataSource, err := sql.Open("snowflake", connectionString)
+		if err != nil {
+			return nil, err
+		}
 
-	if err := dataSource.Ping(); err != nil {
-		dataSource.Close()
-		return nil, err
+		if err := dataSource.Ping(); err != nil {
+			dataSource.Close()
+			return nil, err
+		}
+		dataSource.SetConnMaxIdleTime(3 * time.Minute)
+		dataSource.SetMaxIdleConns(10)
+		return dataSource, nil
 	}
 	typecastFunc := func(placeholder string, column SQLColumn) string {
 		if column.Override {
@@ -141,7 +147,8 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	s := &Snowflake{newSQLAdapterBase(bulkerConfig.Id, SnowflakeBulkerTypeId, config, dataSource, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)}
+	sqlAdapter, err := newSQLAdapterBase(bulkerConfig.Id, SnowflakeBulkerTypeId, config, dbConnectFunction, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)
+	s := &Snowflake{sqlAdapter}
 	s._tableNameFunc = func(config *SnowflakeConfig, tableName string) string {
 		return sfQuoteReservedWords(tableName)
 	}
@@ -150,7 +157,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	s.batchFileFormat = implementations.CSV
 	s.maxIdentifierLength = 255
 	s.toUpper = true
-	return s, nil
+	return s, err
 }
 func (s *Snowflake) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s", utils.SanitizeString(id))))

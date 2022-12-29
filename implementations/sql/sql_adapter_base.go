@@ -49,6 +49,9 @@ var (
 	}
 )
 
+// DbConnectFunction function is used to connect to database
+type DbConnectFunction[T any] func(config *T) (*sql.DB, error)
+
 // ColumnNameFunction adapts column name to format required by database e.g. masks or escapes special characters
 type ColumnNameFunction func(columnName string) string
 
@@ -72,7 +75,6 @@ type SQLAdapterBase[T any] struct {
 	typeId          string
 	config          *T
 	dataSource      *sql.DB
-	dbWrapper       TxOrDB
 	queryLogger     *logging.QueryLogger
 	batchFileFormat implementations.FileFormat
 	temporaryTables bool
@@ -81,6 +83,7 @@ type SQLAdapterBase[T any] struct {
 	identifierQuoteChar          rune
 	sqlUnquotedIdentifierPattern *regexp.Regexp
 	toUpper                      bool
+	dbConnectFunction            DbConnectFunction[T]
 	parameterPlaceholder         ParameterPlaceholder
 	typecastFunc                 TypeCastFunction
 	_tableNameFunc               TableNameFunction[T]
@@ -90,13 +93,12 @@ type SQLAdapterBase[T any] struct {
 	checkErrFunc                 ErrorAdapter
 }
 
-func newSQLAdapterBase[T any](id string, typeId string, config *T, dataSource *sql.DB, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) SQLAdapterBase[T] {
+func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) (SQLAdapterBase[T], error) {
 	s := SQLAdapterBase[T]{
 		ServiceBase:          objects.NewServiceBase(id),
 		typeId:               typeId,
 		config:               config,
-		dataSource:           dataSource,
-		dbWrapper:            dataSource,
+		dbConnectFunction:    dbConnectFunction,
 		queryLogger:          queryLogger,
 		parameterPlaceholder: parameterPlaceholder,
 		typecastFunc:         typecastFunc,
@@ -108,8 +110,9 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, dataSource *s
 		identifierQuoteChar:  '"',
 	}
 	s.batchFileFormat = implementations.JSON
-	s.dbWrapper = NewDbWrapper(typeId, dataSource, queryLogger, checkErrFunc)
-	return s
+	var err error
+	s.dataSource, err = dbConnectFunction(config)
+	return s, err
 }
 
 // Type returns Postgres type
@@ -122,12 +125,32 @@ func (b *SQLAdapterBase[T]) GetBatchFileFormat() implementations.FileFormat {
 }
 
 func (b *SQLAdapterBase[T]) Ping(ctx context.Context) error {
-	return b.dataSource.PingContext(ctx)
+	if b.dataSource != nil {
+		err := b.dataSource.PingContext(ctx)
+		if err != nil {
+			dataSource, err := b.dbConnectFunction(b.config)
+			if err == nil {
+				_ = b.dataSource.Close()
+				b.dataSource = dataSource
+			}
+			return err
+		}
+	} else {
+		var err error
+		b.dataSource, err = b.dbConnectFunction(b.config)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close underlying sql.DB
 func (b *SQLAdapterBase[T]) Close() error {
-	return b.dataSource.Close()
+	if b.dataSource != nil {
+		return b.dataSource.Close()
+	}
+	return nil
 }
 
 // OpenTx opens underline sql transaction and return wrapped instance
@@ -143,7 +166,7 @@ func (b *SQLAdapterBase[T]) openTx(ctx context.Context, sqlAdapter SQLAdapter) (
 func (b *SQLAdapterBase[T]) txOrDb(ctx context.Context) TxOrDB {
 	txOrDb, ok := ctx.Value(ContextTransactionKey).(TxOrDB)
 	if !ok {
-		return b.dbWrapper
+		return NewDbWrapper(b.typeId, b.dataSource, b.queryLogger, b.checkErrFunc)
 	}
 	return txOrDb
 }

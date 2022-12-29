@@ -95,6 +95,9 @@ func (ps *AbstractSQLStream) init(ctx context.Context) error {
 	if ps.inited {
 		return nil
 	}
+	if err := ps.sqlAdapter.Ping(ctx); err != nil {
+		return err
+	}
 	//setup required db object like 'schema' or 'dataset' if doesn't exist
 	err := ps.sqlAdapter.InitDatabase(ctx)
 	if err != nil {

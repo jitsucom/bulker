@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/objects"
@@ -137,26 +138,38 @@ func NewRepository(config *AppConfig, configurationSource ConfigurationSource) (
 func (r *repositoryInternal) init(configurationSource ConfigurationSource) error {
 	r.Debugf("Initializing repository")
 	for _, cfg := range configurationSource.GetDestinationConfigs() {
-		bulkerInstance, err := bulker.CreateBulker(cfg.Config)
-		if err != nil {
-			metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
-			r.Errorf("failed to init destination %s: %v", cfg.Id(), err)
-			continue
-		}
-		options := bulker.StreamOptions{}
-		for name, serializedOption := range cfg.StreamConfig.Options {
-			opt, err := bulker.ParseOption(name, serializedOption)
-			if err != nil {
-				metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
-				r.Errorf("failed to parse option %s=%s for destination %s: %v", name, serializedOption, cfg.Id(), err)
-				continue
-			}
-			options.Add(opt)
-		}
-		r.destinations[cfg.Id()] = &Destination{config: cfg, bulker: bulkerInstance, streamOptions: &options, owner: r}
-		r.Infof("destination %s initialized. Ver: %s", cfg.Id(), cfg.UpdatedAt)
+		r.initBulkerInstance(cfg)
 	}
 	return nil
+}
+
+func (r *repositoryInternal) initBulkerInstance(cfg *DestinationConfig) {
+	defer func() {
+		if e := recover(); e != nil {
+			metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
+			r.Errorf("Rejecting destination %s – panic : %v", cfg.Id(), e)
+		}
+	}()
+	bulkerInstance, err := bulker.CreateBulker(cfg.Config)
+	withError := ""
+	logFunc := r.Infof
+	if err != nil {
+		logFunc = r.Errorf
+		withError = fmt.Sprintf(" with error: %v", err)
+		metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
+	}
+	options := bulker.StreamOptions{}
+	for name, serializedOption := range cfg.StreamConfig.Options {
+		opt, err := bulker.ParseOption(name, serializedOption)
+		if err != nil {
+			metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
+			r.Errorf("destination %s – failed to parse option %s=%s : %v", cfg.Id(), name, serializedOption, err)
+			continue
+		}
+		options.Add(opt)
+	}
+	r.destinations[cfg.Id()] = &Destination{config: cfg, bulker: bulkerInstance, streamOptions: &options, owner: r}
+	logFunc("destination %s initialized%s. Ver: %s", cfg.Id(), withError, cfg.UpdatedAt)
 }
 
 func (r *repositoryInternal) GetDestination(id string) *Destination {

@@ -30,6 +30,9 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	if err = ps.init(ctx); err != nil {
 		return
 	}
+	if err = ps.sqlAdapter.Ping(ctx); err != nil {
+		return
+	}
 	table, processedObjects, err := ps.preprocess(object)
 	if err != nil {
 		ps.updateRepresentationTable(table)

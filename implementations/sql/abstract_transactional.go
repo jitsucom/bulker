@@ -78,6 +78,10 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 			ps.targetMarshaller = &types.JSONMarshaller{}
 		}
 	}
+	err = ps.AbstractSQLStream.init(ctx)
+	if err != nil {
+		return err
+	}
 	if ps.tx == nil {
 		ps.tx, err = ps.sqlAdapter.OpenTx(ctx)
 		if err != nil {
@@ -86,10 +90,7 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		//set transactional adapter so all table modification will be performed inside transaction
 		ps.tableHelper.SetSQLAdapter(ps.tx)
 	}
-	err = ps.AbstractSQLStream.init(ctx)
-	if err != nil {
-		return err
-	}
+
 	return nil
 }
 

@@ -81,10 +81,6 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 
 	bulkerConfig.DestinationConfig = config.DataSourceConfig
 	postgres, err := NewPostgres(bulkerConfig)
-	if err != nil {
-		return nil, err
-	}
-
 	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: config.S3OptionConfig}
 	r.batchFileFormat = implementations.CSV_GZIP
 	r.maxIdentifierLength = 127
@@ -93,7 +89,7 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	//// Redshift is case insensitive by default
 	//r._columnNameFunc = strings.ToLower
 	//r._tableNameFunc = func(config *DataSourceConfig, tableName string) string { return tableName }
-	return r, nil
+	return r, err
 }
 
 func (p *Redshift) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
