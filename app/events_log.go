@@ -25,11 +25,11 @@ const (
 	EventTypeIncomingAll   EventType = "incoming.all"
 	EventTypeIncomingError EventType = "incoming.error"
 
-	EventTypeProcessedAll   EventType = "processed.all"
-	EventTypeProcessedError EventType = "processed.error"
+	EventTypeProcessedAll   EventType = "bulker_stream.all"
+	EventTypeProcessedError EventType = "bulker_stream.error"
 
-	EventTypeBatchAll   EventType = "batch.all"
-	EventTypeBatchError EventType = "batch.error"
+	EventTypeBatchAll   EventType = "bulker_batch.all"
+	EventTypeBatchError EventType = "bulker_batch.error"
 )
 
 var redisStreamIdTimestampPart = regexp.MustCompile(`^\d{13}`)
@@ -75,6 +75,9 @@ func NewRedisEventsLog(config *AppConfig, redisUrl string) (*RedisEventsLog, err
 }
 
 func (r *RedisEventsLog) PostEvent(eventType EventType, actorId string, event any) (id EventsLogRecordId, err error) {
+	if actorId == "" {
+		return "", nil
+	}
 	serialized, ok := event.([]byte)
 	if !ok {
 		serialized, err = jsoniter.Marshal(event)

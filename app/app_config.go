@@ -61,7 +61,7 @@ type AppConfig struct {
 	// Redis URL that will be used by default by services that need Redis
 	RedisURL          string `mapstructure:"REDIS_URL"`
 	EventsLogRedisURL string `mapstructure:"EVENTS_LOG_REDIS_URL"`
-	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"10000"`
+	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
 
 	//Timeout that give running batch tasks time to finish during shutdown.
 	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`

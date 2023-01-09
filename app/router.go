@@ -149,7 +149,9 @@ func (r *Router) EventsHandler(c *gin.Context) {
 }
 
 func (r *Router) IngestHandler(c *gin.Context) {
-	key := ""
+	domain := ""
+	// TODO: use workspaceId as default for all stream identification errors
+	streamId := ""
 	var rError RouterError
 	var body []byte
 	var asyncDestinations []string
@@ -160,23 +162,23 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		if rError.Error != nil {
 			eventsLogObj["error"] = rError.PublicError.Error()
 			eventsLogObj["status"] = "FAILED"
-			_, e := r.eventsLogService.PostEvent(EventTypeIncomingError, utils.NvlString(key, "unknown"), eventsLogObj)
+			_, e := r.eventsLogService.PostEvent(EventTypeIncomingError, streamId, eventsLogObj)
 			if e != nil {
 				r.Errorf("Failed to post event to events log service: %w", e)
 			}
-			metrics.IngestHandlerError(key, rError.ErrorType).Inc()
+			metrics.IngestHandlerError(domain, rError.ErrorType).Inc()
 		} else {
 			eventsLogObj["asyncDestinations"] = asyncDestinations
 			eventsLogObj["tags"] = tagsDestinations
 			eventsLogObj["status"] = "SUCCESS"
-			metrics.IngestHandlerSuccess(key).Inc()
+			metrics.IngestHandlerSuccess(domain).Inc()
 		}
-		_, e := r.eventsLogService.PostEvent(EventTypeIncomingAll, utils.NvlString(key, "unknown"), eventsLogObj)
+		_, e := r.eventsLogService.PostEvent(EventTypeIncomingAll, streamId, eventsLogObj)
 		if e != nil {
 			r.Errorf("Failed to post event to events log service: %w", e)
 		}
 	}()
-	key = c.GetHeader("X-Bulker-Domain")
+	domain = c.GetHeader("X-Bulker-Domain")
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, "")
@@ -189,8 +191,8 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	messageId := ingestMessage.MessageId
-	key = utils.NvlString(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain)
-	r.Debugf("[ingest] Message ID: %s Domain: %s", messageId, key)
+	domain = utils.NvlString(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain)
+	r.Debugf("[ingest] Message ID: %s Domain: %s", messageId, domain)
 	logFormat := "[ingest] Message ID: %s Domain: %s"
 
 	var stream *StreamWithDestinations
@@ -204,7 +206,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		streams, err = r.fastStore.GetStreamsByDomain(ingestMessage.Origin.Domain)
 		if len(streams) > 1 {
 			if ingestMessage.WriteKey == "" {
-				rError = r.ResponseError(c, http.StatusBadRequest, "error getting stream", false, fmt.Errorf("multiple streams found for domain %s. Please use 'writeKey' message property to select a concrete stream", ingestMessage.Origin.Domain), logFormat, messageId, key)
+				rError = r.ResponseError(c, http.StatusBadRequest, "error getting stream", false, fmt.Errorf("multiple streams found for domain %s. Please use 'writeKey' message property to select a concrete stream", ingestMessage.Origin.Domain), logFormat, messageId, domain)
 				return
 			}
 			writeKey := ingestMessage.WriteKey
@@ -227,13 +229,14 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		}
 	}
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusInternalServerError, "error getting stream", false, err, logFormat, messageId, key)
+		rError = r.ResponseError(c, http.StatusInternalServerError, "error getting stream", false, err, logFormat, messageId, domain)
 		return
 	}
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusNotFound, "stream not found", false, fmt.Errorf(key), logFormat, messageId, key)
+		rError = r.ResponseError(c, http.StatusNotFound, "stream not found", false, fmt.Errorf(domain), logFormat, messageId, domain)
 		return
 	}
+	streamId = stream.Stream.Id
 	if len(stream.AsynchronousDestinations) == 0 {
 		c.JSON(http.StatusNoContent, gin.H{"message": "no destinations found for stream"})
 		return
@@ -241,7 +244,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	asyncDestinations = utils.ArrayMap(stream.AsynchronousDestinations, func(d ShortDestinationConfig) string { return d.ConnectionId })
 	tagsDestinations = utils.ArrayMap(stream.SynchronousDestinations, func(d ShortDestinationConfig) string { return d.ConnectionId })
 
-	r.Infof("[ingest] Message ID: %s Domain: %s to Connections: [%s] Tags: [%s]", messageId, key,
+	r.Infof("[ingest] Message ID: %s Domain: %s to Connections: [%s] Tags: [%s]", messageId, domain,
 		strings.Join(asyncDestinations, ", "), strings.Join(tagsDestinations, ", "))
 	for _, destination := range stream.AsynchronousDestinations {
 		messageCopy := ingestMessage
@@ -249,19 +252,14 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		payload, err := json.Marshal(messageCopy)
 		r.Debugf("[ingest] Message ID: %s Producing to: %s", messageId, destination.ConnectionId)
 		if err != nil {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err, logFormat, messageId, key)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err, logFormat, messageId, domain)
 			return
 		}
 		err = r.producer.ProduceAsync(r.config.KafkaDestinationsTopicName, payload)
 		if err != nil {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, logFormat, messageId, key)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, logFormat, messageId, domain)
 			return
 		}
-	}
-	logObj := map[string]any{"body": string(body), "asyncDestinations": asyncDestinations, "tags": tagsDestinations, "status": "SUCCESS"}
-	_, e := r.eventsLogService.PostEvent(EventTypeIncomingAll, key, logObj)
-	if e != nil {
-		r.Errorf("Failed to post event to events log service: %w", e)
 	}
 	if len(stream.SynchronousDestinations) == 0 {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
