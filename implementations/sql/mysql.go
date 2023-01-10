@@ -450,7 +450,7 @@ func mySQLDriverConnectionString(config *DataSourceConfig) string {
 		config.Username, config.Password, config.Host, config.Port, config.Db)
 	if len(config.Parameters) > 0 {
 		connectionString += "?"
-		paramList := make([]string, 10)
+		paramList := make([]string, 0, len(config.Parameters))
 		//concat provided connection parameters
 		for k, v := range config.Parameters {
 			paramList = append(paramList, k+"="+v)

@@ -105,7 +105,8 @@ func init() {
 		panic(err)
 	}
 	configRegistry[ClickHouseBulkerTypeId] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
-		Dsns:     clickhouseContainer.Dsns,
+		Hosts:    clickhouseContainer.Hosts,
+		Username: "default",
 		Database: clickhouseContainer.Database,
 	}}
 
@@ -114,7 +115,8 @@ func init() {
 		panic(err)
 	}
 	configRegistry[ClickHouseBulkerTypeId+"_cluster"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
-		Dsns:     clickhouseClusterContainer.Dsns,
+		Hosts:    clickhouseClusterContainer.Hosts,
+		Username: "default",
 		Database: clickhouseClusterContainer.Database,
 		Cluster:  clickhouseClusterContainer.Cluster,
 	}}
@@ -124,7 +126,9 @@ func init() {
 	}
 	configRegistry[ClickHouseBulkerTypeId+"_cluster_noshards"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
 		//also test HTTP mode with this config
-		Dsns:     clickhouseClusterContainerNoShards.DsnsHTTP,
+		Hosts:    clickhouseClusterContainerNoShards.HostsHTTP,
+		Protocol: ClickHouseProtocolHTTP,
+		Username: "default",
 		Database: clickhouseClusterContainerNoShards.Database,
 		Cluster:  clickhouseClusterContainerNoShards.Cluster,
 	}}
@@ -138,8 +142,8 @@ func init() {
 		}
 	}
 	////uncomment to run test for single db only
-	//allBulkerConfigs = []string{SnowflakeBulkerTypeId}
-	//exceptBigquery = []string{}
+	allBulkerConfigs = []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}
+	exceptBigquery = allBulkerConfigs
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 

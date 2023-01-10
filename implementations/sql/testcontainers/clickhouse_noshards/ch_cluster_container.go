@@ -2,7 +2,6 @@ package clickhouse_noshards
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/testcontainers/testcontainers-go"
@@ -10,23 +9,25 @@ import (
 )
 
 const (
-	chClusterDatabase               = "default"
-	chClusterCluster                = "company_cluster"
-	chClusterDatasourceTemplateHttp = "http://default:@localhost:8133,localhost:8134/default?read_timeout=5m&mutations_sync=2&connection_open_strategy=round_robin"
-	chClusterDatasourceTemplate     = "clickhouse://default:@localhost:9010,localhost:9011/default?read_timeout=5m&mutations_sync=2&connection_open_strategy=round_robin"
+	chClusterDatabase = "default"
+	chClusterCluster  = "company_cluster"
+)
+
+var (
+	chClusterHostsHttp   = []string{"localhost:8133", "localhost:8134"}
+	chClusterHostsNative = []string{"localhost:9010", "localhost:9011"}
 )
 
 // ClickHouseClusterContainerNoShards is a ClickHouse testcontainer
 type ClickHouseClusterContainerNoShards struct {
-	datasource *sql.DB
-	Container  testcontainers.Container
-	Compose    *testcontainers.LocalDockerCompose
-	Context    context.Context
+	Container testcontainers.Container
+	Compose   *testcontainers.LocalDockerCompose
+	Context   context.Context
 
-	Cluster  string
-	Dsns     []string
-	DsnsHTTP []string
-	Database string
+	Cluster   string
+	Hosts     []string
+	HostsHTTP []string
+	Database  string
 }
 
 // ClickHouseClusterContainerNoShards creates new Clickhouse test container if CH_TEST_PORT is not defined. Otherwise uses db at defined port.
@@ -53,24 +54,13 @@ func NewClickHouseClusterContainerNoShards(ctx context.Context) (*ClickHouseClus
 		return nil, fmt.Errorf("could not run compose file: %v - %v", composeFilePaths, err)
 	}
 
-	datasource, err := sql.Open("clickhouse", chClusterDatasourceTemplate)
-	if err != nil {
-		execError := compose.Down()
-		err := execError.Error
-		if err != nil {
-			return nil, fmt.Errorf("could not run compose file: %v - %v", composeFilePaths, err)
-		}
-		return nil, err
-	}
-
 	return &ClickHouseClusterContainerNoShards{
-		datasource: datasource,
-		Compose:    compose,
-		Context:    ctx,
-		Dsns:       []string{chClusterDatasourceTemplate},
-		DsnsHTTP:   []string{chClusterDatasourceTemplateHttp},
-		Database:   chClusterDatabase,
-		Cluster:    chClusterCluster,
+		Compose:   compose,
+		Context:   ctx,
+		Hosts:     chClusterHostsNative,
+		HostsHTTP: chClusterHostsHttp,
+		Database:  chClusterDatabase,
+		Cluster:   chClusterCluster,
 	}, nil
 }
 
@@ -81,12 +71,6 @@ func (ch *ClickHouseClusterContainerNoShards) Close() error {
 		err := execError.Error
 		if err != nil {
 			return fmt.Errorf("could down docker compose: %s", ch.Compose.Identifier)
-		}
-	}
-
-	if ch.datasource != nil {
-		if err := ch.datasource.Close(); err != nil {
-			logging.Errorf("failed to close datasource in clickhouse container: %v", err)
 		}
 	}
 

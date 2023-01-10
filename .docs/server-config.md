@@ -275,8 +275,14 @@ Postrgres, MySQL, Redshift and Snowflake `credentials` shares same configuration
 
 ```json5
 {
-  //list of Clickhouse nodes. See https://github.com/ClickHouse/clickhouse-go#dsn  
-  datasources: ["string"],
+  //Clickhouse protocol: clickhouse, clickhouse-secure, http or https
+  protocol: "string",
+  //list of clickhouse servers as host:port. If port is not specified, default port for respective protocol will be used. http → 8123, https → 8443, clickhouse → 9000, clickhouse-secure → 9440  
+  hosts: ["string"],
+  //map of parameters. See https://clickhouse.com/docs/en/integrations/go/clickhouse-go/database-sql-api/#connection-settings 
+  parameters: {},
+  username: "string",
+  password: "string",
   //name of the database
   database: "string",
   //cluster name

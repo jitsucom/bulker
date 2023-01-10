@@ -111,13 +111,26 @@ var (
 	nonLettersCharacters = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 )
 
+type ClickHouseProtocol string
+
+const (
+	ClickHouseProtocolNative ClickHouseProtocol = "clickhouse"
+	ClickHouseProtocolSecure ClickHouseProtocol = "clickhouse-secure"
+	ClickHouseProtocolHTTP   ClickHouseProtocol = "http"
+	ClickHouseProtocolHTTPS  ClickHouseProtocol = "https"
+)
+
 // ClickHouseConfig dto for deserialized clickhouse config
 type ClickHouseConfig struct {
-	Dsns     []string          `mapstructure:"datasources,omitempty" json:"datasources,omitempty" yaml:"datasources,omitempty"`
-	Database string            `mapstructure:"database,omitempty" json:"database,omitempty" yaml:"database,omitempty"`
-	TLS      map[string]string `mapstructure:"tls,omitempty" json:"tls,omitempty" yaml:"tls,omitempty"`
-	Cluster  string            `mapstructure:"cluster,omitempty" json:"cluster,omitempty" yaml:"cluster,omitempty"`
-	Engine   *EngineConfig     `mapstructure:"engine,omitempty" json:"engine,omitempty" yaml:"engine,omitempty"`
+	Protocol   ClickHouseProtocol `mapstructure:"protocol,omitempty" json:"protocol,omitempty" yaml:"protocol,omitempty"`
+	Hosts      []string           `mapstructure:"hosts,omitempty" json:"hosts,omitempty" yaml:"hosts,omitempty"`
+	Parameters map[string]string  `mapstructure:"parameters,omitempty" json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Username   string             `mapstructure:"username,omitempty" json:"username,omitempty" yaml:"username,omitempty"`
+	Password   string             `mapstructure:"password,omitempty" json:"password,omitempty" yaml:"password,omitempty"`
+	Database   string             `mapstructure:"database,omitempty" json:"database,omitempty" yaml:"database,omitempty"`
+	Cluster    string             `mapstructure:"cluster,omitempty" json:"cluster,omitempty" yaml:"cluster,omitempty"`
+	TLS        map[string]string  `mapstructure:"tls,omitempty" json:"tls,omitempty" yaml:"tls,omitempty"`
+	Engine     *EngineConfig      `mapstructure:"engine,omitempty" json:"engine,omitempty" yaml:"engine,omitempty"`
 }
 
 // EngineConfig dto for deserialized clickhouse engine config
@@ -154,32 +167,25 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return nil, err
 	}
 	httpMode := false
-	if strings.HasPrefix(config.Dsns[0], "http") {
+	if config.Protocol == ClickHouseProtocolHTTP || config.Protocol == ClickHouseProtocolHTTPS {
 		httpMode = true
 	}
+	if config.Parameters == nil {
+		config.Parameters = map[string]string{}
+	}
+	if config.Protocol == ClickHouseProtocolSecure || config.Protocol == ClickHouseProtocolHTTPS {
+		config.Parameters["secure"] = "true"
+		utils.MapPutIfAbsent(config.Parameters, "skip_verify", "true")
+	}
+	utils.MapPutIfAbsent(config.Parameters, "connection_open_strategy", "round_robin")
+	utils.MapPutIfAbsent(config.Parameters, "mutations_sync", "2")
+
 	dbConnectFunction := func(config *ClickHouseConfig) (*sql.DB, error) {
-		dataSource, err := sql.Open("clickhouse", config.Dsns[0])
+		dsn := clickhouseDriverConnectionString(config)
+		dataSource, err := sql.Open("clickhouse", dsn)
 		if err != nil {
 			return nil, err
 		}
-		//dataSource := clickhouse.OpenDB(&clickhouse.Options{
-		//
-		//	Addr: config.Dsns,
-		//	Auth: clickhouse.Auth{
-		//		Database: config.Database,
-		//	},
-		//	TLS: &tls.Config{
-		//		InsecureSkipVerify: false,
-		//	},
-		//	Settings: clickhouse.Settings{
-		//		"max_execution_time": 60,
-		//		"wait_end_of_query":  1,
-		//	},
-		//	Protocol:    clickhouse.HTTP,
-		//	DialTimeout: 15 * time.Second,
-		//	Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
-		//	Debug:       true,
-		//})
 
 		if err := chPing(dataSource, httpMode); err != nil {
 			_ = dataSource.Close()
@@ -217,6 +223,48 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		httpMode:              httpMode,
 	}
 	return c, err
+}
+
+func clickhouseDriverConnectionString(config *ClickHouseConfig) string {
+	protocol := string(config.Protocol)
+	if config.Protocol == ClickHouseProtocolSecure || config.Protocol == "" {
+		protocol = "clickhouse"
+	}
+	hostWithPorts := make([]string, len(config.Hosts))
+	for i, host := range config.Hosts {
+		if strings.Contains(host, ":") {
+			// host already contains port
+			hostWithPorts[i] = host
+		} else {
+			switch config.Protocol {
+			case ClickHouseProtocolHTTP:
+				hostWithPorts[i] = host + ":8123"
+			case ClickHouseProtocolHTTPS:
+				hostWithPorts[i] = host + ":8443"
+			case ClickHouseProtocolNative:
+				hostWithPorts[i] = host + ":9000"
+			case ClickHouseProtocolSecure:
+				hostWithPorts[i] = host + ":9440"
+			default:
+				hostWithPorts[i] = host + ":9000"
+			}
+		}
+	}
+	hosts := strings.Join(hostWithPorts, ",")
+	// protocol://[user[:password]@][host1:port],[host2:port]/dbname[?param1=value1&paramN=valueN]
+	connectionString := fmt.Sprintf("%s://%s:%s@%s/%s", protocol,
+		config.Username, config.Password, hosts, config.Database)
+	if len(config.Parameters) > 0 {
+		connectionString += "?"
+		paramList := make([]string, 0, len(config.Parameters))
+		//concat provided connection parameters
+		for k, v := range config.Parameters {
+			paramList = append(paramList, k+"="+v)
+		}
+		connectionString += strings.Join(paramList, "&")
+	}
+	//logging.Infof("Connection string: %s", connectionString)
+	return connectionString
 }
 
 func (ch *ClickHouse) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -911,18 +959,18 @@ func (chc *ClickHouseConfig) Validate() error {
 		return errors.New("ClickHouse config is required")
 	}
 
-	if len(chc.Dsns) == 0 {
-		return errors.New("databases is required parameter")
+	if len(chc.Hosts) == 0 {
+		return errors.New("hosts is required parameter")
 	}
 
-	for _, dsn := range chc.Dsns {
+	for _, dsn := range chc.Hosts {
 		if dsn == "" {
-			return errors.New("DSNs values can't be empty")
+			return errors.New("Host value can't be empty")
 		}
 	}
 
-	if chc.Cluster == "" && len(chc.Dsns) > 1 {
-		return errors.New("cluster is required parameter when datasources count > 1")
+	if chc.Cluster == "" && len(chc.Hosts) > 1 {
+		return errors.New("cluster is required parameter when hosts count > 1")
 	}
 
 	if chc.Database == "" {

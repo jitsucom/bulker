@@ -2,9 +2,7 @@ package testcontainers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"github.com/docker/go-connections/nat"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/testcontainers/testcontainers-go"
@@ -13,49 +11,22 @@ import (
 )
 
 const (
-	chDatabase           = "default"
-	chDatasourceTemplate = "clickhouse://default:@localhost:%d/default?read_timeout=5m&mutations_sync=2"
-
+	chDatabase                = "default"
 	envClickhousePortVariable = "CH_TEST_PORT"
 )
 
 // ClickHouseContainer is a ClickHouse testcontainer
 type ClickHouseContainer struct {
-	datasource *sql.DB
-	Container  testcontainers.Container
-	Context    context.Context
+	Container testcontainers.Container
+	Context   context.Context
 
-	Port     int
-	Dsns     []string
+	Hosts    []string
 	Database string
 }
 
 // NewClickhouseContainer creates new Clickhouse test container if CH_TEST_PORT is not defined. Otherwise uses db at defined port.
 // This logic is required for running test at CI environment
 func NewClickhouseContainer(ctx context.Context) (*ClickHouseContainer, error) {
-	//if os.Getenv(envClickhousePortVariable) != "" {
-	//	port, err := strconv.Atoi(os.Getenv(envClickhousePortVariable))
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//	dsn := fmt.Sprintf(chDatasourceTemplate, port)
-	//
-	//	datasource, err := sql.Open("clickhouse", dsn)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	return &ClickHouseContainer{
-	//		datasource: datasource,
-	//		Context:    ctx,
-	//		Dsns:       []string{dsn},
-	//		Database:   chDatabase,
-	//		Port:       port,
-	//	}, nil
-	//}
-	dbURL := func(port nat.Port) string {
-		return fmt.Sprintf(chDatasourceTemplate, port.Int())
-	}
 	image := "clickhouse/clickhouse-server:22.8-alpine"
 	exposedPortHttp := fmt.Sprintf("%d:%d", utils.GetPort(), 8123)
 	exposedPortNative := fmt.Sprintf("%d:%d", utils.GetPort(), 9000)
@@ -64,8 +35,7 @@ func NewClickhouseContainer(ctx context.Context) (*ClickHouseContainer, error) {
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        image,
 			ExposedPorts: []string{exposedPortHttp, exposedPortNative},
-			WaitingFor:   tcWait.ForSQL("9000/tcp", "clickhouse", dbURL).Timeout(time.Second * 60),
-			//WaitingFor:   tcWait.ForListeningPort("8123").WithStartupTimeout(1 * time.Minute),
+			WaitingFor:   tcWait.ForListeningPort("9000/tcp").WithStartupTimeout(1 * time.Minute),
 		},
 		Started: true,
 	})
@@ -79,21 +49,11 @@ func NewClickhouseContainer(ctx context.Context) (*ClickHouseContainer, error) {
 		return nil, err
 	}
 
-	dsn := fmt.Sprintf(chDatasourceTemplate, port.Int())
-
-	datasource, err := sql.Open("clickhouse", dsn)
-	if err != nil {
-		container.Terminate(ctx)
-		return nil, err
-	}
-
 	return &ClickHouseContainer{
-		datasource: datasource,
-		Container:  container,
-		Context:    ctx,
-		Dsns:       []string{dsn},
-		Database:   chDatabase,
-		Port:       port.Int(),
+		Container: container,
+		Context:   ctx,
+		Hosts:     []string{fmt.Sprintf("localhost:%d", port.Int())},
+		Database:  chDatabase,
 	}, nil
 }
 
@@ -132,12 +92,6 @@ func (ch *ClickHouseContainer) Close() error {
 	if ch.Container != nil {
 		if err := ch.Container.Terminate(ch.Context); err != nil {
 			logging.Errorf("Failed to stop ch container: %v", err)
-		}
-	}
-
-	if ch.datasource != nil {
-		if err := ch.datasource.Close(); err != nil {
-			logging.Errorf("failed to close datasource in clickhouse container: %v", err)
 		}
 	}
 
