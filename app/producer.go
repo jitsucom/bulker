@@ -78,7 +78,7 @@ func (p *Producer) Start() {
 
 // ProduceSync TODO: transactional delivery?
 // produces messages to kafka
-func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
+func (p *Producer) ProduceSync(topic string, events ...kafka.Message) error {
 	if p.isClosed() {
 		return p.NewError("producer is closed")
 	}
@@ -87,10 +87,7 @@ func (p *Producer) ProduceSync(topic string, events ...[]byte) error {
 	errors := multierror.Error{}
 	sent := 0
 	for _, event := range events {
-		err := p.producer.Produce(&kafka.Message{
-			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-			Value:          event,
-		}, deliveryChan)
+		err := p.producer.Produce(&event, deliveryChan)
 		if err != nil {
 			metrics.ProducerProduceErrors(ProducerLabelsWithErr(topic, metrics.KafkaErrorCode(err))).Inc()
 			errors.Errors = append(errors.Errors, err)
@@ -192,13 +189,4 @@ func ProducerLabelsWithErr(topic string, errText string) (destinationId, mode, t
 	} else {
 		return destinationId, mode, tableName, errText
 	}
-}
-
-func GetKafkaHeader(message *kafka.Message, key string) string {
-	for _, h := range message.Headers {
-		if h.Key == key {
-			return string(h.Value)
-		}
-	}
-	return ""
 }

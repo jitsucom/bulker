@@ -20,6 +20,9 @@ var topicPattern = regexp.MustCompile(`^in[.]id[.](.*)[.]m[.](.*)[.](t|b64)[.](.
 const topicExpression = "in.id.%s.m.%s.t.%s"
 const topicExpressionBase64 = "in.id.%s.m.%s.b64.%s"
 
+const retryTopicMode = "failed"
+const deadTopicMode = "dead"
+
 const topicLengthLimit = 200
 
 type TopicManager struct {
@@ -41,7 +44,8 @@ type TopicManager struct {
 	allTopics       utils.Set[string]
 
 	//batch consumers by destinationId
-	batchConsumers  map[string][]*BatchConsumer
+	batchConsumers  map[string][]BatchConsumer
+	retryConsumers  map[string][]BatchConsumer
 	streamConsumers map[string][]*StreamConsumer
 
 	bulkerProducer   *Producer
@@ -67,7 +71,8 @@ func NewTopicManager(appContext *AppContext) (*TopicManager, error) {
 		topics:               make(map[string]utils.Set[string]),
 		bulkerProducer:       appContext.producer,
 		eventsLogService:     appContext.eventsLogService,
-		batchConsumers:       make(map[string][]*BatchConsumer),
+		batchConsumers:       make(map[string][]BatchConsumer),
+		retryConsumers:       make(map[string][]BatchConsumer),
 		streamConsumers:      make(map[string][]*StreamConsumer),
 		abandonedTopics:      utils.NewSet[string](),
 		allTopics:            utils.NewSet[string](),
@@ -101,16 +106,29 @@ func (tm *TopicManager) Start() {
 				for _, changedDst := range changes.ChangedDestinations {
 					tm.Lock()
 					for _, consumer := range tm.batchConsumers[changedDst.Id()] {
-						if consumer.batchPeriodSec != bulker.BatchPeriodOption.Get(changedDst.streamOptions) {
-							consumer.batchPeriodSec = bulker.BatchPeriodOption.Get(changedDst.streamOptions)
+						if consumer.BatchPeriodSec() != bulker.BatchPeriodOption.Get(changedDst.streamOptions) {
+							consumer.UpdateBatchPeriod(bulker.BatchPeriodOption.Get(changedDst.streamOptions))
 							_, err := tm.cron.ReplaceBatchConsumer(consumer)
 							if err != nil {
 								metrics.TopicManagerError("reschedule_batch_consumer_error").Inc()
 								consumer.Retire()
-								tm.SystemErrorf("Failed to re-schedule consumer for destination topic: %s: %v", consumer.topicId, err)
+								tm.SystemErrorf("Failed to re-schedule consumer for destination topic: %s: %v", consumer.TopicId(), err)
 								continue
 							}
-							tm.Infof("Consumer for destination topic %s was re-scheduled with new batch period %d", consumer.topicId, consumer.batchPeriodSec)
+							tm.Infof("Consumer for destination topic %s was re-scheduled with new batch period %d", consumer.TopicId(), consumer.BatchPeriodSec())
+						}
+					}
+					for _, consumer := range tm.retryConsumers[changedDst.Id()] {
+						if consumer.BatchPeriodSec() != bulker.BatchPeriodOption.Get(changedDst.streamOptions) {
+							consumer.UpdateBatchPeriod(bulker.BatchPeriodOption.Get(changedDst.streamOptions))
+							_, err := tm.cron.ReplaceBatchConsumer(consumer)
+							if err != nil {
+								metrics.TopicManagerError("reschedule_batch_consumer_error").Inc()
+								consumer.Retire()
+								tm.SystemErrorf("Failed to re-schedule consumer for destination topic: %s: %v", consumer.TopicId(), err)
+								continue
+							}
+							tm.Infof("Consumer for destination topic %s was re-scheduled with new batch period %d", consumer.TopicId(), consumer.BatchPeriodSec())
 						}
 					}
 					for _, consumer := range tm.streamConsumers[changedDst.Id()] {
@@ -131,12 +149,20 @@ func (tm *TopicManager) Start() {
 						delete(tm.batchConsumers, deletedDstId)
 						tm.Unlock()
 					}
+					for _, consumer := range tm.retryConsumers[deletedDstId] {
+						tm.Lock()
+						_ = tm.cron.RemoveBatchConsumer(consumer)
+						consumer.Retire()
+						delete(tm.retryConsumers, deletedDstId)
+						tm.Unlock()
+					}
 					for _, consumer := range tm.streamConsumers[deletedDstId] {
 						tm.Lock()
 						_ = consumer.Close()
 						delete(tm.streamConsumers, deletedDstId)
 						tm.Unlock()
 					}
+					delete(tm.topics, deletedDstId)
 				}
 				if len(changes.AddedDestinations) > 0 {
 					tm.Lock()
@@ -220,10 +246,27 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 					tm.Errorf("Failed to schedule consumer for destination topic: %s: %v", topic, err)
 					continue
 				} else {
-					tm.Infof("Consumer for destination topic %s was scheduled with batch period %d", topic, batchConsumer.batchPeriodSec)
+					tm.Infof("Consumer for destination topic %s was scheduled with batch period %d", topic, utils.Nvl(batchConsumer.batchPeriodSec, tm.config.BatchRunnerPeriodSec))
 				}
-			case "failed":
-				tm.Infof("Found topic %s for 'failed' events", topic)
+			case retryTopicMode:
+				retryConsumer, err := NewRetryConsumer(tm.repository, destinationId, bulker.BatchPeriodOption.Get(destination.streamOptions), topic, tm.config, tm.kafkaConfig)
+				if err != nil {
+					topicsErrorsByMode[mode]++
+					tm.Errorf("Failed to create retry consumer for destination topic: %s: %v", topic, err)
+					continue
+				}
+				tm.retryConsumers[destinationId] = append(tm.retryConsumers[destinationId], retryConsumer)
+				_, err = tm.cron.AddBatchConsumer(retryConsumer)
+				if err != nil {
+					topicsErrorsByMode[mode]++
+					retryConsumer.Retire()
+					tm.Errorf("Failed to schedule retry consumer for destination topic: %s: %v", topic, err)
+					continue
+				} else {
+					tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %d", topic, utils.Nvl(retryConsumer.batchPeriodSec, tm.config.BatchRunnerPeriodSec))
+				}
+			case deadTopicMode:
+				tm.Infof("Found topic %s for 'dead' events", topic)
 			default:
 				topicsErrorsByMode[mode]++
 				tm.Errorf("Unknown stream mode: %s for topic: %s", mode, topic)
@@ -327,13 +370,8 @@ func (tm *TopicManager) createDestinationTopic(destination *Destination, topic s
 		return tm.NewError("Unknown stream mode: %s for topic: %s", mode, topic)
 	}
 	destinationId := destination.Id()
-	var set utils.Set[string]
-	ok := false
-	if set, ok = tm.topics[destinationId]; !ok {
-		set = utils.NewSet[string]()
-		tm.topics[destinationId] = set
-	}
-	failedTopic, _ := MakeTopicId(destinationId, "failed", tableName, false)
+	failedTopic, _ := MakeTopicId(destinationId, retryTopicMode, tableName, false)
+	deadTopic, _ := MakeTopicId(destinationId, deadTopicMode, tableName, false)
 	topicRes, err := tm.kaftaAdminClient.CreateTopics(context.Background(), []kafka.TopicSpecification{
 		{
 			Topic:         topic,
@@ -352,6 +390,14 @@ func (tm *TopicManager) createDestinationTopic(destination *Destination, topic s
 				"retention.ms": fmt.Sprint(tm.config.KafkaFailedTopicRetentionHours * 60 * 60 * 1000),
 			},
 		},
+		{
+			Topic:             deadTopic,
+			NumPartitions:     1,
+			ReplicationFactor: tm.config.KafkaTopicReplicationFactor,
+			Config: map[string]string{
+				"retention.ms": fmt.Sprint(tm.config.KafkaDeadTopicRetentionHours * 60 * 60 * 1000),
+			},
+		},
 	})
 	if err != nil {
 		errorType = "kafka error"
@@ -361,43 +407,16 @@ func (tm *TopicManager) createDestinationTopic(destination *Destination, topic s
 		return tm.NewError("Error creating topic %s: %w", topic, err)
 	}
 	for _, res := range topicRes {
-		if res.Error.Code() != kafka.ErrNoError {
+		if res.Error.Code() != kafka.ErrNoError && res.Error.Code() != kafka.ErrTopicAlreadyExists {
 			errorType = metrics.KafkaErrorCode(res.Error)
 			return tm.NewError("Error creating topic %s: %w", res.Topic, res.Error)
 		}
 	}
-	switch mode {
-	case "stream":
-		streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.bulkerProducer, tm.eventsLogService)
-		if err != nil {
-			errorType = "cannot create stream consumer"
-			return tm.NewError("Failed to create consumer for destination topic: %s: %v", topic, err)
-		}
-		tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
-	case "batch":
-		batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, bulker.BatchPeriodOption.Get(destination.streamOptions), topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
-		if err != nil {
-			errorType = "cannot create batch consumer"
-			return tm.NewError("Failed to create batch consumer for destination topic: %s: %v", topic, err)
-		}
-		tm.batchConsumers[destinationId] = append(tm.batchConsumers[destinationId], batchConsumer)
-		_, err = tm.cron.AddBatchConsumer(batchConsumer)
-		if err != nil {
-			errorType = "cannot schedule batch consumer"
-			batchConsumer.Retire()
-			return tm.NewError("Failed to schedule consumer for destination topic: %s: %v", topic, err)
-		} else {
-			tm.Infof("Consumer for destination topic %s was scheduled with batch period %d", topic, batchConsumer.batchPeriodSec)
-		}
-	}
-	set.Put(topic)
-	tm.Infof("Created topic %s", topic)
-	tm.Infof("Created topic %s", failedTopic)
-
+	tm.Infof("Created topics: %s, %s, %s", topic, failedTopic, deadTopic)
 	return nil
 }
 
-// createTopic creates topic for destination
+// createTopic creates topic for any purpose
 func (tm *TopicManager) createTopic(topic string) error {
 	topicRes, err := tm.kaftaAdminClient.CreateTopics(context.Background(), []kafka.TopicSpecification{
 		{
@@ -414,7 +433,7 @@ func (tm *TopicManager) createTopic(topic string) error {
 		return tm.NewError("Error creating topic %s: %w", topic, err)
 	}
 	for _, res := range topicRes {
-		if res.Error.Code() != kafka.ErrNoError {
+		if res.Error.Code() != kafka.ErrNoError && res.Error.Code() != kafka.ErrTopicAlreadyExists {
 			return tm.NewError("Error creating topic %s: %w", res.Topic, res.Error)
 		}
 	}
@@ -429,6 +448,11 @@ func (tm *TopicManager) Close() error {
 	tm.Lock()
 	defer tm.Unlock()
 	for _, consumers := range tm.batchConsumers {
+		for _, consumer := range consumers {
+			consumer.Retire()
+		}
+	}
+	for _, consumers := range tm.retryConsumers {
 		for _, consumer := range consumers {
 			consumer.Retire()
 		}

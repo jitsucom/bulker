@@ -280,7 +280,7 @@ func (r *Router) FailedHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tableName query parameter is required"})
 		return
 	}
-	topicId, _ := MakeTopicId(destinationId, "failed", tableName, false)
+	topicId, _ := MakeTopicId(destinationId, retryTopicMode, tableName, false)
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"auto.offset.reset":             "earliest",
 		"group.id":                      uuid.New(),

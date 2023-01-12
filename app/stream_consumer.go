@@ -6,10 +6,12 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/objects"
+	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 	jsoniter "github.com/json-iterator/go"
+	"strconv"
 	"sync/atomic"
 	"time"
 )
@@ -157,7 +159,7 @@ func (sc *StreamConsumer) start() {
 						sc.postEventsLog(message.Value, nil, nil, err)
 						sc.Errorf("Failed to parse event from message: %s offset: %s: %w", message.Value, message.TopicPartition.Offset.String(), err)
 					} else {
-						sc.Infof("Consumed Message ID: %s Offset: %s", obj.Id(), message.TopicPartition.Offset.String())
+						sc.Infof("Consumed Message ID: %s Offset: %s (Retries: %s)", obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader))
 						var state bulker.State
 						var processedObjects []types.Object
 						state, processedObjects, err = (*sc.stream.Load()).Consume(context.Background(), obj)
@@ -170,8 +172,24 @@ func (sc *StreamConsumer) start() {
 						}
 					}
 					if err != nil {
-						failedTopic, _ := MakeTopicId(sc.destination.Id(), "failed", sc.tableName, false)
-						err = sc.bulkerProducer.ProduceSync(failedTopic, message.Value)
+						failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, sc.tableName, false)
+						retries, err := GetKafkaIntHeader(message, retriesCountHeader)
+						if err != nil {
+							sc.Errorf("failed to read retry header: %w", err)
+						}
+						if retries >= sc.config.MessagesRetryCount {
+							//no attempts left - send to dead-letter topic
+							failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, sc.tableName, false)
+						}
+						retryMessage := kafka.Message{
+							TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
+							Headers: []kafka.Header{
+								{Key: retriesCountHeader, Value: []byte(strconv.Itoa(retries))},
+								{Key: originalTopicHeader, Value: []byte(sc.topicId)},
+								{Key: retryTimeHeader, Value: []byte(timestamp.ToISOFormat(RetryBackOffTime(sc.config, retries+1).UTC()))}},
+							Value: message.Value,
+						}
+						err = sc.bulkerProducer.ProduceSync(failedTopic, retryMessage)
 						if err != nil {
 							sc.Errorf("failed to store event to 'failed' topic: %s: %v", failedTopic, err)
 						}

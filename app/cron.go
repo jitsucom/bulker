@@ -21,31 +21,31 @@ func NewCron(config *AppConfig) *Cron {
 	return &Cron{ServiceBase: base, scheduler: s, config: config}
 }
 
-func (c *Cron) AddBatchConsumer(batchConsumer *BatchConsumer) (*gocron.Job, error) {
-	batchPeriodSeconds := batchConsumer.batchPeriodSec
+func (c *Cron) AddBatchConsumer(batchConsumer BatchConsumer) (*gocron.Job, error) {
+	batchPeriodSeconds := batchConsumer.BatchPeriodSec()
 	if batchPeriodSeconds == 0 {
 		batchPeriodSeconds = c.config.BatchRunnerPeriodSec
 	}
 	return c.scheduler.Every(batchPeriodSeconds).Seconds().
 		StartAt(time.Now().Add(time.Duration(rand.Intn(batchPeriodSeconds)) * time.Second)).
-		Tag(batchConsumer.topicId).
+		Tag(batchConsumer.TopicId()).
 		Do(batchConsumer.RunJob)
 }
 
-func (c *Cron) ReplaceBatchConsumer(batchConsumer *BatchConsumer) (*gocron.Job, error) {
-	_ = c.scheduler.RemoveByTag(batchConsumer.topicId)
-	batchPeriodSeconds := batchConsumer.batchPeriodSec
+func (c *Cron) ReplaceBatchConsumer(batchConsumer BatchConsumer) (*gocron.Job, error) {
+	_ = c.scheduler.RemoveByTag(batchConsumer.TopicId())
+	batchPeriodSeconds := batchConsumer.BatchPeriodSec()
 	if batchPeriodSeconds == 0 {
 		batchPeriodSeconds = c.config.BatchRunnerPeriodSec
 	}
 	return c.scheduler.Every(batchPeriodSeconds).Seconds().
 		StartAt(time.Now().Add(time.Duration(rand.Intn(batchPeriodSeconds)) * time.Second)).
-		Tag(batchConsumer.topicId).
+		Tag(batchConsumer.TopicId()).
 		Do(batchConsumer.RunJob)
 }
 
-func (c *Cron) RemoveBatchConsumer(batchConsumer *BatchConsumer) error {
-	return c.scheduler.RemoveByTag(batchConsumer.topicId)
+func (c *Cron) RemoveBatchConsumer(batchConsumer BatchConsumer) error {
+	return c.scheduler.RemoveByTag(batchConsumer.TopicId())
 }
 
 // Close scheduler

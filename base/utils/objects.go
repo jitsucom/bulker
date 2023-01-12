@@ -76,13 +76,14 @@ func ExtractObject(object any, path ...string) (any, error) {
 // Nvl returns first not null object or pointer from varargs
 //
 // return nil if all passed arguments are nil
-func Nvl(args ...any) any {
+func Nvl[T comparable](args ...T) T {
+	var empty T
 	for _, str := range args {
-		if str != nil {
+		if str != empty {
 			return str
 		}
 	}
-	return nil
+	return empty
 }
 
 // NvlMap returns first not empty map from varargs

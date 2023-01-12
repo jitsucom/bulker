@@ -26,3 +26,10 @@ func ParseInt(value any) (int, error) {
 		return 0, fmt.Errorf("ParseInt: invalid value type %T", value)
 	}
 }
+
+func MaxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

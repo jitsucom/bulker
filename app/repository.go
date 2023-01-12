@@ -154,9 +154,14 @@ func (r *repositoryInternal) initBulkerInstance(cfg *DestinationConfig) {
 	withError := ""
 	logFunc := r.Infof
 	if err != nil {
+		metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
+		if bulkerInstance == nil {
+			r.Errorf("destination %s – failed to create bulker instance: %v", cfg.Id(), err)
+			return
+		}
+		// we could not connect but problem may be resolved on the warehouse side later.
 		logFunc = r.Errorf
 		withError = fmt.Sprintf(" with error: %v", err)
-		metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
 	}
 	options := bulker.StreamOptions{}
 	for name, serializedOption := range cfg.StreamConfig.Options {

@@ -42,6 +42,7 @@ type AppConfig struct {
 
 	KafkaTopicRetentionHours       int `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
 	KafkaFailedTopicRetentionHours int `mapstructure:"KAFKA_FAILED_TOPIC_RETENTION_HOURS" default:"168"`
+	KafkaDeadTopicRetentionHours   int `mapstructure:"KAFKA_FAILED_TOPIC_RETENTION_HOURS" default:"168"`
 
 	KafkaTopicReplicationFactor              int    `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR"`
 	KafkaAdminMetadataTimeoutMs              int    `mapstructure:"KAFKA_ADMIN_METADATA_TIMEOUT_MS" default:"1000"`
@@ -54,9 +55,15 @@ type AppConfig struct {
 
 	ProducerWaitForDeliveryMs int `mapstructure:"PRODUCER_WAIT_FOR_DELIVERY_MS" default:"1000"`
 
-	BatchRunnerPeriodSec          int `mapstructure:"BATCH_RUNNER_DEFAULT_PERIOD_SEC" default:"300"`
-	BatchRunnerDefaultBatchSize   int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"10000"`
-	BatchRunnerWaitForMessagesSec int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"1"`
+	BatchRunnerPeriodSec             int `mapstructure:"BATCH_RUNNER_DEFAULT_PERIOD_SEC" default:"300"`
+	BatchRunnerDefaultBatchSize      int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"10000"`
+	BatchRunnerWaitForMessagesSec    int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"1"`
+	BatchRunnerDefaultRetryBatchSize int `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE" default:"100"`
+
+	MessagesRetryCount       int     `mapstructure:"MESSAGES_RETRY_COUNT" default:"3"`
+	MessagesRetryBackoffBase float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_BASE" default:"5"`
+	// minutes
+	MessagesRetryBackoffMaxDelay float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_MAX_DELAY" default:"1440"`
 
 	// Redis URL that will be used by default by services that need Redis
 	RedisURL          string `mapstructure:"REDIS_URL"`
