@@ -106,8 +106,9 @@ func (tm *TopicManager) Start() {
 				for _, changedDst := range changes.ChangedDestinations {
 					tm.Lock()
 					for _, consumer := range tm.batchConsumers[changedDst.Id()] {
-						if consumer.BatchPeriodSec() != bulker.BatchPeriodOption.Get(changedDst.streamOptions) {
-							consumer.UpdateBatchPeriod(bulker.BatchPeriodOption.Get(changedDst.streamOptions))
+						batchPeriodSec := utils.Nvl(bulker.BatchPeriodOption.Get(changedDst.streamOptions), tm.config.BatchRunnerPeriodSec)
+						if consumer.BatchPeriodSec() != batchPeriodSec {
+							consumer.UpdateBatchPeriod(batchPeriodSec)
 							_, err := tm.cron.ReplaceBatchConsumer(consumer)
 							if err != nil {
 								metrics.TopicManagerError("reschedule_batch_consumer_error").Inc()
@@ -119,8 +120,9 @@ func (tm *TopicManager) Start() {
 						}
 					}
 					for _, consumer := range tm.retryConsumers[changedDst.Id()] {
-						if consumer.BatchPeriodSec() != bulker.BatchPeriodOption.Get(changedDst.streamOptions) {
-							consumer.UpdateBatchPeriod(bulker.BatchPeriodOption.Get(changedDst.streamOptions))
+						retryPeriodSec := utils.Nvl(bulker.RetryPeriodOption.Get(changedDst.streamOptions), bulker.BatchPeriodOption.Get(changedDst.streamOptions), tm.config.BatchRunnerRetryPeriodSec)
+						if consumer.BatchPeriodSec() != retryPeriodSec {
+							consumer.UpdateBatchPeriod(retryPeriodSec)
 							_, err := tm.cron.ReplaceBatchConsumer(consumer)
 							if err != nil {
 								metrics.TopicManagerError("reschedule_batch_consumer_error").Inc()
@@ -232,7 +234,8 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 				}
 				tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
 			case "batch":
-				batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, bulker.BatchPeriodOption.Get(destination.streamOptions), topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
+				batchPeriodSec := utils.Nvl(bulker.BatchPeriodOption.Get(destination.streamOptions), tm.config.BatchRunnerPeriodSec)
+				batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, batchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
 				if err != nil {
 					topicsErrorsByMode[mode]++
 					tm.Errorf("Failed to create batch consumer for destination topic: %s: %v", topic, err)
@@ -246,10 +249,11 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 					tm.Errorf("Failed to schedule consumer for destination topic: %s: %v", topic, err)
 					continue
 				} else {
-					tm.Infof("Consumer for destination topic %s was scheduled with batch period %d", topic, utils.Nvl(batchConsumer.batchPeriodSec, tm.config.BatchRunnerPeriodSec))
+					tm.Infof("Consumer for destination topic %s was scheduled with batch period %ds.", topic, batchPeriodSec)
 				}
 			case retryTopicMode:
-				retryConsumer, err := NewRetryConsumer(tm.repository, destinationId, bulker.BatchPeriodOption.Get(destination.streamOptions), topic, tm.config, tm.kafkaConfig)
+				retryPeriodSec := utils.Nvl(bulker.RetryPeriodOption.Get(destination.streamOptions), bulker.BatchPeriodOption.Get(destination.streamOptions), tm.config.BatchRunnerRetryPeriodSec)
+				retryConsumer, err := NewRetryConsumer(tm.repository, destinationId, retryPeriodSec, topic, tm.config, tm.kafkaConfig)
 				if err != nil {
 					topicsErrorsByMode[mode]++
 					tm.Errorf("Failed to create retry consumer for destination topic: %s: %v", topic, err)
@@ -263,7 +267,7 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 					tm.Errorf("Failed to schedule retry consumer for destination topic: %s: %v", topic, err)
 					continue
 				} else {
-					tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %d", topic, utils.Nvl(retryConsumer.batchPeriodSec, tm.config.BatchRunnerPeriodSec))
+					tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %d", topic, retryPeriodSec)
 				}
 			case deadTopicMode:
 				tm.Infof("Found topic %s for 'dead' events", topic)

@@ -25,6 +25,12 @@ var (
 	// FrequencyOption [[IGNORED]] is the same as BatchPeriodOption but in minutes.
 	FrequencyOption = ImplementationOption[int]{Key: "frequency", ParseFunc: utils.ParseInt}
 
+	RetryPeriodOption = ImplementationOption[int]{
+		Key:          "retryPeriodSec",
+		DefaultValue: 0,
+		ParseFunc:    utils.ParseInt,
+	}
+
 	RetryBatchSizeOption = ImplementationOption[int]{
 		Key:          "retryBatchSize",
 		DefaultValue: 0,
@@ -34,9 +40,11 @@ var (
 
 func init() {
 	RegisterOption(&BatchSizeOption)
-	RegisterOption(&RetryBatchSizeOption)
 	RegisterOption(&BatchPeriodOption)
 	RegisterOption(&FrequencyOption)
+
+	RegisterOption(&RetryPeriodOption)
+	RegisterOption(&RetryBatchSizeOption)
 
 }
 

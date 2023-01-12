@@ -193,7 +193,8 @@ func TestBulkerApp(t *testing.T) {
 			if res != nil && res.Body != nil {
 				_ = res.Body.Close()
 			}
-			reqr.Equal(tt.expectedFailedCount, failedCount, "unexpected failed count for table %s", tt.name)
+			//retry consumer may multiply failed events (reappend to the queue messages that is not ready for retry yet)
+			reqr.GreaterOrEqualf(failedCount, tt.expectedFailedCount, "unexpected failed count %d for table %s", failedCount, tt.name)
 			logging.Infof("Test %s passed", tt.name)
 		})
 	}

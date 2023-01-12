@@ -58,6 +58,7 @@ type AppConfig struct {
 	BatchRunnerPeriodSec             int `mapstructure:"BATCH_RUNNER_DEFAULT_PERIOD_SEC" default:"300"`
 	BatchRunnerDefaultBatchSize      int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"10000"`
 	BatchRunnerWaitForMessagesSec    int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"1"`
+	BatchRunnerRetryPeriodSec        int `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC" default:"300"`
 	BatchRunnerDefaultRetryBatchSize int `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE" default:"100"`
 
 	MessagesRetryCount       int     `mapstructure:"MESSAGES_RETRY_COUNT" default:"3"`
