@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,6 +45,7 @@ type AbstractBatchConsumer struct {
 	consumerClosed  bool
 	producer        *kafka.Producer
 	topicId         string
+	mode            string
 	tableName       string
 	waitForMessages time.Duration
 	closed          chan struct{}
@@ -59,11 +61,11 @@ type AbstractBatchConsumer struct {
 	batchFunc BatchFunction
 }
 
-func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *AppConfig, kafkaConfig *kafka.ConfigMap) (*AbstractBatchConsumer, error) {
+func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *AppConfig, kafkaConfig *kafka.ConfigMap) (*AbstractBatchConsumer, error) {
 	base := objects.NewServiceBase(topicId)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
-		metrics.BatchConsumerErrors("INVALID_TOPIC", "INVALID_TOPIC:"+topicId, "failed to parse topic").Inc()
+		metrics.BatchConsumerErrors(topicId, mode, "INVALID_TOPIC", "INVALID_TOPIC", "failed to parse topic").Inc()
 		return nil, base.NewError("Failed to parse topic: %w", err)
 	}
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
@@ -79,19 +81,19 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	}
 	consumer, err := kafka.NewConsumer(&consumerConfig)
 	if err != nil {
-		metrics.BatchConsumerErrors(destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		return nil, base.NewError("Error creating consumer: %w", err)
 	}
 	// check topic partitions count
 	metadata, err := consumer.GetMetadata(&topicId, false, 10000)
 	if err != nil {
-		metrics.BatchConsumerErrors(destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		return nil, base.NewError("Failed to get consumer metadata: %w", err)
 	}
 	for _, topic := range metadata.Topics {
 		if topic.Topic == topicId {
 			if len(topic.Partitions) > 1 {
-				metrics.BatchConsumerErrors(destinationId, tableName, "invalid_partitions_count").Inc()
+				metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, "invalid_partitions_count").Inc()
 				return nil, base.NewError("Topic has more than 1 partition. Batch Consumer supports only topics with a single partition")
 			}
 			break
@@ -100,7 +102,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 
 	err = consumer.Subscribe(topicId, nil)
 	if err != nil {
-		metrics.BatchConsumerErrors(destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		_ = consumer.Close()
 		return nil, base.NewError("Failed to subscribe to topic: %w", err)
 	}
@@ -110,7 +112,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	}, *kafkaConfig))
 	producer, err := kafka.NewProducer(&producerConfig)
 	if err != nil {
-		metrics.BatchConsumerErrors(destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		_ = consumer.Close()
 		return nil, base.NewError("error creating kafka producer: %w", err)
 	}
@@ -118,7 +120,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	//enable transactions support for producer
 	err = producer.InitTransactions(ctx)
 	if err != nil {
-		metrics.BatchConsumerErrors(destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		_ = consumer.Close()
 		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %w", err)
 	}
@@ -130,6 +132,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		tableName:       tableName,
 		batchPeriodSec:  batchPeriodSec,
 		topicId:         topicId,
+		mode:            mode,
 		consumerConfig:  consumerConfig,
 		consumer:        consumer,
 		producer:        producer,
@@ -178,7 +181,7 @@ func (bc *AbstractBatchConsumer) RunJob() {
 	_, _ = bc.ConsumeAll()
 }
 
-func (bc *AbstractBatchConsumer) ConsumeAll() (consumed BatchCounters, err error) {
+func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error) {
 	bc.Lock()
 	defer bc.Unlock()
 	if bc.consumerClosed {
@@ -186,18 +189,20 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (consumed BatchCounters, err error
 		return BatchCounters{}, bc.NewError("Consumer is closed")
 	}
 	bc.Debugf("Starting consuming messages from topic")
-	metrics.BatchConsumerBatchRuns(bc.destinationId, bc.tableName).Inc()
 	bc.idle.Store(false)
 	defer func() {
 		bc.idle.Store(true)
 		bc.pause()
+		bc.countersMetric(counters)
 		if err != nil {
-			bc.Errorf("Consume finished with error: %w stats: %s", err, consumed)
+			metrics.BatchConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "fail").Inc()
+			bc.Errorf("Consume finished with error: %w stats: %s", err, counters)
 		} else {
-			if consumed.processed > 0 {
-				bc.Infof("Successfully %s", consumed)
+			metrics.BatchConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "success").Inc()
+			if counters.processed > 0 {
+				bc.Infof("Successfully %s", counters)
 			} else {
-				bc.Infof("No messages were processed: %s", consumed)
+				bc.Infof("No messages were processed: %s", counters)
 			}
 		}
 	}()
@@ -228,7 +233,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (consumed BatchCounters, err error
 		if err2 != nil {
 			bc.Errorf("Batch finished with error: %w stats: %s nextBatch: %t", err2, batchStats, nextBatch)
 		}
-		consumed.accumulate(batchStats)
+		counters.accumulate(batchStats)
 		if !nextBatch {
 			err = err2
 			return
@@ -249,7 +254,7 @@ func (bc *AbstractBatchConsumer) close() error {
 func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchSize, retryBatchSize int) (counters BatchCounters, nextBath bool, err error) {
 	err = bc.resume()
 	if err != nil {
-		metrics.BatchConsumerErrors(bc.destinationId, bc.tableName, "resume_error").Inc()
+		bc.errorMetric("resume_error")
 		err = bc.NewError("failed to resume kafka consumer to process batch: %w", err)
 		return
 	}
@@ -294,7 +299,7 @@ func (bc *AbstractBatchConsumer) pause() {
 					bc.Debugf("Consumer paused. Heartbeat sent.")
 					continue
 				}
-				metrics.BatchConsumerErrors(bc.destinationId, bc.tableName, "error_while_paused").Inc()
+				bc.errorMetric("error_while_paused")
 				if !errorReported {
 					bc.Errorf("Error on paused consumer: %v", kafkaErr)
 					errorReported = true
@@ -309,7 +314,7 @@ func (bc *AbstractBatchConsumer) pause() {
 				//If message slipped through pause, rollback offset and make sure consumer is paused
 				err = bc.consumer.Seek(message.TopicPartition, 0)
 				if err != nil {
-					metrics.BatchConsumerErrors(bc.destinationId, bc.tableName, "ROLLBACK_ON_PAUSE_ERR").Inc()
+					bc.errorMetric("ROLLBACK_ON_PAUSE_ERR")
 					bc.SystemErrorf("Failed to rollback offset on paused consumer: %v", err)
 				}
 				bc.pauseKafkaConsumer()
@@ -341,13 +346,13 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 			bc.Infof("Restarting consumer")
 			consumer, err := kafka.NewConsumer(&bc.consumerConfig)
 			if err != nil {
-				metrics.BatchConsumerErrors(bc.destinationId, bc.tableName, metrics.KafkaErrorCode(err)).Inc()
+				bc.errorMetric("consumer_error:" + metrics.KafkaErrorCode(err))
 				bc.Errorf("Error creating kafka consumer: %w", err)
 				break
 			}
 			err = consumer.SubscribeTopics([]string{bc.topicId}, nil)
 			if err != nil {
-				metrics.BatchConsumerErrors(bc.destinationId, bc.tableName, metrics.KafkaErrorCode(err)).Inc()
+				bc.errorMetric("consumer_error:" + metrics.KafkaErrorCode(err))
 				_ = consumer.Close()
 				bc.Errorf("Failed to subscribe to topic: %w", err)
 				break
@@ -367,7 +372,7 @@ func (bc *AbstractBatchConsumer) pauseKafkaConsumer() {
 		err = bc.consumer.Pause(partitions)
 	}
 	if err != nil {
-		metrics.BatchConsumerErrors(bc.destinationId, bc.tableName, "pause_error").Inc()
+		bc.errorMetric("pause_error")
 		bc.SystemErrorf("Failed to pause kafka consumer: %w", err)
 	} else {
 		if len(partitions) > 0 {
@@ -399,6 +404,20 @@ func (bc *AbstractBatchConsumer) Retire() {
 	bc.Infof("Retiring batch consumer")
 	bc.retired.Store(true)
 }
+func (bc *AbstractBatchConsumer) errorMetric(errorType string) {
+	metrics.BatchConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, errorType).Inc()
+}
+
+func (bc *AbstractBatchConsumer) countersMetric(counters BatchCounters) {
+	countersValue := reflect.ValueOf(counters)
+	countersType := countersValue.Type()
+	for i := 0; i < countersValue.NumField(); i++ {
+		value := countersValue.Field(i).Int()
+		if value > 0 {
+			metrics.BatchConsumerMessages(bc.topicId, bc.mode, bc.destinationId, bc.tableName, countersType.Field(i).Name).Add(float64(value))
+		}
+	}
+}
 
 type BatchCounters struct {
 	consumed        int
@@ -407,6 +426,7 @@ type BatchCounters struct {
 	notReadyReadded int
 	retryScheduled  int
 	deadLettered    int
+	failed          int
 }
 
 // accumulate stats from batch
@@ -423,23 +443,13 @@ func (bs *BatchCounters) accumulate(batchStats BatchCounters) {
 func (bs BatchCounters) String() string {
 	// print non-zero values
 	var sb strings.Builder
-	if bs.consumed > 0 {
-		sb.WriteString(fmt.Sprintf("consumed: %d ", bs.consumed))
-	}
-	if bs.skipped > 0 {
-		sb.WriteString(fmt.Sprintf("skipped: %d ", bs.skipped))
-	}
-	if bs.processed > 0 {
-		sb.WriteString(fmt.Sprintf("processed: %d ", bs.processed))
-	}
-	if bs.notReadyReadded > 0 {
-		sb.WriteString(fmt.Sprintf("notReadyReadded: %d ", bs.notReadyReadded))
-	}
-	if bs.retryScheduled > 0 {
-		sb.WriteString(fmt.Sprintf("retryScheduled: %d ", bs.retryScheduled))
-	}
-	if bs.deadLettered > 0 {
-		sb.WriteString(fmt.Sprintf("deadLettered: %d ", bs.deadLettered))
+	countersValue := reflect.ValueOf(bs)
+	countersType := countersValue.Type()
+	for i := 0; i < countersValue.NumField(); i++ {
+		value := countersValue.Field(i).Int()
+		if value > 0 {
+			sb.WriteString(fmt.Sprintf("%s: %d ", countersType.Field(i).Name, value))
+		}
 	}
 	return sb.String()
 }

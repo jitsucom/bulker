@@ -47,22 +47,13 @@ var (
 		return eventsHandlerSuccess.WithLabelValues(destinationId, tableName)
 	}
 
-	topicManagerCreateSuccess = promauto.NewCounterVec(prometheus.CounterOpts{
+	topicManagerCreate = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "topic_manager",
-		Name:      "create_success",
-	}, []string{"destinationId", "mode", "tableName"})
-	TopicManagerCreateSuccess = func(destinationId, mode, tableName string) prometheus.Counter {
-		return topicManagerCreateSuccess.WithLabelValues(destinationId, mode, tableName)
-	}
-
-	topicManagerCreateError = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "topic_manager",
-		Name:      "create_error",
-	}, []string{"destinationId", "mode", "tableName", "errorType"})
-	TopicManagerCreateError = func(destinationId, mode, tableName, errorType string) prometheus.Counter {
-		return topicManagerCreateError.WithLabelValues(destinationId, mode, tableName, errorType)
+		Name:      "create",
+	}, []string{"topicId", "destinationId", "mode", "tableName", "status", "errorType"})
+	TopicManagerCreate = func(topicId, destinationId, mode, tableName, status, errorType string) prometheus.Counter {
+		return topicManagerCreate.WithLabelValues(topicId, destinationId, mode, tableName, status, errorType)
 	}
 
 	topicManagerError = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -74,24 +65,14 @@ var (
 		return topicManagerError.WithLabelValues(errorType)
 	}
 
-	topicManagerDestinationsError = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	topicManagerDestinations = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "topic_manager",
-		Name:      "destination_error",
+		Name:      "destinations",
 		Help:      "Number of destination topics with errors by destination mode",
-	}, []string{"mode"})
-	TopicManagerDestinationsError = func(mode string) prometheus.Gauge {
-		return topicManagerDestinationsError.WithLabelValues(mode)
-	}
-
-	topicManagerDestinationTopics = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "topic_manager",
-		Name:      "destination_topics",
-		Help:      "Total number of destination topics destination mode. Including ones with errors",
-	}, []string{"mode"})
-	TopicManagerDestinationTopics = func(mode string) prometheus.Gauge {
-		return topicManagerDestinationTopics.WithLabelValues(mode)
+	}, []string{"mode", "status"})
+	TopicManagerDestinations = func(mode, status string) prometheus.Gauge {
+		return topicManagerDestinations.WithLabelValues(mode, status)
 	}
 
 	TopicManagerAbandonedTopics = promauto.NewGauge(prometheus.GaugeOpts{
@@ -107,40 +88,13 @@ var (
 		Help:      "Number of other topics. Other topics are any kafka topics not managed by the topic manager",
 	})
 
-	producerMessagesProduced = promauto.NewCounterVec(prometheus.CounterOpts{
+	producerMessages = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "producer",
-		Name:      "messages_produced",
-	}, []string{"destinationId", "mode", "tableName"})
-	ProducerMessagesProduced = func(destinationId, mode, tableName string) prometheus.Counter {
-		return producerMessagesProduced.WithLabelValues(destinationId, mode, tableName)
-	}
-
-	producerMessagesDelivered = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "producer",
-		Name:      "messages_delivered",
-	}, []string{"destinationId", "mode", "tableName"})
-	ProducerMessagesDelivered = func(destinationId, mode, tableName string) prometheus.Counter {
-		return producerMessagesDelivered.WithLabelValues(destinationId, mode, tableName)
-	}
-
-	producerProduceErrors = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "producer",
-		Name:      "produce_error",
-	}, []string{"destinationId", "mode", "tableName", "errorType"})
-	ProducerProduceErrors = func(destinationId, mode, tableName, errorType string) prometheus.Counter {
-		return producerProduceErrors.WithLabelValues(destinationId, mode, tableName, errorType)
-	}
-
-	producerDeliveryErrors = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "producer",
-		Name:      "delivery_error",
-	}, []string{"destinationId", "mode", "tableName", "errorType"})
-	ProducerDeliveryErrors = func(destinationId, mode, tableName, errorType string) prometheus.Counter {
-		return producerDeliveryErrors.WithLabelValues(destinationId, mode, tableName, errorType)
+		Name:      "messages",
+	}, []string{"topicId", "destinationId", "mode", "tableName", "status", "errorType"})
+	ProducerMessages = func(topicId, destinationId, mode, tableName, status, errorType string) prometheus.Counter {
+		return producerMessages.WithLabelValues(topicId, destinationId, mode, tableName, status, errorType)
 	}
 
 	ProducerQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
@@ -149,22 +103,13 @@ var (
 		Name:      "queue_length",
 	})
 
-	streamConsumerMessageConsumed = promauto.NewCounterVec(prometheus.CounterOpts{
+	streamConsumerMessages = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "stream_consumer",
-		Name:      "message_consumed",
-	}, []string{"destinationId", "tableName"})
-	StreamConsumerMessageConsumed = func(destinationId, tableName string) prometheus.Counter {
-		return streamConsumerMessageConsumed.WithLabelValues(destinationId, tableName)
-	}
-
-	streamConsumerMessageErrors = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "stream_consumer",
-		Name:      "message_error",
-	}, []string{"destinationId", "tableName", "errorType"})
-	StreamConsumerMessageErrors = func(destinationId, tableName, errorType string) prometheus.Counter {
-		return streamConsumerMessageErrors.WithLabelValues(destinationId, tableName, errorType)
+		Name:      "messages",
+	}, []string{"destinationId", "tableName", "status"})
+	StreamConsumerMessages = func(destinationId, tableName, status string) prometheus.Counter {
+		return streamConsumerMessages.WithLabelValues(destinationId, tableName, status)
 	}
 
 	streamConsumerErrors = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -176,85 +121,31 @@ var (
 		return streamConsumerErrors.WithLabelValues(destinationId, tableName, errorType)
 	}
 
-	batchConsumerMessageConsumed = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "batch_consumer",
-		Name:      "message_consumed",
-	}, []string{"destinationId", "tableName"})
-	BatchConsumerMessageConsumed = func(destinationId, tableName string) prometheus.Counter {
-		return batchConsumerMessageConsumed.WithLabelValues(destinationId, tableName)
-	}
-
-	batchConsumerMessageErrors = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "batch_consumer",
-		Name:      "message_error",
-	}, []string{"destinationId", "tableName", "errorType"})
-	BatchConsumerMessageErrors = func(destinationId, tableName, errorType string) prometheus.Counter {
-		return batchConsumerMessageErrors.WithLabelValues(destinationId, tableName, errorType)
-	}
-
 	batchConsumerErrors = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "batch_consumer",
 		Name:      "error",
-	}, []string{"destinationId", "tableName", "errorType"})
-	BatchConsumerErrors = func(destinationId, tableName, errorType string) prometheus.Counter {
-		return batchConsumerErrors.WithLabelValues(destinationId, tableName, errorType)
+	}, []string{"topicId", "mode", "destinationId", "tableName", "errorType"})
+	BatchConsumerErrors = func(topicId, mode, destinationId, tableName, errorType string) prometheus.Counter {
+		return batchConsumerErrors.WithLabelValues(topicId, mode, destinationId, tableName, errorType)
 	}
 
-	batchConsumerBatchSuccesses = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "batch_consumer",
-		Name:      "batch_success",
-	}, []string{"destinationId", "tableName"})
-	BatchConsumerBatchSuccesses = func(destinationId, tableName string) prometheus.Counter {
-		return batchConsumerBatchSuccesses.WithLabelValues(destinationId, tableName)
-	}
-
-	batchConsumerBatchRuns = promauto.NewCounterVec(prometheus.CounterOpts{
+	batchConsumerRuns = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "batch_consumer",
 		Name:      "run",
-	}, []string{"destinationId", "tableName"})
-	BatchConsumerBatchRuns = func(destinationId, tableName string) prometheus.Counter {
-		return batchConsumerBatchRuns.WithLabelValues(destinationId, tableName)
+	}, []string{"topicId", "mode", "destinationId", "tableName", "status"})
+	BatchConsumerRuns = func(topicId, mode, destinationId, tableName, status string) prometheus.Counter {
+		return batchConsumerRuns.WithLabelValues(topicId, mode, destinationId, tableName, status)
 	}
 
-	batchConsumerBatchMessages = promauto.NewCounterVec(prometheus.CounterOpts{
+	batchConsumerMessages = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "batch_consumer",
 		Name:      "messages",
-	}, []string{"destinationId", "tableName"})
-	BatchConsumerBatchMessages = func(destinationId, tableName string) prometheus.Counter {
-		return batchConsumerBatchMessages.WithLabelValues(destinationId, tableName)
-	}
-
-	batchConsumerBatchFailedMessages = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "batch_consumer",
-		Name:      "failed_messages",
-	}, []string{"destinationId", "tableName"})
-	BatchConsumerBatchFailedMessages = func(destinationId, tableName string) prometheus.Counter {
-		return batchConsumerBatchFailedMessages.WithLabelValues(destinationId, tableName)
-	}
-
-	batchConsumerBatchFailedMessagesRelocated = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "batch_consumer",
-		Name:      "failed_messages_relocated",
-	}, []string{"destinationId", "tableName"})
-	BatchConsumerBatchFailedMessagesRelocated = func(destinationId, tableName string) prometheus.Counter {
-		return batchConsumerBatchFailedMessagesRelocated.WithLabelValues(destinationId, tableName)
-	}
-
-	batchConsumerBatchFails = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "batch_consumer",
-		Name:      "batch_fail",
-	}, []string{"destinationId", "tableName"})
-	BatchConsumerBatchFails = func(destinationId, tableName string) prometheus.Counter {
-		return batchConsumerBatchFails.WithLabelValues(destinationId, tableName)
+	}, []string{"topicId", "mode", "destinationId", "tableName", "status"})
+	BatchConsumerMessages = func(topicId, mode, destinationId, tableName, status string) prometheus.Counter {
+		return batchConsumerMessages.WithLabelValues(topicId, mode, destinationId, tableName, status)
 	}
 
 	redisConfigurationSourceError = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -272,21 +163,15 @@ var (
 		Name:      "destinations",
 	})
 
-	RepositoryAddedDestinations = promauto.NewCounter(prometheus.CounterOpts{
+	repositoryDestinations = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "repository",
-		Name:      "destination_added",
-	})
-	RepositoryChangedDestinations = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "repository",
-		Name:      "destination_changed",
-	})
-	RepositoryRemovedDestinations = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "repository",
-		Name:      "destination_removed",
-	})
+		Name:      "destinations",
+	}, []string{"status"})
+	RepositoryDestinations = func(status string) prometheus.Counter {
+		return repositoryDestinations.WithLabelValues(status)
+	}
+
 	repositoryDestinationInitError = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "repository",

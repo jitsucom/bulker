@@ -280,10 +280,10 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 		}
 	}
 	for mode, count := range topicsCountByMode {
-		metrics.TopicManagerDestinationTopics(mode).Set(count)
+		metrics.TopicManagerDestinations(mode, "success").Set(count)
 	}
 	for mode, count := range topicsErrorsByMode {
-		metrics.TopicManagerDestinationsError(mode).Set(count)
+		metrics.TopicManagerDestinations(mode, "error").Set(count)
 	}
 	metrics.TopicManagerAbandonedTopics.Set(abandonedTopicsCount)
 	metrics.TopicManagerOtherTopics.Set(otherTopicsCount)
@@ -360,9 +360,9 @@ func (tm *TopicManager) createDestinationTopic(destination *Destination, topic s
 	errorType := ""
 	defer func() {
 		if errorType != "" {
-			metrics.TopicManagerCreateError(id, mode, tableName, errorType).Inc()
+			metrics.TopicManagerCreate(topic, id, mode, tableName, "error", errorType).Inc()
 		} else {
-			metrics.TopicManagerCreateSuccess(id, mode, tableName).Inc()
+			metrics.TopicManagerCreate(topic, id, mode, tableName, "success", "").Inc()
 		}
 	}()
 	if err != nil {

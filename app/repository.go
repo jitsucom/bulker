@@ -85,9 +85,9 @@ func (r *Repository) init() error {
 			repositoryChange.AddedDestinations = append(repositoryChange.AddedDestinations, dst)
 		}
 	}
-	metrics.RepositoryAddedDestinations.Add(float64(len(repositoryChange.AddedDestinations)))
-	metrics.RepositoryChangedDestinations.Add(float64(len(repositoryChange.ChangedDestinations)))
-	metrics.RepositoryRemovedDestinations.Add(float64(len(repositoryChange.RemovedDestinationIds)))
+	metrics.RepositoryDestinations("added").Add(float64(len(repositoryChange.AddedDestinations)))
+	metrics.RepositoryDestinations("changed").Add(float64(len(repositoryChange.ChangedDestinations)))
+	metrics.RepositoryDestinations("removed").Add(float64(len(repositoryChange.RemovedDestinationIds)))
 	select {
 	case r.changesChan <- repositoryChange:
 	default:

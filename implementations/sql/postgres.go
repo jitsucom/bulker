@@ -359,11 +359,14 @@ func pgColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[s
 
 // return default value statement for creating column
 func getDefaultValueStatement(sqlType string) string {
+	sqlType = strings.ToLower(sqlType)
 	//get default value based on type
 	if strings.Contains(sqlType, "var") || strings.Contains(sqlType, "text") {
 		return "default ''"
 	}
-
+	if strings.Contains(sqlType, "timestamp") {
+		return "default CURRENT_TIMESTAMP"
+	}
 	return "default 0"
 }
 

@@ -155,7 +155,7 @@ func (sc *StreamConsumer) start() {
 					dec.UseNumber()
 					err := dec.Decode(&obj)
 					if err != nil {
-						metrics.StreamConsumerMessageErrors(sc.destination.Id(), sc.tableName, "parse_event_error").Inc()
+						metrics.StreamConsumerErrors(sc.destination.Id(), sc.tableName, "parse_event_error").Inc()
 						sc.postEventsLog(message.Value, nil, nil, err)
 						sc.Errorf("Failed to parse event from message: %s offset: %s: %w", message.Value, message.TopicPartition.Offset.String(), err)
 					} else {
@@ -165,10 +165,10 @@ func (sc *StreamConsumer) start() {
 						state, processedObjects, err = (*sc.stream.Load()).Consume(context.Background(), obj)
 						sc.postEventsLog(message.Value, state.Representation, processedObjects, err)
 						if err != nil {
-							metrics.StreamConsumerMessageErrors(sc.destination.Id(), sc.tableName, "bulker_stream_error").Inc()
+							metrics.StreamConsumerErrors(sc.destination.Id(), sc.tableName, "bulker_stream_error").Inc()
 							sc.Errorf("Failed to inject event to bulker stream: %v", err)
 						} else {
-							metrics.StreamConsumerMessageConsumed(sc.destination.Id(), sc.tableName).Inc()
+							metrics.StreamConsumerMessages(sc.destination.Id(), sc.tableName, "processed").Inc()
 						}
 					}
 					if err != nil {
@@ -177,8 +177,10 @@ func (sc *StreamConsumer) start() {
 						if err != nil {
 							sc.Errorf("failed to read retry header: %w", err)
 						}
+						status := "retryScheduled"
 						if retries >= sc.config.MessagesRetryCount {
 							//no attempts left - send to dead-letter topic
+							status = "deadLettered"
 							failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, sc.tableName, false)
 						}
 						retryMessage := kafka.Message{
@@ -191,8 +193,10 @@ func (sc *StreamConsumer) start() {
 						}
 						err = sc.bulkerProducer.ProduceSync(failedTopic, retryMessage)
 						if err != nil {
+							status = "failed"
 							sc.Errorf("failed to store event to 'failed' topic: %s: %v", failedTopic, err)
 						}
+						metrics.StreamConsumerMessages(sc.destination.Id(), sc.tableName, status).Inc()
 					}
 				} else {
 					kafkaErr := err.(kafka.Error)
