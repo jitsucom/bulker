@@ -100,7 +100,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		}
 		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
 
-		dataSource, err := sql.Open("postgres", connectionString)
+		dataSource, err := sql.Open("pq-timeouts", connectionString)
 		if err != nil {
 			return nil, err
 		}
