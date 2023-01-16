@@ -102,7 +102,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchSiz
 		dec.UseNumber()
 		err = dec.Decode(&obj)
 		if err == nil {
-			bc.Infof("%d. Consumed Message ID: %s Offset: %s (Retries: %s)", i, obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader))
+			bc.Infof("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
 			_, processedObjectsSample, err = bulkerStream.Consume(context.Background(), obj)
 			if err != nil {
 				bc.errorMetric("bulker_stream_error")
@@ -127,14 +127,14 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchSiz
 		// we need to pause consumer to avoid kafka session timeout while loading huge batches to slow destinations
 		bc.pause()
 
-		bc.Infof("Committing %d events to destination.", processed)
+		bc.Infof("Committing %d events to %s", processed, destination.config.BulkerType)
 		var state bulker.State
 		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(context.Background())
 		bc.postEventsLog(state, processedObjectsSample, err)
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition
-			return counters, false, bc.NewError("Failed to commit bulker stream: %w", err)
+			return counters, false, bc.NewError("Failed to commit bulker stream to %s: %w", destination.config.BulkerType, err)
 		}
 		counters.processed = processed
 		_, err = bc.consumer.Commit()

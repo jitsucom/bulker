@@ -159,7 +159,7 @@ func (sc *StreamConsumer) start() {
 						sc.postEventsLog(message.Value, nil, nil, err)
 						sc.Errorf("Failed to parse event from message: %s offset: %s: %w", message.Value, message.TopicPartition.Offset.String(), err)
 					} else {
-						sc.Infof("Consumed Message ID: %s Offset: %s (Retries: %s)", obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader))
+						sc.Infof("Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), sc.destination.config.BulkerType)
 						var state bulker.State
 						var processedObjects []types.Object
 						state, processedObjects, err = (*sc.stream.Load()).Consume(context.Background(), obj)

@@ -181,6 +181,8 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	utils.MapPutIfAbsent(config.Parameters, "connection_open_strategy", "round_robin")
 	utils.MapPutIfAbsent(config.Parameters, "mutations_sync", "2")
+	utils.MapPutIfAbsent(config.Parameters, "dial_timeout", "60s")
+	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "60s")
 
 	dbConnectFunction := func(config *ClickHouseConfig) (*sql.DB, error) {
 		dsn := clickhouseDriverConnectionString(config)

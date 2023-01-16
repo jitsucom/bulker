@@ -107,6 +107,12 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	_, config.Schema = adaptSqlIdentifier(config.Schema, 255, 0, sqlUnquotedIdentifierPattern, true)
 	config.Schema = sfQuoteReservedWords(config.Schema)
+
+	minute := "60s"
+	utils.MapPutIfAbsent(config.Parameters, "loginTimeout", &minute)
+	utils.MapPutIfAbsent(config.Parameters, "requestTimeout", &minute)
+	utils.MapPutIfAbsent(config.Parameters, "clientTimeout", &minute)
+
 	dbConnectFunction := func(config *SnowflakeConfig) (*sql.DB, error) {
 		cfg := &sf.Config{
 			Account:   config.Account,

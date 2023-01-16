@@ -17,7 +17,7 @@ import (
 	"text/template"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/Kount/pq-timeouts"
 )
 
 func init() {
@@ -86,6 +86,10 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
 	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0, nil, false)
+
+	utils.MapPutIfAbsent(config.Parameters, "connect_timeout", "60")
+	utils.MapPutIfAbsent(config.Parameters, "write_timeout", "60000")
+	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "60000")
 
 	dbConnectFunction := func(cfg *DataSourceConfig) (*sql.DB, error) {
 		connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",

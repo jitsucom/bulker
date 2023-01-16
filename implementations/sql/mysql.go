@@ -76,10 +76,13 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
-	if _, ok := config.Parameters["tls"]; !ok {
-		// similar to postgres default value of sslmode option
-		config.Parameters["tls"] = "preferred"
-	}
+
+	utils.MapPutIfAbsent(config.Parameters, "tls", "preferred")
+
+	utils.MapPutIfAbsent(config.Parameters, "timeout", "60s")
+	utils.MapPutIfAbsent(config.Parameters, "writeTimeout", "60s")
+	utils.MapPutIfAbsent(config.Parameters, "readTimeout", "60s")
+
 	dbConnectFunction := func(cfg *DataSourceConfig) (*sql.DB, error) {
 		connectionString := mySQLDriverConnectionString(config)
 		dataSource, err := sql.Open("mysql", connectionString)
