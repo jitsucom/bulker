@@ -105,7 +105,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 		//ensure that dstTable contains all columns from tmpTable
 		ps.dstTable.Columns = ps.tmpTable.Columns
 		dstTable := ps.dstTable
-		dstTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.dstTable)
+		dstTable, err = ps.tableHelper.EnsureTableWithoutCaching(ctx, ps.id, ps.dstTable)
 		if err != nil {
 			ps.updateRepresentationTable(ps.dstTable)
 			return ps.state, errorj.Decorate(err, "failed to ensure destination table")

@@ -39,13 +39,22 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		return
 	}
 	dstTable, err := ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, table)
-	if err != nil {
-		ps.updateRepresentationTable(table)
-		err = errorj.Decorate(err, "failed to ensure table")
-		return
+	if err == nil {
+		ps.updateRepresentationTable(dstTable)
+		err = ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObjects)
 	}
-	ps.updateRepresentationTable(dstTable)
-	return ps.state, processedObjects, ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObjects)
+	if err != nil {
+		// give another try without using table cache
+		dstTable, err = ps.tableHelper.EnsureTableWithoutCaching(ctx, ps.id, table)
+		if err != nil {
+			ps.updateRepresentationTable(table)
+			err = errorj.Decorate(err, "failed to ensure table")
+			return
+		}
+		ps.updateRepresentationTable(dstTable)
+		return ps.state, processedObjects, ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObjects)
+	}
+	return ps.state, processedObjects, nil
 }
 
 func (ps *AutoCommitStream) Complete(ctx context.Context) (state bulker.State, err error) {

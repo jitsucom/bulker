@@ -142,8 +142,8 @@ func init() {
 		}
 	}
 	////uncomment to run test for single db only
-	allBulkerConfigs = []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}
-	exceptBigquery = allBulkerConfigs
+	//allBulkerConfigs = []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}
+	//exceptBigquery = allBulkerConfigs
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 

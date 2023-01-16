@@ -9,7 +9,6 @@ import (
 	"github.com/jitsucom/bulker/types"
 )
 
-// TODO: tableHelper not sure that using cache is always applicable. Transaction rollback may lead to inconsistency.
 // TODO: check whether COPY is transactional ?
 // TODO: pk conflict on Redshift file storage ?
 

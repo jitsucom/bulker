@@ -304,7 +304,7 @@ func (ps *AbstractTransactionalSQLStream) insert(ctx context.Context, targetTabl
 		ps.tmpTable.Columns = utils.MapPutAll(targetTable.Columns, ps.tmpTable.Columns)
 	}
 	ps.updateRepresentationTable(ps.tmpTable)
-	ps.tmpTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, ps.tmpTable)
+	ps.tmpTable, err = ps.tableHelper.EnsureTableWithoutCaching(ctx, ps.id, ps.tmpTable)
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure table")
 	}
