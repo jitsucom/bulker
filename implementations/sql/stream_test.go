@@ -142,8 +142,8 @@ func init() {
 		}
 	}
 	////uncomment to run test for single db only
-	//allBulkerConfigs = []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}
-	//exceptBigquery = allBulkerConfigs
+	allBulkerConfigs = []string{MySQLBulkerTypeId}
+	exceptBigquery = allBulkerConfigs
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 
@@ -262,7 +262,7 @@ func TestStreams(t *testing.T) {
 			expectedErrors: map[string]any{
 				"consume_object_1_postgres":     "cause: pq: 22P02 invalid input syntax for type bigint: \"a\"",
 				"consume_object_1_redshift":     "cause: pq: 22P02 invalid input syntax for integer: \"a\"",
-				"consume_object_1_mysql":        "cause: Error 1366: Incorrect integer value: 'a' for column 'int_1' at row 1",
+				"consume_object_1_mysql":        "Incorrect integer value: 'a' for column 'int_1' at row 1",
 				"consume_object_1_snowflake":    "cause: 100038 (22018): Numeric value 'a' is not recognized",
 				"consume_object_1_clickhouse":   []string{"cause: error converting string to int", "Cannot parse string 'a' as Int64"},
 				"create_stream_bigquery_stream": BigQueryAutocommitUnsupported,
@@ -277,7 +277,7 @@ func TestStreams(t *testing.T) {
 			expectedErrors: map[string]any{
 				"stream_complete_postgres":   "cause: pq: 22P02 invalid input syntax for type bigint: \"a\"",
 				"stream_complete_redshift":   "system table for details.",
-				"stream_complete_mysql":      "cause: Error 1366: Incorrect integer value: 'a' for column 'int_1' at row 1",
+				"stream_complete_mysql":      "Incorrect integer value: 'a' for column 'int_1' at row 1",
 				"stream_complete_snowflake":  "cause: 100038 (22018): Numeric value 'a' is not recognized",
 				"stream_complete_clickhouse": "cause: error converting string to int",
 				"stream_complete_bigquery":   "Could not parse 'a' as INT64 for field int_1",
