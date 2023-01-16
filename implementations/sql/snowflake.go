@@ -111,7 +111,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Parameters == nil {
 		config.Parameters = map[string]*string{}
 	}
-	minute := "60s"
+	minute := "60"
 	utils.MapPutIfAbsent(config.Parameters, "loginTimeout", &minute)
 	utils.MapPutIfAbsent(config.Parameters, "requestTimeout", &minute)
 	utils.MapPutIfAbsent(config.Parameters, "clientTimeout", &minute)
