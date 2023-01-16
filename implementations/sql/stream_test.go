@@ -142,8 +142,8 @@ func init() {
 		}
 	}
 	////uncomment to run test for single db only
-	allBulkerConfigs = []string{MySQLBulkerTypeId}
-	exceptBigquery = allBulkerConfigs
+	//allBulkerConfigs = []string{MySQLBulkerTypeId}
+	//exceptBigquery = allBulkerConfigs
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 
