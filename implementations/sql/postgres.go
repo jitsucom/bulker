@@ -87,6 +87,9 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0, nil, false)
 
+	if config.Parameters == nil {
+		config.Parameters = map[string]string{}
+	}
 	utils.MapPutIfAbsent(config.Parameters, "connect_timeout", "60")
 	utils.MapPutIfAbsent(config.Parameters, "write_timeout", "60000")
 	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "60000")

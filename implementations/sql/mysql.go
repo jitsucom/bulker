@@ -77,6 +77,9 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
 
+	if config.Parameters == nil {
+		config.Parameters = map[string]string{}
+	}
 	utils.MapPutIfAbsent(config.Parameters, "tls", "preferred")
 
 	utils.MapPutIfAbsent(config.Parameters, "timeout", "60s")
