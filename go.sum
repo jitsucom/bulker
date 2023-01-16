@@ -95,6 +95,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/ClickHouse/ch-go v0.51.0 h1:APpjlLifKMgRp1b94cujX7dRZLL4DjbtMVs7qRoUPqg=
 github.com/ClickHouse/ch-go v0.51.0/go.mod h1:laZ+vBk0hO3UBQblUXqECDcy71K+/tcIfs7ZjN0evgc=
+github.com/ClickHouse/clickhouse-go/v2 v2.3.0 h1:v0iT0yZspjjNgnLyPUa0WoGMme0Y/sNjCtOAFcyBkkA=
+github.com/ClickHouse/clickhouse-go/v2 v2.3.0/go.mod h1:f2kb1LPopJdIyt0Y0vxNk9aiQCyhCmeVcyvOOaPCT4Q=
 github.com/ClickHouse/clickhouse-go/v2 v2.5.0 h1:zJHnnGTXwANqryLI3c9dESa8g5aij6zTTL1QL7SW5sk=
 github.com/ClickHouse/clickhouse-go/v2 v2.5.0/go.mod h1:21ga8MAMxWl6AKFJTaoT/ur/zIo8OJccxj/5bF8T9SE=
 github.com/Kount/pq-timeouts v1.0.0 h1:6a23dhwmQ2PukftCWm56T4RPJ4zc2iE9y5E42TMAl6E=
