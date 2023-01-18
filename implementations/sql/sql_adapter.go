@@ -22,11 +22,13 @@ var ErrTableNotExist = errors.New("table doesn't exist")
 type SQLAdapter interface {
 	Type() string
 
-	//GetTypesMapping return mapping from generic types to SQL types specific for this database
-	GetTypesMapping() map[types.DataType]string
+	//GetSQLType return mapping from generic bulker type to SQL type specific for this database
+	GetSQLType(dataType types.DataType) (string, bool)
+	//GetDataType return mapping from sql type to generic bulker type
+	GetDataType(sqlType string) (types.DataType, bool)
 	GetBatchFileFormat() implementations.FileFormat
 	OpenTx(ctx context.Context) (*TxSQLAdapter, error)
-	Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error
+	Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) error
 	Ping(ctx context.Context) error
 	// InitDatabase setups required db objects like 'schema' or 'dataset' if they don't exist
 	InitDatabase(ctx context.Context) error
@@ -78,15 +80,20 @@ func (tx *TxSQLAdapter) GetBatchFileFormat() implementations.FileFormat {
 	return tx.sqlAdapter.GetBatchFileFormat()
 }
 
-func (tx *TxSQLAdapter) GetTypesMapping() map[types.DataType]string {
-	return tx.sqlAdapter.GetTypesMapping()
+func (tx *TxSQLAdapter) GetSQLType(dataType types.DataType) (string, bool) {
+	return tx.sqlAdapter.GetSQLType(dataType)
 }
+
+func (tx *TxSQLAdapter) GetDataType(sqlType string) (types.DataType, bool) {
+	return tx.sqlAdapter.GetDataType(sqlType)
+}
+
 func (tx *TxSQLAdapter) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	return nil, fmt.Errorf("can't open transaction inside transaction")
 }
-func (tx *TxSQLAdapter) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error {
+func (tx *TxSQLAdapter) Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.Insert(ctx, table, merge, objects)
+	return tx.sqlAdapter.Insert(ctx, table, merge, objects...)
 }
 func (tx *TxSQLAdapter) Ping(ctx context.Context) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)

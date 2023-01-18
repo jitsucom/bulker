@@ -79,6 +79,9 @@ type SQLAdapterBase[T any] struct {
 	batchFileFormat implementations.FileFormat
 	temporaryTables bool
 
+	typesMapping        map[types.DataType]string
+	reverseTypesMapping map[string]types.DataType
+
 	maxIdentifierLength          int
 	identifierQuoteChar          rune
 	sqlUnquotedIdentifierPattern *regexp.Regexp
@@ -93,7 +96,7 @@ type SQLAdapterBase[T any] struct {
 	checkErrFunc                 ErrorAdapter
 }
 
-func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) (SQLAdapterBase[T], error) {
+func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], dataTypes map[types.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) (SQLAdapterBase[T], error) {
 	s := SQLAdapterBase[T]{
 		ServiceBase:          objects.NewServiceBase(id),
 		typeId:               typeId,
@@ -112,7 +115,25 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunc
 	s.batchFileFormat = implementations.JSON
 	var err error
 	s.dataSource, err = dbConnectFunction(config)
+	s.initTypes(dataTypes)
 	return s, err
+}
+
+func (b *SQLAdapterBase[T]) initTypes(dataTypes map[types.DataType][]string) {
+	typeMapping := make(map[types.DataType]string, len(dataTypes))
+	reverseTypeMapping := make(map[string]types.DataType, len(dataTypes)+3)
+	for dataType, postgresTypes := range dataTypes {
+		for i, postgresType := range postgresTypes {
+			if i == 0 {
+				typeMapping[dataType] = postgresType
+			}
+			if dataType != types.UNKNOWN && dataType != types.JSON {
+				reverseTypeMapping[postgresType] = dataType
+			}
+		}
+	}
+	b.typesMapping = typeMapping
+	b.reverseTypesMapping = reverseTypeMapping
 }
 
 // Type returns Postgres type
@@ -714,6 +735,16 @@ func (b *SQLAdapterBase[T]) ToWhenConditions(conditions *WhenConditions, paramEx
 	}
 
 	return strings.Join(queryConditions, " "+conditions.JoinCondition+" "), values
+}
+
+func (b *SQLAdapterBase[T]) GetSQLType(dataType types.DataType) (string, bool) {
+	v, ok := b.typesMapping[dataType]
+	return v, ok
+}
+
+func (b *SQLAdapterBase[T]) GetDataType(sqlType string) (types.DataType, bool) {
+	v, ok := b.reverseTypesMapping[sqlType]
+	return v, ok
 }
 
 func checkNotExistErr(err error) error {

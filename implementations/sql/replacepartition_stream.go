@@ -31,14 +31,12 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 		return nil, err
 	}
 	ps.partitionId = partitionId
-	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, batchFile bool) *Table {
+	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		dstTable := tableForObject
-		if !batchFile {
-			existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
-			if existingTable.Exists() {
-				dstTable = existingTable
-				dstTable.Columns = utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
-			}
+		existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
+		if existingTable.Exists() {
+			dstTable = existingTable
+			ps.adjustTableColumnTypes(dstTable, tableForObject, object)
 		}
 		tmpTableName := fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8])
 		pkName := ""
@@ -57,28 +55,9 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 }
 
 func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects []types.Object, err error) {
-	defer func() {
-		err = ps.postConsume(err)
-		state = ps.state
-	}()
-	if err = ps.init(ctx); err != nil {
-		return
-	}
-
-	//mark rows by setting __partition_id column with value of partitionId option
-	object[PartitonIdKeyword] = ps.partitionId
-	//type mapping, flattening => table schema
-	tableForObject, processedObjects, err := ps.preprocess(object)
-	if err != nil {
-		ps.updateRepresentationTable(tableForObject)
-		return
-	}
-	if ps.batchFile != nil {
-		err = ps.writeToBatchFile(ctx, tableForObject, processedObjects)
-	} else {
-		err = ps.insert(ctx, tableForObject, processedObjects)
-	}
-	return
+	objCopy := utils.MapCopy(object)
+	objCopy[PartitonIdKeyword] = ps.partitionId
+	return ps.AbstractTransactionalSQLStream.Consume(ctx, objCopy)
 }
 
 func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -106,9 +85,8 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 					return ps.state, err
 				}
 			}
-			//ensure that dstTable contains all columns from tmpTable
-			ps.dstTable.Columns = ps.tmpTable.Columns
-			dstTable, err := ps.tableHelper.EnsureTableWithoutCaching(ctx, ps.id, ps.dstTable)
+			var dstTable *Table
+			dstTable, err = ps.tableHelper.EnsureTableWithoutCaching(ctx, ps.id, ps.dstTable)
 			if err != nil {
 				ps.updateRepresentationTable(ps.dstTable)
 				return ps.state, errorj.Decorate(err, "failed to ensure destination table")

@@ -49,13 +49,14 @@ var (
 	mySQLMergeQueryTemplate, _     = template.New("mysqlMergeQuery").Parse(mySQLMergeQuery)
 	mySQLBulkMergeQueryTemplate, _ = template.New("mysqlBulkMergeQuery").Parse(mySQLBulkMergeQuery)
 
-	SchemaToMySQL = map[types.DataType]string{
-		types.STRING:    "TEXT",
-		types.INT64:     "BIGINT",
-		types.FLOAT64:   "DOUBLE",
-		types.TIMESTAMP: "TIMESTAMP(6)",
-		types.BOOL:      "BOOLEAN",
-		types.UNKNOWN:   "TEXT",
+	mysqlTypes = map[types.DataType][]string{
+		types.STRING:    {"text"},
+		types.INT64:     {"bigint"},
+		types.FLOAT64:   {"double"},
+		types.TIMESTAMP: {"timestamp(6)"},
+		types.BOOL:      {"boolean", "tinyint(1)"},
+		types.JSON:      {"JSON"},
+		types.UNKNOWN:   {"text"},
 	}
 
 	//mySQLPrimaryKeyTypesMapping forces to use a special type in primary keys
@@ -126,7 +127,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	// disable infile support for convenience
 	infileEnabled := false
-	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, MySQLBulkerTypeId, config, dbConnectFunction, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr)
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, MySQLBulkerTypeId, config, dbConnectFunction, mysqlTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr)
 	m := &MySQL{
 		SQLAdapterBase: sqlAdapterBase,
 		infileEnabled:  infileEnabled,
@@ -180,16 +181,12 @@ func (m *MySQL) InitDatabase(ctx context.Context) error {
 	return nil
 }
 
-func (m *MySQL) GetTypesMapping() map[types.DataType]string {
-	return SchemaToMySQL
-}
-
 // OpenTx opens underline sql transaction and return wrapped instance
 func (m *MySQL) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	return m.openTx(ctx, m)
 }
 
-func (m *MySQL) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error {
+func (m *MySQL) Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) error {
 	if !merge {
 		return m.insert(ctx, table, objects)
 	} else {
@@ -364,8 +361,8 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 			//skip dropped field
 			continue
 		}
-
-		table.Columns[columnName] = SQLColumn{Type: columnType}
+		dt, _ := m.GetDataType(columnType)
+		table.Columns[columnName] = SQLColumn{Type: columnType, DataType: dt}
 	}
 
 	if err := rows.Err(); err != nil {

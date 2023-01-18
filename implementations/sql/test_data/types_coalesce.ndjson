@@ -1,0 +1,8 @@
+{"id": 1, "str_1":  7, "float_1": 7, "int_1": 7, "bool_1": true, "str_2": "str"}
+{"id": 2, "str_1":  7, "float_1": 7, "int_1": 7, "bool_1": false, "str_2": "str"}
+{"id": 3, "str_1":  3.14, "float_1": 3.14, "int_1": 7, "bool_1": true, "str_2": "str"}
+{"id": 4, "str_1":  "str", "float_1": 3.14, "int_1": 7, "bool_1": true, "str_2": "str"}
+{"id": 5, "str_1":  "str", "float_1": true, "int_1": 9.0, "bool_1": 0, "str_2": "str"}
+{"id": 6, "str_1":  "str", "float_1": false, "int_1": false, "bool_1": 1.0, "str_2": "str"}
+{"id": 7, "str_1":  "str", "float_1": 7, "int_1": true, "bool_1": "true", "str_2": "str"}
+{"id": 8, "str_1":  "str", "float_1": 7, "int_1": true, "bool_1": "false", "str_2": "str"}

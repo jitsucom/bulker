@@ -45,13 +45,14 @@ var (
 	sfReservedWordsSet      = utils.NewSet(sfReservedWords...)
 	sfMergeQueryTemplate, _ = template.New("snowflakeMergeQuery").Parse(sfMergeStatement)
 
-	SchemaToSnowflake = map[types.DataType]string{
-		types.STRING:    "text",
-		types.INT64:     "bigint",
-		types.FLOAT64:   "double precision",
-		types.TIMESTAMP: "timestamp(6)",
-		types.BOOL:      "boolean",
-		types.UNKNOWN:   "text",
+	snowflakeTypes = map[types.DataType][]string{
+		types.STRING:    {"text", "VARCHAR(16777216)"},
+		types.INT64:     {"bigint", "NUMBER(38,0)"},
+		types.FLOAT64:   {"double precision", "FLOAT"},
+		types.TIMESTAMP: {"timestamp(6)", "TIMESTAMP_NTZ(6)"},
+		types.BOOL:      {"boolean", "BOOLEAN"},
+		types.JSON:      {"text", "VARCHAR(16777216)"},
+		types.UNKNOWN:   {"text", "VARCHAR(16777216)"},
 	}
 )
 
@@ -156,7 +157,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	sqlAdapter, err := newSQLAdapterBase(bulkerConfig.Id, SnowflakeBulkerTypeId, config, dbConnectFunction, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)
+	sqlAdapter, err := newSQLAdapterBase(bulkerConfig.Id, SnowflakeBulkerTypeId, config, dbConnectFunction, snowflakeTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)
 	s := &Snowflake{sqlAdapter}
 	s._tableNameFunc = func(config *SnowflakeConfig, tableName string) string {
 		return sfQuoteReservedWords(tableName)
@@ -193,10 +194,6 @@ func (s *Snowflake) validateOptions(streamOptions []bulker.StreamOption) error {
 		options.Add(option)
 	}
 	return nil
-}
-
-func (s *Snowflake) GetTypesMapping() map[types.DataType]string {
-	return SchemaToSnowflake
 }
 
 // OpenTx opens underline sql transaction and return wrapped instance
@@ -281,7 +278,8 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 
 		columnName := fmt.Sprint(row["name"])
 		columnSnowflakeType := fmt.Sprint(row["type"])
-		table.Columns[columnName] = SQLColumn{Type: columnSnowflakeType}
+		dt, _ := s.GetDataType(columnSnowflakeType)
+		table.Columns[columnName] = SQLColumn{Type: columnSnowflakeType, DataType: dt}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
@@ -416,7 +414,7 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 }
 
 // Insert inserts data with InsertContext as a single object or a batch into Snowflake
-func (s *Snowflake) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error {
+func (s *Snowflake) Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) error {
 	if !merge || len(table.GetPKFields()) == 0 {
 		return s.insert(ctx, table, objects)
 	}

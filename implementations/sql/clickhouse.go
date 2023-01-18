@@ -62,13 +62,14 @@ const (
 )
 
 var (
-	SchemaToClickhouse = map[types.DataType]string{
-		types.STRING:    "String",
-		types.INT64:     "Int64",
-		types.FLOAT64:   "Float64",
-		types.TIMESTAMP: "DateTime64(6)",
-		types.BOOL:      "UInt8",
-		types.UNKNOWN:   "String",
+	clickhouseTypes = map[types.DataType][]string{
+		types.STRING:    {"String"},
+		types.INT64:     {"Int64"},
+		types.FLOAT64:   {"Float64"},
+		types.TIMESTAMP: {"DateTime64(6)"},
+		types.BOOL:      {"UInt8"},
+		types.JSON:      {"String"},
+		types.UNKNOWN:   {"String"},
 	}
 
 	defaultValues = map[string]interface{}{
@@ -217,7 +218,7 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, dbConnectFunction, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr)
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, dbConnectFunction, clickhouseTypes, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr)
 	sqlAdapterBase.batchFileFormat = implementations.JSON
 	sqlAdapterBase.identifierQuoteChar = '`'
 
@@ -289,10 +290,6 @@ func (ch *ClickHouse) CreateStream(id, tableName string, mode bulker.BulkMode, s
 
 func (ch *ClickHouse) Type() string {
 	return ClickHouseBulkerTypeId
-}
-
-func (ch *ClickHouse) GetTypesMapping() map[types.DataType]string {
-	return SchemaToClickhouse
 }
 
 // OpenTx opens underline sql transaction and return wrapped instance
@@ -421,7 +418,8 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 					Values:      []interface{}{ch.config.Database, tableName},
 				})
 		}
-		table.Columns[columnName] = SQLColumn{Type: columnClickhouseType}
+		dt, _ := ch.GetDataType(columnClickhouseType)
+		table.Columns[columnName] = SQLColumn{Type: columnClickhouseType, DataType: dt}
 		if isPk {
 			table.PKFields.Put(columnName)
 			table.PrimaryKeyName = BuildConstraintName(tableName)
@@ -522,9 +520,9 @@ func (ch *ClickHouse) Count(ctx context.Context, tableName string, whenCondition
 	return strconv.Atoi(fmt.Sprint(scnt))
 }
 
-func (ch *ClickHouse) Insert(ctx context.Context, targetTable *Table, merge bool, objects []types.Object) (err error) {
+func (ch *ClickHouse) Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) (err error) {
 	//if ch.httpMode {
-	return ch.insert(ctx, targetTable, objects)
+	return ch.insert(ctx, table, objects)
 	//}
 	//tx, err := ch.dataSource.BeginTx(ctx, nil)
 	//if err != nil {

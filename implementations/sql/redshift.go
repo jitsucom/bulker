@@ -46,13 +46,14 @@ const (
 )
 
 var (
-	SchemaToRedshift = map[types.DataType]string{
-		types.STRING:    "character varying(65535)",
-		types.INT64:     "bigint",
-		types.FLOAT64:   "double precision",
-		types.TIMESTAMP: "timestamp",
-		types.BOOL:      "boolean",
-		types.UNKNOWN:   "character varying(65535)",
+	redshiftTypes = map[types.DataType][]string{
+		types.STRING:    {"character varying(65535)"},
+		types.INT64:     {"bigint"},
+		types.FLOAT64:   {"double precision"},
+		types.TIMESTAMP: {"timestamp", "timestamp without time zone", "timestamp with time zone"},
+		types.BOOL:      {"boolean"},
+		types.JSON:      {"character varying(65535)"},
+		types.UNKNOWN:   {"character varying(65535)"},
 	}
 )
 
@@ -86,6 +87,7 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	r.maxIdentifierLength = 127
 	r.temporaryTables = true
 	r._columnDDLFunc = redshiftColumnDDL
+	r.initTypes(redshiftTypes)
 	//// Redshift is case insensitive by default
 	//r._columnNameFunc = strings.ToLower
 	//r._tableNameFunc = func(config *DataSourceConfig, tableName string) string { return tableName }
@@ -125,16 +127,13 @@ func (p *Redshift) validateOptions(streamOptions []bulker.StreamOption) error {
 func (p *Redshift) Type() string {
 	return RedshiftBulkerTypeId
 }
-func (p *Redshift) GetTypesMapping() map[types.DataType]string {
-	return SchemaToRedshift
-}
 
 // OpenTx opens underline sql transaction and return wrapped instance
 func (p *Redshift) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	return p.openTx(ctx, p)
 }
 
-func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error {
+func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) error {
 	if !merge || len(table.GetPKFields()) == 0 {
 		return p.insert(ctx, table, objects)
 	}

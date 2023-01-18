@@ -23,7 +23,7 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 	if err != nil {
 		return nil, err
 	}
-	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, batchFile bool) *Table {
+	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		return &Table{
 			Name:           fmt.Sprintf("%s_tmp_%s", ps.tableName, timestamp.Now().Format("060102_150405")),
 			PrimaryKeyName: tableForObject.PrimaryKeyName,
@@ -34,28 +34,6 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 		}
 	}
 	return &ps, nil
-}
-
-func (ps *ReplaceTableStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects []types.Object, err error) {
-	defer func() {
-		err = ps.postConsume(err)
-		state = ps.state
-	}()
-	if err = ps.init(ctx); err != nil {
-		return
-	}
-	//type mapping, flattening => table schema
-	tableForObject, processedObjects, err := ps.preprocess(object)
-	if err != nil {
-		ps.updateRepresentationTable(tableForObject)
-		return
-	}
-	if ps.batchFile != nil {
-		err = ps.writeToBatchFile(ctx, tableForObject, processedObjects)
-	} else {
-		err = ps.insert(ctx, tableForObject, processedObjects)
-	}
-	return
 }
 
 func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State, err error) {

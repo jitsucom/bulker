@@ -12,53 +12,33 @@ const SqlTypePrefix = "__sql_type"
 // ProcessEvents processes events objects without applying mapping rules
 // returns table headerm array of processed objects
 // or error if at least 1 was occurred
-func ProcessEvents(tableName string, objects []types.Object, sqlAdapter SQLAdapter, customTypes SQLTypes) (*BatchHeader, []types.Object, error) {
-
-	var batchHeader *BatchHeader
-	var payload []types.Object
-	for _, event := range objects {
-		sqlTypesHints, err := extractSQLTypesHints(event)
-		if err != nil {
-			return nil, nil, err
-		}
-		for k, v := range customTypes {
-			sqlTypesHints[k] = v
-		}
-		flatObject, err := DefaultFlattener.FlattenObject(event, sqlTypesHints)
-		if err != nil {
-			return nil, nil, err
-		}
-		sqlAdaptedObject := make(types.Object)
-		for k, v := range flatObject {
-			sqlAdaptedObject[sqlAdapter.ColumnName(k)] = v
-		}
-		adaptedSQlTypesHints := make(SQLTypes)
-		for k, v := range sqlTypesHints {
-			adaptedSQlTypesHints[sqlAdapter.ColumnName(k)] = v
-		}
-		fields, err := DefaultTypeResolver.Resolve(sqlAdaptedObject, adaptedSQlTypesHints)
-		if err != nil {
-			return nil, nil, err
-		}
-		bh := &BatchHeader{TableName: sqlAdapter.TableName(tableName), Fields: fields}
-
-		//don't process empty and skipped object
-		if !bh.Exists() {
-			continue
-		}
-
-		foldedBatchHeader, foldedObject, _ := foldLongFields(bh, sqlAdaptedObject)
-
-		if len(payload) == 0 {
-			payload = []types.Object{foldedObject}
-			batchHeader = foldedBatchHeader
-		} else {
-			batchHeader.Fields.Merge(foldedBatchHeader.Fields)
-			payload = append(payload, foldedObject)
-		}
+func ProcessEvents(tableName string, event types.Object, sqlAdapter SQLAdapter, customTypes SQLTypes) (*BatchHeader, types.Object, error) {
+	sqlTypesHints, err := extractSQLTypesHints(event)
+	if err != nil {
+		return nil, nil, err
 	}
+	for k, v := range customTypes {
+		sqlTypesHints[k] = v
+	}
+	flatObject, err := DefaultFlattener.FlattenObject(event, sqlTypesHints)
+	if err != nil {
+		return nil, nil, err
+	}
+	sqlAdaptedObject := make(types.Object)
+	for k, v := range flatObject {
+		sqlAdaptedObject[sqlAdapter.ColumnName(k)] = v
+	}
+	adaptedSQlTypesHints := make(SQLTypes)
+	for k, v := range sqlTypesHints {
+		adaptedSQlTypesHints[sqlAdapter.ColumnName(k)] = v
+	}
+	fields, err := DefaultTypeResolver.Resolve(sqlAdaptedObject, adaptedSQlTypesHints)
+	if err != nil {
+		return nil, nil, err
+	}
+	bh := &BatchHeader{TableName: sqlAdapter.TableName(tableName), Fields: fields}
 
-	return batchHeader, payload, nil
+	return foldLongFields(bh, sqlAdaptedObject)
 }
 
 func extractSQLTypesHints(object map[string]any) (SQLTypes, error) {

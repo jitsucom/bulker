@@ -27,6 +27,8 @@ const (
 	STRING
 	//TIMESTAMP type for string values that match timestamp pattern
 	TIMESTAMP
+	//JSON type for json values
+	JSON
 )
 
 var (

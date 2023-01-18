@@ -63,13 +63,14 @@ var (
 	pgMergeQueryTemplate, _     = template.New("postgresMergeQuery").Parse(pgMergeQuery)
 	pgBulkMergeQueryTemplate, _ = template.New("postgresBulkMergeQuery").Parse(pgBulkMergeQuery)
 
-	SchemaToPostgres = map[types.DataType]string{
-		types.STRING:    "text",
-		types.INT64:     "bigint",
-		types.FLOAT64:   "double precision",
-		types.TIMESTAMP: "timestamp",
-		types.BOOL:      "boolean",
-		types.UNKNOWN:   "text",
+	postgresDataTypes = map[types.DataType][]string{
+		types.STRING:    {"text"},
+		types.INT64:     {"bigint"},
+		types.FLOAT64:   {"double precision"},
+		types.TIMESTAMP: {"timestamp", "timestamp without time zone", "timestamp with time zone"},
+		types.BOOL:      {"boolean"},
+		types.JSON:      {"jsonb"},
+		types.UNKNOWN:   {"text"},
 	}
 )
 
@@ -137,7 +138,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dbConnectFunction, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)
 	p := &Postgres{sqlAdapterBase, dbConnectFunction}
 	return p, err
 }
@@ -167,10 +168,6 @@ func (p *Postgres) validateOptions(streamOptions []bulker.StreamOption) error {
 		options.Add(option)
 	}
 	return nil
-}
-
-func (p *Postgres) GetTypesMapping() map[types.DataType]string {
-	return SchemaToPostgres
 }
 
 // OpenTx opens underline sql transaction and return wrapped instance
@@ -252,7 +249,8 @@ func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, erro
 			//skip dropped postgres field
 			continue
 		}
-		table.Columns[columnName] = SQLColumn{Type: columnPostgresType}
+		dt, _ := p.GetDataType(columnPostgresType)
+		table.Columns[columnName] = SQLColumn{Type: columnPostgresType, DataType: dt}
 	}
 
 	if err := rows.Err(); err != nil {
@@ -269,7 +267,7 @@ func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, erro
 	return table, nil
 }
 
-func (p *Postgres) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) error {
+func (p *Postgres) Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) error {
 	if !merge {
 		return p.insert(ctx, table, objects)
 	} else {

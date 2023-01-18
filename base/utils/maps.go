@@ -1,5 +1,14 @@
 package utils
 
+// MapCopy returns copy of map
+func MapCopy[K comparable, V any](mp map[K]V) map[K]V {
+	result := make(map[K]V, len(mp))
+	for k, v := range mp {
+		result[k] = v
+	}
+	return result
+}
+
 func MapPutAll[K comparable, V any](destination map[K]V, source map[K]V) map[K]V {
 	for k, v := range source {
 		destination[k] = v

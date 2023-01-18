@@ -50,15 +50,33 @@ var (
 	bigqueryColumnUnsupportedCharacters = regexp.MustCompile(`[^0-9A-Za-z_]`)
 
 	//SchemaToBigQueryString is mapping between JSON types and BigQuery types
-	SchemaToBigQueryString = map[types.DataType]string{
-		types.STRING:    string(bigquery.StringFieldType),
-		types.INT64:     string(bigquery.IntegerFieldType),
-		types.FLOAT64:   string(bigquery.FloatFieldType),
-		types.TIMESTAMP: string(bigquery.TimestampFieldType),
-		types.BOOL:      string(bigquery.BooleanFieldType),
-		types.UNKNOWN:   string(bigquery.StringFieldType),
+	bigqueryTypes = map[types.DataType][]string{
+		types.STRING:    {string(bigquery.StringFieldType)},
+		types.INT64:     {string(bigquery.IntegerFieldType)},
+		types.FLOAT64:   {string(bigquery.FloatFieldType)},
+		types.TIMESTAMP: {string(bigquery.TimestampFieldType)},
+		types.BOOL:      {string(bigquery.BooleanFieldType)},
+		types.JSON:      {string(bigquery.JSONFieldType)},
+		types.UNKNOWN:   {string(bigquery.StringFieldType)},
 	}
+	bigqueryTypeMapping        map[types.DataType]string
+	bigqueryReverseTypeMapping map[string]types.DataType
 )
+
+func init() {
+	bigqueryTypeMapping = make(map[types.DataType]string, len(bigqueryTypes))
+	bigqueryReverseTypeMapping = make(map[string]types.DataType, len(bigqueryTypes)+3)
+	for dataType, postgresTypes := range bigqueryTypes {
+		for i, postgresType := range postgresTypes {
+			if i == 0 {
+				bigqueryTypeMapping[dataType] = postgresType
+			}
+			if dataType != types.UNKNOWN {
+				bigqueryReverseTypeMapping[postgresType] = dataType
+			}
+		}
+	}
+}
 
 // BigQuery adapter for creating,patching (schema or table), inserting and copying data from gcs to BigQuery
 type BigQuery struct {
@@ -221,10 +239,6 @@ func (bq *BigQuery) Ping(ctx context.Context) error {
 	return err
 }
 
-func (bq *BigQuery) GetTypesMapping() map[types.DataType]string {
-	return SchemaToBigQueryString
-}
-
 // GetTableSchema return google BigQuery table (name,columns) representation wrapped in Table struct
 func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
 	tableName = bq.TableName(tableName)
@@ -247,7 +261,8 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 			})
 	}
 	for _, field := range meta.Schema {
-		table.Columns[field.Name] = SQLColumn{Type: string(field.Type)}
+		dt, _ := bq.GetDataType(string(field.Type))
+		table.Columns[field.Name] = SQLColumn{Type: string(field.Type), DataType: dt}
 	}
 	pkFieldName := BuildConstraintName(table.Name)
 	pkFieldsString, ok := meta.Labels[pkFieldName]
@@ -448,7 +463,7 @@ func GranularityToPartitionIds(g Granularity, t time.Time) []string {
 	}
 }
 
-func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, objects []types.Object) (err error) {
+func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) (err error) {
 	inserter := bq.client.Dataset(bq.config.Dataset).Table(table.Name).Inserter()
 	bq.logQuery(fmt.Sprintf("Inserting [%d] values to table %s using BigQuery Streaming API with chunks [%d]: ", len(objects), table.Name, bigqueryRowsLimitPerInsertOperation), objects, nil)
 
@@ -951,4 +966,14 @@ func (bq *BigQuery) adaptSqlIdentifier(identifier string, maxIdentifierLength in
 	} else {
 		return result, result
 	}
+}
+
+func (bq *BigQuery) GetSQLType(dataType types.DataType) (string, bool) {
+	v, ok := bigqueryTypeMapping[dataType]
+	return v, ok
+}
+
+func (bq *BigQuery) GetDataType(sqlType string) (types.DataType, bool) {
+	v, ok := bigqueryReverseTypeMapping[sqlType]
+	return v, ok
 }

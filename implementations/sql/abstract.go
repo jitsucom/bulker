@@ -56,17 +56,17 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	return ps, nil
 }
 
-func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, []types.Object, error) {
+func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Object, error) {
 	if ps.state.Status != bulker.Active {
 		return nil, nil, fmt.Errorf("stream is not active. Status: %s", ps.state.Status)
 	}
-	batchHeader, processedObjects, err := ProcessEvents(ps.tableName, []types.Object{object}, ps.sqlAdapter, ps.customTypes)
+	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.sqlAdapter, ps.customTypes)
 	if err != nil {
 		return nil, nil, err
 	}
 	table := ps.tableHelper.MapTableSchema(batchHeader)
 	ps.state.ProcessedRows++
-	return table, processedObjects, nil
+	return table, processedObject, nil
 }
 
 func (ps *AbstractSQLStream) postConsume(err error) error {

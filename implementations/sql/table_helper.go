@@ -8,7 +8,6 @@ import (
 	"github.com/jitsucom/bulker/base/locks"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
-	"github.com/jitsucom/bulker/types"
 	"sync"
 	"time"
 )
@@ -25,9 +24,8 @@ type TableHelper struct {
 	coordinationService coordination.Service
 	tables              map[string]*Table
 
-	pkFields           utils.Set[string]
-	timestampColumn    string
-	columnTypesMapping map[types.DataType]string
+	pkFields        utils.Set[string]
+	timestampColumn string
 
 	destinationType string
 	streamMode      bool
@@ -43,9 +41,8 @@ func NewTableHelper(sqlAdapter SQLAdapter, coordinationService coordination.Serv
 		coordinationService: coordinationService,
 		tables:              map[string]*Table{},
 
-		pkFields:           pkFields,
-		timestampColumn:    timestampColumn,
-		columnTypesMapping: sqlAdapter.GetTypesMapping(),
+		pkFields:        pkFields,
+		timestampColumn: timestampColumn,
 
 		destinationType: sqlAdapter.Type(),
 		maxColumns:      maxColumns,
@@ -76,11 +73,11 @@ func (th *TableHelper) MapTableSchema(batchHeader *BatchHeader) *Table {
 		}
 
 		//map Jitsu type -> SQL type
-		sqlType, ok := th.columnTypesMapping[field.GetType()]
+		sqlType, ok := th.sqlAdapter.GetSQLType(field.GetType())
 		if ok {
-			table.Columns[fieldName] = SQLColumn{Type: sqlType}
+			table.Columns[fieldName] = SQLColumn{DataType: field.GetType(), Type: sqlType, New: true}
 		} else {
-			logging.SystemErrorf("Unknown column type mapping for %s mapping: %v", field.GetType(), th.columnTypesMapping)
+			logging.SystemErrorf("Unknown column type %s mapping for %s", field.GetType(), th.sqlAdapter.Type())
 		}
 	}
 

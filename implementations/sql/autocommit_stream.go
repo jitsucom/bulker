@@ -33,7 +33,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	if err = ps.sqlAdapter.Ping(ctx); err != nil {
 		return
 	}
-	table, processedObjects, err := ps.preprocess(object)
+	table, processedObject, err := ps.preprocess(object)
 	if err != nil {
 		ps.updateRepresentationTable(table)
 		return
@@ -41,7 +41,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	dstTable, err := ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, table)
 	if err == nil {
 		ps.updateRepresentationTable(dstTable)
-		err = ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObjects)
+		err = ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObject)
 	}
 	if err != nil {
 		// give another try without using table cache
@@ -52,7 +52,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 			return
 		}
 		ps.updateRepresentationTable(dstTable)
-		return ps.state, processedObjects, ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObjects)
+		return ps.state, processedObjects, ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObject)
 	}
 	return ps.state, processedObjects, nil
 }

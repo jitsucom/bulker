@@ -5,16 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jitsucom/bulker/base/errorj"
-	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 )
 
 // TODO: Use real temporary tables
-// TODO: Prebuffer inserts
-// TODO: User prepared statements for insert
-// TODO: Use driver specific bulk/batch approaches
 type TransactionalStream struct {
 	AbstractTransactionalSQLStream
 }
@@ -26,15 +22,14 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 	if err != nil {
 		return nil, err
 	}
-	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, batchFile bool) *Table {
+	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		dstTable := tableForObject
-		if !batchFile {
-			existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
-			if existingTable.Exists() {
-				dstTable = existingTable
-				dstTable.Columns = utils.MapPutAll(tableForObject.Columns, dstTable.Columns)
-			}
+		existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
+		if existingTable.Exists() {
+			dstTable = existingTable
+			ps.adjustTableColumnTypes(dstTable, tableForObject, object)
 		}
+
 		tmpTableName := fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8])
 		pkName := ""
 		if len(dstTable.PKFields) > 0 {
@@ -55,37 +50,7 @@ func (ps *TransactionalStream) init(ctx context.Context) (err error) {
 	if ps.inited {
 		return nil
 	}
-	//localBatchFile := localBatchFileOption.Get(&ps.options)
-	//if localBatchFile != "" && ps.batchFile == nil {
-	//	ps.batchFile, err = os.CreateTemp("", localBatchFile)
-	//	if err != nil {
-	//		return err
-	//	}
-	//}
 	return ps.AbstractTransactionalSQLStream.init(ctx)
-}
-
-func (ps *TransactionalStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects []types.Object, err error) {
-	defer func() {
-		err = ps.postConsume(err)
-		state = ps.state
-	}()
-	if err = ps.init(ctx); err != nil {
-		return
-	}
-
-	//type mapping, flattening => table schema
-	tableForObject, processedObjects, err := ps.preprocess(object)
-	if err != nil {
-		ps.updateRepresentationTable(tableForObject)
-		return
-	}
-	if ps.batchFile != nil {
-		err = ps.writeToBatchFile(ctx, tableForObject, processedObjects)
-	} else {
-		err = ps.insert(ctx, tableForObject, processedObjects)
-	}
-	return
 }
 
 func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State, err error) {
@@ -102,9 +67,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 				return ps.state, err
 			}
 		}
-		//ensure that dstTable contains all columns from tmpTable
-		ps.dstTable.Columns = ps.tmpTable.Columns
-		dstTable := ps.dstTable
+		var dstTable *Table
 		dstTable, err = ps.tableHelper.EnsureTableWithoutCaching(ctx, ps.id, ps.dstTable)
 		if err != nil {
 			ps.updateRepresentationTable(ps.dstTable)

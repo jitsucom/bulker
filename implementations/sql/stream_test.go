@@ -142,10 +142,23 @@ func init() {
 		}
 	}
 	////uncomment to run test for single db only
-	//allBulkerConfigs = []string{MySQLBulkerTypeId}
+	//allBulkerConfigs = []string{PostgresBulkerTypeId}
 	//exceptBigquery = allBulkerConfigs
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
+
+type TypeCheckingMode int
+
+const (
+	//Disabled type checking
+	TypeCheckingDisabled TypeCheckingMode = iota
+	//DataTypesOnly - check only data types
+	TypeCheckingDataTypesOnly
+	//SQLTypesOnly - check only data types
+	TypeCheckingSQLTypesOnly
+	//TypeCheckingFull - strict type checking
+	TypeCheckingFull
+)
 
 type bulkerTestConfig struct {
 	//name of the test
@@ -163,7 +176,7 @@ type bulkerTestConfig struct {
 	//schema of the table expected as result of complete test run
 	expectedTable ExpectedTable
 	//control whether to check types of columns fow expectedTable. For test that run against multiple bulker types is required to leave 'false'
-	expectedTableTypeChecking bool
+	expectedTableTypeChecking TypeCheckingMode
 	//control whether to check character case of table and columns names
 	expectedTableCaseChecking bool
 	//for configs that runs for multiple modes including bulker.ReplacePartition automatically adds WithPartition to streamOptions and partition id column to expectedTable and expectedRows for that particular mode
@@ -223,8 +236,8 @@ func TestStreams(t *testing.T) {
 			configIds:      allBulkerConfigs,
 		},
 		{
-			name:              "types",
-			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			name:              "types_stream",
+			modes:             []bulker.BulkMode{bulker.Stream},
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
@@ -237,6 +250,21 @@ func TestStreams(t *testing.T) {
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
+		},
+		{
+			name:              "types_other",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/types.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+			},
+			expectedRows: []map[string]any{
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+			},
+			configIds: allBulkerConfigs,
 		},
 		//{
 		//	name:              "types2",
@@ -270,17 +298,14 @@ func TestStreams(t *testing.T) {
 			configIds: allBulkerConfigs,
 		},
 		{
+			//for batch modes bulker accumulates common type for int_1 column before sending batch. and common type is String
 			name:              "types_collision_other",
 			modes:             []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,
 			dataFile:          "test_data/types_collision.ndjson",
-			expectedErrors: map[string]any{
-				"stream_complete_postgres":   "cause: pq: 22P02 invalid input syntax for type bigint: \"a\"",
-				"stream_complete_redshift":   "system table for details.",
-				"stream_complete_mysql":      "Incorrect integer value: 'a' for column 'int_1' at row 1",
-				"stream_complete_snowflake":  "cause: 100038 (22018): Numeric value 'a' is not recognized",
-				"stream_complete_clickhouse": "cause: error converting string to int",
-				"stream_complete_bigquery":   "Could not parse 'a' as INT64 for field int_1",
+			expectedRows: []map[string]any{
+				{"id": 1, "int_1": "1", "roundfloat": 1.0, "float1": 1.2, "intstring": "1", "roundfloatstring": "1.0", "floatstring": "1.1", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18"},
+				{"id": 2, "int_1": "a", "roundfloat": 1.0, "float1": 1.0, "intstring": "1.1", "roundfloatstring": "1.1", "floatstring": "1.0", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18"},
 			},
 			configIds: allBulkerConfigs,
 		},
@@ -469,12 +494,27 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		//Check table schema
 		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
 		PostStep("get_table", testConfig, mode, reqr, err)
-		if !testConfig.expectedTableTypeChecking {
+		switch testConfig.expectedTableTypeChecking {
+		case TypeCheckingDisabled:
 			for k := range testConfig.expectedTable.Columns {
 				testConfig.expectedTable.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
 			}
 			for k := range table.Columns {
 				table.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
+			}
+		case TypeCheckingDataTypesOnly:
+			for k := range testConfig.expectedTable.Columns {
+				testConfig.expectedTable.Columns[k] = SQLColumn{DataType: testConfig.expectedTable.Columns[k].DataType}
+			}
+			for k := range table.Columns {
+				table.Columns[k] = SQLColumn{DataType: table.Columns[k].DataType}
+			}
+		case TypeCheckingSQLTypesOnly:
+			for k := range testConfig.expectedTable.Columns {
+				testConfig.expectedTable.Columns[k] = SQLColumn{Type: testConfig.expectedTable.Columns[k].Type}
+			}
+			for k := range table.Columns {
+				table.Columns[k] = SQLColumn{Type: table.Columns[k].Type}
 			}
 		}
 		originalTableName := table.Name
