@@ -4,6 +4,7 @@ destinations:
     mode: "batch"
     options:
       batchSize: 10
+      primaryKey: "id"
     credentials:
       host: localhost
       port: [[POSTGRES_PORT]]
@@ -16,6 +17,8 @@ destinations:
   stream_postgres:
     type: "postgres"
     mode: "stream"
+    options:
+      primaryKey: "id"
     credentials:
       host: localhost
       port: [[POSTGRES_PORT]]

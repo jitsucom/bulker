@@ -14,7 +14,7 @@
 {"_timestamp": "2022-08-18T14:17:22Z", "id": 14, "name": "test14"}
 {"_timestamp": "2022-08-18T14:17:22Z", "id": 15, "name": "test15"}
 {"_timestamp": "2022-08-18T14:17:22Z", "id": 16, "name": "test16"}
-{"_timestamp": "2022-08-18T14:17:22Z", "id": "BAD ID", "name": "test17"}
+{"_timestamp": "2022-08-18T14:17:22Z", "id": 16, "name": "test17"}
 {"_timestamp": "2022-08-18T14:17:22Z", "id": 18, "name": "test18"}
 {"_timestamp": "2022-08-18T14:17:22Z", "id": 19, "name": "test19"}
 {"_timestamp": "2022-08-18T14:17:22Z", "id": 20, "name": "test20"}
