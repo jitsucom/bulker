@@ -10,7 +10,124 @@ import (
 	"time"
 )
 
+func TestTypesMappingAndCollision(t *testing.T) {
+	t.Parallel()
+	tests := []bulkerTestConfig{
+		{
+			name:              "types_stream",
+			modes:             []bulker.BulkMode{bulker.Stream},
+			expectPartitionId: true,
+			dataFile:          "test_data/types.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+			},
+			expectedRows: []map[string]any{
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+			},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+		},
+		{
+			name:              "types_other",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/types.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+			},
+			expectedRows: []map[string]any{
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+			},
+			configIds: allBulkerConfigs,
+		},
+		//{
+		//	name:              "types2",
+		//	modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+		//	expectPartitionId: true,
+		//	dataFile:          "test_data/types2.ndjson",
+		//	expectedTable: ExpectedTable{
+		//		Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+		//	},
+		//	expectedRows: []map[string]any{
+		//		{"id": 1, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+		//		{"id": 2, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+		//		{"id": 3, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
+		//	},
+		//	expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+		//	configIds:      allBulkerConfigs,
+		//},
+		{
+			name:              "types_collision_stream",
+			modes:             []bulker.BulkMode{bulker.Stream},
+			expectPartitionId: true,
+			dataFile:          "test_data/types_collision.ndjson",
+			expectedRows: []map[string]any{
+				{"id": 1, "int_1": 1, "roundfloat": 1.0, "float1": 1.2, "intstring": "1", "roundfloatstring": "1.0", "floatstring": "1.1", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": nil},
+				{"id": 2, "int_1": nil, "roundfloat": 1.0, "float1": 1.0, "intstring": "1.1", "roundfloatstring": "1.1", "floatstring": "1.0", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": "{\"int_1\": \"a\"}"},
+			},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{PostgresBulkerTypeId, MySQLBulkerTypeId}),
+		},
+		{
+			name:              "types_collision_stream",
+			modes:             []bulker.BulkMode{bulker.Stream},
+			expectPartitionId: true,
+			dataFile:          "test_data/types_collision.ndjson",
+			expectedRows: []map[string]any{
+				{"id": 1, "int_1": 1, "roundfloat": 1.0, "float1": 1.2, "intstring": "1", "roundfloatstring": "1.0", "floatstring": "1.1", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": nil},
+				{"id": 2, "int_1": 0, "roundfloat": 1.0, "float1": 1.0, "intstring": "1.1", "roundfloatstring": "1.1", "floatstring": "1.0", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": "{\"int_1\":\"a\"}"},
+			},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}),
+		},
+		{
+			name:              "types_collision_stream",
+			modes:             []bulker.BulkMode{bulker.Stream},
+			expectPartitionId: true,
+			dataFile:          "test_data/types_collision.ndjson",
+			expectedRows: []map[string]any{
+				{"id": 1, "int_1": 1, "roundfloat": 1.0, "float1": 1.2, "intstring": "1", "roundfloatstring": "1.0", "floatstring": "1.1", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": nil},
+				{"id": 2, "int_1": nil, "roundfloat": 1.0, "float1": 1.0, "intstring": "1.1", "roundfloatstring": "1.1", "floatstring": "1.0", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": "{\"int_1\":\"a\"}"},
+			},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{RedshiftBulkerTypeId}),
+		},
+		{
+			name:              "types_collision_stream",
+			modes:             []bulker.BulkMode{bulker.Stream},
+			expectPartitionId: true,
+			dataFile:          "test_data/types_collision.ndjson",
+			expectedRows: []map[string]any{
+				{"id": 1, "int_1": 1, "roundfloat": 1.0, "float1": 1.2, "intstring": "1", "roundfloatstring": "1.0", "floatstring": "1.1", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": nil},
+				{"id": 2, "int_1": nil, "roundfloat": 1.0, "float1": 1.0, "intstring": "1.1", "roundfloatstring": "1.1", "floatstring": "1.0", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": "{\"INT_1\":\"a\"}"},
+			},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{SnowflakeBulkerTypeId}),
+		},
+		{
+			//for batch modes bulker accumulates common type for int_1 column before sending batch. and common type is String
+			name:              "types_collision_other",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/types_collision.ndjson",
+			expectedRows: []map[string]any{
+				{"id": 1, "int_1": "1", "roundfloat": 1.0, "float1": 1.2, "intstring": "1", "roundfloatstring": "1.0", "floatstring": "1.1", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18"},
+				{"id": 2, "int_1": "a", "roundfloat": 1.0, "float1": 1.0, "intstring": "1.1", "roundfloatstring": "1.1", "floatstring": "1.0", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18"},
+			},
+			configIds: allBulkerConfigs,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			runTestConfig(t, tt, testStream)
+		})
+	}
+}
+
 func TestReverseDataTypeMapping(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:                      "data_types_from_sql_types",
@@ -39,6 +156,7 @@ func TestReverseDataTypeMapping(t *testing.T) {
 }
 
 func TestSQLTypeHints(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:                      "sql_types_hints_postgres",
@@ -101,7 +219,8 @@ func TestSQLTypeHints(t *testing.T) {
 	}
 }
 
-func TestTypeOverride(t *testing.T) {
+func TestTypeOverrideOption(t *testing.T) {
+	t.Parallel()
 	//t.Skip("Temporarily disabled")
 	tests := []bulkerTestConfig{
 		{
@@ -248,6 +367,7 @@ func TestTypeOverride(t *testing.T) {
 }
 
 func TestTypeCoalesce(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			// this test runs in 2 batches by 4 rows

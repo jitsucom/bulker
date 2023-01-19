@@ -30,9 +30,6 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	if err = ps.init(ctx); err != nil {
 		return
 	}
-	if err = ps.sqlAdapter.Ping(ctx); err != nil {
-		return
-	}
 	table, processedObject, err := ps.preprocess(object)
 	if err != nil {
 		ps.updateRepresentationTable(table)
@@ -40,8 +37,16 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	}
 	dstTable, err := ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, table)
 	if err == nil {
+		// for autocommit mode this method only tries to convert values to existing column types
+		columnsAdded := ps.adjustTableColumnTypes(dstTable, table, processedObject)
+		if columnsAdded {
+			// if new columns were added - update table. (for _unmapped_data column)
+			dstTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, dstTable)
+		}
 		ps.updateRepresentationTable(dstTable)
-		err = ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObject)
+		if err == nil {
+			err = ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObject)
+		}
 	}
 	if err != nil {
 		// give another try without using table cache
@@ -50,6 +55,17 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 			ps.updateRepresentationTable(table)
 			err = errorj.Decorate(err, "failed to ensure table")
 			return
+		}
+		// for autocommit mode this method only tries to convert values to existing column types
+		columnsAdded := ps.adjustTableColumnTypes(dstTable, table, processedObject)
+		if columnsAdded {
+			// if new columns were added - update table. (for _unmapped_data column)
+			dstTable, err = ps.tableHelper.EnsureTableWithCaching(ctx, ps.id, dstTable)
+			if err != nil {
+				ps.updateRepresentationTable(dstTable)
+				err = errorj.Decorate(err, "failed to ensure table")
+				return
+			}
 		}
 		ps.updateRepresentationTable(dstTable)
 		return ps.state, processedObjects, ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObject)

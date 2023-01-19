@@ -4,13 +4,17 @@ import (
 	"context"
 	"fmt"
 	"github.com/jitsucom/bulker/base/coordination"
+	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
+	jsoniter "github.com/json-iterator/go"
 )
 
 // TODO: check whether COPY is transactional ?
 // TODO: pk conflict on Redshift file storage ?
+
+const unmappedDataColumn = "_unmapped_data"
 
 type AbstractSQLStream struct {
 	id         string
@@ -104,6 +108,77 @@ func (ps *AbstractSQLStream) init(ctx context.Context) error {
 	}
 	ps.inited = true
 	return nil
+}
+
+// adjustTableColumnTypes modify existingTable with extra new columns from desiredTable if such exists
+// if some column already exists in the database, no problems if its DataType is castable to DataType of existing column
+// if some new column is being added but with different DataTypes - type of this column will be changed to a common ancestor type
+// object values that can't be casted will be added to '_unmaped_data' column of JSON type as an json object
+// returns true if new column was added to the existingTable as a result of this function call
+func (ps *AbstractSQLStream) adjustTableColumnTypes(existingTable, desiredTable *Table, values types.Object) bool {
+	columnsAdded := false
+	cloned := existingTable.Columns.Clone()
+	unmappedObj := map[string]any{}
+	for name, newCol := range desiredTable.Columns {
+		existingCol, ok := cloned[name]
+		if !ok {
+			//column not exist in database - adding as New
+			newCol.New = true
+			cloned[name] = newCol
+			columnsAdded = true
+			continue
+		}
+		if existingCol.DataType == newCol.DataType {
+			continue
+		}
+		if newCol.Override {
+			//if column sql type is overridden by user - leave it this way
+			cloned[name] = newCol
+			continue
+		}
+		if !existingCol.New {
+			//column exists in database - check if its DataType is castable to DataType of existing column
+			if types.IsConvertible(newCol.DataType, existingCol.DataType) {
+				newVal, err := types.Convert(existingCol.DataType, values[name])
+				if err != nil {
+					//logging.Warnf("Can't convert '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), err)
+					unmappedObj[name] = values[name]
+					delete(values, name)
+					continue
+				} else {
+					//logging.Infof("Converted '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), newVal)
+					values[name] = newVal
+				}
+			} else {
+				//logging.Warnf("Can't convert '%s' value '%v' from %s to %s", name, values[name], newCol.DataType.String(), existingCol.DataType.String())
+				unmappedObj[name] = values[name]
+				delete(values, name)
+				continue
+			}
+		} else {
+			common := types.GetCommonAncestorType(existingCol.DataType, newCol.DataType)
+			if common != existingCol.DataType {
+				//logging.Warnf("Changed '%s' type from %s to %s because of %s", name, existingCol.DataType.String(), common.String(), newCol.DataType.String())
+				sqlType, ok := ps.sqlAdapter.GetSQLType(common)
+				if ok {
+					existingCol.DataType = common
+					existingCol.Type = sqlType
+					cloned[name] = existingCol
+				} else {
+					logging.SystemErrorf("Unknown column type %s mapping for %s", common, ps.sqlAdapter.Type())
+				}
+			}
+		}
+	}
+	if len(unmappedObj) > 0 {
+		jsonSQLType, _ := ps.sqlAdapter.GetSQLType(types.JSON)
+		added := utils.MapPutIfAbsent(cloned, unmappedDataColumn, SQLColumn{DataType: types.JSON, Type: jsonSQLType})
+		columnsAdded = columnsAdded || added
+		b, _ := jsoniter.Marshal(unmappedObj)
+		values[unmappedDataColumn] = string(b)
+	}
+	existingTable.Columns = cloned
+	return columnsAdded
 }
 
 func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {

@@ -29,8 +29,6 @@ const forceLeaveResultingTables = false
 var allBulkerConfigs []string
 var exceptBigquery []string
 
-//var allBulkerConfigs = []string{MySQLBulkerTypeId}
-
 type TestConfig struct {
 	//type of bulker destination
 	BulkerType string
@@ -213,7 +211,8 @@ func (c *bulkerTestConfig) getIdAndTableName(mode bulker.BulkMode) (id, tableNam
 	return
 }
 
-func TestStreams(t *testing.T) {
+func TestBasics(t *testing.T) {
+	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
 			name:              "added_columns",
@@ -234,80 +233,6 @@ func TestStreams(t *testing.T) {
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
-		},
-		{
-			name:              "types_stream",
-			modes:             []bulker.BulkMode{bulker.Stream},
-			expectPartitionId: true,
-			dataFile:          "test_data/types.ndjson",
-			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
-			},
-			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-			},
-			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
-			configIds:      allBulkerConfigs,
-		},
-		{
-			name:              "types_other",
-			modes:             []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
-			expectPartitionId: true,
-			dataFile:          "test_data/types.ndjson",
-			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
-			},
-			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-			},
-			configIds: allBulkerConfigs,
-		},
-		//{
-		//	name:              "types2",
-		//	modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
-		//	expectPartitionId: true,
-		//	dataFile:          "test_data/types2.ndjson",
-		//	expectedTable: ExpectedTable{
-		//		Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
-		//	},
-		//	expectedRows: []map[string]any{
-		//		{"id": 1, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-		//		{"id": 2, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-		//		{"id": 3, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": "2022-08-18"},
-		//	},
-		//	expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
-		//	configIds:      allBulkerConfigs,
-		//},
-		{
-			name:              "types_collision_stream",
-			modes:             []bulker.BulkMode{bulker.Stream},
-			expectPartitionId: true,
-			dataFile:          "test_data/types_collision.ndjson",
-			expectedErrors: map[string]any{
-				"consume_object_1_postgres":     "cause: pq: 22P02 invalid input syntax for type bigint: \"a\"",
-				"consume_object_1_redshift":     "cause: pq: 22P02 invalid input syntax for integer: \"a\"",
-				"consume_object_1_mysql":        "Incorrect integer value: 'a' for column 'int_1' at row 1",
-				"consume_object_1_snowflake":    "cause: 100038 (22018): Numeric value 'a' is not recognized",
-				"consume_object_1_clickhouse":   []string{"cause: error converting string to int", "Cannot parse string 'a' as Int64"},
-				"create_stream_bigquery_stream": BigQueryAutocommitUnsupported,
-			},
-			configIds: allBulkerConfigs,
-		},
-		{
-			//for batch modes bulker accumulates common type for int_1 column before sending batch. and common type is String
-			name:              "types_collision_other",
-			modes:             []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
-			expectPartitionId: true,
-			dataFile:          "test_data/types_collision.ndjson",
-			expectedRows: []map[string]any{
-				{"id": 1, "int_1": "1", "roundfloat": 1.0, "float1": 1.2, "intstring": "1", "roundfloatstring": "1.0", "floatstring": "1.1", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18"},
-				{"id": 2, "int_1": "a", "roundfloat": 1.0, "float1": 1.0, "intstring": "1.1", "roundfloatstring": "1.1", "floatstring": "1.0", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18"},
-			},
-			configIds: allBulkerConfigs,
 		},
 		{
 			name:              "repeated_ids_no_pk",

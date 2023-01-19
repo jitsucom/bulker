@@ -102,7 +102,7 @@ func (th *TableHelper) EnsureTableWithoutCaching(ctx context.Context, destinatio
 // returns actual db table schema (with actual db types)
 func (th *TableHelper) ensureTable(ctx context.Context, destinationID string, desiredSchema *Table, cacheTable bool) (actualSchema *Table, err error) {
 	defer func() {
-		if err != nil && cacheTable {
+		if err != nil {
 			th.ClearCache(desiredSchema.Name)
 		}
 	}()
