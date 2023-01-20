@@ -29,9 +29,11 @@ func init() {
 const (
 	SnowflakeBulkerTypeId = "snowflake"
 
-	sfTableExistenceQuery = `SELECT count(*) from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = ? and TABLE_NAME = ?`
-	sfDescTableQuery      = `desc table %s`
-	sfCopyStatement       = `COPY INTO %s (%s) from @~/%s FILE_FORMAT=(TYPE= 'CSV', FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE SKIP_HEADER = 1) `
+	sfTableExistenceQuery        = `SELECT count(*) from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = ? and TABLE_NAME = ?`
+	sfDescTableQuery             = `desc table %s`
+	sfAlterClusteringKeyTemplate = `ALTER TABLE %s CLUSTER BY (DATE_TRUNC('MONTH', %s))`
+
+	sfCopyStatement = `COPY INTO %s (%s) from @~/%s FILE_FORMAT=(TYPE= 'CSV', FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE SKIP_HEADER = 1) `
 
 	sfMergeStatement = `MERGE INTO {{.TableTo}} T USING (SELECT {{.Columns}} FROM {{.TableFrom}} ) S ON {{.JoinConditions}} WHEN MATCHED THEN UPDATE SET {{.UpdateSet}} WHEN NOT MATCHED THEN INSERT ({{.Columns}}) VALUES ({{.SourceColumns}})`
 
@@ -479,6 +481,43 @@ func sfQuoteReservedWords(value string) string {
 		return fmt.Sprintf(`"%s"`, strings.ToUpper(value))
 	}
 	return value
+}
+
+func (s *Snowflake) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+	err := s.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
+	if err != nil {
+		return err
+	}
+	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
+		err = s.createClusteringKey(ctx, schemaToCreate)
+		if err != nil {
+			s.DropTable(ctx, schemaToCreate.Name, true)
+			return fmt.Errorf("failed to create sort key: %v", err)
+		}
+	}
+	return nil
+}
+
+func (s *Snowflake) createClusteringKey(ctx context.Context, table *Table) error {
+	if table.TimestampColumn == "" {
+		return nil
+	}
+	quotedTableName := s.quotedTableName(table.Name)
+
+	//TODO: properly quote TimestampColumn name
+	statement := fmt.Sprintf(sfAlterClusteringKeyTemplate,
+		quotedTableName, table.TimestampColumn)
+
+	if _, err := s.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
+		return errorj.AlterTableError.Wrap(err, "failed to set clustering key").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Table:       quotedTableName,
+				PrimaryKeys: table.GetPKFields(),
+				Statement:   statement,
+			})
+	}
+
+	return nil
 }
 
 //func (s *Snowflake) ColumnName(identifier string) string {

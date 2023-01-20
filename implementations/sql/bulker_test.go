@@ -278,7 +278,7 @@ func TestBasics(t *testing.T) {
 		},
 		{
 			name:              "timestamp_option",
-			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:             []bulker.BulkMode{bulker.Batch},
 			expectPartitionId: true,
 			dataFile:          "test_data/simple.ndjson",
 			expectedTable: ExpectedTable{

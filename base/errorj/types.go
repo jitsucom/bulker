@@ -19,6 +19,7 @@ var (
 	DropError                 = sqlError.NewSubtype("drop_table")
 	RenameError               = sqlError.NewSubtype("rename_table")
 	CreatePrimaryKeysError    = sqlError.NewSubtype("create_primary_keys")
+	AlterTableError           = sqlError.NewSubtype("alter_table")
 	DeletePrimaryKeysError    = sqlError.NewSubtype("delete_primary_keys")
 	GetPrimaryKeysError       = sqlError.NewSubtype("get_primary_keys")
 	DeleteFromTableError      = sqlError.NewSubtype("delete_from_table")

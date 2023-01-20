@@ -64,11 +64,15 @@ func (t *Table) Clone() *Table {
 	clonedPkFields := t.PKFields.Clone()
 
 	return &Table{
-		Name:           t.Name,
-		Columns:        clonedColumns,
-		PKFields:       clonedPkFields,
-		PrimaryKeyName: t.PrimaryKeyName,
-		DeletePkFields: t.DeletePkFields,
+		Name:            t.Name,
+		Columns:         clonedColumns,
+		PKFields:        clonedPkFields,
+		PrimaryKeyName:  t.PrimaryKeyName,
+		Temporary:       t.Temporary,
+		TimestampColumn: t.TimestampColumn,
+		Partition:       t.Partition,
+		Cached:          t.Cached,
+		DeletePkFields:  t.DeletePkFields,
 	}
 }
 

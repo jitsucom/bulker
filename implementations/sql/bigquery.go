@@ -309,21 +309,25 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 		labels = map[string]string{table.PrimaryKeyName: strings.Join(table.PKFields.ToSlice(), ",")}
 	}
 	tableMetaData := bigquery.TableMetadata{Name: tableName, Schema: bqSchema, Labels: labels}
-	bq.logQuery("CREATE table for schema: ", tableMetaData, nil)
+	if table.Partition.Field == "" && table.TimestampColumn != "" {
+		// partition by timestamp column
+		table = table.Clone()
+		table.Partition.Field = table.TimestampColumn
+		table.Partition.Granularity = MONTH
+	}
 	if table.Partition.Field != "" && table.Partition.Granularity != ALL {
 		var partitioningType bigquery.TimePartitioningType
 		switch table.Partition.Granularity {
-		case DAY:
-		case WEEK:
+		case DAY, WEEK:
 			partitioningType = bigquery.DayPartitioningType
-		case MONTH:
-		case QUARTER:
+		case MONTH, QUARTER:
 			partitioningType = bigquery.MonthPartitioningType
 		case YEAR:
 			partitioningType = bigquery.YearPartitioningType
 		}
 		tableMetaData.TimePartitioning = &bigquery.TimePartitioning{Field: table.Partition.Field, Type: partitioningType}
 	}
+	bq.logQuery("CREATE table for schema: ", tableMetaData, nil)
 	if err := bqTable.Create(ctx, &tableMetaData); err != nil {
 		schemaJson, _ := bqSchema.ToJSONFields()
 		return errorj.GetTableError.Wrap(err, "failed to create table").

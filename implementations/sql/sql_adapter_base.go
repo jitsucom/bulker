@@ -575,11 +575,11 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 
 // createPrimaryKey create primary key constraint
 func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) error {
-	quotedTableName := b.quotedTableName(table.Name)
-
 	if len(table.PKFields) == 0 {
 		return nil
 	}
+
+	quotedTableName := b.quotedTableName(table.Name)
 
 	columnNames := make([]string, len(table.PKFields))
 	for i, column := range table.GetPKFields() {

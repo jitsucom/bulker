@@ -50,6 +50,7 @@ WHERE tco.constraint_type = 'PRIMARY KEY' AND
       kcu.table_schema = $1 AND
       kcu.table_name = $2`
 	pgCreateDbSchemaIfNotExistsTemplate = `CREATE SCHEMA IF NOT EXISTS "%s"`
+	pgCreateIndexTemplate               = `CREATE INDEX ON %s (%s);`
 
 	pgMergeQuery = `INSERT INTO {{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}}) ON CONFLICT ON CONSTRAINT {{.PrimaryKeyName}} DO UPDATE set {{.UpdateSet}}`
 
@@ -426,4 +427,41 @@ func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string,
 	}
 
 	return primaryKeyName, primaryKeys, nil
+}
+
+func (p *Postgres) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+	err := p.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
+	if err != nil {
+		return err
+	}
+	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
+		err = p.createIndex(ctx, schemaToCreate)
+		if err != nil {
+			p.DropTable(ctx, schemaToCreate.Name, true)
+			return fmt.Errorf("failed to create sort key: %v", err)
+		}
+	}
+	return nil
+}
+
+func (p *Postgres) createIndex(ctx context.Context, table *Table) error {
+	if table.TimestampColumn == "" {
+		return nil
+	}
+	quotedTableName := p.quotedTableName(table.Name)
+
+	//TODO: properly quote TimestampColumn name
+	statement := fmt.Sprintf(pgCreateIndexTemplate,
+		quotedTableName, table.TimestampColumn)
+
+	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
+		return errorj.AlterTableError.Wrap(err, "failed to set sort key").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Table:       quotedTableName,
+				PrimaryKeys: table.GetPKFields(),
+				Statement:   statement,
+			})
+	}
+
+	return nil
 }

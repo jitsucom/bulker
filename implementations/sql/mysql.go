@@ -40,6 +40,7 @@ const (
 								WHERE table_schema = ? AND table_name = ? AND column_key = 'PRI'`
 	mySQLCreateDBIfNotExistsTemplate = "CREATE DATABASE IF NOT EXISTS %s"
 	mySQLAllowLocalFile              = "SET GLOBAL local_infile = 1"
+	mySQLIndexTemplate               = `CREATE INDEX %s ON %s (%s);`
 	mySQLLoadTemplate                = `LOAD DATA LOCAL INFILE '%s' INTO TABLE %s FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\n' IGNORE 1 LINES (%s)`
 	mySQLMergeQuery                  = `INSERT INTO {{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}}) ON DUPLICATE KEY UPDATE {{.UpdateSet}}`
 	mySQLBulkMergeQuery              = "INSERT INTO {{.TableTo}}({{.Columns}}) SELECT * FROM (SELECT {{.Columns}} FROM {{.TableFrom}}) AS S ON DUPLICATE KEY UPDATE {{.UpdateSet}}"
@@ -486,4 +487,41 @@ func mySQLMapColumnValue(value any, valuePresent bool, column SQLColumn) any {
 		}
 	}
 	return value
+}
+
+func (m *MySQL) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+	err := m.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
+	if err != nil {
+		return err
+	}
+	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
+		err = m.createIndex(ctx, schemaToCreate)
+		if err != nil {
+			m.DropTable(ctx, schemaToCreate.Name, true)
+			return fmt.Errorf("failed to create sort key: %v", err)
+		}
+	}
+	return nil
+}
+
+func (m *MySQL) createIndex(ctx context.Context, table *Table) error {
+	if table.TimestampColumn == "" {
+		return nil
+	}
+	quotedTableName := m.quotedTableName(table.Name)
+
+	//TODO: properly quote TimestampColumn name
+	statement := fmt.Sprintf(mySQLIndexTemplate, "bulker_timestamp_index",
+		quotedTableName, table.TimestampColumn)
+
+	if _, err := m.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
+		return errorj.AlterTableError.Wrap(err, "failed to set sort key").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Table:       quotedTableName,
+				PrimaryKeys: table.GetPKFields(),
+				Statement:   statement,
+			})
+	}
+
+	return nil
 }

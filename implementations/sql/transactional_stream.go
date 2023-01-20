@@ -36,11 +36,12 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 			pkName = BuildConstraintName(tmpTableName)
 		}
 		return &Table{
-			Name:           tmpTableName,
-			Columns:        dstTable.Columns,
-			PKFields:       dstTable.PKFields,
-			PrimaryKeyName: pkName,
-			Temporary:      true,
+			Name:            tmpTableName,
+			Columns:         dstTable.Columns,
+			PKFields:        dstTable.PKFields,
+			PrimaryKeyName:  pkName,
+			Temporary:       true,
+			TimestampColumn: tableForObject.TimestampColumn,
 		}
 	}
 	return &ps, nil

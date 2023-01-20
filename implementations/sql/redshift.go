@@ -31,6 +31,7 @@ const (
                     dateformat 'auto'
                     timeformat 'auto'`
 
+	redshiftAlterSortKeyTemplate       = `ALTER TABLE %s ALTER SORTKEY (%s)`
 	redshiftDeleteBeforeBulkMergeUsing = `DELETE FROM %s using %s where %s`
 
 	redshiftPrimaryKeyFieldsQuery = `select tco.constraint_name as constraint_name, kcu.column_name as key_column
@@ -326,6 +327,43 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 	}
 
 	return primaryKeyName, primaryKeys, nil
+}
+
+func (p *Redshift) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+	err := p.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
+	if err != nil {
+		return err
+	}
+	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
+		err = p.createSortKey(ctx, schemaToCreate)
+		if err != nil {
+			p.DropTable(ctx, schemaToCreate.Name, true)
+			return fmt.Errorf("failed to create sort key: %v", err)
+		}
+	}
+	return nil
+}
+
+func (p *Redshift) createSortKey(ctx context.Context, table *Table) error {
+	if table.TimestampColumn == "" {
+		return nil
+	}
+	quotedTableName := p.quotedTableName(table.Name)
+
+	//TODO: properly quote TimestampColumn name
+	statement := fmt.Sprintf(redshiftAlterSortKeyTemplate,
+		quotedTableName, table.TimestampColumn)
+
+	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
+		return errorj.AlterTableError.Wrap(err, "failed to set sort key").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Table:       quotedTableName,
+				PrimaryKeys: table.GetPKFields(),
+				Statement:   statement,
+			})
+	}
+
+	return nil
 }
 
 // redshiftColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
