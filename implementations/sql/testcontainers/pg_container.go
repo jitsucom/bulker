@@ -40,7 +40,7 @@ type PostgresContainer struct {
 
 // NewPostgresContainer creates new Postgres test container if PG_TEST_PORT is not defined. Otherwise uses db at defined port. This logic is required
 // for running test at CI environment
-func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
+func NewPostgresContainer(ctx context.Context, skipReaper bool) (*PostgresContainer, error) {
 	if os.Getenv(envPostgresPortVariable) != "" {
 		port, err := strconv.Atoi(os.Getenv(envPostgresPortVariable))
 		if err != nil {
@@ -82,9 +82,9 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "postgres:12-alpine",
 			ExposedPorts: []string{exposedPort},
-
-			Env:        dbSettings,
-			WaitingFor: tcWait.ForSQL("5432", "postgres", dbURL).Timeout(time.Second * 60),
+			SkipReaper:   skipReaper,
+			Env:          dbSettings,
+			WaitingFor:   tcWait.ForSQL("5432", "postgres", dbURL).Timeout(time.Second * 60),
 		},
 		Started: true,
 	})
@@ -197,6 +197,7 @@ func extractData(rows *sql.Rows) ([]map[string]interface{}, error) {
 
 // Close terminates underlying postgres docker container
 func (pgc *PostgresContainer) Close() error {
+	logging.Infof("terminating postgres container")
 	if pgc.Container != nil {
 		if err := pgc.Container.Terminate(pgc.Context); err != nil {
 			logging.Errorf("Failed to stop postgres container: %v", err)

@@ -49,6 +49,7 @@ func (c *Cron) Close() {
 	}()
 	select {
 	case <-stopped:
+		c.Infof("Cron scheduler stopped")
 	case <-time.After(time.Duration(c.config.ShutdownTimeoutSec) * time.Second):
 		c.Warnf("Shutdown timeout [%ds] expired. Scheduler will be stopped forcibly. Active batches may be interrupted abruptly", c.config.ShutdownTimeoutSec)
 	}

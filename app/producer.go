@@ -159,6 +159,7 @@ func (p *Producer) Close() error {
 		//TODO: suck p.producer.ProduceChannel() and store to fallback file or some retry queue
 	}
 	close(p.closed)
+	p.Infof("Closing producer.")
 	p.producer.Close()
 	close(p.asyncDeliveryChannel)
 	return nil

@@ -71,7 +71,7 @@ func init() {
 		configRegistry[SnowflakeBulkerTypeId] = TestConfig{BulkerType: SnowflakeBulkerTypeId, Config: snowflakeConfig}
 	}
 	var err error
-	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background())
+	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background(), false)
 	if err != nil {
 		panic(err)
 	}

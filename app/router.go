@@ -276,11 +276,16 @@ func (r *Router) IngestHandler(c *gin.Context) {
 func (r *Router) FailedHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
+	status := utils.NvlString(c.Query("status"), "dead")
+	if status != retryTopicMode && status != deadTopicMode {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown status: " + status + " (should be '" + retryTopicMode + "' or '" + deadTopicMode + "')"})
+		return
+	}
 	if tableName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tableName query parameter is required"})
 		return
 	}
-	topicId, _ := MakeTopicId(destinationId, retryTopicMode, tableName, false)
+	topicId, _ := MakeTopicId(destinationId, status, tableName, false)
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"auto.offset.reset":             "earliest",
 		"group.id":                      uuid.New(),

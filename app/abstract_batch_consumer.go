@@ -42,7 +42,7 @@ type AbstractBatchConsumer struct {
 	consumerConfig kafka.ConfigMap
 	consumer       *kafka.Consumer
 	//it is not allowed to close consumer twice
-	consumerClosed  bool
+	consumerClosed  atomic.Bool
 	producer        *kafka.Producer
 	topicId         string
 	mode            string
@@ -124,6 +124,8 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		_ = consumer.Close()
 		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %w", err)
 	}
+	idle := atomic.Bool{}
+	idle.Store(true)
 	bc := &AbstractBatchConsumer{
 		ServiceBase:     base,
 		config:          config,
@@ -139,6 +141,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		waitForMessages: time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
 		closed:          make(chan struct{}),
 		resumeChannel:   make(chan struct{}),
+		idle:            idle,
 	}
 
 	// Delivery reports channel for 'failed' producer messages
@@ -146,6 +149,8 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		for {
 			select {
 			case <-bc.closed:
+				bc.Infof("Closing producer.")
+				bc.producer.Close()
 				return
 			case e := <-bc.producer.Events():
 				switch ev := e.(type) {
@@ -184,7 +189,7 @@ func (bc *AbstractBatchConsumer) RunJob() {
 func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error) {
 	bc.Lock()
 	defer bc.Unlock()
-	if bc.consumerClosed {
+	if bc.consumerClosed.Load() {
 		bc.Errorf("No messages were consumed. Consumer is closed.")
 		return BatchCounters{}, bc.NewError("Consumer is closed")
 	}
@@ -242,9 +247,12 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 }
 
 func (bc *AbstractBatchConsumer) close() error {
-	close(bc.closed)
-	bc.producer.Close()
-	if !bc.consumerClosed {
+	select {
+	case <-bc.closed:
+	default:
+		close(bc.closed)
+	}
+	if bc.consumerClosed.CompareAndSwap(false, true) {
 		err := bc.consumer.Close()
 		return err
 	}
@@ -324,11 +332,13 @@ func (bc *AbstractBatchConsumer) pause() {
 }
 
 func (bc *AbstractBatchConsumer) restartConsumer() {
-	bc.Lock()
-	err := bc.consumer.Close()
-	bc.Infof("Previous consumer closed: %v", err)
-	bc.consumerClosed = true
-	bc.Unlock()
+	if bc.retired.Load() {
+		return
+	}
+	if bc.consumerClosed.CompareAndSwap(false, true) {
+		err := bc.consumer.Close()
+		bc.Infof("Previous consumer closed: %v", err)
+	}
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -359,7 +369,7 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 			}
 			bc.Lock()
 			bc.consumer = consumer
-			bc.consumerClosed = false
+			bc.consumerClosed.Store(false)
 			bc.Unlock()
 			return
 		}
@@ -401,7 +411,7 @@ func (bc *AbstractBatchConsumer) resume() (err error) {
 // Retire Mark consumer as retired
 // Consumer will close itself when com
 func (bc *AbstractBatchConsumer) Retire() {
-	bc.Infof("Retiring batch consumer")
+	bc.Infof("Retiring %s consumer", bc.mode)
 	bc.retired.Store(true)
 }
 func (bc *AbstractBatchConsumer) errorMetric(errorType string) {

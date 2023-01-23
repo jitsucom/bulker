@@ -50,6 +50,7 @@ type TopicManager struct {
 
 	bulkerProducer   *Producer
 	eventsLogService EventsLogService
+	refreshChan      chan bool
 	closed           chan struct{}
 }
 
@@ -77,23 +78,18 @@ func NewTopicManager(appContext *AppContext) (*TopicManager, error) {
 		abandonedTopics:      utils.NewSet[string](),
 		allTopics:            utils.NewSet[string](),
 		closed:               make(chan struct{}),
+		refreshChan:          make(chan bool, 1),
 	}, nil
 }
 
 // Start starts TopicManager
 func (tm *TopicManager) Start() {
-	metadata, err := tm.kaftaAdminClient.GetMetadata(nil, true, tm.config.KafkaAdminMetadataTimeoutMs)
+	err := tm.EnsureTopic(tm.config.KafkaDestinationsTopicName)
 	if err != nil {
-		metrics.TopicManagerError("load_metadata_error").Inc()
-		tm.Errorf("Error getting metadata from brokers [%s]: %v", tm.kafkaBootstrapServer, err)
-	} else {
-		tm.loadMetadata(metadata)
-		err = tm.EnsureTopic(tm.config.KafkaDestinationsTopicName)
-		if err != nil {
-			metrics.TopicManagerError("destination-topic_error").Inc()
-			tm.Errorf("Failed to create destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
-		}
+		metrics.TopicManagerError("destination-topic_error").Inc()
+		tm.SystemErrorf("Failed to create destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
 	}
+	tm.LoadMetadata()
 	// refresh metadata every 10 seconds
 	go func() {
 		ticker := time.NewTicker(time.Duration(tm.config.TopicManagerRefreshPeriodSec) * time.Second)
@@ -172,25 +168,24 @@ func (tm *TopicManager) Start() {
 					tm.Unlock()
 				}
 			case <-ticker.C:
-				//start := time.Now()
-				metadata, err = tm.kaftaAdminClient.GetMetadata(nil, true, tm.config.KafkaAdminMetadataTimeoutMs)
-				if err != nil {
-					metrics.TopicManagerError("load_metadata_error").Inc()
-					tm.Errorf("Error getting metadata: %v", err)
-					continue
-				}
-				tm.loadMetadata(metadata)
-				err = tm.EnsureTopic(tm.config.KafkaDestinationsTopicName)
-				if err != nil {
-					metrics.TopicManagerError("destination-topic_error").Inc()
-					tm.Errorf("Failed to create destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
-				}
+				tm.LoadMetadata()
+			case <-tm.refreshChan:
+				tm.LoadMetadata()
 			}
 		}
 	}()
 }
 
-func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
+func (tm *TopicManager) LoadMetadata() {
+	metadata, err := tm.kaftaAdminClient.GetMetadata(nil, true, tm.config.KafkaAdminMetadataTimeoutMs)
+	if err != nil {
+		metrics.TopicManagerError("load_metadata_error").Inc()
+		tm.Errorf("Error getting metadata: %v", err)
+	} else {
+		tm.parseMetadata(metadata)
+	}
+}
+func (tm *TopicManager) parseMetadata(metadata *kafka.Metadata) {
 	tm.Lock()
 	defer tm.Unlock()
 	start := time.Now()
@@ -267,7 +262,7 @@ func (tm *TopicManager) loadMetadata(metadata *kafka.Metadata) {
 					tm.Errorf("Failed to schedule retry consumer for destination topic: %s: %v", topic, err)
 					continue
 				} else {
-					tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %d", topic, retryPeriodSec)
+					tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %ds", topic, retryPeriodSec)
 				}
 			case deadTopicMode:
 				tm.Infof("Found topic %s for 'dead' events", topic)
@@ -417,6 +412,7 @@ func (tm *TopicManager) createDestinationTopic(destination *Destination, topic s
 		}
 	}
 	tm.Infof("Created topics: %s, %s, %s", topic, failedTopic, deadTopic)
+	tm.Refresh()
 	return nil
 }
 
@@ -441,12 +437,21 @@ func (tm *TopicManager) createTopic(topic string) error {
 			return tm.NewError("Error creating topic %s: %w", res.Topic, res.Error)
 		}
 	}
-	tm.allTopics.Put(topic)
+	tm.Infof("Created topic: %s", topic)
+	tm.Refresh()
 	return nil
+}
+
+func (tm *TopicManager) Refresh() {
+	select {
+	case tm.refreshChan <- true:
+	default:
+	}
 }
 
 func (tm *TopicManager) Close() error {
 	close(tm.closed)
+	close(tm.refreshChan)
 	tm.kaftaAdminClient.Close()
 	//close all batch consumers
 	tm.Lock()

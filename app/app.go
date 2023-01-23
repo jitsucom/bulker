@@ -45,9 +45,9 @@ func Run() {
 	logging.Info(appContext.server.ListenAndServe())
 }
 
-func Exit() {
+func Exit(signal os.Signal) {
 	logging.Infof("App Triggered Exit...")
-	exitChannel <- os.Interrupt
+	exitChannel <- signal
 }
 
 func InitAppContext() *AppContext {
@@ -120,4 +120,5 @@ func (a *AppContext) Shutdown() {
 	}
 	_ = a.server.Shutdown(context.Background())
 	_ = a.eventsLogService.Close()
+	_ = a.fastStore.Close()
 }
