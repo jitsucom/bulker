@@ -130,7 +130,7 @@ When error occurs, Bulker move events to Kafka topic dedicated to  Retry Consume
 In streaming mode single failed event is moved to `retry` topic while in batch mode whole batch is moved to `retry` topic.
 
 Retry Consumer is responsible for requeuing events from `retry` topic. It runs periodically and 
-relocate events from `retry` topic to original topic while incrementing retries attempt counter. 
+relocate events from `retry` topic to the original topic while incrementing retries attempt counter. 
 
 If stream or batch consumer reaches max retry attempts for specific event, that event is moved to `dead` topic.
 
@@ -171,10 +171,9 @@ Read more about batch processing configuration [below](#defining-destinations)
 
 ## Kafka topic management (advanced)
 
-Bulker automatically creates 3 topics per each table in destination. One topic is for main processing and the second
-one is for failed events that should be retried. The topic names has format `in.id.{destiantionId}.m.{mode}.t.{tableName}`.
+Bulker automatically creates 3 topics per each table in destination. One topic is for main processing, one is for failed events that should be retried and the last one for failed events that won't be retried - dead. The topic names has format `in.id.{destiantionId}.m.{mode}.t.{tableName}`.
 
-Mode can be: `batch`, `stream`, `retry`, `dead`.
+Mode can be: `batch` or `stream`, `retry`, `dead`.
 
 Parameters above define how topics are created
 
@@ -210,12 +209,11 @@ Replication factor for topics.
 If `BULKER_REDIS_URL` is set, Bulker will use Redis for storing a history of processed events
 in following format:
 
- * `events_log:processed.all:<destination-id>` - all events that have been sent to `<destination-id>` in streaming mode. Includes failed events too
- * `events_log:processed.error:<destination-id>` - all events that have been sent to `<destination-id>` in streaming mode and failed
-   * `processed.error` is a subset of `processed.all`
-* `events_log:batch.all:<destination-id>` - all processed batches
-* `events_log:batch.error:<destination-id>` - all failed batches
-    * `batch.error` is a subset of `batch.all`
+ * `events_log:bulker_stream.all:<destination-id>` - all events that have been sent to `<destination-id>` in streaming mode. Includes failed events too
+ * `events_log:bulker_stream.error:<destination-id>` - all events that have been sent to `<destination-id>` in streaming mode and failed
+
+ * `events_log:bulker_batch.all:<destination-id>` - all processed batches including failed ones
+ * `events_log:bulker_batch.error:<destination-id>` - all failed batches
 
 Each key is a [redis stream](https://redis.io/docs/data-types/streams/)
  
@@ -278,22 +276,29 @@ Each destination is a JSON object:
   options: {
     //maximum batch size. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE is used
     //see "Batching" section above
-    batchSize: 10000, // optional, default value: 10000,
+    //default value: 10000
+    batchSize: 10000,
     //period of running batch consumer in seconds. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC is used
     //see "Batching" section above
-    batchPeriodSec: 300, // optional, default value: 300,
+    //default value: 300
+    batchPeriodSec: 300, 
     //name of the field that contains unique event id.
-    "primaryKey": "id", //optional
+    //optional
+    primaryKey: "id", 
     //whether bulker should deduplicate events by primary key. See db-feature-matrix.md Requires primaryKey to be set. 
-    "deduplicate": false, //optional
+    //default value: false
+    deduplicate: false, 
     //field that contains timestamp of an event. If set bulker will create destination tables optimized for range queries and sorting by provided column
-    "timestamp": "timestamp", // optional
+    //optional
+    timestamp: "timestamp",
     //batch size of retry consumer. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE is used
     //see "Error Handling and Retries" section above
-    retryBatchSize: 100, // optional, default value: 100,
+    //default value: 100
+    retryBatchSize: 100, 
     //period of running retry consumer in seconds. If not set batchPeriodSec is used or BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC if batchPeriodSec is not set too.
     //see "Error Handling and Retries" section above
-    retryBatchPeriodSec: 300, // optional, default value: 300,
+    //default value: 300
+    retryBatchPeriodSec: 300, 
   },
 }
 ```
