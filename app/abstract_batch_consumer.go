@@ -65,7 +65,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	base := objects.NewServiceBase(topicId)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
-		metrics.BatchConsumerErrors(topicId, mode, "INVALID_TOPIC", "INVALID_TOPIC", "failed to parse topic").Inc()
+		metrics.ConsumerErrors(topicId, mode, "INVALID_TOPIC", "INVALID_TOPIC", "failed to parse topic").Inc()
 		return nil, base.NewError("Failed to parse topic: %w", err)
 	}
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
@@ -81,19 +81,19 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	}
 	consumer, err := kafka.NewConsumer(&consumerConfig)
 	if err != nil {
-		metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		return nil, base.NewError("Error creating consumer: %w", err)
 	}
 	// check topic partitions count
 	metadata, err := consumer.GetMetadata(&topicId, false, 10000)
 	if err != nil {
-		metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		return nil, base.NewError("Failed to get consumer metadata: %w", err)
 	}
 	for _, topic := range metadata.Topics {
 		if topic.Topic == topicId {
 			if len(topic.Partitions) > 1 {
-				metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, "invalid_partitions_count").Inc()
+				metrics.ConsumerErrors(topicId, mode, destinationId, tableName, "invalid_partitions_count").Inc()
 				return nil, base.NewError("Topic has more than 1 partition. Batch Consumer supports only topics with a single partition")
 			}
 			break
@@ -102,7 +102,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 
 	err = consumer.Subscribe(topicId, nil)
 	if err != nil {
-		metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		_ = consumer.Close()
 		return nil, base.NewError("Failed to subscribe to topic: %w", err)
 	}
@@ -112,7 +112,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	}, *kafkaConfig))
 	producer, err := kafka.NewProducer(&producerConfig)
 	if err != nil {
-		metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		_ = consumer.Close()
 		return nil, base.NewError("error creating kafka producer: %w", err)
 	}
@@ -120,7 +120,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	//enable transactions support for producer
 	err = producer.InitTransactions(ctx)
 	if err != nil {
-		metrics.BatchConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		_ = consumer.Close()
 		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %w", err)
 	}
@@ -200,10 +200,10 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.pause()
 		bc.countersMetric(counters)
 		if err != nil {
-			metrics.BatchConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "fail").Inc()
+			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "fail").Inc()
 			bc.Errorf("Consume finished with error: %w stats: %s", err, counters)
 		} else {
-			metrics.BatchConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "success").Inc()
+			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "success").Inc()
 			if counters.processed > 0 {
 				bc.Infof("Successfully %s", counters)
 			} else {
@@ -415,7 +415,7 @@ func (bc *AbstractBatchConsumer) Retire() {
 	bc.retired.Store(true)
 }
 func (bc *AbstractBatchConsumer) errorMetric(errorType string) {
-	metrics.BatchConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, errorType).Inc()
+	metrics.ConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, errorType).Inc()
 }
 
 func (bc *AbstractBatchConsumer) countersMetric(counters BatchCounters) {
@@ -424,7 +424,7 @@ func (bc *AbstractBatchConsumer) countersMetric(counters BatchCounters) {
 	for i := 0; i < countersValue.NumField(); i++ {
 		value := countersValue.Field(i).Int()
 		if value > 0 {
-			metrics.BatchConsumerMessages(bc.topicId, bc.mode, bc.destinationId, bc.tableName, countersType.Field(i).Name).Add(float64(value))
+			metrics.ConsumerMessages(bc.topicId, bc.mode, bc.destinationId, bc.tableName, countersType.Field(i).Name).Add(float64(value))
 		}
 	}
 }
