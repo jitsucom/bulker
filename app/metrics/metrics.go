@@ -8,43 +8,24 @@ import (
 )
 
 var (
-	ingestHandlerError = promauto.NewCounterVec(prometheus.CounterOpts{
+	ingestHandlerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
-		Subsystem: "ingest_handler",
-		Name:      "error",
+		Subsystem: "handler",
+		Name:      "ingest",
 		Help:      "Ingest handler errors by destination Id",
-	}, []string{"slug", "errorType"})
-	IngestHandlerError = func(slug, errorType string) prometheus.Counter {
-		return ingestHandlerError.WithLabelValues(slug, errorType)
-	}
-	ingestHandlerSuccess = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "ingest_handler",
-		Name:      "success",
-		Help:      "Ingest handler successes by stream Id",
-	}, []string{"slug"})
-	IngestHandlerSuccess = func(slug string) prometheus.Counter {
-		return ingestHandlerSuccess.WithLabelValues(slug)
+	}, []string{"slug", "status", "errorType"})
+	IngestHandlerRequests = func(slug, status, errorType string) prometheus.Counter {
+		return ingestHandlerRequests.WithLabelValues(slug, status, errorType)
 	}
 
-	eventsHandlerError = promauto.NewCounterVec(prometheus.CounterOpts{
+	eventsHandlerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
-		Subsystem: "events_handler",
-		Name:      "error",
+		Subsystem: "handler",
+		Name:      "events",
 		Help:      "Events handler errors by destination Id",
-	}, []string{"destinationId", "tableName", "errorType"})
-	EventsHandlerError = func(destinationId, tableName, errorType string) prometheus.Counter {
-		return eventsHandlerError.WithLabelValues(destinationId, tableName, errorType)
-	}
-
-	eventsHandlerSuccess = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "events_handler",
-		Name:      "success",
-		Help:      "Events handler successes by destination Id",
-	}, []string{"destinationId", "tableName"})
-	EventsHandlerSuccess = func(destinationId, tableName string) prometheus.Counter {
-		return eventsHandlerSuccess.WithLabelValues(destinationId, tableName)
+	}, []string{"destinationId", "tableName", "status", "errorType"})
+	EventsHandlerRequests = func(destinationId, tableName, status, errorType string) prometheus.Counter {
+		return eventsHandlerRequests.WithLabelValues(destinationId, tableName, status, errorType)
 	}
 
 	topicManagerCreate = promauto.NewCounterVec(prometheus.CounterOpts{

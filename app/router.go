@@ -105,9 +105,9 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	var rError RouterError
 	defer func() {
 		if rError.Error != nil {
-			metrics.EventsHandlerError(destinationId, tableName, rError.ErrorType).Inc()
+			metrics.EventsHandlerRequests(destinationId, tableName, "error", rError.ErrorType).Inc()
 		} else {
-			metrics.EventsHandlerSuccess(destinationId, tableName).Inc()
+			metrics.EventsHandlerRequests(destinationId, tableName, "success", "").Inc()
 		}
 	}()
 	if tableName == "" {
@@ -166,12 +166,12 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			if e != nil {
 				r.Errorf("Failed to post event to events log service: %w", e)
 			}
-			metrics.IngestHandlerError(domain, rError.ErrorType).Inc()
+			metrics.IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
 		} else {
 			eventsLogObj["asyncDestinations"] = asyncDestinations
 			eventsLogObj["tags"] = tagsDestinations
 			eventsLogObj["status"] = "SUCCESS"
-			metrics.IngestHandlerSuccess(domain).Inc()
+			metrics.IngestHandlerRequests(domain, "success", "").Inc()
 		}
 		_, e := r.eventsLogService.PostEvent(EventTypeIncomingAll, streamId, eventsLogObj)
 		if e != nil {
