@@ -87,12 +87,12 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchSiz
 			_, _ = bulkerStream.Abort(context.Background())
 			return counters, false, bc.NewError("Failed to consume event from topic. Retryable: %t: %w", kafkaErr.IsRetriable(), kafkaErr)
 		}
+		counters.consumed++
 		retriesHeader := GetKafkaHeader(message, retriesCountHeader)
 		if retriesHeader != "" {
 			// we perform retries in smaller batches
 			batchSize = retryBatchSize
 		}
-		counters.consumed++
 		latestMessage = message
 		if firstPosition == nil {
 			firstPosition = &message.TopicPartition

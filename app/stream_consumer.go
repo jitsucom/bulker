@@ -148,57 +148,9 @@ func (sc *StreamConsumer) start() {
 				sc.Infof("Closed stream state: %+v", state)
 				return
 			default:
-				message, err := sc.consumer.ReadMessage(streamConsumerMessageWaitTimeout)
-				if err == nil {
-					obj := types.Object{}
-					dec := jsoniter.NewDecoder(bytes.NewReader(message.Value))
-					dec.UseNumber()
-					err := dec.Decode(&obj)
-					if err != nil {
-						metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "parse_event_error").Inc()
-						sc.postEventsLog(message.Value, nil, nil, err)
-						sc.Errorf("Failed to parse event from message: %s offset: %s: %w", message.Value, message.TopicPartition.Offset.String(), err)
-					} else {
-						sc.Infof("Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), sc.destination.config.BulkerType)
-						var state bulker.State
-						var processedObjects []types.Object
-						state, processedObjects, err = (*sc.stream.Load()).Consume(context.Background(), obj)
-						sc.postEventsLog(message.Value, state.Representation, processedObjects, err)
-						if err != nil {
-							metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "bulker_stream_error").Inc()
-							sc.Errorf("Failed to inject event to bulker stream: %v", err)
-						} else {
-							metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "processed").Inc()
-						}
-					}
-					if err != nil {
-						failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, sc.tableName, false)
-						retries, err := GetKafkaIntHeader(message, retriesCountHeader)
-						if err != nil {
-							sc.Errorf("failed to read retry header: %w", err)
-						}
-						status := "retryScheduled"
-						if retries >= sc.config.MessagesRetryCount {
-							//no attempts left - send to dead-letter topic
-							status = "deadLettered"
-							failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, sc.tableName, false)
-						}
-						retryMessage := kafka.Message{
-							TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
-							Headers: []kafka.Header{
-								{Key: retriesCountHeader, Value: []byte(strconv.Itoa(retries))},
-								{Key: originalTopicHeader, Value: []byte(sc.topicId)},
-								{Key: retryTimeHeader, Value: []byte(timestamp.ToISOFormat(RetryBackOffTime(sc.config, retries+1).UTC()))}},
-							Value: message.Value,
-						}
-						err = sc.bulkerProducer.ProduceSync(failedTopic, retryMessage)
-						if err != nil {
-							status = "failed"
-							sc.Errorf("failed to store event to 'failed' topic: %s: %v", failedTopic, err)
-						}
-						metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, status).Inc()
-					}
-				} else {
+				var message *kafka.Message
+				message, err = sc.consumer.ReadMessage(streamConsumerMessageWaitTimeout)
+				if err != nil {
 					kafkaErr := err.(kafka.Error)
 					if kafkaErr.Code() != kafka.ErrTimedOut {
 						metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, metrics.KafkaErrorCode(kafkaErr)).Inc()
@@ -209,7 +161,58 @@ func (sc *StreamConsumer) start() {
 							sc.restartConsumer()
 						}
 					}
+					continue
 				}
+				metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "consumed").Inc()
+				obj := types.Object{}
+				dec := jsoniter.NewDecoder(bytes.NewReader(message.Value))
+				dec.UseNumber()
+				err = dec.Decode(&obj)
+				if err != nil {
+					metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "parse_event_error").Inc()
+					sc.postEventsLog(message.Value, nil, nil, err)
+					sc.Errorf("Failed to parse event from message: %s offset: %s: %w", message.Value, message.TopicPartition.Offset.String(), err)
+				} else {
+					sc.Infof("Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), sc.destination.config.BulkerType)
+					var state bulker.State
+					var processedObjects []types.Object
+					state, processedObjects, err = (*sc.stream.Load()).Consume(context.Background(), obj)
+					sc.postEventsLog(message.Value, state.Representation, processedObjects, err)
+					if err != nil {
+						metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "bulker_stream_error").Inc()
+						sc.Errorf("Failed to inject event to bulker stream: %v", err)
+					} else {
+						metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "processed").Inc()
+					}
+				}
+				if err != nil {
+					failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, sc.tableName, false)
+					retries, err := GetKafkaIntHeader(message, retriesCountHeader)
+					if err != nil {
+						sc.Errorf("failed to read retry header: %w", err)
+					}
+					status := "retryScheduled"
+					if retries >= sc.config.MessagesRetryCount {
+						//no attempts left - send to dead-letter topic
+						status = "deadLettered"
+						failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, sc.tableName, false)
+					}
+					retryMessage := kafka.Message{
+						TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
+						Headers: []kafka.Header{
+							{Key: retriesCountHeader, Value: []byte(strconv.Itoa(retries))},
+							{Key: originalTopicHeader, Value: []byte(sc.topicId)},
+							{Key: retryTimeHeader, Value: []byte(timestamp.ToISOFormat(RetryBackOffTime(sc.config, retries+1).UTC()))}},
+						Value: message.Value,
+					}
+					err = sc.bulkerProducer.ProduceSync(failedTopic, retryMessage)
+					if err != nil {
+						status = "failed"
+						sc.Errorf("failed to store event to 'failed' topic: %s: %v", failedTopic, err)
+					}
+					metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, status).Inc()
+				}
+
 			}
 		}
 	}()
