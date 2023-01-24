@@ -3,10 +3,12 @@
 * [Running Bulker](#running-bulker)
 * [Common Parameters](#common-parameters)
 * [Kafka Connection](#connection-to-kafka) 
-  * [Advanced Kafka Tuning](#connection-to-kafka)
-* [Redis Connection](#connection-to-redis) *(optional)*
-* [Defining Destination](#connection-to-redis)
-  * [Batching Strategy](#batching-strategy)] 
+* [Batching](#batching)
+* [Streaming](#streaming)
+* [Error Handling and Retries](#error-handling-and-retries)
+* [Advanced Kafka Tuning](#connection-to-kafka)
+* [Redis Connection](#connection-to-redis--optional-) *(optional)*
+* [Defining Destination](#defining-destinations)
   * [Postgres / MySQL / Redshift / Snowflake credentials](#postgres--mysql--redshift--snowflake-credentials)
   * [Clickhouse](#clickhouse)
   * [BigQuery](#bigquery)
