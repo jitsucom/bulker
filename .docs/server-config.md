@@ -88,12 +88,93 @@ Skip SSL verification of kafka server certificate.
 
 ### `BULKER_KAFKA_SASL` (aka Kafka auth)
 
-Kafka authorization as JSON object `{"mechanism": "SCRAM-SHA-256|SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}`
+Kafka authorization as JSON object `{"mechanism": "SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}`
+
+
+## Batching
+
+Bulker buffers events and sends them to destination in batches if mode=`batch`. The batch is sent when
+either one of the following is true:
+
+* `batchSize` events are buffered
+* `batchPeriodSec` seconds passed since the first event in the batch was buffered
+
+Batch settings that are default for all destinations may be set with following variables:
+
+### `BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC`
+
+*Optional, default value: `300` (5 min)*
+
+Default period for batch processing for destinations where `batchPeriodSec` is not set explicitly.
+Read more about batch processing configuration [below](#defining-destinations)
+
+### `BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE`
+
+*Optional, default value: `10000`*
+
+Default batch size for destinations where `batchSize` is not set explicitly.
+Read more about batch processing configuration [below](#defining-destinations)
+
+>**See also**
+> [DB Feature Matrix](./db-feature-matrix.md)
+
+
+## Streaming
+
+If mode is `stream`, Bulker will send events to destination as soon as they are received.
+
+## Error Handling and Retries
+
+If Bulker fails to send events to destination, it can retry sending them with exponential backoff.
+When error occurs, Bulker move events to Kafka topic dedicated to  Retry Consumer.
+In streaming mode single failed event is moved to `retry` topic while in batch mode whole batch is moved to `retry` topic.
+
+Retry Consumer is responsible for requeuing events from `retry` topic. It runs periodically and 
+relocate events from `retry` topic to original topic while incrementing retries attempt counter. 
+
+If stream or batch consumer reaches max retry attempts for specific event, that event is moved to `dead` topic.
+
+Parameters:
+
+### `BULKER_MESSAGES_RETRY_COUNT`
+
+*Optional, default value: `5`*
+
+Max number of retry attempts.
+
+### `BULKER_MESSAGES_RETRY_BACKOFF_BASE`
+
+*Optional, default value: `5`*
+
+Defines base for exponential backoff in minutes for retry attempts.
+For example, if retry count is 3 and base is 5, then retry delays will be 5, 25, 125 minutes.
+
+### `BULKER_MESSAGES_RETRY_BACKOFF_MAX_DELAY`
+
+*Optional, default value: `1440`*
+
+Defines maximum possible retry delay in minutes. Default: 1440 minutes = 24 hours
+
+### `BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC`
+
+*Optional, default value: `300` (5 min)*
+
+Default period of running Retry Consumer for destinations where `retryPeriodSec` is not set explicitly.
+Read more about batch processing configuration [below](#defining-destinations)
+
+### `BULKER_BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE`
+
+*Optional, default value: `100`*
+
+Default batch size for destination's Retry Consumer where `retryBatchSize` is not set explicitly.
+Read more about batch processing configuration [below](#defining-destinations)
 
 ## Kafka topic management (advanced)
 
-Bulker automatically creates 2 topics per each table in destination. One topic is for main processing and the second
-one is for failed events that should be retried. The topic names start with `in.id` prefix.
+Bulker automatically creates 3 topics per each table in destination. One topic is for main processing and the second
+one is for failed events that should be retried. The topic names has format `in.id.{destiantionId}.m.{mode}.t.{tableName}`.
+
+Mode can be: `batch`, `stream`, `retry`, `dead`.
 
 Parameters above define how topics are created
 
@@ -103,11 +184,17 @@ Parameters above define how topics are created
 
 Main topic retention time in hours.
 
-### `BULKER_KAFKA_FAILED_TOPIC_RETENTION_HOURS`
+### `BULKER_KAFKA_RETRY_TOPIC_RETENTION_HOURS`
 
 *Optional, default value: `168` (7 days)*
 
-Topic for failed events retention time in hours.
+Topic for retried events retention time in hours.
+
+### `BULKER_KAFKA_DEAD_TOPIC_RETENTION_HOURS`
+
+*Optional, default value: `168` (7 days)*
+
+Topic for dead events retention time in hours.
 
 ### `BULKER_KAFKA_TOPIC_REPLICATION_FACTOR`
 
@@ -117,26 +204,6 @@ Replication factor for topics.
 
 > **Note**
 > For production, it should be set to at least 2.
-
-### `BULKER_PRODUCER_WAIT_FOR_DELIVERY_MS`
-
-*Optional, default value: `1000`*
-
-Wait for delivery confirmation
-
-### `BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC`
-
-*Optional, default value: `300` (5 min)*
-
-Default period for batch processing for destinations where `batch_period_sec` is not set explicitly.
-Read more about batch processing configuration [below](#defining-destinations)
-
-### `BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE`
-
-*Optional, default value: `10000`*
-
-Default period for batch processing for destinations where `batch_size` is not set explicitly.
-Read more about batch processing configuration [below](#defining-destinations)
 
 ## Connection to Redis (optional)
 
@@ -189,7 +256,7 @@ BULKER_DESTINATION_POSTGRES="{id: 'postgres', }"
 
 ### With Redis
 
-Set `BULKER_CONFIG_SOURCE` to `redis://...` or `rediss://...` and Bulker will read destinations from Redis `bulkerExportDestinations` key.
+Set `BULKER_CONFIG_SOURCE` to `redis://...` or `rediss://...` and Bulker will read destinations from Redis `enrichedConnections` key.
 
 
 ### Destination parameters
@@ -210,37 +277,26 @@ Each destination is a JSON object:
   credentials: {},
   options: {
     //maximum batch size. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE is used
-    //see "Batching strategy" section below
-    batchSize: 10000,
-    //maximum batch period in seconds. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC is used
-    //see "Batching strategy" section below
+    //see "Batching" section above
+    batchSize: 10000, // optional, default value: 10000,
+    //period of running batch consumer in seconds. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC is used
+    //see "Batching" section above
     batchPeriodSec: 300, // optional, default value: 300,
-    //(optional) mame of the field that contains unique event id. "id" by default
-    "primaryKey": "id",
-    //field that contains timestamp of an event. If not set, bulker won't treat
-    //events as time series
-    "timestamp": "timestamp",
+    //name of the field that contains unique event id.
+    "primaryKey": "id", //optional
+    //whether bulker should deduplicate events by primary key. See db-feature-matrix.md Requires primaryKey to be set. 
+    "deduplicate": false, //optional
+    //field that contains timestamp of an event. If set bulker will create destination tables optimized for range queries and sorting by provided column
+    "timestamp": "timestamp", // optional
+    //batch size of retry consumer. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE is used
+    //see "Error Handling and Retries" section above
+    retryBatchSize: 100, // optional, default value: 100,
+    //period of running retry consumer in seconds. If not set batchPeriodSec is used or BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC if batchPeriodSec is not set too.
+    //see "Error Handling and Retries" section above
+    retryBatchPeriodSec: 300, // optional, default value: 300,
   },
 }
 ```
-
-### Batching strategy
-
-Bulker buffers events and sends them to destination in batches if mode=`batch`. The batch is sent when
-either one of the following is true:
-
- * `batch_size` events are buffered
- * `batch_period_sec` seconds passed since the first event in the batch was buffered
-
-
->**See also**
-> [DB Feature Matrix](./db-feature-matrix.md)
-
-
-### Streaming
-
-If mode is `stream`, Bulker will send events to destination as soon as they are received. 
-
 
 ### Postgres / MySQL / Redshift / Snowflake credentials
 

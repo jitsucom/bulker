@@ -20,7 +20,7 @@ var topicPattern = regexp.MustCompile(`^in[.]id[.](.*)[.]m[.](.*)[.](t|b64)[.](.
 const topicExpression = "in.id.%s.m.%s.t.%s"
 const topicExpressionBase64 = "in.id.%s.m.%s.b64.%s"
 
-const retryTopicMode = "failed"
+const retryTopicMode = "retry"
 const deadTopicMode = "dead"
 
 const topicLengthLimit = 200
@@ -369,7 +369,7 @@ func (tm *TopicManager) createDestinationTopic(destination *Destination, topic s
 		return tm.NewError("Unknown stream mode: %s for topic: %s", mode, topic)
 	}
 	destinationId := destination.Id()
-	failedTopic, _ := MakeTopicId(destinationId, retryTopicMode, tableName, false)
+	retryTopic, _ := MakeTopicId(destinationId, retryTopicMode, tableName, false)
 	deadTopic, _ := MakeTopicId(destinationId, deadTopicMode, tableName, false)
 	topicRes, err := tm.kaftaAdminClient.CreateTopics(context.Background(), []kafka.TopicSpecification{
 		{
@@ -382,11 +382,11 @@ func (tm *TopicManager) createDestinationTopic(destination *Destination, topic s
 			},
 		},
 		{
-			Topic:             failedTopic,
+			Topic:             retryTopic,
 			NumPartitions:     1,
 			ReplicationFactor: tm.config.KafkaTopicReplicationFactor,
 			Config: map[string]string{
-				"retention.ms": fmt.Sprint(tm.config.KafkaFailedTopicRetentionHours * 60 * 60 * 1000),
+				"retention.ms": fmt.Sprint(tm.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
 			},
 		},
 		{
@@ -411,7 +411,7 @@ func (tm *TopicManager) createDestinationTopic(destination *Destination, topic s
 			return tm.NewError("Error creating topic %s: %w", res.Topic, res.Error)
 		}
 	}
-	tm.Infof("Created topics: %s, %s, %s", topic, failedTopic, deadTopic)
+	tm.Infof("Created topics: %s, %s, %s", topic, retryTopic, deadTopic)
 	tm.Refresh()
 	return nil
 }

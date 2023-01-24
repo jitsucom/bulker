@@ -46,11 +46,11 @@ const (
 // See BulkMode for more details.
 type Bulker interface {
 	io.Closer
-	//CreateStream create a BulkerStream instance that will store objects to the target table in a data warehouse.
-	//bulker BulkerStream creates a new table with provided tableName if it does not exist.
-	//Table schema is based on flattened object structure but may be overridden by providing WithTable option.
-	//bulker BulkerStream will add new column to a table on the fly if new properties appear in object and table schema is not overridden.
-	//TODO: escape special symbols in table names
+	// CreateStream create a BulkerStream instance that will store objects to the target table in a data warehouse.
+	// bulker BulkerStream creates a new table with provided tableName if it does not exist.
+	// Table schema is based on flattened object structure but may be overridden by providing WithTable option.
+	// bulker BulkerStream will add new column to a table on the fly if new properties appear in object and table schema is not overridden.
+	// TODO: escape special symbols in table names
 	CreateStream(id, tableName string, mode BulkMode, streamOptions ...StreamOption) (BulkerStream, error)
 }
 

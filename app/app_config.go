@@ -16,6 +16,10 @@ import (
 
 const instanceIdFilePath = "~/.bulkerapp/instance_id"
 
+// AppConfig is a struct for bulker app configuration
+// It is loaded from `bulker.env` config file or environment variables.
+//
+// Environment variables requires prefix `BULKER_`
 type AppConfig struct {
 	// InstanceId ID of bulker instance. It is used for identifying Kafka consumers.
 	// If is not set, instance id will be generated and persisted to disk (~/.bulkerapp/instance_id) and reused on next restart.
@@ -27,40 +31,57 @@ type AppConfig struct {
 
 	// # AUTH
 
-	// [AuthTokens] A list of auth tokens that authorizes user in HTTP interface separated by comma. Each token can be either:
-	//
-	// - ${token} un-encrypted token value
-	// - ${salt}.${hash} hashed token. ${salt} should be random string. Hash is base64(sha512($token + $salt + $BULKER_TOKEN_SECRET).
-	// - Token is [0-9a-zA-Z_\-] (only letters, digits, underscore and dash)
-	AuthTokens   string `mapstructure:"AUTH_TOKENS"`
+	// AuthTokens A list of auth tokens that authorizes user in HTTP interface separated by comma. Each token can be either:
+	// - `${token}` un-encrypted token value
+	// - `${salt}.${hash}` hashed token.` ${salt}` should be random string. Hash is `base64(sha512($token + $salt + TokenSecrets)`.
+	// - Token is `[0-9a-zA-Z_\-]` (only letters, digits, underscore and dash)
+	AuthTokens string `mapstructure:"AUTH_TOKENS"`
+	// See AuthTokens
 	TokenSecrets string `mapstructure:"TOKEN_SECRET"`
-
-	LogFormat string `mapstructure:"LOG_FORMAT"`
-
-	GlobalHashSecret  string `mapstructure:"GLOBAL_HASH_SECRET" default:"dea42a58-acf4-45af-85bb-e77e94bd5025"`
+	// For ingest endpoint only
+	GlobalHashSecret string `mapstructure:"GLOBAL_HASH_SECRET" default:"dea42a58-acf4-45af-85bb-e77e94bd5025"`
+	// For ingest endpoint only
 	GlobalHashSecrets []string
 
-	ConfigSource string `mapstructure:"CONFIG_SOURCE"`
+	// # LOGGING
 
+	// LogFormat log format. Can be `text` or `json`. Default: `text`
+	LogFormat string `mapstructure:"LOG_FORMAT"`
+
+	// # DESTINATIONS CONFIGS
+
+	// ConfigSource source of destinations configs. Can be:
+	//  - `file://...`  for destinations config in yaml format
+	//  - `redis` or `redis://redis_url` to load configs from redis `enrichedConnections` key
+	//  - `env://PREFIX` to load each destination environment variables with like `PREFIX_ID` where ID is destination id
+	//
+	// Default: `env://BULKER_DESTINATION`
+	ConfigSource string `mapstructure:"CONFIG_SOURCE"`
+	// RedisURL that will be used by default by all services that need Redis
+	RedisURL   string `mapstructure:"REDIS_URL"`
 	RedisTLSCA string `mapstructure:"REDIS_TLS_CA"`
 
+	// # KAFKA
+
+	// KafkaBootstrapServers List of Kafka brokers separated by comma. Each broker should be in format host:port.
 	KafkaBootstrapServers string `mapstructure:"KAFKA_BOOTSTRAP_SERVERS"`
 	KafkaSSL              bool   `mapstructure:"KAFKA_SSL" default:"false"`
 	KafkaSSLSkipVerify    bool   `mapstructure:"KAFKA_SSL_SKIP_VERIFY" default:"false"`
-
+	//Kafka authorization as JSON object {"mechanism": "SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}
 	KafkaSASL string `mapstructure:"KAFKA_SASL"`
 
-	KafkaTopicRetentionHours       int `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
-	KafkaFailedTopicRetentionHours int `mapstructure:"KAFKA_FAILED_TOPIC_RETENTION_HOURS" default:"168"`
-	KafkaDeadTopicRetentionHours   int `mapstructure:"KAFKA_FAILED_TOPIC_RETENTION_HOURS" default:"168"`
-
+	KafkaTopicRetentionHours                 int    `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
+	KafkaRetryTopicRetentionHours            int    `mapstructure:"KAFKA_RETRY_TOPIC_RETENTION_HOURS" default:"168"`
+	KafkaDeadTopicRetentionHours             int    `mapstructure:"KAFKA_DEAD_TOPIC_RETENTION_HOURS" default:"168"`
 	KafkaTopicReplicationFactor              int    `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR"`
 	KafkaAdminMetadataTimeoutMs              int    `mapstructure:"KAFKA_ADMIN_METADATA_TIMEOUT_MS" default:"1000"`
 	KafkaConsumerPartitionsAssigmentStrategy string `mapstructure:"KAFKA_CONSUMER_PARTITIONS_ASSIGMENT_STRATEGY" default:"cooperative-sticky"`
 	//TODO: max.poll.interval.ms
 
+	// KafkaDestinationsTopicName destination topic for /ingest endpoint
 	KafkaDestinationsTopicName string `mapstructure:"KAFKA_DESTINATIONS_TOPIC_NAME" default:"destination-messages"`
 
+	// TopicManagerRefreshPeriodSec how often topic manager will check for new topics
 	TopicManagerRefreshPeriodSec int `mapstructure:"TOPIC_MANAGER_REFRESH_PERIOD_SEC" default:"5"`
 
 	// ProducerWaitForDeliveryMs For ProduceSync only is a timeout for producer to wait for delivery report.
@@ -75,17 +96,18 @@ type AppConfig struct {
 
 	// # ERROR RETRYING
 
-	BatchRunnerRetryPeriodSec        int     `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC" default:"300"`
-	BatchRunnerDefaultRetryBatchSize int     `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE" default:"100"`
-	MessagesRetryCount               int     `mapstructure:"MESSAGES_RETRY_COUNT" default:"3"`
-	MessagesRetryBackoffBase         float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_BASE" default:"5"`
+	BatchRunnerRetryPeriodSec        int `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC" default:"300"`
+	BatchRunnerDefaultRetryBatchSize int `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE" default:"100"`
+	MessagesRetryCount               int `mapstructure:"MESSAGES_RETRY_COUNT" default:"5"`
+	// MessagesRetryBackoffBase defines base for exponential backoff in minutes.
+	// For example, if retry count is 3 and base is 5, then retry delays will be 5, 25, 125 minutes.
+	// Default: 5
+	MessagesRetryBackoffBase float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_BASE" default:"5"`
 	// MessagesRetryBackoffMaxDelay defines maximum possible retry delay in minutes. Default: 1440 minutes = 24 hours
 	MessagesRetryBackoffMaxDelay float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_MAX_DELAY" default:"1440"`
 
 	// # EVENTS LOGGING
 
-	// RedisURL that will be used by default by services that need Redis
-	RedisURL          string `mapstructure:"REDIS_URL"`
 	EventsLogRedisURL string `mapstructure:"EVENTS_LOG_REDIS_URL"`
 	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
 
