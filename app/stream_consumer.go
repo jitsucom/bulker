@@ -207,9 +207,11 @@ func (sc *StreamConsumer) start() {
 					}
 					err = sc.bulkerProducer.ProduceSync(failedTopic, retryMessage)
 					if err != nil {
-						status = "failed"
 						sc.Errorf("failed to store event to 'failed' topic: %s: %v", failedTopic, err)
+						metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "LOST").Inc()
+						continue
 					}
+					metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "failed").Inc()
 					metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, status).Inc()
 				}
 

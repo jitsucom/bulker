@@ -51,6 +51,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchSiz
 			counters.failed = counters.consumed - counters.processed
 			if failedPosition != nil {
 				cnts, err2 := bc.processFailed(firstPosition, failedPosition)
+				cnts.failed = counters.failed
 				counters = cnts
 				if err2 != nil {
 					bc.errorMetric("PROCESS_FAILED_ERROR")

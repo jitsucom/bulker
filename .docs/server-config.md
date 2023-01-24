@@ -6,7 +6,7 @@
 * [Batching](#batching)
 * [Streaming](#streaming)
 * [Error Handling and Retries](#error-handling-and-retries)
-* [Advanced Kafka Tuning](#connection-to-kafka)
+* [Advanced Kafka Tuning](#kafka-topic-management--advanced-)
 * [Redis Connection](#connection-to-redis--optional-) *(optional)*
 * [Defining Destination](#defining-destinations)
   * [Postgres / MySQL / Redshift / Snowflake credentials](#postgres--mysql--redshift--snowflake-credentials)
