@@ -17,11 +17,21 @@ import (
 const instanceIdFilePath = "~/.bulkerapp/instance_id"
 
 type AppConfig struct {
-	// TODO: persist on disk
+	// InstanceId ID of bulker instance. It is used for identifying Kafka consumers.
+	// If is not set, instance id will be generated and persisted to disk (~/.bulkerapp/instance_id) and reused on next restart.
+	// Default: random uuid
 	InstanceId string `mapstructure:"INSTANCE_ID"`
 
+	// HTTPPort port for bulker http server. Default: 3042
 	HTTPPort int `mapstructure:"HTTP_PORT"`
 
+	// # AUTH
+
+	// [AuthTokens] A list of auth tokens that authorizes user in HTTP interface separated by comma. Each token can be either:
+	//
+	// - ${token} un-encrypted token value
+	// - ${salt}.${hash} hashed token. ${salt} should be random string. Hash is base64(sha512($token + $salt + $BULKER_TOKEN_SECRET).
+	// - Token is [0-9a-zA-Z_\-] (only letters, digits, underscore and dash)
 	AuthTokens   string `mapstructure:"AUTH_TOKENS"`
 	TokenSecrets string `mapstructure:"TOKEN_SECRET"`
 
@@ -53,23 +63,33 @@ type AppConfig struct {
 
 	TopicManagerRefreshPeriodSec int `mapstructure:"TOPIC_MANAGER_REFRESH_PERIOD_SEC" default:"5"`
 
+	// ProducerWaitForDeliveryMs For ProduceSync only is a timeout for producer to wait for delivery report.
 	ProducerWaitForDeliveryMs int `mapstructure:"PRODUCER_WAIT_FOR_DELIVERY_MS" default:"1000"`
 
-	BatchRunnerPeriodSec             int `mapstructure:"BATCH_RUNNER_DEFAULT_PERIOD_SEC" default:"300"`
-	BatchRunnerDefaultBatchSize      int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"10000"`
-	BatchRunnerWaitForMessagesSec    int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"1"`
-	BatchRunnerRetryPeriodSec        int `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC" default:"300"`
-	BatchRunnerDefaultRetryBatchSize int `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE" default:"100"`
+	// # BATCHING
 
-	MessagesRetryCount       int     `mapstructure:"MESSAGES_RETRY_COUNT" default:"3"`
-	MessagesRetryBackoffBase float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_BASE" default:"5"`
-	// minutes
+	BatchRunnerPeriodSec        int `mapstructure:"BATCH_RUNNER_DEFAULT_PERIOD_SEC" default:"300"`
+	BatchRunnerDefaultBatchSize int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"10000"`
+	// BatchRunnerWaitForMessagesSec when there are no more messages in the topic BatchRunner will wait for BatchRunnerWaitForMessagesSec seconds before sending a batch
+	BatchRunnerWaitForMessagesSec int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"1"`
+
+	// # ERROR RETRYING
+
+	BatchRunnerRetryPeriodSec        int     `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC" default:"300"`
+	BatchRunnerDefaultRetryBatchSize int     `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE" default:"100"`
+	MessagesRetryCount               int     `mapstructure:"MESSAGES_RETRY_COUNT" default:"3"`
+	MessagesRetryBackoffBase         float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_BASE" default:"5"`
+	// MessagesRetryBackoffMaxDelay defines maximum possible retry delay in minutes. Default: 1440 minutes = 24 hours
 	MessagesRetryBackoffMaxDelay float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_MAX_DELAY" default:"1440"`
 
-	// Redis URL that will be used by default by services that need Redis
+	// # EVENTS LOGGING
+
+	// RedisURL that will be used by default by services that need Redis
 	RedisURL          string `mapstructure:"REDIS_URL"`
 	EventsLogRedisURL string `mapstructure:"EVENTS_LOG_REDIS_URL"`
 	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
+
+	// # GRACEFUL SHUTDOWN
 
 	//Timeout that give running batch tasks time to finish during shutdown.
 	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`
