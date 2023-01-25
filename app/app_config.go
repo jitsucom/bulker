@@ -111,6 +111,12 @@ type AppConfig struct {
 	EventsLogRedisURL string `mapstructure:"EVENTS_LOG_REDIS_URL"`
 	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
 
+	// # METRICS
+
+	MetricsPort             int    `mapstructure:"METRICS_PORT" default:"9091"`
+	MetricsRelayDestination string `mapstructure:"METRICS_RELAY_DESTINATION"`
+	MetricsRelayPeriodSec   int    `mapstructure:"METRICS_RELAY_PERIOD_SEC" default:"60"`
+
 	// # GRACEFUL SHUTDOWN
 
 	//Timeout that give running batch tasks time to finish during shutdown.

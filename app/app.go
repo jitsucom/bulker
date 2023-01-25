@@ -26,6 +26,8 @@ type AppContext struct {
 	topicManager        *TopicManager
 	fastStore           *FastStore
 	server              *http.Server
+	metricsServer       *MetricsServer
+	metricsRelay        *MetricsRelay
 }
 
 // TODO: graceful shutdown and cleanups. Flush producer
@@ -42,6 +44,7 @@ func Run() {
 		appContext.Shutdown()
 		os.Exit(0)
 	}()
+	logging.Infof("Starting http server on %s", appContext.server.Addr)
 	logging.Info(appContext.server.ListenAndServe())
 }
 
@@ -105,6 +108,14 @@ func InitAppContext() *AppContext {
 		ReadHeaderTimeout: time.Second * 60,
 		IdleTimeout:       time.Second * 65,
 	}
+	metricsServer := NewMetricsServer(appContext.config)
+	appContext.metricsServer = metricsServer
+
+	metricsRelay, err := NewMetricsRelay(appContext.config)
+	if err != nil {
+		logging.Errorf("Error initializing metrics relay: %v", err)
+	}
+	appContext.metricsRelay = metricsRelay
 	return &appContext
 }
 
@@ -118,6 +129,9 @@ func (a *AppContext) Shutdown() {
 		logging.Infof("Waiting %d seconds before http server shutdown...", a.config.ShutdownExtraDelay)
 		time.Sleep(time.Duration(a.config.ShutdownExtraDelay) * time.Second)
 	}
+	logging.Infof("Shutting down http server...")
+	_ = a.metricsServer.Stop()
+	_ = a.metricsRelay.Stop()
 	_ = a.server.Shutdown(context.Background())
 	_ = a.eventsLogService.Close()
 	_ = a.fastStore.Close()

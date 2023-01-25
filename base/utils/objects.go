@@ -1,8 +1,8 @@
 package utils
 
 import (
-	"encoding/json"
 	"fmt"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
 )
@@ -30,7 +30,7 @@ func ParseObject[K any](inputObject any, result *K) error {
 			return fmt.Errorf("failed to parse. input data is empty")
 		}
 		if cfg[0] == '{' {
-			if err := json.Unmarshal(cfg, result); err != nil {
+			if err := jsoniter.Unmarshal(cfg, result); err != nil {
 				return fmt.Errorf("failed to parse json as %T : %w", result, err)
 			}
 		} else {
@@ -43,7 +43,7 @@ func ParseObject[K any](inputObject any, result *K) error {
 			return fmt.Errorf("failed to parse. input string is empty")
 		}
 		if cfg[0] == '{' {
-			if err := json.Unmarshal([]byte(cfg), result); err != nil {
+			if err := jsoniter.Unmarshal([]byte(cfg), result); err != nil {
 				return fmt.Errorf("failed to parse json as %T : %w", result, err)
 			}
 		} else {

@@ -72,9 +72,9 @@ func NewRouter(appContext *AppContext) *Router {
 	// set request duration, default {0.1, 0.3, 1.2, 5, 10}
 	// used to p95, p99
 	m.SetDuration([]float64{0.01, 0.05, 0.1, 0.3, 1.0, 2.0, 3.0, 10})
-	m.SetMetricPath("/metrics")
-	m.Use(engine)
+	m.UseWithoutExposingEndpoint(engine)
 
+	engine.Use(gin.Recovery())
 	engine.Use(router.AuthMiddleware)
 	engine.POST("/post/:destinationId", router.EventsHandler)
 	engine.POST("/test", router.TestConnectionHandler)
@@ -185,7 +185,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	ingestMessage := IngestMessage{}
-	err = json.Unmarshal(body, &ingestMessage)
+	err = jsoniter.Unmarshal(body, &ingestMessage)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing IngestMessage", false, fmt.Errorf("%w: %s", err, string(body)), "")
 		return

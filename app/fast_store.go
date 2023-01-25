@@ -1,9 +1,9 @@
 package app
 
 import (
-	"encoding/json"
 	"github.com/gomodule/redigo/redis"
 	"github.com/jitsucom/bulker/base/objects"
+	jsoniter "github.com/json-iterator/go"
 	"strings"
 )
 
@@ -86,7 +86,7 @@ func (fs *FastStore) GetStreamById(slug string) (*StreamWithDestinations, error)
 		return nil, fs.NewError("failed to get stream by slug [%s]: %w", slug, err)
 	}
 	stream := StreamWithDestinations{}
-	err = json.Unmarshal(streamBytes, &stream)
+	err = jsoniter.Unmarshal(streamBytes, &stream)
 	if err != nil {
 		return nil, fs.NewError("failed to unmarshal stream bytes for slug [%s]: %w: %s", slug, err, string(streamBytes))
 	}
@@ -107,7 +107,7 @@ func (fs *FastStore) GetStreamsByDomain(domain string) ([]StreamWithDestinations
 		return nil, fs.NewError("failed to get stream by domain [%s]: %w", domain, err)
 	}
 	stream := make([]StreamWithDestinations, 0, 2)
-	err = json.Unmarshal(streamBytes, &stream)
+	err = jsoniter.Unmarshal(streamBytes, &stream)
 	if err != nil {
 		return nil, fs.NewError("failed to unmarshal stream bytes for domain [%s]: %w: %s", domain, err, string(streamBytes))
 	}

@@ -4,17 +4,18 @@ import "time"
 
 type Ticker struct {
 	ticker *time.Ticker
+	d      time.Duration
 	C      chan time.Time
-	closed chan struct{}
+	Closed chan struct{}
 }
 
 func NewTicker(d time.Duration, startDelay time.Duration) *Ticker {
 	c := make(chan time.Time, 1)
 	closed := make(chan struct{})
 	t := &Ticker{
-		ticker: time.NewTicker(d),
+		d:      d,
 		C:      c,
-		closed: closed,
+		Closed: closed,
 	}
 	t.start(startDelay)
 	return t
@@ -23,25 +24,32 @@ func NewTicker(d time.Duration, startDelay time.Duration) *Ticker {
 // start
 func (t *Ticker) start(startDelay time.Duration) {
 	go func() {
-		select {
-		case tm := <-time.After(startDelay):
-			t.C <- tm
-		case <-t.closed:
-			return
+		if startDelay != t.d {
+			select {
+			case tm := <-time.After(startDelay):
+				t.C <- tm
+			case <-t.Closed:
+				return
+			}
 		}
+		t.ticker = time.NewTicker(t.d)
 		for {
 			select {
 			case tm := <-t.ticker.C:
 				t.C <- tm
-			case <-t.closed:
+			case <-t.Closed:
 				return
 			}
 		}
 	}()
 }
 
+func (t *Ticker) Period() time.Duration {
+	return t.d
+}
+
 // Stop turns off a ticker. After Stop, no more ticks will be sent.
 func (t *Ticker) Stop() {
 	t.ticker.Stop()
-	close(t.closed)
+	close(t.Closed)
 }
