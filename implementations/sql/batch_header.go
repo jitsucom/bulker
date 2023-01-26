@@ -7,15 +7,15 @@ import (
 
 type Fields map[string]Field
 
-// BatchHeader is the schema result of parsing JSON objects
-type BatchHeader struct {
+// TypesHeader is the schema result of parsing JSON objects
+type TypesHeader struct {
 	TableName string
 	Fields    Fields
 	Partition DatePartition
 }
 
 // Exists returns true if there is at least one field
-func (bh *BatchHeader) Exists() bool {
+func (bh *TypesHeader) Exists() bool {
 	return bh != nil && len(bh.Fields) > 0
 }
 

@@ -3,7 +3,6 @@ package sql
 import (
 	"context"
 	"fmt"
-	"github.com/jitsucom/bulker/base/coordination"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
@@ -24,12 +23,12 @@ type AbstractSQLStream struct {
 	tableName  string
 	merge      bool
 
-	state       bulker.State
-	tableHelper *TableHelper
-	inited      bool
+	state  bulker.State
+	inited bool
 
-	customTypes SQLTypes
-	pkColumns   utils.Set[string]
+	customTypes     SQLTypes
+	pkColumns       utils.Set[string]
+	timestampColumn string
 }
 
 func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractSQLStream, error) {
@@ -44,17 +43,10 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 		return AbstractSQLStream{}, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	var customFields = ColumnTypesOption.Get(&ps.options)
-	adaptedPkColumns := utils.NewSet[string]()
-	for k, _ := range pkColumns {
-		adaptedPkColumns.Put(p.ColumnName(k))
-	}
-	ps.pkColumns = adaptedPkColumns
-	timestampColumn := TimestampOption.Get(&ps.options)
-	if timestampColumn != "" {
-		timestampColumn = p.ColumnName(timestampColumn)
-	}
+	ps.pkColumns = pkColumns
+	ps.timestampColumn = TimestampOption.Get(&ps.options)
+
 	//TODO: max column?
-	ps.tableHelper = NewTableHelper(p, coordination.DummyCoordinationService{}, ps.pkColumns, timestampColumn, 1000)
 	ps.state = bulker.State{Status: bulker.Active}
 	ps.customTypes = customFields
 	return ps, nil
@@ -64,11 +56,11 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Obje
 	if ps.state.Status != bulker.Active {
 		return nil, nil, fmt.Errorf("stream is not active. Status: %s", ps.state.Status)
 	}
-	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.sqlAdapter, ps.customTypes)
+	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes)
 	if err != nil {
 		return nil, nil, err
 	}
-	table := ps.tableHelper.MapTableSchema(batchHeader)
+	table, processedObject := ps.sqlAdapter.TableHelper().MapTableSchema(batchHeader, processedObject, ps.pkColumns, ps.timestampColumn)
 	ps.state.ProcessedRows++
 	return table, processedObject, nil
 }
@@ -172,10 +164,10 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(existingTable, desiredTable 
 	}
 	if len(unmappedObj) > 0 {
 		jsonSQLType, _ := ps.sqlAdapter.GetSQLType(types.JSON)
-		added := utils.MapPutIfAbsent(cloned, unmappedDataColumn, SQLColumn{DataType: types.JSON, Type: jsonSQLType})
+		added := utils.MapPutIfAbsent(cloned, ps.sqlAdapter.ColumnName(unmappedDataColumn), SQLColumn{DataType: types.JSON, Type: jsonSQLType})
 		columnsAdded = columnsAdded || added
 		b, _ := jsoniter.Marshal(unmappedObj)
-		values[unmappedDataColumn] = string(b)
+		values[ps.sqlAdapter.ColumnName(unmappedDataColumn)] = string(b)
 	}
 	existingTable.Columns = cloned
 	return columnsAdded
@@ -188,7 +180,7 @@ func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 		ps.state.Representation = RepresentationTable{
 			Name:             table.Name,
 			Schema:           table.Columns,
-			PrimaryKeyFields: table.PKFields.ToSlice(),
+			PrimaryKeyFields: table.GetPKFields(),
 			PrimaryKeyName:   table.PrimaryKeyName,
 			Temporary:        table.Temporary,
 		}

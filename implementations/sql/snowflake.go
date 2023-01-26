@@ -15,6 +15,7 @@ import (
 	"github.com/jitsucom/bulker/types"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -43,8 +44,10 @@ const (
 )
 
 var (
-	sfReservedWords         = []string{"all", "alter", "and", "any", "as", "between", "by", "case", "cast", "check", "column", "connect", "constraint", "create", "cross", "current", "current_date", "current_time", "current_timestamp", "current_user", "delete", "distinct", "drop", "else", "exists", "false", "following", "for", "from", "full", "grant", "group", "having", "ilike", "in", "increment", "inner", "insert", "intersect", "into", "is", "join", "lateral", "left", "like", "localtime", "localtimestamp", "minus", "natural", "not", "null", "of", "on", "or", "order", "qualify", "regexp", "revoke", "right", "rlike", "row", "rows", "sample", "select", "set", "some", "start", "table", "tablesample", "then", "to", "trigger", "true", "try_cast", "union", "unique", "update", "using", "values", "when", "whenever", "where", "with"}
-	sfReservedWordsSet      = utils.NewSet(sfReservedWords...)
+	sfReservedWords             = []string{"all", "alter", "and", "any", "as", "between", "by", "case", "cast", "check", "column", "connect", "constraint", "create", "cross", "current", "current_date", "current_time", "current_timestamp", "current_user", "delete", "distinct", "drop", "else", "exists", "false", "following", "for", "from", "full", "grant", "group", "having", "ilike", "in", "increment", "inner", "insert", "intersect", "into", "is", "join", "lateral", "left", "like", "localtime", "localtimestamp", "minus", "natural", "not", "null", "of", "on", "or", "order", "qualify", "regexp", "revoke", "right", "rlike", "row", "rows", "sample", "select", "set", "some", "start", "table", "tablesample", "then", "to", "trigger", "true", "try_cast", "union", "unique", "update", "using", "values", "when", "whenever", "where", "with"}
+	sfReservedWordsSet          = utils.NewSet(sfReservedWords...)
+	sfUnquotedIdentifierPattern = regexp.MustCompile(`^[a-z_][0-9a-z_]*$|^[A-Z_][0-9A-Z_]*$`)
+
 	sfMergeQueryTemplate, _ = template.New("snowflakeMergeQuery").Parse(sfMergeStatement)
 
 	snowflakeTypes = map[types.DataType][]string{
@@ -71,6 +74,12 @@ type SnowflakeConfig struct {
 	Parameters map[string]*string `mapstructure:"parameters,omitempty" json:"parameters,omitempty" yaml:"parameters,omitempty"`
 }
 
+func init() {
+	for _, word := range sfReservedWords {
+		sfReservedWordsSet.Put(strings.ToUpper(word))
+	}
+}
+
 // Validate required fields in SnowflakeConfig
 func (sc *SnowflakeConfig) Validate() error {
 	if sc == nil {
@@ -93,7 +102,6 @@ func (sc *SnowflakeConfig) Validate() error {
 		sc.Parameters = map[string]*string{}
 	}
 
-	sc.Schema = sfQuoteReservedWords(sc.Schema)
 	return nil
 }
 
@@ -108,8 +116,6 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
-	_, config.Schema = adaptSqlIdentifier(config.Schema, 255, 0, sqlUnquotedIdentifierPattern, true)
-	config.Schema = sfQuoteReservedWords(config.Schema)
 
 	if config.Parameters == nil {
 		config.Parameters = map[string]*string{}
@@ -161,14 +167,11 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	sqlAdapter, err := newSQLAdapterBase(bulkerConfig.Id, SnowflakeBulkerTypeId, config, dbConnectFunction, snowflakeTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)
 	s := &Snowflake{sqlAdapter}
-	s._tableNameFunc = func(config *SnowflakeConfig, tableName string) string {
-		return sfQuoteReservedWords(tableName)
-	}
-	s._columnNameFunc = sfQuoteReservedWords
-	s.sqlUnquotedIdentifierPattern = sqlUnquotedIdentifierPattern
 	s.batchFileFormat = implementations.CSV
-	s.maxIdentifierLength = 255
-	s.toUpper = true
+
+	s.tableHelper = NewTableHelper(s, 255, '"')
+	s.tableHelper.tableNameFunc = sfIdentifierFunction
+	s.tableHelper.columnNameFunc = sfIdentifierFunction
 	return s, err
 }
 func (s *Snowflake) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -222,8 +225,7 @@ func (s *Snowflake) InitDatabase(ctx context.Context) error {
 
 // GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
 func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
-	tableName = s.TableName(tableName)
-	quotedTableName := s.quotedTableName(tableName)
+	quotedTableName, tableName := s.tableHelper.adaptTableName(tableName)
 	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.NewSet[string]()}
 
 	countReqRows, err := s.txOrDb(ctx).QueryContext(ctx, sfTableExistenceQuery, s.config.Schema, tableName)
@@ -310,7 +312,7 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 
 // getPrimaryKey returns primary key name and fields
 func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string, utils.Set[string], error) {
-	quotedTableName := s.quotedColumnName(tableName)
+	quotedTableName := s.quotedTableName(tableName)
 
 	primaryKeys := utils.Set[string]{}
 	statement := fmt.Sprintf(sfPrimaryKeyFieldsQuery, quotedTableName)
@@ -366,7 +368,7 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 
 // LoadTable transfer data from local file to Snowflake by passing COPY request to Snowflake
 func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
-	quotedTableName := s.quotedColumnName(targetTable.Name)
+	quotedTableName := s.quotedTableName(targetTable.Name)
 
 	if loadSource.Type != LocalFile {
 		return fmt.Errorf("LoadTable: only local file is supported")
@@ -467,8 +469,9 @@ func (s *Snowflake) ReplaceTable(ctx context.Context, targetTableName string, re
 }
 
 // columnDDLsfColumnDDL returns column DDL (column name, mapped sql type)
-func sfColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
-	return fmt.Sprintf(`%s %s`, sfQuoteReservedWords(quotedName), column.GetDDLType())
+func sfColumnDDL(quotedName, name string, table *Table) string {
+	column := table.Columns[name]
+	return fmt.Sprintf(`%s %s`, quotedName, column.GetDDLType())
 }
 
 func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
@@ -476,11 +479,15 @@ func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions
 	return s.SQLAdapterBase.Select(ctx, tableName, whenConditions, orderBy)
 }
 
-func sfQuoteReservedWords(value string) string {
+func sfIdentifierFunction(value string) (adapted string, needQuotes bool) {
 	if sfReservedWordsSet.Contains(value) {
-		return fmt.Sprintf(`"%s"`, strings.ToUpper(value))
+		return strings.ToUpper(value), true
 	}
-	return value
+	if !sfUnquotedIdentifierPattern.MatchString(value) {
+		return value, true
+	} else {
+		return strings.ToUpper(value), false
+	}
 }
 
 func (s *Snowflake) CreateTable(ctx context.Context, schemaToCreate *Table) error {
@@ -504,9 +511,8 @@ func (s *Snowflake) createClusteringKey(ctx context.Context, table *Table) error
 	}
 	quotedTableName := s.quotedTableName(table.Name)
 
-	//TODO: properly quote TimestampColumn name
 	statement := fmt.Sprintf(sfAlterClusteringKeyTemplate,
-		quotedTableName, table.TimestampColumn)
+		quotedTableName, s.quotedColumnName(table.TimestampColumn))
 
 	if _, err := s.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.AlterTableError.Wrap(err, "failed to set clustering key").
@@ -519,13 +525,3 @@ func (s *Snowflake) createClusteringKey(ctx context.Context, table *Table) error
 
 	return nil
 }
-
-//func (s *Snowflake) ColumnName(identifier string) string {
-//	_, unquoted := s.adaptSqlIdentifier(identifier)
-//	return unquoted
-//}
-//
-//func (s *Snowflake) TableName(identifier string) string {
-//	_, unquoted := s.adaptSqlIdentifier(identifier)
-//	return unquoted
-//}

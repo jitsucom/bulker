@@ -8,11 +8,23 @@ import (
 	"github.com/jitsucom/bulker/base/locks"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
+	"github.com/jitsucom/bulker/types"
+	"regexp"
 	"sync"
 	"time"
 )
 
 const tableLockTimeout = time.Minute
+
+// IdentifierFunction adapts identifier name to format required by database e.g. masks or escapes special characters
+type IdentifierFunction func(identifier string) (adapted string, needQuotes bool)
+
+var (
+	// Generally unsupported characters in SQL identifiers: all except letters(any languages), underscore, numbers, space, dollar sign, hyphen
+	sqlIdentifierUnsupportedCharacters = regexp.MustCompile(`[^\p{L}_\d $-]`)
+	// SQL identifier that can be used without quotes: starts with latin letter or underscore, contains only lowercase latin letters, numbers and underscores
+	sqlUnquotedIdentifierPattern = regexp.MustCompile(`^[a-z_][0-9a-z_]*$`)
+)
 
 // TableHelper keeps tables schema state inmemory and update it according to incoming new data
 // consider that all tables are in one destination schema.
@@ -22,66 +34,85 @@ type TableHelper struct {
 
 	sqlAdapter          SQLAdapter
 	coordinationService coordination.Service
-	tables              map[string]*Table
+	tablesCache         map[string]*Table
 
-	pkFields        utils.Set[string]
-	timestampColumn string
+	maxColumns int
 
-	destinationType string
-	streamMode      bool
-	maxColumns      int
+	maxIdentifierLength int
+	identifierQuoteChar rune
+
+	tableNameFunc  IdentifierFunction
+	columnNameFunc IdentifierFunction
 }
 
 // NewTableHelper returns configured TableHelper instance
 // Note: columnTypesMapping must be not empty (or fields will be ignored)
-func NewTableHelper(sqlAdapter SQLAdapter, coordinationService coordination.Service, pkFields utils.Set[string],
-	timestampColumn string, maxColumns int) *TableHelper {
-	return &TableHelper{
+func NewTableHelper(sqlAdapter SQLAdapter, maxIdentifierLength int, identifierQuoteChar rune) TableHelper {
+	return TableHelper{
 		sqlAdapter:          sqlAdapter,
-		coordinationService: coordinationService,
-		tables:              map[string]*Table{},
+		coordinationService: coordination.DummyCoordinationService{},
+		tablesCache:         map[string]*Table{},
 
-		pkFields:        pkFields,
-		timestampColumn: timestampColumn,
+		maxColumns: 1000,
 
-		destinationType: sqlAdapter.Type(),
-		maxColumns:      maxColumns,
+		maxIdentifierLength: maxIdentifierLength,
+		identifierQuoteChar: identifierQuoteChar,
 	}
 }
 
-// MapTableSchema maps types.BatchHeader (JSON structure with json data types) into types.Table (structure with SQL types)
+// MapTableSchema maps types.TypesHeader (JSON structure with json data types) into types.Table (structure with SQL types)
 // applies column types mapping
-func (th *TableHelper) MapTableSchema(batchHeader *BatchHeader) *Table {
+// adjusts object properties names to column names
+func (th *TableHelper) MapTableSchema(batchHeader *TypesHeader, object types.Object, pkFields utils.Set[string], timestampColumn string) (*Table, types.Object) {
+	adaptedPKFields := utils.NewSet[string]()
+	for pkField := range pkFields {
+		adaptedPKFields.Put(th.ColumnName(pkField))
+	}
 	table := &Table{
-		Name:            th.sqlAdapter.TableName(batchHeader.TableName),
-		Columns:         Columns{},
-		Partition:       batchHeader.Partition,
-		PKFields:        th.pkFields,
-		TimestampColumn: th.timestampColumn,
+		Name:      th.sqlAdapter.TableName(batchHeader.TableName),
+		Columns:   Columns{},
+		Partition: batchHeader.Partition,
+		PKFields:  adaptedPKFields,
+	}
+	if timestampColumn != "" {
+		table.TimestampColumn = th.ColumnName(timestampColumn)
 	}
 
 	//pk fields from the configuration
-	if len(th.pkFields) > 0 {
+	if len(adaptedPKFields) > 0 {
 		table.PrimaryKeyName = BuildConstraintName(table.Name)
 	}
 
+	//need to adapt object properties to column names
+	needAdapt := false
 	for fieldName, field := range batchHeader.Fields {
+		colName := th.ColumnName(fieldName)
+		if !needAdapt && colName != fieldName {
+			needAdapt = true
+		}
 		suggestedSQLType, ok := field.GetSuggestedSQLType()
 		if ok {
-			table.Columns[fieldName] = suggestedSQLType
+			table.Columns[colName] = suggestedSQLType
 			continue
 		}
 
 		//map Jitsu type -> SQL type
 		sqlType, ok := th.sqlAdapter.GetSQLType(field.GetType())
 		if ok {
-			table.Columns[fieldName] = SQLColumn{DataType: field.GetType(), Type: sqlType, New: true}
+			table.Columns[colName] = SQLColumn{DataType: field.GetType(), Type: sqlType, New: true}
 		} else {
 			logging.SystemErrorf("Unknown column type %s mapping for %s", field.GetType(), th.sqlAdapter.Type())
 		}
 	}
-
-	return table
+	if needAdapt {
+		adaptedObject := make(types.Object, len(object))
+		for fieldName, field := range object {
+			adaptedObject[th.ColumnName(fieldName)] = field
+		}
+		return table, adaptedObject
+	} else {
+		return table, object
+	}
 }
 
 // EnsureTableWithCaching calls ensureTable with cacheTable = true
@@ -103,7 +134,7 @@ func (th *TableHelper) EnsureTableWithoutCaching(ctx context.Context, destinatio
 func (th *TableHelper) ensureTable(ctx context.Context, destinationID string, desiredSchema *Table, cacheTable bool) (actualSchema *Table, err error) {
 	defer func() {
 		if err != nil {
-			th.ClearCache(desiredSchema.Name)
+			th.clearCache(desiredSchema.Name)
 		}
 	}()
 
@@ -188,7 +219,7 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, destinationID str
 		dbSchema.PKFields = utils.Set[string]{}
 	}
 
-	th.UpdateCached(dbSchema.Name, dbSchema)
+	th.updateCached(dbSchema.Name, dbSchema)
 
 	return dbSchema, nil
 }
@@ -205,19 +236,19 @@ func (th *TableHelper) getCachedOrCreateTableSchema(ctx context.Context, destina
 		return nil, err
 	}
 
-	th.UpdateCached(dataSchema.Name, dbSchema)
+	th.updateCached(dataSchema.Name, dbSchema)
 
 	return dbSchema, nil
 }
 
-// RefreshTableSchema force get (or create) db table schema and update it in-memory
-func (th *TableHelper) RefreshTableSchema(ctx context.Context, destinationName string, dataSchema *Table) (*Table, error) {
+// refreshTableSchema force get (or create) db table schema and update it in-memory
+func (th *TableHelper) refreshTableSchema(ctx context.Context, destinationName string, dataSchema *Table) (*Table, error) {
 	dbTableSchema, err := th.getOrCreateWithLock(ctx, destinationName, dataSchema)
 	if err != nil {
 		return nil, err
 	}
 
-	th.UpdateCached(dataSchema.Name, dbTableSchema)
+	th.updateCached(dataSchema.Name, dbTableSchema)
 
 	return dbTableSchema, nil
 }
@@ -283,7 +314,7 @@ func (th *TableHelper) SetSQLAdapter(adapter SQLAdapter) {
 
 func (th *TableHelper) GetCached(tableName string) (*Table, bool) {
 	th.RLock()
-	dbSchema, ok := th.tables[tableName]
+	dbSchema, ok := th.tablesCache[tableName]
 	th.RUnlock()
 
 	if ok {
@@ -292,17 +323,68 @@ func (th *TableHelper) GetCached(tableName string) (*Table, bool) {
 	return nil, false
 }
 
-func (th *TableHelper) UpdateCached(tableName string, dbSchema *Table) {
+func (th *TableHelper) updateCached(tableName string, dbSchema *Table) {
 	th.Lock()
 	cloned := dbSchema.Clone()
 	cloned.Cached = true
-	th.tables[tableName] = cloned
+	th.tablesCache[tableName] = cloned
 	th.Unlock()
 }
 
-// ClearCache removes cached table schema for cache for provided table
-func (th *TableHelper) ClearCache(tableName string) {
+// clearCache removes cached table schema for cache for provided table
+func (th *TableHelper) clearCache(tableName string) {
 	th.Lock()
-	delete(th.tables, tableName)
+	delete(th.tablesCache, tableName)
 	th.Unlock()
+}
+
+// quotedColumnName adapts table name to sql identifier rules of database and quotes accordingly (if needed)
+func (th *TableHelper) quotedTableName(tableName string) string {
+	quoted, _ := th.adaptTableName(tableName)
+	return quoted
+}
+
+// quotedColumnName adapts column name to sql identifier rules of database and quotes accordingly (if needed)
+func (th *TableHelper) quotedColumnName(columnName string) string {
+	quoted, _ := th.adaptColumnName(columnName)
+	return quoted
+}
+
+func (th *TableHelper) adaptTableName(tableName string) (quotedIfNeeded string, unquoted string) {
+	return th.adaptSqlIdentifier(tableName, "table", th.tableNameFunc)
+}
+
+func (th *TableHelper) adaptColumnName(columnName string) (quotedIfNeeded string, unquoted string) {
+	return th.adaptSqlIdentifier(columnName, "column", th.columnNameFunc)
+}
+
+// adaptSqlIdentifier adapts the given identifier to basic rules derived from the SQL standard and injection protection:
+// - must only contain letters, numbers, underscores, hyphen, and spaces - all other characters are removed
+// - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
+func (th *TableHelper) adaptSqlIdentifier(identifier string, kind string, idFunc IdentifierFunction) (quotedIfNeeded string, unquoted string) {
+	useQuoting := th.identifierQuoteChar != rune(0)
+	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "")
+	if cleanIdentifier == "" {
+		cleanIdentifier = fmt.Sprintf("%s_%x", kind, utils.HashString(identifier))
+	}
+	result := utils.ShortenString(cleanIdentifier, th.maxIdentifierLength)
+	if idFunc != nil {
+		result, useQuoting = idFunc(result)
+	}
+
+	if useQuoting {
+		return fmt.Sprintf(`%c%s%c`, th.identifierQuoteChar, result, th.identifierQuoteChar), result
+	} else {
+		return result, result
+	}
+}
+
+func (th *TableHelper) TableName(tableName string) string {
+	_, unquoted := th.adaptTableName(tableName)
+	return unquoted
+}
+
+func (th *TableHelper) ColumnName(columnName string) string {
+	_, unquoted := th.adaptColumnName(columnName)
+	return unquoted
 }

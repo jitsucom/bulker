@@ -79,16 +79,15 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Port == 0 {
 		config.Port = 5439
 	}
-	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0, nil, false)
 
 	bulkerConfig.DestinationConfig = config.DataSourceConfig
 	postgres, err := NewPostgres(bulkerConfig)
 	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: config.S3OptionConfig}
 	r.batchFileFormat = implementations.CSV_GZIP
-	r.maxIdentifierLength = 127
 	r.temporaryTables = true
 	r._columnDDLFunc = redshiftColumnDDL
 	r.initTypes(redshiftTypes)
+	r.tableHelper = NewTableHelper(r, 127, '"')
 	//// Redshift is case insensitive by default
 	//r._columnNameFunc = strings.ToLower
 	//r._tableNameFunc = func(config *DataSourceConfig, tableName string) string { return tableName }
@@ -350,9 +349,8 @@ func (p *Redshift) createSortKey(ctx context.Context, table *Table) error {
 	}
 	quotedTableName := p.quotedTableName(table.Name)
 
-	//TODO: properly quote TimestampColumn name
 	statement := fmt.Sprintf(redshiftAlterSortKeyTemplate,
-		quotedTableName, table.TimestampColumn)
+		quotedTableName, p.quotedColumnName(table.TimestampColumn))
 
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.AlterTableError.Wrap(err, "failed to set sort key").
@@ -367,15 +365,16 @@ func (p *Redshift) createSortKey(ctx context.Context, table *Table) error {
 }
 
 // redshiftColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func redshiftColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
+func redshiftColumnDDL(quotedName, name string, table *Table) string {
 	var columnConstaints string
 	var columnAttributes string
 
+	column := table.Columns[name]
 	sqlType := column.GetDDLType()
 
-	if _, ok := pkFields[name]; ok {
+	if _, ok := table.PKFields[name]; ok {
 		columnConstaints = " not null " + getDefaultValueStatement(sqlType)
-		if len(pkFields) == 1 {
+		if len(table.PKFields) == 1 {
 			columnAttributes = " DISTKEY "
 		}
 	}

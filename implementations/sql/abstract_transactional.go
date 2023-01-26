@@ -88,7 +88,7 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 			return err
 		}
 		//set transactional adapter so all table modification will be performed inside transaction
-		ps.tableHelper.SetSQLAdapter(ps.tx)
+		ps.sqlAdapter.TableHelper().SetSQLAdapter(ps.tx)
 	}
 
 	return nil
@@ -292,7 +292,7 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 func (ps *AbstractTransactionalSQLStream) insert(ctx context.Context, targetTable *Table, processedObject types.Object) (err error) {
 	ps.adjustTables(ctx, targetTable, processedObject)
 	ps.updateRepresentationTable(ps.tmpTable)
-	ps.tmpTable, err = ps.tableHelper.EnsureTableWithoutCaching(ctx, ps.id, ps.tmpTable)
+	ps.tmpTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.id, ps.tmpTable)
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure table")
 	}
@@ -359,7 +359,7 @@ func (ps *AbstractTransactionalSQLStream) getPKValue(object types.Object) (strin
 	}
 	if l == 1 {
 		for col := range ps.pkColumns {
-			pkValue, ok := object[col]
+			pkValue, ok := object[ps.sqlAdapter.ColumnName(col)]
 			if !ok {
 				return "", fmt.Errorf("primary key [%s] is not found in the object", col)
 			}

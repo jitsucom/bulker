@@ -211,8 +211,8 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Engine != nil {
 		nullableFields = config.Engine.NullableFields
 	}
-	columnDDlFunc := func(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
-		return chColumnDDL(name, quotedName, column, pkFields, nullableFields)
+	columnDDlFunc := func(quotedName, name string, table *Table) string {
+		return chColumnDDL(quotedName, name, table, nullableFields)
 	}
 	var queryLogger *logging.QueryLogger
 	if bulkerConfig.LogLevel == bulker.Verbose {
@@ -220,13 +220,13 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, dbConnectFunction, clickhouseTypes, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr)
 	sqlAdapterBase.batchFileFormat = implementations.JSON
-	sqlAdapterBase.identifierQuoteChar = '`'
 
 	c := &ClickHouse{
 		SQLAdapterBase:        sqlAdapterBase,
 		tableStatementFactory: tableStatementFactory,
 		httpMode:              httpMode,
 	}
+	c.tableHelper = NewTableHelper(c, 63, '`')
 	return c, err
 }
 
@@ -338,11 +338,12 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 // New tables will have MergeTree() or ReplicatedMergeTree() engine depends on config.cluster empty or not
 func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 	if table.Temporary {
+		table := table.Clone()
+		table.PKFields = utils.NewSet[string]()
 		columns := table.SortedColumnNames()
 		columnsDDL := make([]string, len(columns))
 		for i, columnName := range columns {
-			column := table.Columns[columnName]
-			columnsDDL[i] = ch.columnDDL(columnName, column, nil)
+			columnsDDL[i] = ch.columnDDL(columnName, table)
 		}
 
 		query := fmt.Sprintf(createTableTemplate+" ENGINE = Memory", "", ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
@@ -359,8 +360,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 	columns := table.SortedColumnNames()
 	columnsDDL := make([]string, len(columns))
 	for i, columnName := range table.SortedColumnNames() {
-		column := table.Columns[columnName]
-		columnsDDL[i] = ch.columnDDL(columnName, column, table.PKFields)
+		columnsDDL[i] = ch.columnDDL(columnName, table)
 	}
 
 	statementStr := ch.tableStatementFactory.CreateTableStatement(ch.quotedLocalTableName(table.Name), ch.TableName(table.Name), strings.Join(columnsDDL, ","), table)
@@ -449,8 +449,7 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 	columns := patchSchema.SortedColumnNames()
 	addedColumnsDDL := make([]string, len(patchSchema.Columns))
 	for i, columnName := range columns {
-		column := patchSchema.Columns[columnName]
-		columnDDL := ch.columnDDL(columnName, column, patchSchema.PKFields)
+		columnDDL := ch.columnDDL(columnName, patchSchema)
 		addedColumnsDDL[i] = "ADD COLUMN " + columnDDL
 	}
 
@@ -796,7 +795,7 @@ func (ch *ClickHouse) createDistributedTableInTransaction(ctx context.Context, o
 	originTableName := originTable.Name
 	shardingKey := "rand()"
 	if len(originTable.PKFields) > 0 {
-		shardingKey = "halfMD5(" + strings.Join(originTable.PKFields.ToSlice(), ",") + ")"
+		shardingKey = "halfMD5(" + strings.Join(originTable.GetPKFields(), ",") + ")"
 	}
 	statement := fmt.Sprintf(chCreateDistributedTableTemplate,
 		ch.quotedTableName(originTable.Name), ch.getOnClusterClause(), ch.quotedLocalTableName(originTableName), ch.config.Cluster, ch.config.Database, ch.quotedLocalTableName(originTableName), shardingKey)
@@ -887,8 +886,9 @@ func convertType(value any, column SQLColumn) (any, error) {
 }
 
 // chColumnDDL returns column DDL (column name, mapped sql type)
-func chColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string], nullableFields []string) string {
+func chColumnDDL(quotedName, name string, table *Table, nullableFields []string) string {
 	//get sql type
+	column := table.Columns[name]
 	columnSQLType := column.GetDDLType()
 
 	//get nullable or plain

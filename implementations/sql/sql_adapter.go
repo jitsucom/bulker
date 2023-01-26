@@ -32,6 +32,7 @@ type SQLAdapter interface {
 	Ping(ctx context.Context) error
 	// InitDatabase setups required db objects like 'schema' or 'dataset' if they don't exist
 	InitDatabase(ctx context.Context) error
+	TableHelper() *TableHelper
 	GetTableSchema(ctx context.Context, tableName string) (*Table, error)
 	CreateTable(ctx context.Context, schemaToCreate *Table) error
 	CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) error
@@ -103,6 +104,11 @@ func (tx *TxSQLAdapter) InitDatabase(ctx context.Context) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.InitDatabase(ctx)
 }
+
+func (tx *TxSQLAdapter) TableHelper() *TableHelper {
+	return tx.sqlAdapter.TableHelper()
+}
+
 func (tx *TxSQLAdapter) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.GetTableSchema(ctx, tableName)

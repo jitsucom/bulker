@@ -84,6 +84,7 @@ type BigQuery struct {
 	client      *bigquery.Client
 	config      *implementations.GoogleConfig
 	queryLogger *logging.QueryLogger
+	tableHelper TableHelper
 }
 
 // NewBigquery return configured BigQuery bulker.Bulker instance
@@ -112,9 +113,13 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	return &BigQuery{
+	b := &BigQuery{
 		ServiceBase: objects.NewServiceBase(bulkerConfig.Id),
-		client:      client, config: config, queryLogger: queryLogger}, err
+		client:      client, config: config, queryLogger: queryLogger}
+	b.tableHelper = NewTableHelper(b, 1024, '`')
+	b.tableHelper.columnNameFunc = columnNameFunc
+	b.tableHelper.tableNameFunc = tableNameFunc
+	return b, err
 }
 
 func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -306,7 +311,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	}
 	var labels map[string]string
 	if len(table.PKFields) > 0 && table.PrimaryKeyName != "" {
-		labels = map[string]string{table.PrimaryKeyName: strings.Join(table.PKFields.ToSlice(), ",")}
+		labels = map[string]string{table.PrimaryKeyName: strings.Join(table.GetPKFields(), ",")}
 	}
 	tableMetaData := bigquery.TableMetadata{Name: tableName, Schema: bqSchema, Labels: labels}
 	if table.Partition.Field == "" && table.TimestampColumn != "" {
@@ -388,7 +393,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 
 	//patch primary keys - create new
 	if len(patchSchema.PKFields) > 0 && patchSchema.PrimaryKeyName != "" {
-		metadata.Labels = map[string]string{patchSchema.PrimaryKeyName: strings.Join(patchSchema.PKFields.ToSlice(), ",")}
+		metadata.Labels = map[string]string{patchSchema.PrimaryKeyName: strings.Join(patchSchema.GetPKFields(), ",")}
 	}
 	for _, columnName := range patchSchema.SortedColumnNames() {
 		column := patchSchema.Columns[columnName]
@@ -927,14 +932,17 @@ func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 }
 
 func (bq *BigQuery) fullTableName(tableName string) string {
-	quoted, _ := bq.adaptSqlIdentifier(tableName, 1024)
-	return bq.config.Project + "." + bq.config.Dataset + "." + quoted
+	return bq.config.Project + "." + bq.config.Dataset + "." + bq.tableHelper.quotedTableName(tableName)
 }
 
-func (bq *BigQuery) ColumnName(identifier string) string {
+func tableNameFunc(identifier string) (adapted string, needQuote bool) {
+	return identifier, !sqlUnquotedIdentifierPattern.MatchString(identifier)
+}
+
+func columnNameFunc(identifier string) (adapted string, needQuote bool) {
 	cleanIdentifier := bigqueryColumnUnsupportedCharacters.ReplaceAllString(identifier, "")
 	if cleanIdentifier == "" {
-		return fmt.Sprintf("column_%x", utils.HashString(identifier))
+		return fmt.Sprintf("column_%x", utils.HashString(identifier)), false
 	}
 	identifier = strings.ReplaceAll(identifier, " ", "_")
 	result := bigqueryColumnUnsupportedCharacters.ReplaceAllString(identifier, "")
@@ -946,30 +954,15 @@ func (bq *BigQuery) ColumnName(identifier string) string {
 			result = "_" + result
 		}
 	}
-	return utils.ShortenString(result, 300)
+	return utils.ShortenString(result, 300), false
 }
 
 func (bq *BigQuery) TableName(identifier string) string {
-	_, unquoted := bq.adaptSqlIdentifier(identifier, 1024)
-	return unquoted
+	return bq.tableHelper.TableName(identifier)
 }
 
-// adaptSqlIdentifier adapts the given identifier to basic rules derived from the SQL standard and injection protection:
-// - must only contain letters, numbers, underscores, hyphen, and spaces - all other characters are removed
-// - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
-func (bq *BigQuery) adaptSqlIdentifier(identifier string, maxIdentifierLength int) (quotedIfNeeded string, unquoted string) {
-	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "")
-	result := utils.ShortenString(cleanIdentifier, maxIdentifierLength)
-	if result == "" {
-		result = fmt.Sprintf("bulker_table_%x", utils.HashString(identifier))
-		return result, result
-	}
-	m := sqlUnquotedIdentifierPattern.MatchString(result)
-	if !m {
-		return fmt.Sprintf(`%c%s%c`, '`', result, '`'), result
-	} else {
-		return result, result
-	}
+func (bq *BigQuery) ColumnName(identifier string) string {
+	return bq.tableHelper.ColumnName(identifier)
 }
 
 func (bq *BigQuery) GetSQLType(dataType types.DataType) (string, bool) {
@@ -980,4 +973,8 @@ func (bq *BigQuery) GetSQLType(dataType types.DataType) (string, bool) {
 func (bq *BigQuery) GetDataType(sqlType string) (types.DataType, bool) {
 	v, ok := bigqueryReverseTypeMapping[sqlType]
 	return v, ok
+}
+
+func (bq *BigQuery) TableHelper() *TableHelper {
+	return &bq.tableHelper
 }

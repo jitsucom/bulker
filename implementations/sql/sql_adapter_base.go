@@ -8,10 +8,8 @@ import (
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/timestamp"
-	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -35,14 +33,8 @@ const (
 )
 
 var (
-	sqlIdentifierUnsupportedCharacters = regexp.MustCompile(`[^\p{L}_\d $-]`)
-	sqlUnquotedIdentifierPattern       = regexp.MustCompile(`^[a-z_][0-9a-z_]*$`)
-
-	insertQueryTemplate, _                              = template.New("insertQuery").Parse(insertQuery)
-	insertFromSelectQueryTemplate, _                    = template.New("insertFromSelectQuery").Parse(insertFromSelectQuery)
-	originalColumnName               ColumnNameFunction = func(col string) string {
-		return col
-	}
+	insertQueryTemplate, _           = template.New("insertQuery").Parse(insertQuery)
+	insertFromSelectQueryTemplate, _ = template.New("insertFromSelectQuery").Parse(insertFromSelectQuery)
 
 	unmappedValue ValueMappingFunction = func(val any, valPresent bool, column SQLColumn) any {
 		return val
@@ -52,17 +44,11 @@ var (
 // DbConnectFunction function is used to connect to database
 type DbConnectFunction[T any] func(config *T) (*sql.DB, error)
 
-// ColumnNameFunction adapts column name to format required by database e.g. masks or escapes special characters
-type ColumnNameFunction func(columnName string) string
-
 // ColumnDDLFunction generate column DDL for CREATE TABLE statement based on type (SQLColumn) and whether it is used for PK
-type ColumnDDLFunction func(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string
+type ColumnDDLFunction func(quotedName, name string, table *Table) string
 
 // ValueMappingFunction maps object value to database value. For cases such default value substitution for null or missing values
 type ValueMappingFunction func(value any, valuePresent bool, column SQLColumn) any
-
-// TableNameFunction builds full qualified table name from short name and config. e.g. schema_name.table_name
-type TableNameFunction[T any] func(config *T, tableName string) string
 
 // TypeCastFunction wraps parameter(or placeholder) to a type cast expression if it is necessary (e.g. on types overrides)
 type TypeCastFunction func(placeholder string, column SQLColumn) string
@@ -82,18 +68,13 @@ type SQLAdapterBase[T any] struct {
 	typesMapping        map[types.DataType]string
 	reverseTypesMapping map[string]types.DataType
 
-	maxIdentifierLength          int
-	identifierQuoteChar          rune
-	sqlUnquotedIdentifierPattern *regexp.Regexp
-	toUpper                      bool
-	dbConnectFunction            DbConnectFunction[T]
-	parameterPlaceholder         ParameterPlaceholder
-	typecastFunc                 TypeCastFunction
-	_tableNameFunc               TableNameFunction[T]
-	_columnNameFunc              ColumnNameFunction
-	_columnDDLFunc               ColumnDDLFunction
-	valueMappingFunction         ValueMappingFunction
-	checkErrFunc                 ErrorAdapter
+	dbConnectFunction    DbConnectFunction[T]
+	parameterPlaceholder ParameterPlaceholder
+	typecastFunc         TypeCastFunction
+	valueMappingFunction ValueMappingFunction
+	_columnDDLFunc       ColumnDDLFunction
+	tableHelper          TableHelper
+	checkErrFunc         ErrorAdapter
 }
 
 func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], dataTypes map[types.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) (SQLAdapterBase[T], error) {
@@ -105,12 +86,9 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunc
 		queryLogger:          queryLogger,
 		parameterPlaceholder: parameterPlaceholder,
 		typecastFunc:         typecastFunc,
-		_columnNameFunc:      originalColumnName,
-		_columnDDLFunc:       columnDDLFunc,
 		valueMappingFunction: valueMappingFunction,
+		_columnDDLFunc:       columnDDLFunc,
 		checkErrFunc:         checkErrFunc,
-		maxIdentifierLength:  63,
-		identifierQuoteChar:  '"',
 	}
 	s.batchFileFormat = implementations.JSON
 	var err error
@@ -196,7 +174,7 @@ func (b *SQLAdapterBase[T]) Select(ctx context.Context, tableName string, whenCo
 	return b.selectFrom(ctx, selectQueryTemplate, tableName, "*", whenConditions, orderBy)
 }
 func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
-	quotedTableName := b.quotedTableName(tableName)
+	quotedTableName := b.tableHelper.quotedTableName(tableName)
 	whenCondition, values := b.ToWhenConditions(whenConditions, b.parameterPlaceholder, 0)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
@@ -500,12 +478,10 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Table) error {
 	quotedTableName := b.quotedTableName(schemaToCreate.Name)
 
-	pkFields := schemaToCreate.GetPKFieldsSet()
 	columns := schemaToCreate.SortedColumnNames()
 	columnsDDL := make([]string, len(columns))
 	for i, columnName := range columns {
-		column := schemaToCreate.Columns[columnName]
-		columnsDDL[i] = b.columnDDL(columnName, column, pkFields)
+		columnsDDL[i] = b.columnDDL(columnName, schemaToCreate)
 	}
 	temporary := ""
 	if b.temporaryTables && schemaToCreate.Temporary {
@@ -535,13 +511,11 @@ func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Tab
 func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Table) error {
 	quotedTableName := b.quotedTableName(patchTable.Name)
 
-	pkFields := patchTable.GetPKFieldsSet()
 	columns := patchTable.SortedColumnNames()
 
 	//patch columns
 	for _, columnName := range columns {
-		column := patchTable.Columns[columnName]
-		columnDDL := b.columnDDL(columnName, column, pkFields)
+		columnDDL := b.columnDDL(columnName, patchTable)
 		query := fmt.Sprintf(addColumnTemplate, quotedTableName, columnDDL)
 
 		if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
@@ -650,63 +624,31 @@ func (b *SQLAdapterBase[T]) ReplaceTable(ctx context.Context, targetTableName st
 	return
 }
 
+func (b *SQLAdapterBase[T]) TableHelper() *TableHelper {
+	return &b.tableHelper
+}
+
+func (b *SQLAdapterBase[T]) columnDDL(name string, table *Table) string {
+	quoted, unquoted := b.tableHelper.adaptColumnName(name)
+	return b._columnDDLFunc(quoted, unquoted, table)
+}
+
 // quotedColumnName adapts table name to sql identifier rules of database and quotes accordingly (if needed)
 func (b *SQLAdapterBase[T]) quotedTableName(tableName string) string {
-	quoted, _ := b.adaptSqlIdentifier(tableName)
-	if b._tableNameFunc != nil {
-		return b._tableNameFunc(b.config, quoted)
-	} else {
-		return quoted
-	}
+	return b.tableHelper.quotedTableName(tableName)
 }
 
 // quotedColumnName adapts column name to sql identifier rules of database and quotes accordingly (if needed)
 func (b *SQLAdapterBase[T]) quotedColumnName(columnName string) string {
-	quoted, _ := b.adaptSqlIdentifier(columnName)
-	return b._columnNameFunc(quoted)
-}
-
-func (b *SQLAdapterBase[T]) columnDDL(name string, column SQLColumn, pkFields utils.Set[string]) string {
-	quoted, unquoted := b.adaptSqlIdentifier(name)
-	return b._columnDDLFunc(unquoted, quoted, column, pkFields)
-}
-
-// adaptSqlIdentifier adapts the given identifier to basic rules derived from the SQL standard and injection protection:
-// - must only contain letters, numbers, underscores, hyphen, and spaces - all other characters are removed
-// - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
-func (b *SQLAdapterBase[T]) adaptSqlIdentifier(identifier string) (quotedIfNeeded string, unquoted string) {
-	return adaptSqlIdentifier(identifier, b.maxIdentifierLength, b.identifierQuoteChar, b.sqlUnquotedIdentifierPattern, b.toUpper)
-}
-
-func adaptSqlIdentifier(identifier string, maxIdentifierLength int, identifierQuoteChar rune, sqlUnquotedIdentifierPattern *regexp.Regexp, toUpper bool) (quotedIfNeeded string, unquoted string) {
-	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "")
-	result := utils.ShortenString(cleanIdentifier, maxIdentifierLength)
-	if result == "" {
-		result = fmt.Sprintf("column_%x", utils.HashString(identifier))
-		if toUpper {
-			result = strings.ToUpper(result)
-		}
-		return result, result
-	}
-	if identifierQuoteChar != rune(0) &&
-		(sqlUnquotedIdentifierPattern == nil || !sqlUnquotedIdentifierPattern.MatchString(result)) {
-		return fmt.Sprintf(`%c%s%c`, identifierQuoteChar, result, identifierQuoteChar), result
-	} else {
-		if toUpper {
-			result = strings.ToUpper(result)
-		}
-		return result, result
-	}
+	return b.tableHelper.quotedColumnName(columnName)
 }
 
 func (b *SQLAdapterBase[T]) ColumnName(identifier string) string {
-	_, unquoted := b.adaptSqlIdentifier(identifier)
-	return unquoted
+	return b.tableHelper.ColumnName(identifier)
 }
 
 func (b *SQLAdapterBase[T]) TableName(identifier string) string {
-	_, unquoted := b.adaptSqlIdentifier(identifier)
-	return unquoted
+	return b.tableHelper.TableName(identifier)
 }
 
 // ToWhenConditions generates WHEN clause for SQL query based on provided WhenConditions

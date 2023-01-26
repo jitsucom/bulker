@@ -78,12 +78,20 @@ func (t *Table) Clone() *Table {
 
 // GetPKFields returns primary keys list
 func (t *Table) GetPKFields() []string {
-	return t.PKFields.ToSlice()
+	if t.PKFields != nil {
+		return t.PKFields.ToSlice()
+	} else {
+		return []string{}
+	}
 }
 
 // GetPKFieldsSet returns primary keys set
 func (t *Table) GetPKFieldsSet() utils.Set[string] {
-	return t.PKFields
+	if t.PKFields != nil {
+		return t.PKFields
+	} else {
+		return utils.Set[string]{}
+	}
 }
 
 // Diff calculates diff between current schema and another one.

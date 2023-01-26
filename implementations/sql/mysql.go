@@ -133,12 +133,12 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		SQLAdapterBase: sqlAdapterBase,
 		infileEnabled:  infileEnabled,
 	}
-	m.identifierQuoteChar = '`'
 	if infileEnabled {
 		m.batchFileFormat = implementations.CSV
 	} else {
 		m.batchFileFormat = implementations.JSON
 	}
+	m.tableHelper = NewTableHelper(m, 63, '`')
 	return m, err
 }
 
@@ -465,12 +465,13 @@ func mySQLDriverConnectionString(config *DataSourceConfig) string {
 }
 
 // mySQLColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func mySQLColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
+func mySQLColumnDDL(quotedName, name string, table *Table) string {
+	column := table.Columns[name]
 	sqlType := column.GetDDLType()
 
 	//map special types for primary keys (text -> varchar)
 	//because old versions of MYSQL requires non null and default value on TEXT types
-	if _, ok := pkFields[name]; ok {
+	if _, ok := table.PKFields[name]; ok {
 		if typeForPKField, ok := mySQLPrimaryKeyTypesMapping[sqlType]; ok {
 			sqlType = typeForPKField
 		}
@@ -510,9 +511,8 @@ func (m *MySQL) createIndex(ctx context.Context, table *Table) error {
 	}
 	quotedTableName := m.quotedTableName(table.Name)
 
-	//TODO: properly quote TimestampColumn name
 	statement := fmt.Sprintf(mySQLIndexTemplate, "bulker_timestamp_index",
-		quotedTableName, table.TimestampColumn)
+		quotedTableName, m.quotedColumnName(table.TimestampColumn))
 
 	if _, err := m.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.AlterTableError.Wrap(err, "failed to set sort key").

@@ -12,7 +12,7 @@ const SqlTypePrefix = "__sql_type"
 // ProcessEvents processes events objects without applying mapping rules
 // returns table headerm array of processed objects
 // or error if at least 1 was occurred
-func ProcessEvents(tableName string, event types.Object, sqlAdapter SQLAdapter, customTypes SQLTypes) (*BatchHeader, types.Object, error) {
+func ProcessEvents(tableName string, event types.Object, customTypes SQLTypes) (*TypesHeader, types.Object, error) {
 	sqlTypesHints, err := extractSQLTypesHints(event)
 	if err != nil {
 		return nil, nil, err
@@ -24,21 +24,13 @@ func ProcessEvents(tableName string, event types.Object, sqlAdapter SQLAdapter, 
 	if err != nil {
 		return nil, nil, err
 	}
-	sqlAdaptedObject := make(types.Object)
-	for k, v := range flatObject {
-		sqlAdaptedObject[sqlAdapter.ColumnName(k)] = v
-	}
-	adaptedSQlTypesHints := make(SQLTypes)
-	for k, v := range sqlTypesHints {
-		adaptedSQlTypesHints[sqlAdapter.ColumnName(k)] = v
-	}
-	fields, err := DefaultTypeResolver.Resolve(sqlAdaptedObject, adaptedSQlTypesHints)
+	fields, err := DefaultTypeResolver.Resolve(flatObject, sqlTypesHints)
 	if err != nil {
 		return nil, nil, err
 	}
-	bh := &BatchHeader{TableName: sqlAdapter.TableName(tableName), Fields: fields}
+	bh := &TypesHeader{TableName: tableName, Fields: fields}
 
-	return foldLongFields(bh, sqlAdaptedObject)
+	return bh, flatObject, nil
 }
 
 func extractSQLTypesHints(object map[string]any) (SQLTypes, error) {
@@ -79,73 +71,74 @@ func _extractSQLTypesHints(key string, object map[string]any, result SQLTypes) e
 	return nil
 }
 
-// foldLongFields replace all column names with truncated values if they exceed the limit
-// uses cutName under the hood
-func foldLongFields(header *BatchHeader, object types.Object) (*BatchHeader, types.Object, error) {
-	//TODO: Get maxColumnNameLen from storage config
-	maxColumnNameLen := 0
-
-	if maxColumnNameLen <= 0 {
-		return header, object, nil
-	}
-
-	changes := map[string]string{}
-	for name := range header.Fields {
-		if len(name) > maxColumnNameLen {
-			newName := cutName(name, maxColumnNameLen)
-			if name != newName {
-				changes[name] = newName
-			}
-		}
-	}
-
-	for oldName, newName := range changes {
-		field, _ := header.Fields[oldName]
-		delete(header.Fields, oldName)
-		header.Fields[newName] = field
-
-		if value, ok := object[oldName]; ok {
-			delete(object, oldName)
-			object[newName] = value
-		}
-	}
-
-	return header, object, nil
-}
-
-// cutName converts input name that exceeds maxLen to lower length string by cutting parts between '_' to 2 symbols.
-// if name len is still greater than returns maxLen symbols from the end of the name
-func cutName(name string, maxLen int) string {
-	if len(name) <= maxLen {
-		return name
-	}
-
-	//just cut from the beginning
-	if !strings.Contains(name, "_") {
-		return name[len(name)-maxLen:]
-	}
-
-	var replaced bool
-	replace := ""
-	for _, part := range strings.Split(name, "_") {
-		if replace != "" {
-			replace += "_"
-		}
-
-		if len(part) > 2 {
-			newPart := part[:2]
-			name = strings.ReplaceAll(name, replace+part, replace+newPart)
-			replaced = true
-			break
-		} else {
-			replace += part
-		}
-	}
-
-	if !replaced {
-		//case when ab_ac_ad and maxLen = 6
-		return name[len(name)-maxLen:]
-	}
-
-	return cutName(name, maxLen)
-}
+//
+//// foldLongFields replace all column names with truncated values if they exceed the limit
+//// uses cutName under the hood
+//func foldLongFields(header *TypesHeader, object types.Object) (*TypesHeader, types.Object, error) {
+//	//TODO: Get maxColumnNameLen from storage config
+//	maxColumnNameLen := 0
+//
+//	if maxColumnNameLen <= 0 {
+//		return header, object, nil
+//	}
+//
+//	changes := map[string]string{}
+//	for name := range header.Fields {
+//		if len(name) > maxColumnNameLen {
+//			newName := cutName(name, maxColumnNameLen)
+//			if name != newName {
+//				changes[name] = newName
+//			}
+//		}
+//	}
+//
+//	for oldName, newName := range changes {
+//		field, _ := header.Fields[oldName]
+//		delete(header.Fields, oldName)
+//		header.Fields[newName] = field
+//
+//		if value, ok := object[oldName]; ok {
+//			delete(object, oldName)
+//			object[newName] = value
+//		}
+//	}
+//
+//	return header, object, nil
+//}
+//
+//// cutName converts input name that exceeds maxLen to lower length string by cutting parts between '_' to 2 symbols.
+//// if name len is still greater than returns maxLen symbols from the end of the name
+//func cutName(name string, maxLen int) string {
+//	if len(name) <= maxLen {
+//		return name
+//	}
+//
+//	//just cut from the beginning
+//	if !strings.Contains(name, "_") {
+//		return name[len(name)-maxLen:]
+//	}
+//
+//	var replaced bool
+//	replace := ""
+//	for _, part := range strings.Split(name, "_") {
+//		if replace != "" {
+//			replace += "_"
+//		}
+//
+//		if len(part) > 2 {
+//			newPart := part[:2]
+//			name = strings.ReplaceAll(name, replace+part, replace+newPart)
+//			replaced = true
+//			break
+//		} else {
+//			replace += part
+//		}
+//	}
+//
+//	if !replaced {
+//		//case when ab_ac_ad and maxLen = 6
+//		return name[len(name)-maxLen:]
+//	}
+//
+//	return cutName(name, maxLen)
+//}

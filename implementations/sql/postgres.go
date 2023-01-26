@@ -87,7 +87,6 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
-	_, config.Schema = adaptSqlIdentifier(config.Schema, 63, 0, nil, false)
 
 	if config.Parameters == nil {
 		config.Parameters = map[string]string{}
@@ -141,6 +140,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)
 	p := &Postgres{sqlAdapterBase, dbConnectFunction}
+	p.tableHelper = NewTableHelper(p, 63, '"')
 	return p, err
 }
 
@@ -351,12 +351,13 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 }
 
 // pgColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func pgColumnDDL(name, quotedName string, column SQLColumn, pkFields utils.Set[string]) string {
+func pgColumnDDL(quotedName, name string, table *Table) string {
 	var notNullClause string
+	column := table.Columns[name]
 	sqlType := column.GetDDLType()
 
 	//not null
-	if _, ok := pkFields[name]; ok {
+	if _, ok := table.PKFields[name]; ok {
 		notNullClause = " not null " + getDefaultValueStatement(sqlType)
 	}
 
@@ -450,9 +451,8 @@ func (p *Postgres) createIndex(ctx context.Context, table *Table) error {
 	}
 	quotedTableName := p.quotedTableName(table.Name)
 
-	//TODO: properly quote TimestampColumn name
 	statement := fmt.Sprintf(pgCreateIndexTemplate,
-		quotedTableName, table.TimestampColumn)
+		quotedTableName, p.quotedColumnName(table.TimestampColumn))
 
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.AlterTableError.Wrap(err, "failed to set sort key").
