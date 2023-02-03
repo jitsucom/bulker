@@ -255,17 +255,17 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		payload, err := json.Marshal(messageCopy)
 		r.Debugf("[ingest] Message ID: %s Producing to: %s", messageId, destination.ConnectionId)
 		if err != nil {
-			metrics.IngestedMessages(destination.ConnectionId, "error", "message marshal error")
+			metrics.IngestedMessages(destination.ConnectionId, "error", "message marshal error").Inc()
 			rError = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err, logFormat, messageId, domain)
 			continue
 		}
 		err = r.producer.ProduceAsync(r.config.KafkaDestinationsTopicName, payload)
 		if err != nil {
-			metrics.IngestedMessages(destination.ConnectionId, "error", "producer error")
+			metrics.IngestedMessages(destination.ConnectionId, "error", "producer error").Inc()
 			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, logFormat, messageId, domain)
 			continue
 		}
-		metrics.IngestedMessages(destination.ConnectionId, "success", "")
+		metrics.IngestedMessages(destination.ConnectionId, "success", "").Inc()
 	}
 	if len(stream.SynchronousDestinations) == 0 {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -275,7 +275,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	tags := make(map[string]TagDestinationConfig, len(stream.SynchronousDestinations))
 	for _, destination := range stream.SynchronousDestinations {
 		tags[destination.Id] = destination.TagDestinationConfig
-		metrics.IngestedMessages(destination.ConnectionId, "success", "")
+		metrics.IngestedMessages(destination.ConnectionId, "success", "").Inc()
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "tags": tags})
 }
