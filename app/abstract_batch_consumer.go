@@ -48,13 +48,14 @@ type AbstractBatchConsumer struct {
 	mode            string
 	tableName       string
 	waitForMessages time.Duration
-	closed          chan struct{}
+
+	closed chan struct{}
 
 	//AbstractBatchConsumer marked as no longer needed. We cannot close it immediately because it can be in the middle of processing batch
 	retired atomic.Bool
-	//idle AbstractBatchConsumer that is not running any batch jobs. It can be closed immediately. retired idle consumer automatically closes itself
+	//idle AbstractBatchConsumer that is not running any batch jobs. retired idle consumer automatically closes itself
 	idle atomic.Bool
-
+	//consumer can be paused between batches(idle) and also can be paused during loading batch to destination(not idle)
 	paused        atomic.Bool
 	resumeChannel chan struct{}
 
@@ -207,7 +208,11 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 			if counters.processed > 0 {
 				bc.Infof("Successfully %s", counters)
 			} else {
-				bc.Infof("No messages were processed: %s", counters)
+				countersString := counters.String()
+				if countersString != "" {
+					countersString = ": " + countersString
+				}
+				bc.Infof("No messages were processed%s", counters)
 			}
 		}
 	}()

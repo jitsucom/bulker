@@ -174,6 +174,13 @@ func InitAppConfig() (*AppConfig, error) {
 	if appConfig.LogFormat == "json" {
 		logging.SetJsonFormatter()
 	}
+	if strings.HasPrefix(appConfig.InstanceId, "env://") {
+		env := appConfig.InstanceId[len("env://"):]
+		appConfig.InstanceId = os.Getenv(env)
+		if appConfig.InstanceId != "" {
+			logging.Infof("Loaded instance id from env %s: %s", env, appConfig.InstanceId)
+		}
+	}
 	if appConfig.InstanceId == "" {
 		instId, _ := os.ReadFile(instanceIdFilePath)
 		if len(instId) > 0 {
@@ -181,16 +188,13 @@ func InitAppConfig() (*AppConfig, error) {
 			logging.Infof("Loaded instance id from file: %s", appConfig.InstanceId)
 		} else {
 			appConfig.InstanceId = uuid.New()
+			logging.Infof("Generated instance id: %s", appConfig.InstanceId)
 			_ = os.MkdirAll(filepath.Dir(instanceIdFilePath), 0755)
 			err = os.WriteFile(instanceIdFilePath, []byte(appConfig.InstanceId), 0644)
 			if err != nil {
 				logging.Errorf("error persisting instance id file: %s", err)
 			}
 		}
-	} else if strings.HasPrefix(appConfig.InstanceId, "env://") {
-		env := appConfig.InstanceId[len("env://"):]
-		appConfig.InstanceId = os.Getenv(env)
-		logging.Infof("Loading instance id from env %s: %s", env, appConfig.InstanceId)
 	}
 	appConfig.GlobalHashSecrets = strings.Split(appConfig.GlobalHashSecret, ",")
 	return &appConfig, nil

@@ -18,14 +18,24 @@ var (
 		return ingestHandlerRequests.WithLabelValues(slug, status, errorType)
 	}
 
+	ingestedMessages = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "ingest",
+		Name:      "messages",
+		Help:      "Messages ingested by destination Id",
+	}, []string{"destinationId", "status", "errorType"})
+	IngestedMessages = func(destinationId, status, errorType string) prometheus.Counter {
+		return ingestedMessages.WithLabelValues(destinationId, status, errorType)
+	}
+
 	eventsHandlerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "handler",
 		Name:      "events",
 		Help:      "Events handler errors by destination Id",
-	}, []string{"destinationId", "tableName", "status", "errorType"})
-	EventsHandlerRequests = func(destinationId, tableName, status, errorType string) prometheus.Counter {
-		return eventsHandlerRequests.WithLabelValues(destinationId, tableName, status, errorType)
+	}, []string{"destinationId", "mode", "tableName", "status", "errorType"})
+	EventsHandlerRequests = func(destinationId, mode, tableName, status, errorType string) prometheus.Counter {
+		return eventsHandlerRequests.WithLabelValues(destinationId, mode, tableName, status, errorType)
 	}
 
 	topicManagerCreate = promauto.NewCounterVec(prometheus.CounterOpts{

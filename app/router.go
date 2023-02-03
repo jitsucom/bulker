@@ -102,21 +102,24 @@ func (r *Router) GetEngine() *gin.Engine {
 func (r *Router) EventsHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
+	mode := ""
 	var rError RouterError
 	defer func() {
 		if rError.Error != nil {
-			metrics.EventsHandlerRequests(destinationId, tableName, "error", rError.ErrorType).Inc()
+			metrics.EventsHandlerRequests(destinationId, mode, tableName, "error", rError.ErrorType).Inc()
 		} else {
-			metrics.EventsHandlerRequests(destinationId, tableName, "success", "").Inc()
+			metrics.EventsHandlerRequests(destinationId, mode, tableName, "success", "").Inc()
 		}
 	}()
-	if tableName == "" {
-		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), "")
-		return
-	}
+
 	destination := r.repository.GetDestination(destinationId)
 	if destination == nil {
 		rError = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId), "")
+		return
+	}
+	mode = string(destination.Mode())
+	if tableName == "" {
+		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), "")
 		return
 	}
 	topicId, err := destination.TopicId(tableName)
@@ -237,7 +240,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	streamId = stream.Stream.Id
-	if len(stream.AsynchronousDestinations) == 0 {
+	if len(stream.AsynchronousDestinations) == 0 && len(stream.SynchronousDestinations) == 0 {
 		c.JSON(http.StatusNoContent, gin.H{"message": "no destinations found for stream"})
 		return
 	}
@@ -252,14 +255,17 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		payload, err := json.Marshal(messageCopy)
 		r.Debugf("[ingest] Message ID: %s Producing to: %s", messageId, destination.ConnectionId)
 		if err != nil {
+			metrics.IngestedMessages(destination.ConnectionId, "error", "message marshal error")
 			rError = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err, logFormat, messageId, domain)
-			return
+			continue
 		}
 		err = r.producer.ProduceAsync(r.config.KafkaDestinationsTopicName, payload)
 		if err != nil {
+			metrics.IngestedMessages(destination.ConnectionId, "error", "producer error")
 			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, logFormat, messageId, domain)
-			return
+			continue
 		}
+		metrics.IngestedMessages(destination.ConnectionId, "success", "")
 	}
 	if len(stream.SynchronousDestinations) == 0 {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -269,6 +275,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	tags := make(map[string]TagDestinationConfig, len(stream.SynchronousDestinations))
 	for _, destination := range stream.SynchronousDestinations {
 		tags[destination.Id] = destination.TagDestinationConfig
+		metrics.IngestedMessages(destination.ConnectionId, "success", "")
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "tags": tags})
 }
