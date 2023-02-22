@@ -52,6 +52,13 @@ func MapNVL[K comparable, V any](mp map[K]V, key K, defaultValue V) V {
 	return defaultValue
 }
 
+func MapNVLFunc[K comparable, V any](mp map[K]V, key K, defaultFunc func() V) V {
+	if value, ok := mp[key]; ok {
+		return value
+	}
+	return defaultFunc()
+}
+
 // MapNVLKeys returns value by first key that exists or empty value of V type if no keys exist
 func MapNVLKeys[K comparable, V any](mp map[K]V, keys ...K) V {
 	for _, key := range keys {

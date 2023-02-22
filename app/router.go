@@ -143,7 +143,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, "")
 		return
 	}
-	err = r.producer.ProduceAsync(topicId, body)
+	err = r.producer.ProduceAsync(topicId, uuid.New(), body)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, "")
 		return
@@ -259,7 +259,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			rError = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err, logFormat, messageId, domain)
 			continue
 		}
-		err = r.producer.ProduceAsync(r.config.KafkaDestinationsTopicName, payload)
+		err = r.producer.ProduceAsync(r.config.KafkaDestinationsTopicName, uuid.New(), payload)
 		if err != nil {
 			metrics.IngestedMessages(destination.ConnectionId, "error", "producer error").Inc()
 			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, logFormat, messageId, domain)
@@ -292,7 +292,7 @@ func (r *Router) FailedHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tableName query parameter is required"})
 		return
 	}
-	topicId, _ := MakeTopicId(destinationId, status, tableName, false)
+	topicId, _ := MakeTopicId(destinationId, status, allTablesToken, false)
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"auto.offset.reset":             "earliest",
 		"group.id":                      uuid.New(),
@@ -395,6 +395,7 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 	start := c.Query("start")
 	end := c.Query("end")
 	limit := c.Query("limit")
+	ndjson := c.Query("ndjson")
 
 	var err error
 	eventsLogFilter := &EventsLogFilter{}
@@ -425,14 +426,18 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get events log: " + err.Error()})
 		return
 	}
-	c.Header("Content-Type", "application/x-ndjson")
-	for _, record := range records {
-		bytes, err := jsoniter.Marshal(record)
-		if err != nil {
-			bytes = []byte(fmt.Sprintf(`{"EVENTS_LOG_ERROR": "Failed to marshal event log record: %s", "OBJECT": "%+v"}`, err.Error(), record))
+	if ok, _ := strconv.ParseBool(ndjson); ok {
+		c.Header("Content-Type", "application/x-ndjson")
+		for _, record := range records {
+			bytes, err := jsoniter.Marshal(record)
+			if err != nil {
+				bytes = []byte(fmt.Sprintf(`{"EVENTS_LOG_ERROR": "Failed to marshal event log record: %s", "OBJECT": "%+v"}`, err.Error(), record))
+			}
+			_, _ = c.Writer.Write(bytes)
+			_, _ = c.Writer.Write([]byte("\n"))
 		}
-		_, _ = c.Writer.Write(bytes)
-		_, _ = c.Writer.Write([]byte("\n"))
+	} else {
+		c.JSON(http.StatusOK, records)
 	}
 }
 

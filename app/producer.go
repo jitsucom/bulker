@@ -128,22 +128,21 @@ func (p *Producer) ProduceSync(topic string, events ...kafka.Message) error {
 
 // ProduceAsync TODO: transactional delivery?
 // produces messages to kafka
-func (p *Producer) ProduceAsync(topic string, events ...[]byte) error {
+func (p *Producer) ProduceAsync(topic string, messageId string, event []byte) error {
 	if p.isClosed() {
 		return p.NewError("producer is closed")
 	}
 	errors := multierror.Error{}
-	for _, event := range events {
-		err := p.producer.Produce(&kafka.Message{
-			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-			Value:          event,
-		}, nil)
-		if err != nil {
-			metrics.ProducerMessages(ProducerMessageLabels(topic, "error", metrics.KafkaErrorCode(err))).Inc()
-			errors.Errors = append(errors.Errors, err)
-		} else {
-			metrics.ProducerMessages(ProducerMessageLabels(topic, "produced", "")).Inc()
-		}
+	err := p.producer.Produce(&kafka.Message{
+		Key:            []byte(messageId),
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+		Value:          event,
+	}, nil)
+	if err != nil {
+		metrics.ProducerMessages(ProducerMessageLabels(topic, "error", metrics.KafkaErrorCode(err))).Inc()
+		errors.Errors = append(errors.Errors, err)
+	} else {
+		metrics.ProducerMessages(ProducerMessageLabels(topic, "produced", "")).Inc()
 	}
 	return errors.ErrorOrNil()
 }

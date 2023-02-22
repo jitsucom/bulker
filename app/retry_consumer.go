@@ -92,7 +92,7 @@ func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchSize, r
 		if retries >= rc.config.MessagesRetryCount {
 			singleCount.deadLettered++
 			//no attempts left - send to dead-letter topic
-			topic, _ = MakeTopicId(rc.destinationId, deadTopicMode, rc.tableName, false)
+			topic, _ = MakeTopicId(rc.destinationId, deadTopicMode, allTablesToken, false)
 		} else if !rc.isTimeToRetry(message) {
 			singleCount.notReadyReadded++
 			// retry time is not yet come. requeueing message
@@ -105,6 +105,7 @@ func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchSize, r
 		headers = append(headers, kafka.Header{Key: originalTopicHeader, Value: []byte(originalTopic)})
 		headers = append(headers, kafka.Header{Key: retriesCountHeader, Value: []byte(strconv.Itoa(retries))})
 		err = rc.producer.Produce(&kafka.Message{
+			Key:            message.Key,
 			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 			Headers:        headers,
 			Value:          message.Value,

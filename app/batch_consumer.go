@@ -204,7 +204,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		}
 		counters.consumed++
 		deadLettered := false
-		failedTopic, _ := MakeTopicId(bc.destinationId, retryTopicMode, bc.tableName, false)
+		failedTopic, _ := MakeTopicId(bc.destinationId, retryTopicMode, allTablesToken, false)
 		retries, err := GetKafkaIntHeader(message, retriesCountHeader)
 		if err != nil {
 			bc.Errorf("failed to read retry header: %w", err)
@@ -212,9 +212,10 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		if retries >= bc.config.MessagesRetryCount {
 			//no attempts left - send to dead-letter topic
 			deadLettered = true
-			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, bc.tableName, false)
+			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, false)
 		}
 		err = bc.producer.Produce(&kafka.Message{
+			Key:            message.Key,
 			TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
 			Headers: []kafka.Header{
 				{Key: retriesCountHeader, Value: []byte(strconv.Itoa(retries))},

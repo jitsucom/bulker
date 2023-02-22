@@ -70,6 +70,7 @@ type AppConfig struct {
 	//Kafka authorization as JSON object {"mechanism": "SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}
 	KafkaSASL string `mapstructure:"KAFKA_SASL"`
 
+	KafkaTopicCompression                    string `mapstructure:"KAFKA_TOPIC_COMPRESSION" default:"snappy"`
 	KafkaTopicRetentionHours                 int    `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
 	KafkaRetryTopicRetentionHours            int    `mapstructure:"KAFKA_RETRY_TOPIC_RETENTION_HOURS" default:"168"`
 	KafkaDeadTopicRetentionHours             int    `mapstructure:"KAFKA_DEAD_TOPIC_RETENTION_HOURS" default:"168"`

@@ -186,7 +186,7 @@ func (sc *StreamConsumer) start() {
 					}
 				}
 				if err != nil {
-					failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, sc.tableName, false)
+					failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, allTablesToken, false)
 					retries, err := GetKafkaIntHeader(message, retriesCountHeader)
 					if err != nil {
 						sc.Errorf("failed to read retry header: %w", err)
@@ -195,9 +195,10 @@ func (sc *StreamConsumer) start() {
 					if retries >= sc.config.MessagesRetryCount {
 						//no attempts left - send to dead-letter topic
 						status = "deadLettered"
-						failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, sc.tableName, false)
+						failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, allTablesToken, false)
 					}
 					retryMessage := kafka.Message{
+						Key:            message.Key,
 						TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
 						Headers: []kafka.Header{
 							{Key: retriesCountHeader, Value: []byte(strconv.Itoa(retries))},
