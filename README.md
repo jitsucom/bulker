@@ -1,11 +1,11 @@
 # 🚚 Bulker
 
-Bulker is a HTTP server that simplifies streaming large amounts of data into databases. It is designed to be 
+Bulker is an HTTP server that simplifies streaming large amounts of data into databases. It is designed to be 
 used as a part of ETL pipelines. 
 
 Bulker is a 💜 of [Jitsu](https://github.com/jitsucom/jitsu), an open-source data integration platform.
 
-HTTP-server uses Kafka as internal transport
+HTTP-server uses Kafka as a transport
 
 <p align="center">
 <img src="./.docs/assets/bulker-summary.excalidraw.png" width="600" />
