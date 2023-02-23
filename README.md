@@ -1,20 +1,22 @@
 # 🚚 Bulker
 
-Bulker is a HTTP server and go-lib that simplifies streaming large amounts of data into databases. It is designed to be 
+Bulker is a HTTP server that simplifies streaming large amounts of data into databases. It is designed to be 
 used as a part of ETL pipelines. 
 
 Bulker is a 💜 of [Jitsu](https://github.com/jitsucom/jitsu), an open-source data integration platform.
 
-HTTP-server relies on Kafka for message delivery.   
+HTTP-server uses Kafka as internal transport
 
 <p align="center">
 <img src="./.docs/assets/bulker-summary.excalidraw.png" width="600" />
 </p>
 
+Bulker is also available as a go library if you want to embed it into your application as opposed to use a HTTP-server
+
 ## Features
 
 * 🛢️ **Batching** - Bulker sends data in batches in most efficient way for particular database. For example, for Postgres it uses 
-COPY command, for BigQuery it uses files
+COPY command, for BigQuery it uses batch-files
 * 🚿 **Streaming** - alternatively, Bulker can stream data to database. It is useful when number of records is low. Up to 10 records
 per second for most databases
 * 🐫 **Deduplication** - if configured, Bulker will deduplicate records by primary key 
