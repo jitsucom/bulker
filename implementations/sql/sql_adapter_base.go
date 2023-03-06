@@ -131,14 +131,16 @@ func (b *SQLAdapterBase[T]) Ping(ctx context.Context) error {
 			if err == nil {
 				_ = b.dataSource.Close()
 				b.dataSource = dataSource
+				return nil
+			} else {
+				return fmt.Errorf("failed to connect to %sю error: %v", b.typeId, err)
 			}
-			return err
 		}
 	} else {
 		var err error
 		b.dataSource, err = b.dbConnectFunction(b.config)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to connect to %sю error: %v", b.typeId, err)
 		}
 	}
 	return nil
