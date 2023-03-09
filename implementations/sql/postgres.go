@@ -12,7 +12,9 @@ import (
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 	jsoniter "github.com/json-iterator/go"
+	"io/ioutil"
 	"os"
+	"path"
 	"strings"
 	"text/template"
 	"time"
@@ -75,47 +77,41 @@ var (
 	}
 )
 
+type PostgresConfig struct {
+	DataSourceConfig `mapstructure:",squash"`
+	SSLConfig        `mapstructure:",squash"`
+}
+
 // Postgres is adapter for creating,patching (schema or table), inserting data to postgres
 type Postgres struct {
-	SQLAdapterBase[DataSourceConfig]
-	dbConnectFunction DbConnectFunction[DataSourceConfig]
+	SQLAdapterBase[PostgresConfig]
+	dbConnectFunction DbConnectFunction[PostgresConfig]
+	tmpDir            string
 }
 
 // NewPostgres return configured Postgres bulker.Bulker instance
 func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
-	config := &DataSourceConfig{}
+	config := &PostgresConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
-
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+	//create tmp dir for ssl certs if any
+	tmpDir, err := os.MkdirTemp("", "postgres_"+bulkerConfig.Id)
+	if err != nil && (config.SSLMode == "verify-ca" || config.SSLMode == "verify-full") {
+		return nil, fmt.Errorf("failed to create tmp dir for postgres ssl certs: %w", err)
+	}
+	if err = ProcessSSL(tmpDir, config); err != nil {
+		return nil, err
+	}
 	if config.Parameters == nil {
 		config.Parameters = map[string]string{}
 	}
 	utils.MapPutIfAbsent(config.Parameters, "connect_timeout", "60")
 	utils.MapPutIfAbsent(config.Parameters, "write_timeout", "60000")
 	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "60000")
-
-	dbConnectFunction := func(cfg *DataSourceConfig) (*sql.DB, error) {
-		connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
-			config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
-		//concat provided connection parameters
-		for k, v := range config.Parameters {
-			connectionString += " " + k + "=" + v + " "
-		}
-		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
-
-		dataSource, err := sql.Open("pq-timeouts", connectionString)
-		if err != nil {
-			return nil, err
-		}
-		if err := dataSource.Ping(); err != nil {
-			_ = dataSource.Close()
-			return nil, err
-		}
-		dataSource.SetConnMaxIdleTime(3 * time.Minute)
-		dataSource.SetMaxIdleConns(10)
-		return dataSource, nil
-	}
 
 	typecastFunc := func(placeholder string, column SQLColumn) string {
 		if column.Override {
@@ -138,8 +134,30 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
+
+	dbConnectFunction := func(cfg *PostgresConfig) (*sql.DB, error) {
+		connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
+			config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
+		//concat provided connection parameters
+		for k, v := range config.Parameters {
+			connectionString += " " + k + "=" + v + " "
+		}
+		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
+
+		dataSource, err := sql.Open("pq-timeouts", connectionString)
+		if err != nil {
+			return nil, err
+		}
+		if err := dataSource.Ping(); err != nil {
+			_ = dataSource.Close()
+			return nil, err
+		}
+		dataSource.SetConnMaxIdleTime(3 * time.Minute)
+		dataSource.SetMaxIdleConns(10)
+		return dataSource, nil
+	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)
-	p := &Postgres{sqlAdapterBase, dbConnectFunction}
+	p := &Postgres{sqlAdapterBase, dbConnectFunction, tmpDir}
 	p.tableHelper = NewTableHelper(p, 63, '"')
 	return p, err
 }
@@ -464,4 +482,107 @@ func (p *Postgres) createIndex(ctx context.Context, table *Table) error {
 	}
 
 	return nil
+}
+
+// Close underlying sql.DB
+func (p *Postgres) Close() error {
+	if p.tmpDir != "" {
+		if err := os.RemoveAll(p.tmpDir); err != nil {
+			logging.Errorf("failed to remove tmp dir '%s': %v", p.tmpDir, err)
+		}
+	}
+	return p.SQLAdapterBase.Close()
+}
+
+const (
+	SSLModeRequire    string = "require"
+	SSLModeDisable    string = "disable"
+	SSLModeVerifyCA   string = "verify-ca"
+	SSLModeVerifyFull string = "verify-full"
+
+	SSLModeNotProvided string = ""
+)
+
+// SSLConfig is a dto for deserialized SSL configuration for Postgres
+type SSLConfig struct {
+	SSLMode       string `mapstructure:"sslMode,omitempty"`
+	SSLServerCA   string `mapstructure:"sslServerCA,omitempty"`
+	SSLClientCert string `mapstructure:"sslClientCert,omitempty"`
+	SSLClientKey  string `mapstructure:"sslClientKey,omitempty"`
+}
+
+// ValidateSSL returns err if the ssl configuration is invalid
+func (sc *SSLConfig) ValidateSSL() error {
+	if sc == nil {
+		return fmt.Errorf("ssl config is required")
+	}
+
+	if sc.SSLMode == SSLModeVerifyCA || sc.SSLMode == SSLModeVerifyFull {
+		if sc.SSLServerCA == "" {
+			return fmt.Errorf("'sslServerCA' is required parameter for sslMode '%s'", sc.SSLMode)
+		}
+
+		if sc.SSLClientCert == "" {
+			return fmt.Errorf("'sslClientCert' is required parameter for sslMode '%s'", sc.SSLMode)
+		}
+
+		if sc.SSLClientKey == "" {
+			return fmt.Errorf("'sslClientKey' is required parameter for sslMode '%s'", sc.SSLMode)
+		}
+	}
+
+	return nil
+}
+
+// ProcessSSL serializes SSL payload (ca, client cert, key) into files
+// enriches input DataSourceConfig parameters with SSL config
+// ssl configuration might be file path as well as string content
+func ProcessSSL(dir string, dsc *PostgresConfig) error {
+	dsc.ValidateSSL()
+
+	if dsc.SSLMode == SSLModeNotProvided {
+		//default driver ssl mode
+		return nil
+	}
+
+	dsc.Parameters["sslmode"] = dsc.SSLMode
+
+	switch dsc.SSLMode {
+	case SSLModeRequire, SSLModeDisable:
+		//other parameters aren't required for 'disable' and 'require' mode
+		return nil
+	case SSLModeVerifyCA, SSLModeVerifyFull:
+		serverCAPath, err := getSSLFilePath("server_ca", dir, dsc.SSLServerCA)
+		if err != nil {
+			return fmt.Errorf("error saving server_ca: %v", err)
+		}
+		dsc.Parameters["sslrootcert"] = serverCAPath
+
+		clientCertPath, err := getSSLFilePath("client_cert", dir, dsc.SSLClientCert)
+		if err != nil {
+			return fmt.Errorf("error saving client_cert: %v", err)
+		}
+		dsc.Parameters["sslcert"] = clientCertPath
+
+		clientKeyPath, err := getSSLFilePath("client_key", dir, dsc.SSLClientKey)
+		if err != nil {
+			return fmt.Errorf("error saving client_key: %v", err)
+		}
+		dsc.Parameters["sslkey"] = clientKeyPath
+	default:
+		return fmt.Errorf("unsupported ssl mode: %s", dsc.SSLMode)
+	}
+	return nil
+}
+
+// getSSLFilePath checks if input payload is filepath - returns it
+// otherwise write payload as a file and returns abs file path
+func getSSLFilePath(name, dir, payload string) (string, error) {
+	if path.IsAbs(payload) {
+		return payload, nil
+	}
+
+	filepath := path.Join(dir, name)
+	err := ioutil.WriteFile(filepath, []byte(payload), 0600)
+	return filepath, err
 }
