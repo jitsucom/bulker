@@ -88,6 +88,7 @@ func NewTopicManager(appContext *AppContext) (*TopicManager, error) {
 			retryTopicMode: {
 				"cleanup.policy":   "delete,compact",
 				"compression.type": appContext.config.KafkaTopicCompression,
+				"segment.bytes":    fmt.Sprint(appContext.config.KafkaRetryTopicSegmentBytes),
 				"retention.ms":     fmt.Sprint(appContext.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
 			},
 			deadTopicMode: {
@@ -101,11 +102,6 @@ func NewTopicManager(appContext *AppContext) (*TopicManager, error) {
 
 // Start starts TopicManager
 func (tm *TopicManager) Start() {
-	err := tm.EnsureTopic(tm.config.KafkaDestinationsTopicName)
-	if err != nil {
-		metrics.TopicManagerError("destination-topic_error").Inc()
-		tm.SystemErrorf("Failed to create destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
-	}
 	tm.LoadMetadata()
 	go func() {
 		ticker := time.NewTicker(time.Duration(tm.config.TopicManagerRefreshPeriodSec) * time.Second)
@@ -134,11 +130,11 @@ func (tm *TopicManager) LoadMetadata() {
 		metrics.TopicManagerError("load_metadata_error").Inc()
 		tm.Errorf("Error getting metadata: %v", err)
 	} else {
-		tm.parseMetadata(metadata)
+		tm.processMetadata(metadata)
 	}
 }
 
-func (tm *TopicManager) parseMetadata(metadata *kafka.Metadata) {
+func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 	tm.Lock()
 	defer tm.Unlock()
 	start := time.Now()
@@ -147,8 +143,10 @@ func (tm *TopicManager) parseMetadata(metadata *kafka.Metadata) {
 	topicsCountByMode := make(map[string]float64)
 	topicsErrorsByMode := make(map[string]float64)
 
+	allTopics := utils.NewSet[string]()
+
 	for topic, _ := range metadata.Topics {
-		tm.allTopics.Put(topic)
+		allTopics.Put(topic)
 		if tm.abandonedTopics.Contains(topic) {
 			abandonedTopicsCount++
 			continue
@@ -240,6 +238,18 @@ func (tm *TopicManager) parseMetadata(metadata *kafka.Metadata) {
 			}
 		}
 	}
+	tm.allTopics = allTopics
+	err := tm.ensureTopic(tm.config.KafkaDestinationsTopicName, tm.config.KafkaDestinationsTopicPartitions, nil)
+	if err != nil {
+		metrics.TopicManagerError("destination-topic_error").Inc()
+		tm.SystemErrorf("Failed to create destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
+	}
+	err = tm.ensureTopic(tm.config.KafkaDestinationsDeadLetterTopicName, 1, nil)
+	if err != nil {
+		metrics.TopicManagerError("destination-topic_error").Inc()
+		tm.SystemErrorf("Failed to create destination dead letter topic [%s]: %v", tm.config.KafkaDestinationsDeadLetterTopicName, err)
+	}
+
 	for mode, count := range topicsCountByMode {
 		metrics.TopicManagerDestinations(mode, "success").Set(count)
 	}
@@ -361,12 +371,10 @@ func (tm *TopicManager) EnsureDestinationTopic(destination *Destination, topicId
 	return nil
 }
 
-// EnsureTopic creates topic if it doesn't exist
-func (tm *TopicManager) EnsureTopic(topicId string) error {
-	tm.Lock()
-	defer tm.Unlock()
+// ensureTopic creates topic if it doesn't exist
+func (tm *TopicManager) ensureTopic(topicId string, partitions int, config map[string]string) error {
 	if !tm.allTopics.Contains(topicId) {
-		return tm.createTopic(topicId, nil)
+		return tm.createTopic(topicId, partitions, config)
 	}
 	return nil
 }
@@ -441,7 +449,7 @@ func (tm *TopicManager) createDestinationTopic(topic string, config map[string]s
 }
 
 // createTopic creates topic for any purpose
-func (tm *TopicManager) createTopic(topic string, config map[string]string) error {
+func (tm *TopicManager) createTopic(topic string, partitions int, config map[string]string) error {
 	errorType := ""
 	defer func() {
 		if errorType != "" {
@@ -451,13 +459,14 @@ func (tm *TopicManager) createTopic(topic string, config map[string]string) erro
 		}
 	}()
 	topicConfig := map[string]string{
-		"retention.ms": fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
+		"compression.type": tm.config.KafkaTopicCompression,
+		"retention.ms":     fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
 	}
 	utils.MapPutAll(topicConfig, config)
 	topicRes, err := tm.kaftaAdminClient.CreateTopics(context.Background(), []kafka.TopicSpecification{
 		{
 			Topic:         topic,
-			NumPartitions: 1,
+			NumPartitions: partitions,
 			//TODO  get broker count from admin
 			ReplicationFactor: tm.config.KafkaTopicReplicationFactor,
 			Config:            topicConfig,

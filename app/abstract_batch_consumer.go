@@ -158,7 +158,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 				case *kafka.Message:
 					messageId := GetKafkaHeader(ev, MessageIdHeader)
 					if ev.TopicPartition.Error != nil {
-						bc.Errorf("Error sending message (ID: %s) to kafka topic %s: %s", messageId, ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
+						bc.Errorf("Error sending message (ID: %s) to kafka topic %s: %s", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
 					} else {
 						bc.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 					}

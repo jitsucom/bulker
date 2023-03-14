@@ -259,7 +259,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			rError = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err, logFormat, messageId, domain)
 			continue
 		}
-		err = r.producer.ProduceAsync(r.config.KafkaDestinationsTopicName, uuid.New(), payload)
+		err = r.producer.ProduceAsync(r.config.KafkaDestinationsTopicName, messageCopy.ConnectionId, payload)
 		if err != nil {
 			metrics.IngestedMessages(destination.ConnectionId, "error", "producer error").Inc()
 			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, logFormat, messageId, domain)

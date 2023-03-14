@@ -24,6 +24,8 @@ var (
 
 	// FrequencyOption [[IGNORED]] is the same as BatchPeriodOption but in minutes.
 	FrequencyOption = ImplementationOption[int]{Key: "frequency", ParseFunc: utils.ParseInt}
+	// Dummy. just added here to be treated as known options
+	FunctionsOption = ImplementationOption[any]{Key: "functions", ParseFunc: func(serialized any) (any, error) { return nil, nil }}
 
 	RetryPeriodOption = ImplementationOption[int]{
 		Key:          "retryPeriodSec",
@@ -42,6 +44,7 @@ func init() {
 	RegisterOption(&BatchSizeOption)
 	RegisterOption(&BatchPeriodOption)
 	RegisterOption(&FrequencyOption)
+	RegisterOption(&FunctionsOption)
 
 	RegisterOption(&RetryPeriodOption)
 	RegisterOption(&RetryBatchSizeOption)

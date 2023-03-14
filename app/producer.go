@@ -51,7 +51,7 @@ func (p *Producer) Start() {
 				if ev.TopicPartition.Error != nil {
 					//TODO: check for retrieable errors
 					metrics.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "error", metrics.KafkaErrorCode(ev.TopicPartition.Error))).Inc()
-					p.Errorf("Error sending message (ID: %s) to kafka topic %s: %s", messageId, ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
+					p.Errorf("Error sending message (ID: %s) to kafka topic %s: %s", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
 				} else {
 					metrics.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "delivered", "")).Inc()
 					p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
@@ -108,7 +108,7 @@ func (p *Producer) ProduceSync(topic string, events ...kafka.Message) error {
 				messageId := GetKafkaHeader(m, MessageIdHeader)
 				if m.TopicPartition.Error != nil {
 					metrics.ProducerMessages(ProducerMessageLabels(topic, "error", metrics.KafkaErrorCode(m.TopicPartition.Error))).Inc()
-					p.Errorf("Error sending message (ID: %s) to kafka topic %s: %v", messageId, topic, m.TopicPartition.Error)
+					p.Errorf("Error sending message (ID: %s) to kafka topic %s: %v", messageId, *m.TopicPartition.Topic, m.TopicPartition.Error)
 					errors.Errors = append(errors.Errors, m.TopicPartition.Error)
 				} else {
 					metrics.ProducerMessages(ProducerMessageLabels(topic, "delivered", "")).Inc()
@@ -128,13 +128,13 @@ func (p *Producer) ProduceSync(topic string, events ...kafka.Message) error {
 
 // ProduceAsync TODO: transactional delivery?
 // produces messages to kafka
-func (p *Producer) ProduceAsync(topic string, messageId string, event []byte) error {
+func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte) error {
 	if p.isClosed() {
 		return p.NewError("producer is closed")
 	}
 	errors := multierror.Error{}
 	err := p.producer.Produce(&kafka.Message{
-		Key:            []byte(messageId),
+		Key:            []byte(messageKey),
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Value:          event,
 	}, nil)

@@ -73,6 +73,7 @@ type AppConfig struct {
 	KafkaTopicCompression                    string `mapstructure:"KAFKA_TOPIC_COMPRESSION" default:"snappy"`
 	KafkaTopicRetentionHours                 int    `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
 	KafkaRetryTopicRetentionHours            int    `mapstructure:"KAFKA_RETRY_TOPIC_RETENTION_HOURS" default:"168"`
+	KafkaRetryTopicSegmentBytes              int    `mapstructure:"KAFKA_RETRY_TOPIC_SEGMENT_BYTES" default:"104857600"`
 	KafkaDeadTopicRetentionHours             int    `mapstructure:"KAFKA_DEAD_TOPIC_RETENTION_HOURS" default:"168"`
 	KafkaTopicReplicationFactor              int    `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR"`
 	KafkaAdminMetadataTimeoutMs              int    `mapstructure:"KAFKA_ADMIN_METADATA_TIMEOUT_MS" default:"1000"`
@@ -80,7 +81,10 @@ type AppConfig struct {
 	//TODO: max.poll.interval.ms
 
 	// KafkaDestinationsTopicName destination topic for /ingest endpoint
-	KafkaDestinationsTopicName string `mapstructure:"KAFKA_DESTINATIONS_TOPIC_NAME" default:"destination-messages"`
+	KafkaDestinationsTopicName       string `mapstructure:"KAFKA_DESTINATIONS_TOPIC_NAME" default:"destination-messages"`
+	KafkaDestinationsTopicPartitions int    `mapstructure:"KAFKA_DESTINATIONS_TOPIC_PARTITIONS" default:"4"`
+
+	KafkaDestinationsDeadLetterTopicName string `mapstructure:"KAFKA_DESTINATIONS_DEAD_LETTER_TOPIC_NAME" default:"destination-messages-dead-letter"`
 
 	// TopicManagerRefreshPeriodSec how often topic manager will check for new topics
 	TopicManagerRefreshPeriodSec int `mapstructure:"TOPIC_MANAGER_REFRESH_PERIOD_SEC" default:"5"`
