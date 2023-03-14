@@ -75,14 +75,16 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	configRegistry[PostgresBulkerTypeId] = TestConfig{BulkerType: PostgresBulkerTypeId, Config: DataSourceConfig{
-		Host:       postgresContainer.Host,
-		Port:       postgresContainer.Port,
-		Username:   postgresContainer.Username,
-		Password:   postgresContainer.Password,
-		Db:         postgresContainer.Database,
-		Schema:     postgresContainer.Schema,
-		Parameters: map[string]string{"sslmode": "disable"},
+	configRegistry[PostgresBulkerTypeId] = TestConfig{BulkerType: PostgresBulkerTypeId, Config: PostgresConfig{
+		DataSourceConfig: DataSourceConfig{
+			Host:       postgresContainer.Host,
+			Port:       postgresContainer.Port,
+			Username:   postgresContainer.Username,
+			Password:   postgresContainer.Password,
+			Db:         postgresContainer.Database,
+			Schema:     postgresContainer.Schema,
+			Parameters: map[string]string{"sslmode": "disable"},
+		},
 	}}
 
 	mysqlContainer, err = testcontainers.NewMySQLContainer(context.Background())
@@ -140,8 +142,8 @@ func init() {
 		}
 	}
 	////uncomment to run test for single db only
-	//allBulkerConfigs = []string{SnowflakeBulkerTypeId}
-	//exceptBigquery = allBulkerConfigs
+	allBulkerConfigs = []string{PostgresBulkerTypeId}
+	exceptBigquery = allBulkerConfigs
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 
