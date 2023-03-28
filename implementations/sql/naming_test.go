@@ -13,7 +13,7 @@ func TestNaming(t *testing.T) {
 		{
 			name:                      "naming_test1",
 			tableName:                 "Strange Table Name; DROP DATABASE public;",
-			modes:                     []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplacePartition},
+			modes:                     []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			dataFile:                  "test_data/identifiers.ndjson",
 			expectPartitionId:         true,
 			expectedRowsCount:         1,

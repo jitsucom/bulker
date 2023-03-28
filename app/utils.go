@@ -1,7 +1,7 @@
 package app
 
 import (
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"math"
 	"strconv"

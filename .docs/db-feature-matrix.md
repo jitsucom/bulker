@@ -197,7 +197,7 @@ For cluster bulker insert into distributed table so data evenly distributed acro
 
 Algorithm:
 - Write to tmp file
-- `INSERT INTO tmp_table (...) VALUES (...)` - bulk load data from tmp file into tmp_table using prepared statement in transaction
+- `INSERT INTO tmp_table (...) VALUES (...)` - bulk load data from tmp file into tmp_table using bulk insert
 - `INSERT INTO target_table(...) SELECT ... FROM tmp_table`
 
 ### ClickHouse Deduplication
@@ -239,7 +239,7 @@ Bulker creates tables [partitioned](https://clickhouse.com/docs/en/engines/table
 
 Algorithm:
 - Write to tmp file
-- `INSERT INTO tmp_table (...) VALUES (...)` - bulk load data from tmp file into tmp_table using prepared statement in transaction
+- `INSERT INTO tmp_table (...) VALUES (...)` - bulk load data from tmp file into tmp_table using bulk insert
 - `EXCHANGE TABLES target_table tmp_table`
 
 ### ClickHouse Replace Partition
@@ -248,7 +248,7 @@ Algorithm:
 
 Algorithm:
 - Write to tmp file
-- `INSERT INTO tmp_table(...) VALUES (...)` - bulk load data from tmp file into tmp_table using prepared statement in transaction
+- `INSERT INTO tmp_table(...) VALUES (...)` - bulk load data from tmp file into tmp_table using bulk insert
 - `INSERT INTO target_table(...) SELECT ... FROM tmp_table`
 
 

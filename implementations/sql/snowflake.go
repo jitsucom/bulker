@@ -228,37 +228,12 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 	quotedTableName, tableName := s.tableHelper.adaptTableName(tableName)
 	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.NewSet[string]()}
 
-	countReqRows, err := s.txOrDb(ctx).QueryContext(ctx, sfTableExistenceQuery, s.config.Schema, tableName)
-	if err != nil {
-		return nil, errorj.GetTableError.Wrap(err, "failed to get table existence").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Schema:    s.config.Schema,
-				Table:     tableName,
-				Statement: sfTableExistenceQuery,
-				Values:    []any{s.config.Schema, tableName},
-			})
-	}
-	defer countReqRows.Close()
-	countReqRows.Next()
-	var count int
-	if err = countReqRows.Scan(&count); err != nil {
-		return nil, errorj.GetTableError.Wrap(err, "failed to scan existence result").
-			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Schema:    s.config.Schema,
-				Table:     tableName,
-				Statement: sfTableExistenceQuery,
-				Values:    []any{s.config.Schema, tableName},
-			})
-	}
-
-	//table doesn't exist
-	if count == 0 {
-		return table, nil
-	}
-
 	query := fmt.Sprintf(sfDescTableQuery, quotedTableName)
 	rows, err := s.txOrDb(ctx).QueryContext(ctx, query)
 	if err != nil {
+		if strings.Contains(err.Error(), "does not exist") {
+			return table, nil
+		}
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Schema:    s.config.Schema,
