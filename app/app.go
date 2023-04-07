@@ -100,9 +100,12 @@ func InitAppContext() *AppContext {
 		panic(err)
 	}
 
-	jobRunner, err := NewJobRunner(&appContext)
-	if err != nil {
-		panic(err)
+	var jobRunner *JobRunner
+	if appContext.config.KubernetesClientConfig != "" {
+		jobRunner, err = NewJobRunner(&appContext)
+		if err != nil {
+			panic(err)
+		}
 	}
 	router := NewRouter(&appContext, jobRunner)
 	appContext.server = &http.Server{

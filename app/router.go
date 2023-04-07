@@ -83,7 +83,9 @@ func NewRouter(appContext *AppContext, jobRunner *JobRunner) *Router {
 	engine.POST("/ingest", router.IngestHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
 	engine.GET("/log/:eventType/:actorId", router.EventsLogHandler)
-	engine.GET("/source/spec", jobRunner.SpecHandler)
+	if jobRunner != nil {
+		engine.GET("/source/spec", jobRunner.SpecHandler)
+	}
 
 	engine.GET("/ready", func(c *gin.Context) {
 		if router.topicManager.IsReady() {
