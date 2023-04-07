@@ -15,6 +15,9 @@ var (
 			case []string:
 				return withPrimaryKey(o, v...), nil
 			case string:
+				if v == "" {
+					return func(options *bulker.StreamOptions) {}, nil
+				}
 				return withPrimaryKey(o, v), nil
 			default:
 				return nil, fmt.Errorf("failed to parse 'primaryKey' option: %v incorrect type: %T expected string or []string", v, v)

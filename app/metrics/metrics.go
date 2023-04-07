@@ -38,6 +38,16 @@ var (
 		return eventsHandlerRequests.WithLabelValues(destinationId, mode, tableName, status, errorType)
 	}
 
+	bulkHandlerRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "handler",
+		Name:      "bulk",
+		Help:      "Events handler errors by destination Id",
+	}, []string{"destinationId", "mode", "tableName", "status", "errorType"})
+	BulkHandlerRequests = func(destinationId, mode, tableName, status, errorType string) prometheus.Counter {
+		return bulkHandlerRequests.WithLabelValues(destinationId, mode, tableName, status, errorType)
+	}
+
 	topicManagerCreate = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "topic_manager",

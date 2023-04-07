@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/base/uuid"
 	"github.com/jitsucom/bulker/bulker"
+	"github.com/jitsucom/bulker/types"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/penglongli/gin-metrics/ginmetrics"
 	"io"
@@ -42,7 +44,7 @@ type Router struct {
 	noAuthPaths      []string
 }
 
-func NewRouter(appContext *AppContext) *Router {
+func NewRouter(appContext *AppContext, jobRunner *JobRunner) *Router {
 	base := objects.NewServiceBase("router")
 	authTokens := strings.Split(appContext.config.AuthTokens, ",")
 	if len(authTokens) == 1 && authTokens[0] == "" {
@@ -73,14 +75,15 @@ func NewRouter(appContext *AppContext) *Router {
 	// used to p95, p99
 	m.SetDuration([]float64{0.01, 0.05, 0.1, 0.3, 1.0, 2.0, 3.0, 10})
 	m.UseWithoutExposingEndpoint(engine)
-
 	engine.Use(gin.Recovery())
 	engine.Use(router.AuthMiddleware)
 	engine.POST("/post/:destinationId", router.EventsHandler)
+	engine.POST("/bulk/:destinationId", router.BulkHandler)
 	engine.POST("/test", router.TestConnectionHandler)
 	engine.POST("/ingest", router.IngestHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
 	engine.GET("/log/:eventType/:actorId", router.EventsLogHandler)
+	engine.GET("/source/spec", jobRunner.SpecHandler)
 
 	engine.GET("/ready", func(c *gin.Context) {
 		if router.topicManager.IsReady() {
@@ -151,10 +154,81 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }
 
+func (r *Router) BulkHandler(c *gin.Context) {
+	destinationId := c.Param("destinationId")
+	tableName := c.Query("tableName")
+	jobId := c.DefaultQuery("jobId", fmt.Sprintf("%s_%s_%s", destinationId, tableName, uuid.New()))
+	mode := ""
+	var rError RouterError
+	defer func() {
+		if rError.Error != nil {
+			metrics.BulkHandlerRequests(destinationId, mode, tableName, "error", rError.ErrorType).Inc()
+		} else {
+			metrics.BulkHandlerRequests(destinationId, mode, tableName, "success", "").Inc()
+		}
+	}()
+
+	destination := r.repository.GetDestination(destinationId)
+	if destination == nil {
+		rError = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId), "")
+		return
+	}
+	mode = string(destination.Mode())
+	if tableName == "" {
+		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), "")
+		return
+	}
+	//TODO: Replace hardcoded ReplaceTable mode with value from destination
+	bulkerStream, err := destination.bulker.CreateStream(jobId, tableName, bulker.ReplaceTable, destination.streamOptions.Options...)
+	if err != nil {
+		rError = r.ResponseError(c, http.StatusInternalServerError, "create stream error", true, err, "")
+		return
+	}
+	scanner := bufio.NewScanner(c.Request.Body)
+	scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
+	consumed := 0
+	for scanner.Scan() {
+		bytes := scanner.Bytes()
+		if len(bytes) >= 5 && string(bytes[:5]) == "ABORT" {
+			_, _ = bulkerStream.Abort(c)
+			rError = r.ResponseError(c, http.StatusBadRequest, "aborted", false, fmt.Errorf(string(bytes)), "")
+			return
+		}
+		obj := types.Object{}
+		if err = jsoniter.Unmarshal(bytes, &obj); err != nil {
+			_, _ = bulkerStream.Abort(c)
+			rError = r.ResponseError(c, http.StatusBadRequest, "unmarhsal error", false, err, "")
+			return
+		}
+		if _, _, err = bulkerStream.Consume(c, obj); err != nil {
+			_, _ = bulkerStream.Abort(c)
+			rError = r.ResponseError(c, http.StatusBadRequest, "stream consume error", false, err, "")
+			return
+		}
+		consumed++
+	}
+	if err = scanner.Err(); err != nil {
+		_, _ = bulkerStream.Abort(c)
+		rError = r.ResponseError(c, http.StatusBadRequest, "scanner error", false, err, "")
+		return
+	}
+	if consumed > 0 {
+		state, err := bulkerStream.Complete(c)
+		if err != nil {
+			rError = r.ResponseError(c, http.StatusBadRequest, "stream complete error", false, err, "")
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "ok", "state": state})
+	} else {
+		_, _ = bulkerStream.Abort(c)
+		c.JSON(http.StatusOK, gin.H{"message": "ok"})
+	}
+}
+
 func (r *Router) IngestHandler(c *gin.Context) {
 	domain := ""
 	// TODO: use workspaceId as default for all stream identification errors
-	streamId := ""
+	var eventsLogIds []string
 	var rError RouterError
 	var body []byte
 	var asyncDestinations []string
@@ -165,20 +239,29 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		if rError.Error != nil {
 			eventsLogObj["error"] = rError.PublicError.Error()
 			eventsLogObj["status"] = "FAILED"
-			_, e := r.eventsLogService.PostEvent(EventTypeIncomingError, streamId, eventsLogObj)
-			if e != nil {
-				r.Errorf("Failed to post event to events log service: %w", e)
+			for _, streamId := range eventsLogIds {
+				_, e := r.eventsLogService.PostEvent(EventTypeIncomingError, streamId, eventsLogObj)
+				if e != nil {
+					r.Errorf("Failed to post event to events log service: %w", e)
+				}
 			}
 			metrics.IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
 		} else {
 			eventsLogObj["asyncDestinations"] = asyncDestinations
 			eventsLogObj["tags"] = tagsDestinations
-			eventsLogObj["status"] = "SUCCESS"
+			if len(asyncDestinations) > 0 || len(tagsDestinations) > 0 {
+				eventsLogObj["status"] = "SUCCESS"
+			} else {
+				eventsLogObj["status"] = "SKIPPED"
+				eventsLogObj["error"] = "no destinations found for stream"
+			}
 			metrics.IngestHandlerRequests(domain, "success", "").Inc()
 		}
-		_, e := r.eventsLogService.PostEvent(EventTypeIncomingAll, streamId, eventsLogObj)
-		if e != nil {
-			r.Errorf("Failed to post event to events log service: %w", e)
+		for _, streamId := range eventsLogIds {
+			_, e := r.eventsLogService.PostEvent(EventTypeIncomingAll, streamId, eventsLogObj)
+			if e != nil {
+				r.Errorf("Failed to post event to events log service: %w", e)
+			}
 		}
 	}()
 	domain = c.GetHeader("X-Bulker-Domain")
@@ -202,6 +285,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	if ingestMessage.WriteKey != "" {
 		stream, err = r.fastStore.GetStreamById(ingestMessage.WriteKey)
 	} else if ingestMessage.Origin.Slug != "" {
+		eventsLogIds = []string{ingestMessage.Origin.Slug}
 		stream, err = r.fastStore.GetStreamById(ingestMessage.Origin.Slug)
 	}
 	if stream == nil && ingestMessage.Origin.Domain != "" {
@@ -214,6 +298,8 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			}
 			writeKey := ingestMessage.WriteKey
 			for _, s := range streams {
+				// in case we don't select stream by public key, we need to translate error to all candidates
+				eventsLogIds = append(eventsLogIds, s.Stream.Id)
 				for _, k := range s.Stream.PublicKeys {
 					pk := strings.SplitN(k.Hash, ".", 2)
 					salt := pk[0]
@@ -236,10 +322,10 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusNotFound, "stream not found", false, fmt.Errorf(domain), logFormat, messageId, domain)
+		rError = r.ResponseError(c, http.StatusNotFound, "stream not found", false, nil, logFormat, messageId, domain)
 		return
 	}
-	streamId = stream.Stream.Id
+	eventsLogIds = []string{stream.Stream.Id}
 	if len(stream.AsynchronousDestinations) == 0 && len(stream.SynchronousDestinations) == 0 {
 		c.JSON(http.StatusNoContent, gin.H{"message": "no destinations found for stream"})
 		return

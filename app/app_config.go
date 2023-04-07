@@ -61,6 +61,12 @@ type AppConfig struct {
 	RedisURL   string `mapstructure:"REDIS_URL"`
 	RedisTLSCA string `mapstructure:"REDIS_TLS_CA"`
 
+	// # Kubernetes
+
+	// KubernetesNamespace namespace of bulker app. Default: `default`
+	KubernetesNamespace    string `mapstructure:"KUBERNETES_NAMESPACE" default:"default"`
+	KubernetesClientConfig string `mapstructure:"KUBERNETES_CLIENT_CONFIG"`
+
 	// # KAFKA
 
 	// KafkaBootstrapServers List of Kafka brokers separated by comma. Each broker should be in format host:port.

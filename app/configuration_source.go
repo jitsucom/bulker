@@ -32,12 +32,49 @@ type ConfigurationSource interface {
 	io.Closer
 	GetDestinationConfigs() []*DestinationConfig
 	GetDestinationConfig(id string) *DestinationConfig
-	GetValue(key string) any
 	ChangesChannel() <-chan bool
 	//Equals(other ConfigurationSource) bool
 }
 
 func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
+	cfgSource := config.ConfigSource
+	if cfgSource == "" {
+		logging.Infof("BULKER_CONFIG_SOURCE is not set. Using environment variables configuration source with prefix: %s", defaultEnvDestinationPrefix)
+		return NewEnvConfigurationSource(defaultEnvDestinationPrefix), nil
+	} else if cfgSource == "redis" {
+		config.ConfigSource = config.RedisURL
+		cfgSource = config.RedisURL
+	}
+
+	var configurationSource ConfigurationSource
+	if strings.HasPrefix(cfgSource, "file://") || !strings.Contains(cfgSource, "://") {
+		filePath := strings.TrimPrefix(cfgSource, "file://")
+		yamlConfig, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("❗️error reading yaml config file: %s: %w", filePath, err)
+		}
+		configurationSource, err = NewYamlConfigurationSource(yamlConfig)
+		if err != nil {
+			return nil, fmt.Errorf("❗error creating yaml configuration source from config file: %s: %v", filePath, err)
+		}
+	} else if strings.HasPrefix(cfgSource, "redis://") || strings.HasPrefix(cfgSource, "rediss://") {
+		var err error
+		configurationSource, err = NewRedisConfigurationSource(config)
+		if err != nil {
+			return nil, fmt.Errorf("❗️error while init redis configuration source: %s: %w", cfgSource, err)
+		}
+	} else if strings.HasPrefix(cfgSource, "env://BULKER_DESTINATION") {
+		envPrefix := strings.TrimPrefix(cfgSource, "env://")
+		configurationSource = NewEnvConfigurationSource(envPrefix)
+	} else {
+		return nil, fmt.Errorf("❗unsupported configuration source: %s", cfgSource)
+	}
+
+	internalDestinationsSource := NewEnvConfigurationSource("BULKER_INTERNAL")
+	return NewMultiConfigurationSource([]ConfigurationSource{internalDestinationsSource, configurationSource}), nil
+}
+
+func initConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
 	cfgSource := config.ConfigSource
 	if cfgSource == "" {
 		logging.Infof("BULKER_CONFIG_SOURCE is not set. Using environment variables configuration source with prefix: %s", defaultEnvDestinationPrefix)

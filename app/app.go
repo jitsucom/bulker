@@ -100,7 +100,11 @@ func InitAppContext() *AppContext {
 		panic(err)
 	}
 
-	router := NewRouter(&appContext)
+	jobRunner, err := NewJobRunner(&appContext)
+	if err != nil {
+		panic(err)
+	}
+	router := NewRouter(&appContext, jobRunner)
 	appContext.server = &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", appContext.config.HTTPPort),
 		Handler:           router.GetEngine(),
