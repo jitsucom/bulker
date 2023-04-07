@@ -80,8 +80,11 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		config.Port = 5439
 	}
 
-	bulkerConfig.DestinationConfig = config.DataSourceConfig
+	bulkerConfig.DestinationConfig = PostgresConfig{DataSourceConfig: config.DataSourceConfig}
 	postgres, err := NewPostgres(bulkerConfig)
+	if err != nil {
+		return nil, err
+	}
 	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: config.S3OptionConfig}
 	r.batchFileFormat = implementations.CSV_GZIP
 	r.temporaryTables = true
