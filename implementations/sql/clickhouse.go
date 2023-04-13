@@ -58,7 +58,7 @@ const (
 	chRenameTableTemplate   = `RENAME TABLE %s TO %s %s`
 
 	chSelectFinalStatement = `SELECT %s FROM %s FINAL %s%s`
-	chLoadStatement        = `INSERT INTO %s (%s) VALUES %s`
+	chLoadStatement        = `INSERT INTO %s (%s) VALUES (%s)`
 )
 
 var (
@@ -520,7 +520,69 @@ func (ch *ClickHouse) Count(ctx context.Context, tableName string, whenCondition
 }
 
 func (ch *ClickHouse) Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) (err error) {
+	//if ch.httpMode {
 	return ch.insert(ctx, table, objects)
+	//}
+	//tx, err := ch.dataSource.BeginTx(ctx, nil)
+	//if err != nil {
+	//	err = errorj.LoadError.Wrap(err, "failed to open transaction to load table").
+	//		WithProperty(errorj.DBInfo, &types.ErrorPayload{
+	//			Database:    ch.config.Database,
+	//			Cluster:     ch.config.Cluster,
+	//			Table:       targetTable.Name,
+	//			PrimaryKeys: targetTable.GetPKFields(),
+	//		})
+	//}
+	//
+	//columns := targetTable.SortedColumnNames()
+	//columnNames := make([]string, len(columns))
+	//placeHolders := make([]string, len(columns))
+	//
+	//for i, name := range columns {
+	//	column := targetTable.Columns[name]
+	//	columnNames[i] = ch.quotedColumnName(name)
+	//	placeHolders[i] = ch.typecastFunc(ch.parameterPlaceholder(i, ch.quotedColumnName(name)), column)
+	//
+	//}
+	//copyStatement := fmt.Sprintf(chLoadStatement, ch.quotedTableName(targetTable.Name), strings.Join(columnNames, ", "), strings.Join(placeHolders, ", "))
+	//defer func() {
+	//	if err != nil {
+	//		_ = tx.Rollback()
+	//		err = errorj.ExecuteInsertError.Wrap(err, "failed to insert to table").
+	//			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+	//				Database:    ch.config.Database,
+	//				Cluster:     ch.config.Cluster,
+	//				Table:       targetTable.Name,
+	//				PrimaryKeys: targetTable.GetPKFields(),
+	//				Statement:   copyStatement,
+	//			})
+	//	}
+	//}()
+	//
+	//stmt, err := tx.PrepareContext(ctx, copyStatement)
+	//if err != nil {
+	//	return err
+	//}
+	//defer func() {
+	//	_ = stmt.Close()
+	//}()
+	//
+	//for _, object := range objects {
+	//	args := make([]any, len(columns))
+	//	for i, v := range columns {
+	//		l, err := convertType(object[v], targetTable.Columns[v])
+	//		if err != nil {
+	//			return err
+	//		}
+	//		//ch.Infof("%s: %v (%T) was %v", v, l, l, object[v])
+	//		args[i] = l
+	//	}
+	//	if _, err := stmt.ExecContext(ctx, args...); err != nil {
+	//		return checkErr(err)
+	//	}
+	//}
+	//
+	//return tx.Commit()
 }
 
 // LoadTable transfer data from local file to ClickHouse table
@@ -532,17 +594,31 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		return fmt.Errorf("LoadTable: only %s format is supported", ch.batchFileFormat)
 	}
 	tableName := ch.quotedTableName(targetTable.Name)
+	tx, err := ch.dataSource.BeginTx(ctx, nil)
+	if err != nil {
+		err = errorj.LoadError.Wrap(err, "failed to open transaction to load table").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Database:    ch.config.Database,
+				Cluster:     ch.config.Cluster,
+				Table:       targetTable.Name,
+				PrimaryKeys: targetTable.GetPKFields(),
+			})
+	}
 
 	columns := targetTable.SortedColumnNames()
 	columnNames := make([]string, len(columns))
+	placeHolders := make([]string, len(columns))
+
 	for i, name := range columns {
+		column := targetTable.Columns[name]
 		columnNames[i] = ch.quotedColumnName(name)
+		placeHolders[i] = ch.typecastFunc(ch.parameterPlaceholder(i, ch.quotedColumnName(name)), column)
+
 	}
-	var placeholdersBuilder strings.Builder
-	args := make([]any, 0, len(columns))
-	var copyStatement string
+	copyStatement := fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), strings.Join(placeHolders, ", "))
 	defer func() {
 		if err != nil {
+			_ = tx.Rollback()
 			err = errorj.LoadError.Wrap(err, "failed to load table").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Database:    ch.config.Database,
@@ -553,6 +629,16 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 				})
 		}
 	}()
+
+	stmt, err := tx.PrepareContext(ctx, copyStatement)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = stmt.Close()
+	}()
+	//f, err := os.ReadFile(loadSource.Path)
+	//ch.Infof("FILE: %s", f)
 
 	file, err := os.Open(loadSource.Path)
 	if err != nil {
@@ -567,28 +653,29 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		if err != nil {
 			return err
 		}
-		placeholdersBuilder.WriteString(",(")
+		args := make([]any, len(columns))
 		for i, v := range columns {
-			column := targetTable.Columns[v]
-			l, err := convertType(object[v], column)
+			l, err := convertType(object[v], targetTable.Columns[v])
 			if err != nil {
 				return err
 			}
 			//ch.Infof("%s: %v (%T) was %v", v, l, l, object[v])
-			if i > 0 {
-				placeholdersBuilder.WriteString(",")
-			}
-			placeholdersBuilder.WriteString(ch.typecastFunc(ch.parameterPlaceholder(i, ch.quotedColumnName(v)), column))
-			args = append(args, l)
+			args[i] = l
 		}
-		placeholdersBuilder.WriteString(")")
+		if _, err := stmt.ExecContext(ctx, args...); err != nil {
+			return checkErr(err)
+		}
+	}
 
-	}
-	copyStatement = fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
-	if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
-		return checkErr(err)
-	}
-	return nil
+	return tx.Commit()
+	//if err != nil {
+	//	return err
+	//}
+	//_, err = ch.txOrDb(ctx).ExecContext(ctx, fmt.Sprintf("OPTIMIZE TABLE %s", ch.quotedTableName(targetTable.Name)))
+	//if err != nil {
+	//	return err
+	//}
+	//return nil
 }
 
 func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) (err error) {
