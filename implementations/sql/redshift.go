@@ -60,7 +60,7 @@ var (
 
 type RedshiftConfig struct {
 	DataSourceConfig `mapstructure:",squash"`
-	*S3OptionConfig  `mapstructure:"s3Config,omitempty" json:"s3Config,omitempty" yaml:"s3Config,omitempty"`
+	S3OptionConfig   `mapstructure:",squash" yaml:"-,inline"`
 }
 
 // Redshift adapter for creating,patching (schema or table), inserting and copying data from s3 to redshift
@@ -85,7 +85,7 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: config.S3OptionConfig}
+	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: &config.S3OptionConfig}
 	r.batchFileFormat = implementations.CSV_GZIP
 	r.temporaryTables = true
 	r._columnDDLFunc = redshiftColumnDDL
