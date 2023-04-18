@@ -93,8 +93,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/ClickHouse/ch-go v0.52.1 h1:nucdgfD1BDSHjbNaG3VNebonxJzD8fX8jbuBpfo5VY0=
 github.com/ClickHouse/ch-go v0.52.1/go.mod h1:B9htMJ0hii/zrC2hljUKdnagRBuLqtRG/GrU3jqCwRk=
-github.com/ClickHouse/clickhouse-go/v2 v2.8.0 h1:NkqldIAAhYMVwPZIMtpdNQbgqB1eWDP5YjpsMDQ83bU=
-github.com/ClickHouse/clickhouse-go/v2 v2.8.0/go.mod h1:teXfZNM90iQ99Jnuht+dxQXCuhDZ8nvvMoTJOFrcmcg=
+github.com/ClickHouse/clickhouse-go/v2 v2.9.0 h1:vh0D+9p5hKWLYqCfU8Hd7/GMXNfHC84isUf7sNlJrZk=
+github.com/ClickHouse/clickhouse-go/v2 v2.9.0/go.mod h1:teXfZNM90iQ99Jnuht+dxQXCuhDZ8nvvMoTJOFrcmcg=
 github.com/JohnCGriffin/overflow v0.0.0-20211019200055-46fa312c352c h1:RGWPOewvKIROun94nF7v2cua9qP+thov/7M50KEoeSU=
 github.com/Kount/pq-timeouts v1.0.0 h1:6a23dhwmQ2PukftCWm56T4RPJ4zc2iE9y5E42TMAl6E=
 github.com/Kount/pq-timeouts v1.0.0/go.mod h1:Y7rNVWI9KiI3xj1QxBmOSB12Eyv9g5Gjego8KFpV5PY=
