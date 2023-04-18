@@ -45,6 +45,8 @@ const (
 )
 
 var (
+	bigqueryReservedWords    = []string{"all", "and", "any", "array", "as", "asc", "assert_rows_modified", "at", "between", "by", "case", "cast", "collate", "contains", "create", "cross", "cube", "current", "default", "define", "desc", "distinct", "else", "end", "enum", "escape", "except", "exclude", "exists", "extract", "false", "fetch", "following", "for", "from", "full", "group", "grouping", "groups", "hash", "having", "if", "ignore", "in", "inner", "intersect", "interval", "into", "is", "join", "lateral", "left", "like", "limit", "lookup", "merge", "natural", "new", "no", "not", "null", "nulls", "of", "on", "or", "order", "outer", "over", "partition", "preceding", "proto", "qualify", "range", "recursive", "respect", "right", "rollup", "rows", "select", "set", "some", "struct", "tablesample", "then", "to", "treat", "true", "unbounded", "union", "unnest", "using", "when", "where", "window", "with", "within"}
+	bigqueryReservedWordsSet = utils.NewSet(bigqueryReservedWords...)
 	bigqueryReservedPrefixes = [...]string{"_table_", "_file_", "_partition", "_row_timestamp", "__root__", "_colidentifier"}
 
 	bigqueryColumnUnsupportedCharacters = regexp.MustCompile(`[^0-9A-Za-z_]`)
@@ -949,9 +951,13 @@ func columnNameFunc(identifier string) (adapted string, needQuote bool) {
 	if utils.IsNumber(int32(result[0])) {
 		result = "_" + result
 	}
+	lc := strings.ToLower(result)
+	if bigqueryReservedWordsSet.Contains(lc) {
+		return "_" + result, false
+	}
 	for _, reserved := range bigqueryReservedPrefixes {
-		if strings.HasPrefix(strings.ToLower(result), reserved) {
-			result = "_" + result
+		if strings.HasPrefix(lc, reserved) {
+			return utils.ShortenString("_"+result, 300), false
 		}
 	}
 	return utils.ShortenString(result, 300), false
