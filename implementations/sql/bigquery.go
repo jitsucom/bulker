@@ -200,13 +200,17 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 		columns := sourceTable.SortedColumnNames()
 		updateSet := make([]string, len(columns))
 		for i, name := range columns {
-			updateSet[i] = fmt.Sprintf("T.%s = S.%s", bq.ColumnName(name), bq.ColumnName(name))
+			updateSet[i] = fmt.Sprintf("T.%s = S.%s", bq.quotedColumnName(name), bq.quotedColumnName(name))
 		}
 		var joinConditions []string
 		for pkField := range targetTable.PKFields {
-			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = S.%s", bq.ColumnName(pkField), bq.ColumnName(pkField)))
+			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = S.%s", bq.quotedColumnName(pkField), bq.quotedColumnName(pkField)))
 		}
-		columnsString := strings.Join(columns, ",")
+		quotedColumns := make([]string, len(columns))
+		for i, name := range columns {
+			quotedColumns[i] = bq.quotedColumnName(name)
+		}
+		columnsString := strings.Join(quotedColumns, ",")
 		insertFromSelectStatement := fmt.Sprintf(bigqueryMergeTemplate, bq.fullTableName(targetTable.Name), bq.fullTableName(sourceTable.Name),
 			strings.Join(joinConditions, " AND "), strings.Join(updateSet, ", "), columnsString, columnsString)
 
@@ -745,7 +749,7 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types.O
 	values := make([]bigquery.QueryParameter, len(object)+len(updateValues), len(object)+len(updateValues))
 	i := 0
 	for name, value := range object {
-		columns[i] = bq.ColumnName(name) + "= @" + name
+		columns[i] = bq.quotedColumnName(name) + "= @" + name
 		values[i] = bigquery.QueryParameter{Name: name, Value: value}
 		i++
 	}
@@ -795,7 +799,7 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 	if len(orderBy) > 0 {
 		quotedOrderByColumns := make([]string, len(orderBy))
 		for i, col := range orderBy {
-			quotedOrderByColumns[i] = fmt.Sprintf("%s asc", bq.ColumnName(col))
+			quotedOrderByColumns[i] = fmt.Sprintf("%s asc", bq.quotedColumnName(col))
 		}
 		orderByClause = " ORDER BY " + strings.Join(quotedOrderByColumns, ", ")
 	}
@@ -882,9 +886,9 @@ func (bq *BigQuery) toWhenConditions(conditions *WhenConditions) (string, []bigq
 		switch strings.ToLower(condition.Clause) {
 		case "is null":
 		case "is not null":
-			queryConditions = append(queryConditions, bq.ColumnName(condition.Field)+" "+condition.Clause)
+			queryConditions = append(queryConditions, bq.quotedColumnName(condition.Field)+" "+condition.Clause)
 		default:
-			queryConditions = append(queryConditions, bq.ColumnName(condition.Field)+" "+condition.Clause+" @when_"+condition.Field)
+			queryConditions = append(queryConditions, bq.quotedColumnName(condition.Field)+" "+condition.Clause+" @when_"+condition.Field)
 			values = append(values, bigquery.QueryParameter{Name: "when_" + condition.Field, Value: types.ReformatValue(condition.Value)})
 		}
 	}
@@ -953,7 +957,7 @@ func columnNameFunc(identifier string) (adapted string, needQuote bool) {
 	}
 	lc := strings.ToLower(result)
 	if bigqueryReservedWordsSet.Contains(lc) {
-		return "_" + result, false
+		return result, true
 	}
 	for _, reserved := range bigqueryReservedPrefixes {
 		if strings.HasPrefix(lc, reserved) {
@@ -969,6 +973,10 @@ func (bq *BigQuery) TableName(identifier string) string {
 
 func (bq *BigQuery) ColumnName(identifier string) string {
 	return bq.tableHelper.ColumnName(identifier)
+}
+
+func (bq *BigQuery) quotedColumnName(identifier string) string {
+	return bq.tableHelper.quotedColumnName(identifier)
 }
 
 func (bq *BigQuery) GetSQLType(dataType types.DataType) (string, bool) {
