@@ -266,7 +266,6 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			}
 		}
 	}()
-	domain = c.GetHeader("X-Bulker-Domain")
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, "")
@@ -286,35 +285,33 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	var stream *StreamWithDestinations
 	if ingestMessage.WriteKey != "" {
 		stream, err = r.fastStore.GetStreamById(ingestMessage.WriteKey)
-	} else if ingestMessage.Origin.Slug != "" {
-		eventsLogIds = []string{ingestMessage.Origin.Slug}
-		stream, err = r.fastStore.GetStreamById(ingestMessage.Origin.Slug)
-	}
-	if stream == nil && ingestMessage.Origin.Domain != "" {
-		var streams []StreamWithDestinations
-		streams, err = r.fastStore.GetStreamsByDomain(ingestMessage.Origin.Domain)
-		if len(streams) > 1 {
-			if ingestMessage.WriteKey == "" {
-				rError = r.ResponseError(c, http.StatusBadRequest, "error getting stream", false, fmt.Errorf("multiple streams found for domain %s. Please use 'writeKey' message property to select a concrete stream", ingestMessage.Origin.Domain), logFormat, messageId, domain)
-				return
-			}
-			writeKey := ingestMessage.WriteKey
-			for _, s := range streams {
-				// in case we don't select stream by public key, we need to translate error to all candidates
-				eventsLogIds = append(eventsLogIds, s.Stream.Id)
-				for _, k := range s.Stream.PublicKeys {
-					pk := strings.SplitN(k.Hash, ".", 2)
+		if stream == nil {
+			var hashes map[string]string
+			hashes, err = r.fastStore.getPublicKeyStreamsIds()
+			if err == nil {
+				for h, id := range hashes {
+					pk := strings.SplitN(h, ".", 2)
 					salt := pk[0]
 					hash := pk[1]
 					for _, globalSecret := range r.config.GlobalHashSecrets {
-						if hash == hashApiKey(writeKey, salt, globalSecret) {
-							stream = &s
+						if hash == hashApiKey(ingestMessage.WriteKey, salt, globalSecret) {
+							eventsLogIds = []string{id}
+							stream, err = r.fastStore.GetStreamById(id)
 							break
 						}
 					}
 				}
 			}
-
+		}
+	} else if ingestMessage.Origin.Slug != "" {
+		eventsLogIds = []string{ingestMessage.Origin.Slug}
+		stream, err = r.fastStore.GetStreamById(ingestMessage.Origin.Slug)
+	} else if ingestMessage.Origin.Domain != "" {
+		var streams []StreamWithDestinations
+		streams, err = r.fastStore.GetStreamsByDomain(ingestMessage.Origin.Domain)
+		if len(streams) > 1 {
+			rError = r.ResponseError(c, http.StatusBadRequest, "error getting stream", false, fmt.Errorf("multiple streams found for domain %s. Please use 'writeKey' message property to select a concrete stream", ingestMessage.Origin.Domain), logFormat, messageId, domain)
+			return
 		} else if len(streams) == 1 {
 			stream = &streams[0]
 		}

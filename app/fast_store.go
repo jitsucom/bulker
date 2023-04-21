@@ -10,6 +10,7 @@ import (
 const fastStoreServiceName = "fast_store"
 
 const fastStoreStreamIdsKey = "streamIds"
+const fastStoreStreamPublicKeys = "streamPublicKeys"
 const fastStoreStreamDomainsKey = "streamDomains"
 
 type FastStore struct {
@@ -72,6 +73,21 @@ func NewFastStore(config *AppConfig) (*FastStore, error) {
 		redisPool:   redisPool,
 	}
 	return &fs, nil
+}
+
+func (fs *FastStore) getPublicKeyStreamsIds() (map[string]string, error) {
+	connection := fs.redisPool.Get()
+	defer connection.Close()
+
+	streamMap, err := redis.StringMap(connection.Do("HGETALL", fastStoreStreamPublicKeys))
+	if err == redis.ErrNil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fs.NewError("failed to get stream ids by hash mapping: %w", err)
+	}
+	
+	return streamMap, nil
 }
 
 func (fs *FastStore) GetStreamById(slug string) (*StreamWithDestinations, error) {
