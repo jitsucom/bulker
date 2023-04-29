@@ -326,7 +326,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	}
 	eventsLogIds = []string{stream.Stream.Id}
 	if len(stream.AsynchronousDestinations) == 0 && len(stream.SynchronousDestinations) == 0 {
-		c.JSON(http.StatusNoContent, gin.H{"message": "no destinations found for stream"})
+		c.JSON(http.StatusOK, gin.H{"message": "no destinations found for stream"})
 		return
 	}
 	asyncDestinations = utils.ArrayMap(stream.AsynchronousDestinations, func(d ShortDestinationConfig) string { return d.ConnectionId })

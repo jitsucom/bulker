@@ -26,6 +26,8 @@ var (
 	FrequencyOption = ImplementationOption[int]{Key: "frequency", ParseFunc: utils.ParseInt}
 	// Dummy. just added here to be treated as known options
 	FunctionsOption = ImplementationOption[any]{Key: "functions", ParseFunc: func(serialized any) (any, error) { return nil, nil }}
+	// Dummy. just added here to be treated as known options
+	DataLayoutOption = ImplementationOption[string]{Key: "dataLayout", ParseFunc: utils.ParseString}
 
 	RetryPeriodOption = ImplementationOption[int]{
 		Key:          "retryPeriodSec",
@@ -45,6 +47,7 @@ func init() {
 	RegisterOption(&BatchPeriodOption)
 	RegisterOption(&FrequencyOption)
 	RegisterOption(&FunctionsOption)
+	RegisterOption(&DataLayoutOption)
 
 	RegisterOption(&RetryPeriodOption)
 	RegisterOption(&RetryBatchSizeOption)
