@@ -32,7 +32,6 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	}
 	table, processedObject, err := ps.preprocess(object)
 	if err != nil {
-		ps.updateRepresentationTable(table)
 		return
 	}
 	dstTable, err := ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.id, table)
