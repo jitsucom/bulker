@@ -322,7 +322,6 @@ func (ps *AbstractTransactionalSQLStream) Consume(ctx context.Context, object ty
 	//type mapping, flattening => table schema
 	tableForObject, processedObject, err := ps.preprocess(object)
 	if err != nil {
-		ps.updateRepresentationTable(tableForObject)
 		return
 	}
 	batchFile := ps.batchFile != nil
