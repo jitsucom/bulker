@@ -43,8 +43,8 @@ func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchSize, r
 		}
 	}()
 	nextBatch = true
-	// we collect batchSize of messages but no longer than for waitForMessages period
-	timeEnd := time.Now().Add(rc.waitForMessages)
+	// we collect batchSize of messages but no longer than for 1/10 of batchPeriodSec
+	timeEnd := time.Now().Add(time.Duration(rc.batchPeriodSec) * time.Second)
 	for i := 0; i < retryBatchSize; i++ {
 		if rc.retired.Load() {
 			return
@@ -53,7 +53,7 @@ func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchSize, r
 		if wait <= 0 {
 			break
 		}
-		message, err := rc.consumer.ReadMessage(wait)
+		message, err := rc.consumer.ReadMessage(rc.waitForMessages)
 		if err != nil {
 			kafkaErr := err.(kafka.Error)
 			if kafkaErr.Code() == kafka.ErrTimedOut {

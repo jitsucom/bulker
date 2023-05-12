@@ -63,8 +63,8 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchSiz
 			}
 		}
 	}()
-	// we collect batchSize of messages but no longer than for waitForMessages period
-	timeEnd := time.Now().Add(bc.waitForMessages)
+	// we collect batchSize of messages but no longer than for 1/10 of batchPeriodSec
+	timeEnd := time.Now().Add(time.Duration(bc.batchPeriodSec) * time.Second)
 	var latestMessage *kafka.Message
 	var processedObjectsSample []types.Object
 	processed := 0
@@ -77,7 +77,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchSiz
 		if wait <= 0 {
 			break
 		}
-		message, err := bc.consumer.ReadMessage(wait)
+		message, err := bc.consumer.ReadMessage(bc.waitForMessages)
 		if err != nil {
 			kafkaErr := err.(kafka.Error)
 			if kafkaErr.Code() == kafka.ErrTimedOut {
