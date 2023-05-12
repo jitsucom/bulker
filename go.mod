@@ -12,7 +12,7 @@ require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.0.2
 	github.com/docker/go-connections v0.4.0
 	github.com/gin-gonic/gin v1.8.1
-	github.com/go-co-op/gocron v1.18.0
+	github.com/go-co-op/gocron v1.27.0
 	github.com/go-sql-driver/mysql v1.7.0
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/martian v2.1.0+incompatible
@@ -161,7 +161,6 @@ require (
 	golang.org/x/mod v0.8.0 // indirect
 	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783 // indirect
-	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
 	golang.org/x/term v0.6.0 // indirect
 	golang.org/x/text v0.8.0 // indirect

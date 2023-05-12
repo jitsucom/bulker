@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/jitsucom/bulker/base/utils"
 	"strconv"
 	"time"
 )
@@ -44,7 +45,7 @@ func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchSize, r
 	}()
 	nextBatch = true
 	// we collect batchSize of messages but no longer than for 1/10 of batchPeriodSec
-	timeEnd := time.Now().Add(time.Duration(rc.batchPeriodSec) * time.Second)
+	timeEnd := time.Now().Add(utils.MaxDuration(time.Duration(rc.batchPeriodSec/10)*time.Second, rc.waitForMessages))
 	for i := 0; i < retryBatchSize; i++ {
 		if rc.retired.Load() {
 			return

@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
+	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 	jsoniter "github.com/json-iterator/go"
@@ -64,7 +65,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchSiz
 		}
 	}()
 	// we collect batchSize of messages but no longer than for 1/10 of batchPeriodSec
-	timeEnd := time.Now().Add(time.Duration(bc.batchPeriodSec) * time.Second)
+	timeEnd := time.Now().Add(utils.MaxDuration(time.Duration(bc.batchPeriodSec/10)*time.Second, bc.waitForMessages))
 	var latestMessage *kafka.Message
 	var processedObjectsSample []types.Object
 	processed := 0

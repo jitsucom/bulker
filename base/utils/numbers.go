@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"time"
 )
 
 // ParseInt parses value of string, int, integer float into int.
@@ -28,6 +29,13 @@ func ParseInt(value any) (int, error) {
 }
 
 func MaxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func MaxDuration(a, b time.Duration) time.Duration {
 	if a > b {
 		return a
 	}
