@@ -173,7 +173,7 @@ func (r *repositoryInternal) initBulkerInstance(cfg *DestinationConfig) {
 		}
 		options.Add(opt)
 	}
-	r.destinations[cfg.Id()] = &Destination{config: cfg, bulker: bulkerInstance, streamOptions: &options, owner: r}
+	r.destinations[cfg.Id()] = &Destination{config: cfg, mode: bulker.ModeOption.Get(&options), bulker: bulkerInstance, streamOptions: &options, owner: r}
 	logFunc("destination %s initialized%s. Ver: %s", cfg.Id(), withError, cfg.UpdatedAt)
 }
 
@@ -220,6 +220,7 @@ func (r *repositoryInternal) GetDestinations() []*Destination {
 type Destination struct {
 	sync.Mutex
 	config        *DestinationConfig
+	mode          bulker.BulkMode
 	bulker        bulker.Bulker
 	streamOptions *bulker.StreamOptions
 
@@ -233,7 +234,7 @@ func (d *Destination) TopicId(tableName string) (string, error) {
 	if tableName == "" {
 		tableName = d.config.StreamConfig.TableName
 	}
-	return MakeTopicId(d.Id(), string(d.config.StreamConfig.BulkMode), tableName, true)
+	return MakeTopicId(d.Id(), string(d.mode), tableName, true)
 }
 
 // Id returns destination id
@@ -243,7 +244,7 @@ func (d *Destination) Id() string {
 
 // Mode returns destination mode
 func (d *Destination) Mode() bulker.BulkMode {
-	return d.config.StreamConfig.BulkMode
+	return d.mode
 }
 
 func (d *Destination) retire() error {

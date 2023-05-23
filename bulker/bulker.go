@@ -38,6 +38,8 @@ const (
 	//
 	//ReplaceTable implies Batch, meaning that the new data will be available only after BulkerStream.complete() call
 	ReplaceTable BulkMode = "replace_table"
+
+	Unknown BulkMode = ""
 )
 
 // TODO: Recommend to use JSON Number! or let all column be float?
@@ -82,8 +84,6 @@ type Config struct {
 
 type StreamConfig struct {
 	TableName string `mapstructure:"defaultTableName" json:"defaultTableName"`
-	//bulkerType - type of bulker implementation will stream data to
-	BulkMode BulkMode `mapstructure:"mode" json:"mode"`
 	//Options by option name (key) in serialized form
 	Options map[string]any `mapstructure:"options" json:"options"`
 }

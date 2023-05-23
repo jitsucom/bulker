@@ -1,11 +1,8 @@
-FROM debian:bullseye-slim as main
-
-RUN apt-get update -y
-RUN apt-get install -y ca-certificates curl
+FROM busybox:glibc as main
 
 ENV TZ=UTC
 
-FROM golang:1.20.2-bullseye as build
+FROM golang:1.20.4-bullseye as build
 
 RUN apt-get install gcc libc6-dev
 

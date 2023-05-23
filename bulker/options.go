@@ -16,23 +16,11 @@ var (
 		ParseFunc:    utils.ParseInt,
 	}
 
-	BatchPeriodOption = ImplementationOption[int]{
-		Key:          "batchPeriodSec",
+	// BatchFrequencyOption frequency of running batches in minutes
+	BatchFrequencyOption = ImplementationOption[float64]{
+		Key:          "frequency",
 		DefaultValue: 0,
-		ParseFunc:    utils.ParseInt,
-	}
-
-	// FrequencyOption [[IGNORED]] is the same as BatchPeriodOption but in minutes.
-	FrequencyOption = ImplementationOption[int]{Key: "frequency", ParseFunc: utils.ParseInt}
-	// Dummy. just added here to be treated as known options
-	FunctionsOption = ImplementationOption[any]{Key: "functions", ParseFunc: func(serialized any) (any, error) { return nil, nil }}
-	// Dummy. just added here to be treated as known options
-	DataLayoutOption = ImplementationOption[string]{Key: "dataLayout", ParseFunc: utils.ParseString}
-
-	RetryPeriodOption = ImplementationOption[int]{
-		Key:          "retryPeriodSec",
-		DefaultValue: 0,
-		ParseFunc:    utils.ParseInt,
+		ParseFunc:    utils.ParseFloat,
 	}
 
 	RetryBatchSizeOption = ImplementationOption[int]{
@@ -40,17 +28,48 @@ var (
 		DefaultValue: 0,
 		ParseFunc:    utils.ParseInt,
 	}
+	// RetryFrequencyOption frequency of running retry consumer in minutes
+	RetryFrequencyOption = ImplementationOption[float64]{
+		Key:          "retryFrequency",
+		DefaultValue: 0,
+		ParseFunc:    utils.ParseFloat,
+	}
+
+	ModeOption = ImplementationOption[BulkMode]{Key: "mode", ParseFunc: func(serialized any) (BulkMode, error) {
+		switch v := serialized.(type) {
+		case string:
+			if v == "stream" {
+				return Stream, nil
+			} else if v == "batch" {
+				return Batch, nil
+			} else {
+				return Unknown, fmt.Errorf("unknown mode: %s", v)
+			}
+		default:
+			return Unknown, fmt.Errorf("invalid value type of mode option: %T", v)
+		}
+	},
+	}
+
+	// Not used by bulker. Just added here to be treated as known options
+	FunctionsOption  = ImplementationOption[any]{Key: "functions", ParseFunc: func(serialized any) (any, error) { return nil, nil }}
+	DataLayoutOption = ImplementationOption[string]{Key: "dataLayout", ParseFunc: utils.ParseString}
+	EventsOption     = ImplementationOption[string]{Key: "events", ParseFunc: utils.ParseString}
+	HostsOption      = ImplementationOption[string]{Key: "hosts", ParseFunc: utils.ParseString}
 )
 
 func init() {
+	RegisterOption(&ModeOption)
 	RegisterOption(&BatchSizeOption)
-	RegisterOption(&BatchPeriodOption)
-	RegisterOption(&FrequencyOption)
+	RegisterOption(&BatchFrequencyOption)
+	RegisterOption(&RetryFrequencyOption)
+	RegisterOption(&RetryBatchSizeOption)
+
+	// Not used by bulker. Just added here to be treated as known options
 	RegisterOption(&FunctionsOption)
 	RegisterOption(&DataLayoutOption)
-
-	RegisterOption(&RetryPeriodOption)
-	RegisterOption(&RetryBatchSizeOption)
+	RegisterOption(&EventsOption)
+	RegisterOption(&HostsOption)
 
 }
 

@@ -99,7 +99,7 @@ Bulker buffers events and sends them to destination in batches if mode=`batch`. 
 either one of the following is true:
 
 * `batchSize` events are buffered
-* `batchPeriodSec` seconds passed since the first event in the batch was buffered
+* `frequency` minutes passed since the first event in the batch was buffered. (float))
 
 Batch settings that are default for all destinations may be set with following variables:
 
@@ -107,7 +107,7 @@ Batch settings that are default for all destinations may be set with following v
 
 *Optional, default value: `300` (5 min)*
 
-Default period for batch processing for destinations where `batchPeriodSec` is not set explicitly.
+Default period for batch processing for destinations where `frequency` is not set explicitly.
 Read more about batch processing configuration [below](#defining-destinations)
 
 ### `BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE`
@@ -271,19 +271,19 @@ Each destination is a JSON object:
   //"s3" and "gcs" are coming soom
   type: "string", // destination type, see below
   //optional (time in ISO8601 format) when destination has been updated
-  mode: "string", // "stream" or "batch"
   updatedAt: "2020-01-01T00:00:00Z",
   //how to connect to destination. Values are destination specific. See 
   credentials: {},
   options: {
+    mode: "string", // "stream" or "batch"
     //maximum batch size. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE is used
     //see "Batching" section above
     //default value: 10000
     batchSize: 10000,
-    //period of running batch consumer in seconds. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC is used
+    //period of running batch consumer in minutes (float). If not set, value of BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC is used
     //see "Batching" section above
-    //default value: 300
-    batchPeriodSec: 300, 
+    //default value: 5
+    frequency: 5, 
     //name of the field that contains unique event id.
     //optional
     primaryKey: "id", 
@@ -297,10 +297,10 @@ Each destination is a JSON object:
     //see "Error Handling and Retries" section above
     //default value: 100
     retryBatchSize: 100, 
-    //period of running retry consumer in seconds. If not set batchPeriodSec is used or BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC if batchPeriodSec is not set too.
+    //period of running retry consumer in minutes (float). If not set batchPeriodSec is used or BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC if batchPeriodSec is not set too.
     //see "Error Handling and Retries" section above
-    //default value: 300
-    retryBatchPeriodSec: 300, 
+    //default value: 5
+    retryFrequency: 5, 
   },
 }
 ```

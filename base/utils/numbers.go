@@ -28,6 +28,22 @@ func ParseInt(value any) (int, error) {
 	}
 }
 
+// ParseFloat parses value of string, int, integer float into float64.
+func ParseFloat(value any) (float64, error) {
+	switch v := value.(type) {
+	case string:
+		return strconv.ParseFloat(v, 64)
+	case int:
+		return float64(v), nil
+	case int64:
+		return float64(v), nil
+	case float64:
+		return v, nil
+	default:
+		return 0, fmt.Errorf("ParseFloat: invalid value type %T", value)
+	}
+}
+
 func MaxInt(a, b int) int {
 	if a > b {
 		return a

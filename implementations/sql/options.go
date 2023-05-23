@@ -64,7 +64,7 @@ var (
 
 	// TimestampOption - field name that contains timestamp. For creating sorting indexes or partitions by that field in destination tables
 	TimestampOption = bulker.ImplementationOption[string]{
-		Key:       "timestamp",
+		Key:       "timestampColumn",
 		ParseFunc: utils.ParseString,
 	}
 

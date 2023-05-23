@@ -180,7 +180,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 				}
 				tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
 			case "batch":
-				batchPeriodSec := utils.Nvl(bulker.BatchPeriodOption.Get(destination.streamOptions), tm.config.BatchRunnerPeriodSec)
+				batchPeriodSec := utils.Nvl(int(bulker.BatchFrequencyOption.Get(destination.streamOptions)*60), tm.config.BatchRunnerPeriodSec)
 				batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, batchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
 				if err != nil {
 					topicsErrorsByMode[mode]++
@@ -198,7 +198,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 					tm.Infof("Consumer for destination topic %s was scheduled with batch period %ds.", topic, batchPeriodSec)
 				}
 			case retryTopicMode:
-				retryPeriodSec := utils.Nvl(bulker.RetryPeriodOption.Get(destination.streamOptions), bulker.BatchPeriodOption.Get(destination.streamOptions), tm.config.BatchRunnerRetryPeriodSec)
+				retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(destination.streamOptions)*60), int(bulker.BatchFrequencyOption.Get(destination.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)
 				retryConsumer, err := NewRetryConsumer(tm.repository, destinationId, retryPeriodSec, topic, tm.config, tm.kafkaConfig)
 				if err != nil {
 					topicsErrorsByMode[mode]++
@@ -266,7 +266,7 @@ func (tm *TopicManager) changeListener(changes RepositoryChange) {
 	for _, changedDst := range changes.ChangedDestinations {
 		tm.Lock()
 		for _, consumer := range tm.batchConsumers[changedDst.Id()] {
-			batchPeriodSec := utils.Nvl(bulker.BatchPeriodOption.Get(changedDst.streamOptions), tm.config.BatchRunnerPeriodSec)
+			batchPeriodSec := utils.Nvl(int(bulker.BatchFrequencyOption.Get(changedDst.streamOptions)*60), tm.config.BatchRunnerPeriodSec)
 			if consumer.BatchPeriodSec() != batchPeriodSec {
 				consumer.UpdateBatchPeriod(batchPeriodSec)
 				_, err := tm.cron.ReplaceBatchConsumer(consumer)
@@ -280,7 +280,7 @@ func (tm *TopicManager) changeListener(changes RepositoryChange) {
 			}
 		}
 		for _, consumer := range tm.retryConsumers[changedDst.Id()] {
-			retryPeriodSec := utils.Nvl(bulker.RetryPeriodOption.Get(changedDst.streamOptions), bulker.BatchPeriodOption.Get(changedDst.streamOptions), tm.config.BatchRunnerRetryPeriodSec)
+			retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(changedDst.streamOptions)*60), int(bulker.BatchFrequencyOption.Get(changedDst.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)
 			if consumer.BatchPeriodSec() != retryPeriodSec {
 				consumer.UpdateBatchPeriod(retryPeriodSec)
 				_, err := tm.cron.ReplaceBatchConsumer(consumer)
