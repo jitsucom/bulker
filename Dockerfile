@@ -1,4 +1,7 @@
-FROM busybox:glibc as main
+FROM debian:bullseye-slim as main
+
+RUN apt-get update -y
+RUN apt-get install -y ca-certificates curl
 
 ENV TZ=UTC
 
