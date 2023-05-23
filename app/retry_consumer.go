@@ -35,7 +35,7 @@ func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchSize, r
 		if err != nil {
 			//cleanup
 			if firstPosition != nil {
-				_ = rc.consumer.Seek(*firstPosition, 10_000)
+				_, _ = rc.consumer.SeekPartitions([]kafka.TopicPartition{*firstPosition})
 			}
 			if txOpened {
 				_ = rc.producer.AbortTransaction(context.Background())

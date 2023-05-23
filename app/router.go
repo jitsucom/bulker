@@ -367,14 +367,9 @@ func (r *Router) IngestHandler(c *gin.Context) {
 
 func (r *Router) FailedHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
-	tableName := c.Query("tableName")
 	status := utils.NvlString(c.Query("status"), "dead")
 	if status != retryTopicMode && status != deadTopicMode {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown status: " + status + " (should be '" + retryTopicMode + "' or '" + deadTopicMode + "')"})
-		return
-	}
-	if tableName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "tableName query parameter is required"})
 		return
 	}
 	topicId, _ := MakeTopicId(destinationId, status, allTablesToken, false)
@@ -397,8 +392,8 @@ func (r *Router) FailedHandler(c *gin.Context) {
 	start := time.Now()
 	c.Header("Content-Type", "application/x-ndjson")
 	for {
-		msg, err := consumer.ReadMessage(time.Second)
-		json := make(map[string]any)
+		msg, err := consumer.ReadMessage(time.Second * 2)
+		jsn := make(map[string]any)
 		if err != nil {
 			kafkaErr := err.(kafka.Error)
 			if kafkaErr.Code() == kafka.ErrTimedOut {
@@ -407,15 +402,15 @@ func (r *Router) FailedHandler(c *gin.Context) {
 			errorID := uuid.NewLettersNumbers()
 			err = fmt.Errorf("error# %s: couldn't read kafka message from topic: %s : %w", errorID, topicId, kafkaErr)
 			r.Errorf(err.Error())
-			json["ERROR"] = fmt.Errorf("error# %s: couldn't read kafka message", errorID).Error()
+			jsn["ERROR"] = fmt.Errorf("error# %s: couldn't read kafka message", errorID).Error()
 		} else {
-			err = hjson.Unmarshal(msg.Value, &json)
+			err = hjson.Unmarshal(msg.Value, &jsn)
 			if err != nil {
-				json["UNPARSABLE_MESSAGE"] = string(msg.Value)
+				jsn["UNPARSABLE_MESSAGE"] = string(msg.Value)
 			}
 		}
 
-		bytes, _ := jsoniter.Marshal(json)
+		bytes, _ := jsoniter.Marshal(jsn)
 		_, _ = c.Writer.Write(bytes)
 		_, _ = c.Writer.Write([]byte("\n"))
 		if msg.Timestamp.After(start) {

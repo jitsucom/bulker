@@ -166,7 +166,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 
 	bc.Infof("Rolling back to first offset %d (failed at %d)", firstPosition.Offset, failedPosition.Offset)
 	//Rollback consumer to committed offset
-	err = bc.consumer.Seek(*firstPosition, 10_000)
+	_, err = bc.consumer.SeekPartitions([]kafka.TopicPartition{*firstPosition})
 	if err != nil {
 		bc.errorMetric("SEEK_ERROR")
 		return BatchCounters{}, fmt.Errorf("failed to rollback kafka consumer offset: %w", err)
@@ -179,7 +179,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		if err != nil {
 			//cleanup
 			_ = bc.producer.AbortTransaction(context.Background())
-			err = bc.consumer.Seek(*firstPosition, 10_000)
+			_, err = bc.consumer.SeekPartitions([]kafka.TopicPartition{*firstPosition})
 			if err != nil {
 				bc.errorMetric("SEEK_ERROR")
 			}

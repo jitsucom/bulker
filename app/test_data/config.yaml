@@ -1,8 +1,8 @@
 destinations:
   batch_postgres:
     type: "postgres"
-    mode: "batch"
     options:
+      mode: "batch"
       batchSize: 10
       primaryKey: "id"
     credentials:
@@ -16,8 +16,8 @@ destinations:
         sslmode: disable
   stream_postgres:
     type: "postgres"
-    mode: "stream"
     options:
+      mode: "stream"
       primaryKey: "id"
     credentials:
       host: localhost
