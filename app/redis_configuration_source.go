@@ -145,7 +145,7 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 			rcs.Errorf("failed to parse config for destination %s: %s: %v", id, config, err)
 		} else if dstCfg.UsesBulker {
 			dstCfg.Config.Id = id
-			rcs.Infof("parsed config for destination %s: %+v", id, dstCfg)
+			rcs.Debugf("parsed config for destination %s.", id, dstCfg)
 			newDsts[id] = &dstCfg
 		}
 	}

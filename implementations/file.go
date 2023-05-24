@@ -11,6 +11,7 @@ type FileAdapter interface {
 	Upload(fileName string, fileReader io.ReadSeeker) error
 	Download(fileName string) ([]byte, error)
 	DeleteObject(key string) error
+	Path(fileName string) string
 	Format() types.FileFormat
 	Compression() types.FileCompression
 }

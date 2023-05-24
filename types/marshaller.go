@@ -201,6 +201,7 @@ const (
 type FileCompression string
 
 const (
-	FileCompressionGZIP FileCompression = "gzip"
-	FileCompressionNONE FileCompression = ""
+	FileCompressionGZIP    FileCompression = "gzip"
+	FileCompressionNONE    FileCompression = "none"
+	FileCompressionUNKNOWN FileCompression = ""
 )

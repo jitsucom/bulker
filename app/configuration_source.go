@@ -227,7 +227,7 @@ func NewEnvConfigurationSource(prefix string) *EnvConfigurationSource {
 			continue
 		}
 		cfg.Config.Id = id
-		base.Infof("parsed config for destination %s: %+v", id, cfg)
+		base.Debugf("parsed config for destination %s: %+v", id, cfg)
 		results[id] = cfg
 	}
 	y := &EnvConfigurationSource{

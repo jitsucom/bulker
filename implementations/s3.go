@@ -18,9 +18,10 @@ import (
 
 // S3Config is a dto for config deserialization
 type S3Config struct {
-	AccessKeyID string                `mapstructure:"access_key_id,omitempty" json:"access_key_id,omitempty" yaml:"access_key_id,omitempty"`
-	SecretKey   string                `mapstructure:"secret_access_key,omitempty" json:"secret_access_key,omitempty" yaml:"secret_access_key,omitempty"`
+	AccessKey   string                `mapstructure:"accessKey,omitempty" json:"accessKey,omitempty" yaml:"accessKey,omitempty"`
+	SecretKey   string                `mapstructure:"secretKey,omitempty" json:"secretKey,omitempty" yaml:"secretKey,omitempty"`
 	Bucket      string                `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
+	Folder      string                `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
 	Region      string                `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
 	Endpoint    string                `mapstructure:"endpoint,omitempty" json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
 	Format      types.FileFormat      `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
@@ -32,11 +33,11 @@ func (s3c *S3Config) Validate() error {
 	if s3c == nil {
 		return errors.New("S3 config is required")
 	}
-	if s3c.AccessKeyID == "" {
-		return errors.New("S3 access_key_id is required parameter")
+	if s3c.AccessKey == "" {
+		return errors.New("S3 accessKey is required parameter")
 	}
 	if s3c.SecretKey == "" {
-		return errors.New("S3 secret_access_key is required parameter")
+		return errors.New("S3 secretKey is required parameter")
 	}
 	if s3c.Bucket == "" {
 		return errors.New("S3 bucket is required parameter")
@@ -62,7 +63,7 @@ func NewS3(s3Config *S3Config) (*S3, error) {
 	}
 
 	awsConfig := aws.NewConfig().
-		WithCredentials(credentials.NewStaticCredentials(s3Config.AccessKeyID, s3Config.SecretKey, "")).
+		WithCredentials(credentials.NewStaticCredentials(s3Config.AccessKey, s3Config.SecretKey, "")).
 		WithRegion(s3Config.Region)
 	if s3Config.Endpoint != "" {
 		awsConfig.WithEndpoint(s3Config.Endpoint)
@@ -93,6 +94,8 @@ func (a *S3) UploadBytes(fileName string, fileBytes []byte) error {
 
 // Upload creates named file on s3 with payload
 func (a *S3) Upload(fileName string, fileReader io.ReadSeeker) error {
+	fileName = a.Path(fileName)
+
 	if a.closed.Load() {
 		return fmt.Errorf("attempt to use closed S3 instance")
 	}
@@ -122,6 +125,8 @@ func (a *S3) Upload(fileName string, fileReader io.ReadSeeker) error {
 
 // Download downloads file from s3 bucket
 func (a *S3) Download(fileName string) ([]byte, error) {
+	fileName = a.Path(fileName)
+
 	if a.closed.Load() {
 		return nil, fmt.Errorf("attempt to use closed S3 instance")
 	}
@@ -153,6 +158,8 @@ func (a *S3) Download(fileName string) ([]byte, error) {
 
 // DeleteObject deletes object from s3 bucket by key
 func (a *S3) DeleteObject(key string) error {
+	key = a.Path(key)
+
 	if a.closed.Load() {
 		return fmt.Errorf("attempt to use closed S3 instance")
 	}
@@ -199,4 +206,11 @@ func (a *S3) ValidateWritePermission() error {
 func (a *S3) Close() error {
 	a.closed.Store(true)
 	return nil
+}
+
+func (a *S3) Path(fileName string) string {
+	if a.config.Folder != "" {
+		return fmt.Sprintf("%s/%s", a.config.Folder, fileName)
+	}
+	return fileName
 }

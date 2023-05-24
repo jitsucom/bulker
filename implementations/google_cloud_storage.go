@@ -24,6 +24,7 @@ var ErrMalformedBQDataset = errors.New("bq_dataset must be alphanumeric (plus un
 
 type GoogleConfig struct {
 	Bucket      string                `mapstructure:"gcsBucket,omitempty" json:"gcsBucket,omitempty" yaml:"gcsBucket,omitempty"`
+	Folder      string                `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
 	Project     string                `mapstructure:"project,omitempty" json:"project,omitempty" yaml:"project,omitempty"`
 	Dataset     string                `mapstructure:"bqDataset,omitempty" json:"bqDataset,omitempty" yaml:"bqDataset,omitempty"`
 	KeyFile     any                   `mapstructure:"keyFile,omitempty" json:"keyFile,omitempty" yaml:"keyFile,omitempty"`
@@ -55,11 +56,11 @@ func (gc *GoogleConfig) Validate() error {
 	case map[string]any:
 		keyFileObject := gc.KeyFile.(map[string]any)
 		if len(keyFileObject) == 0 {
-			return errors.New("Google key_file is required parameter")
+			return errors.New("Google keyFile is required parameter")
 		}
 		b, err := jsoniter.Marshal(keyFileObject)
 		if err != nil {
-			return fmt.Errorf("Malformed google key_file: %v", err)
+			return fmt.Errorf("Malformed google keyFile: %v", err)
 		}
 		gc.Credentials = option.WithCredentialsJSON(b)
 	case string:
@@ -68,7 +69,7 @@ func (gc *GoogleConfig) Validate() error {
 			return nil
 		}
 		if keyFile == "" {
-			return errors.New("Google key file is required parameter")
+			return errors.New("Google keyFile is required parameter")
 		}
 		if strings.Contains(keyFile, "{") {
 			gc.Credentials = option.WithCredentialsJSON([]byte(keyFile))
@@ -123,6 +124,8 @@ func (gcs *GoogleCloudStorage) UploadBytes(fileName string, fileBytes []byte) er
 
 // UploadBytes creates named file on google cloud storage with payload
 func (gcs *GoogleCloudStorage) Upload(fileName string, fileReader io.ReadSeeker) (err error) {
+	fileName = gcs.Path(fileName)
+
 	//panic handler
 	defer func() {
 		if r := recover(); r != nil {
@@ -175,6 +178,7 @@ func (gcs *GoogleCloudStorage) Upload(fileName string, fileReader io.ReadSeeker)
 
 // Download downloads file from google cloud storage bucket
 func (gcs *GoogleCloudStorage) Download(key string) (fileBytes []byte, err error) {
+	key = gcs.Path(key)
 	//panic handler
 	defer func() {
 		if r := recover(); r != nil {
@@ -212,6 +216,7 @@ func (gcs *GoogleCloudStorage) Download(key string) (fileBytes []byte, err error
 
 // DeleteObject deletes object from google cloud storage bucket
 func (gcs *GoogleCloudStorage) DeleteObject(key string) (err error) {
+	key = gcs.Path(key)
 	//panic handler
 	defer func() {
 		if r := recover(); r != nil {
@@ -258,4 +263,11 @@ func (gcs *GoogleCloudStorage) ValidateWritePermission() error {
 func (gcs *GoogleCloudStorage) Close() error {
 	gcs.closed.Store(true)
 	return gcs.client.Close()
+}
+
+func (gcs *GoogleCloudStorage) Path(fileName string) string {
+	if gcs.config.Folder != "" {
+		return fmt.Sprintf("%s/%s", gcs.config.Folder, fileName)
+	}
+	return fileName
 }

@@ -17,8 +17,9 @@ func init() {
 }
 
 type GCSConfig struct {
-	Bucket      string                `mapstructure:"gcsBucket,omitempty" json:"gcsBucket,omitempty" yaml:"gcsBucket,omitempty"`
-	KeyFile     any                   `mapstructure:"keyFile,omitempty" json:"keyFile,omitempty" yaml:"keyFile,omitempty"`
+	Bucket      string                `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
+	Folder      string                `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
+	AccessKey   any                   `mapstructure:"accessKey,omitempty" json:"accessKey,omitempty" yaml:"accessKey,omitempty"`
 	Format      types.FileFormat      `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
 	Compression types.FileCompression `mapstructure:"compression,omitempty" json:"compression,omitempty" yaml:"compression,omitempty"`
 }
@@ -33,7 +34,8 @@ func NewGCSBulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	googleConfig := implementations.GoogleConfig{
 		Bucket:      gcsConfig.Bucket,
-		KeyFile:     gcsConfig.KeyFile,
+		Folder:      gcsConfig.Folder,
+		KeyFile:     gcsConfig.AccessKey,
 		Format:      gcsConfig.Format,
 		Compression: gcsConfig.Compression,
 	}

@@ -325,7 +325,7 @@ func (bc *AbstractBatchConsumer) pause() {
 			} else if message != nil {
 				bc.Debugf("Unexpected message on paused consumer: %v", message)
 				//If message slipped through pause, rollback offset and make sure consumer is paused
-				_, err = bc.consumer.SeekPartitions([]kafka.TopicPartition{message.TopicPartition})
+				err = bc.consumer.Seek(message.TopicPartition, 10_000)
 				if err != nil {
 					bc.errorMetric("ROLLBACK_ON_PAUSE_ERR")
 					bc.SystemErrorf("Failed to rollback offset on paused consumer: %v", err)

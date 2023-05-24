@@ -9,7 +9,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.10.0
 	github.com/Kount/pq-timeouts v1.0.0
 	github.com/aws/aws-sdk-go v1.44.268
-	github.com/confluentinc/confluent-kafka-go/v2 v2.1.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.0.2
 	github.com/docker/go-connections v0.4.0
 	github.com/gin-gonic/gin v1.8.1
 	github.com/go-co-op/gocron v1.27.1

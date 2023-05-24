@@ -433,7 +433,7 @@ func (r *Router) TestConnectionHandler(c *gin.Context) {
 		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "parse failed", false, err, "")
 		return
 	} else {
-		r.Infof("[test] parsed config for destination %s: %+v", utils.MapNVL(destinationConfig, "id", ""), destinationConfig)
+		r.Debugf("[test] parsed config for destination %s: %+v", utils.MapNVL(destinationConfig, "id", ""), destinationConfig)
 	}
 	bulkerCfg.DestinationConfig = destinationConfig
 	bulkerCfg.Id = utils.MapNVL(destinationConfig, "id", "").(string)

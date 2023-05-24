@@ -55,7 +55,7 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 	}
 	s3 := s3BatchFileOption.Get(&ps.options)
 	if s3 != nil {
-		s3Config := implementations.S3Config{AccessKeyID: s3.AccessKeyID, SecretKey: s3.SecretKey, Bucket: s3.Bucket, Region: s3.Region, Format: ps.sqlAdapter.GetBatchFileFormat(), Compression: ps.sqlAdapter.GetBatchFileCompression()}
+		s3Config := implementations.S3Config{AccessKey: s3.AccessKeyID, SecretKey: s3.SecretKey, Bucket: s3.Bucket, Region: s3.Region, Format: ps.sqlAdapter.GetBatchFileFormat(), Compression: ps.sqlAdapter.GetBatchFileCompression()}
 		ps.s3, err = implementations.NewS3(&s3Config)
 		if err != nil {
 			return fmt.Errorf("failed to setup s3 client: %w", err)
@@ -67,7 +67,7 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		if err != nil {
 			return err
 		}
-		ps.marshaller = &types.JSONMarshaller{}
+		ps.marshaller, _ = types.NewMarshaller(types.FileFormatNDJSON, types.FileCompressionNONE)
 		ps.targetMarshaller, err = types.NewMarshaller(ps.sqlAdapter.GetBatchFileFormat(), ps.sqlAdapter.GetBatchFileCompression())
 		if err != nil {
 			return err

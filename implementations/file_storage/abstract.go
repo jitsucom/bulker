@@ -79,7 +79,7 @@ func (ps *AbstractFileStorageStream) init(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		ps.marshaller = &types.JSONMarshaller{}
+		ps.marshaller, _ = types.NewMarshaller(types.FileFormatNDJSON, types.FileCompressionNONE)
 		ps.targetMarshaller, err = types.NewMarshaller(ps.fileAdapter.Format(), ps.fileAdapter.Compression())
 		if err != nil {
 			return err
@@ -101,6 +101,7 @@ func (ps *AbstractFileStorageStream) preprocess(object types.Object) (types.Obje
 			return flatObject, nil
 		}
 	}
+	ps.state.ProcessedRows++
 	return object, nil
 }
 
@@ -207,7 +208,11 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 		if err != nil {
 			return errorj.Decorate(err, "failed to seek to beginning of tmp file")
 		}
-		err = ps.fileAdapter.Upload(ps.filenameFunc(), workingFile)
+		fileName := ps.filenameFunc()
+		ps.state.Representation = map[string]string{
+			"name": ps.fileAdapter.Path(fileName),
+		}
+		err = ps.fileAdapter.Upload(fileName, workingFile)
 		if err != nil {
 			return errorj.Decorate(err, "failed to flush tmp file to the warehouse")
 		}
