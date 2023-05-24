@@ -180,7 +180,7 @@ func TestSQLTypeHints(t *testing.T) {
 			expectedRows: []map[string]any{
 				{"id": 1, "time1": constantTime, "name": "a", "int1": 27, "nested_json1": "{\"a\":1}", "nested_json2": "{\"a\":\"2\"}", "nested_json3_a": 2, "nested_json3_nested_json_nested": "{\"a\":3}", "nested_json4": "{\"a\":\"4\"}"},
 			},
-			streamOptions: []bulker.StreamOption{WithColumnTypes(SQLTypes{}.
+			streamOptions: []bulker.StreamOption{WithColumnTypes(types.SQLTypes{}.
 				With("nested_json4", "json"))},
 			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{PostgresBulkerTypeId}),
 		}, {
@@ -205,7 +205,7 @@ func TestSQLTypeHints(t *testing.T) {
 			expectedRows: []map[string]any{
 				{"id": 1, "time1": constantTime, "name": "a", "int1": 27, "nested_json1": "{\"a\":1}", "nested_json2": "{\"a\":\"2\"}", "nested_json3_a": 2, "nested_json3_nested_json_nested": "{\"a\":3}", "nested_json4": "{\"a\":\"4\"}"},
 			},
-			streamOptions: []bulker.StreamOption{WithColumnTypes(SQLTypes{}.
+			streamOptions: []bulker.StreamOption{WithColumnTypes(types.SQLTypes{}.
 				With("nested_json4", "json"))},
 			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{BigqueryBulkerTypeId}),
 		},
@@ -236,7 +236,7 @@ func TestTypeOverrideOption(t *testing.T) {
 				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 			},
-			streamOptions: []bulker.StreamOption{WithColumnTypes(SQLTypes{}.
+			streamOptions: []bulker.StreamOption{WithColumnTypes(types.SQLTypes{}.
 				With("floatstring", "double precision").
 				With("roundfloatstring", "double precision").
 				With("boolstring", "boolean").
@@ -258,7 +258,7 @@ func TestTypeOverrideOption(t *testing.T) {
 				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 			},
-			streamOptions: []bulker.StreamOption{WithColumnTypes(SQLTypes{}.
+			streamOptions: []bulker.StreamOption{WithColumnTypes(types.SQLTypes{}.
 				With("floatstring", "double precision").
 				With("roundfloatstring", "double precision").
 				With("boolstring", "boolean").
@@ -280,7 +280,7 @@ func TestTypeOverrideOption(t *testing.T) {
 				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 			},
-			streamOptions: []bulker.StreamOption{WithColumnTypes(SQLTypes{}.
+			streamOptions: []bulker.StreamOption{WithColumnTypes(types.SQLTypes{}.
 				With("floatstring", "FLOAT").
 				With("roundfloatstring", "FLOAT").
 				With("boolstring", "BOOLEAN").
@@ -303,7 +303,7 @@ func TestTypeOverrideOption(t *testing.T) {
 				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 			},
-			streamOptions: []bulker.StreamOption{WithColumnTypes(SQLTypes{}.
+			streamOptions: []bulker.StreamOption{WithColumnTypes(types.SQLTypes{}.
 				With("floatstring", "double precision").
 				With("roundfloatstring", "double precision").
 				With("boolstring", "boolean").
@@ -325,7 +325,7 @@ func TestTypeOverrideOption(t *testing.T) {
 				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 			},
-			streamOptions: []bulker.StreamOption{WithColumnTypes(SQLTypes{}.
+			streamOptions: []bulker.StreamOption{WithColumnTypes(types.SQLTypes{}.
 				With("floatstring", "DOUBLE").
 				With("roundfloatstring", "DOUBLE").
 				//With("boolstring", "boolean"). //mysql doesnt cast 'true','false' string to boolean
@@ -347,7 +347,7 @@ func TestTypeOverrideOption(t *testing.T) {
 				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
 			},
-			streamOptions: []bulker.StreamOption{WithColumnTypes(SQLTypes{}.
+			streamOptions: []bulker.StreamOption{WithColumnTypes(types.SQLTypes{}.
 				With("floatstring", "Float64").
 				With("roundfloatstring", "Float64").
 				With("boolstring", "bool").

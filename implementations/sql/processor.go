@@ -3,6 +3,7 @@ package sql
 import (
 	"fmt"
 	"github.com/jitsucom/bulker/base/utils"
+	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	"strings"
 )
@@ -12,7 +13,7 @@ const SqlTypePrefix = "__sql_type"
 // ProcessEvents processes events objects without applying mapping rules
 // returns table headerm array of processed objects
 // or error if at least 1 was occurred
-func ProcessEvents(tableName string, event types.Object, customTypes SQLTypes) (*TypesHeader, types.Object, error) {
+func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTypes) (*TypesHeader, types.Object, error) {
 	sqlTypesHints, err := extractSQLTypesHints(event)
 	if err != nil {
 		return nil, nil, err
@@ -20,7 +21,7 @@ func ProcessEvents(tableName string, event types.Object, customTypes SQLTypes) (
 	for k, v := range customTypes {
 		sqlTypesHints[k] = v
 	}
-	flatObject, err := DefaultFlattener.FlattenObject(event, sqlTypesHints)
+	flatObject, err := implementations.DefaultFlattener.FlattenObject(event, sqlTypesHints)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -33,13 +34,13 @@ func ProcessEvents(tableName string, event types.Object, customTypes SQLTypes) (
 	return bh, flatObject, nil
 }
 
-func extractSQLTypesHints(object map[string]any) (SQLTypes, error) {
-	result := SQLTypes{}
+func extractSQLTypesHints(object map[string]any) (types.SQLTypes, error) {
+	result := types.SQLTypes{}
 	err := _extractSQLTypesHints("", object, result)
 	return result, err
 }
 
-func _extractSQLTypesHints(key string, object map[string]any, result SQLTypes) error {
+func _extractSQLTypesHints(key string, object map[string]any, result types.SQLTypes) error {
 	for k, v := range object {
 		//if column has __sql_type_ prefix
 		if columnName := strings.TrimPrefix(k, SqlTypePrefix); columnName != k {
@@ -51,12 +52,12 @@ func _extractSQLTypesHints(key string, object map[string]any, result SQLTypes) e
 			switch val := v.(type) {
 			case []any:
 				if len(val) > 1 {
-					result[mappedColumnName] = SQLColumn{Type: fmt.Sprint(val[0]), DdlType: fmt.Sprint(val[1]), Override: true}
+					result[mappedColumnName] = types.SQLColumn{Type: fmt.Sprint(val[0]), DdlType: fmt.Sprint(val[1]), Override: true}
 				} else {
-					result[mappedColumnName] = SQLColumn{Type: fmt.Sprint(val[0]), Override: true}
+					result[mappedColumnName] = types.SQLColumn{Type: fmt.Sprint(val[0]), Override: true}
 				}
 			case string:
-				result[mappedColumnName] = SQLColumn{Type: val, Override: true}
+				result[mappedColumnName] = types.SQLColumn{Type: val, Override: true}
 			default:
 				return fmt.Errorf("incorrect type of value for '__sql_type_' hint: %T", v)
 			}

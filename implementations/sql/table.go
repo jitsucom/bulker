@@ -3,6 +3,7 @@ package sql
 import (
 	"fmt"
 	"github.com/jitsucom/bulker/base/utils"
+	"github.com/jitsucom/bulker/types"
 	"sort"
 	"strings"
 )
@@ -10,7 +11,7 @@ import (
 const BulkerManagedPkConstraintPrefix = "bulker_managed_"
 
 // Columns is a list of columns representation
-type Columns map[string]SQLColumn
+type Columns map[string]types.SQLColumn
 
 // TableField is a table column representation
 type TableField struct {
@@ -100,7 +101,7 @@ func (t *Table) GetPKFieldsSet() utils.Set[string] {
 // 2) all fields from another schema exist in current schema
 // NOTE: Diff method doesn't take types into account
 func (t *Table) Diff(another *Table) *Table {
-	diff := &Table{Name: t.Name, Columns: map[string]SQLColumn{}, PKFields: utils.Set[string]{}}
+	diff := &Table{Name: t.Name, Columns: map[string]types.SQLColumn{}, PKFields: utils.Set[string]{}}
 
 	if !another.Exists() {
 		return diff

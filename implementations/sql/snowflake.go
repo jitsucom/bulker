@@ -11,7 +11,6 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
-	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	"os"
 	"path"
@@ -154,7 +153,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		dataSource.SetMaxIdleConns(10)
 		return dataSource, nil
 	}
-	typecastFunc := func(placeholder string, column SQLColumn) string {
+	typecastFunc := func(placeholder string, column types.SQLColumn) string {
 		if column.Override {
 			return placeholder + "::" + column.Type
 		}
@@ -166,7 +165,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	sqlAdapter, err := newSQLAdapterBase(bulkerConfig.Id, SnowflakeBulkerTypeId, config, dbConnectFunction, snowflakeTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)
 	s := &Snowflake{sqlAdapter}
-	s.batchFileFormat = implementations.CSV
+	s.batchFileFormat = types.FileFormatCSV
 
 	s.tableHelper = NewTableHelper(s, 255, '"')
 	s.tableHelper.tableNameFunc = sfIdentifierFunction
@@ -257,7 +256,7 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 		columnName := fmt.Sprint(row["name"])
 		columnSnowflakeType := fmt.Sprint(row["type"])
 		dt, _ := s.GetDataType(columnSnowflakeType)
-		table.Columns[columnName] = SQLColumn{Type: columnSnowflakeType, DataType: dt}
+		table.Columns[columnName] = types.SQLColumn{Type: columnSnowflakeType, DataType: dt}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").

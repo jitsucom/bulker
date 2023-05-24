@@ -276,7 +276,7 @@ func TestBasics(t *testing.T) {
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
-			streamOptions:  []bulker.StreamOption{WithPrimaryKey("id"), WithMergeRows()},
+			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithMergeRows()},
 		},
 		{
 			name:              "timestamp_option",
@@ -294,7 +294,7 @@ func TestBasics(t *testing.T) {
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
-			streamOptions:  []bulker.StreamOption{WithTimestamp("_timestamp")},
+			streamOptions:  []bulker.StreamOption{bulker.WithTimestamp("_timestamp")},
 		},
 	}
 	for _, tt := range tests {
@@ -424,24 +424,24 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		switch testConfig.expectedTableTypeChecking {
 		case TypeCheckingDisabled:
 			for k := range testConfig.expectedTable.Columns {
-				testConfig.expectedTable.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
+				testConfig.expectedTable.Columns[k] = types.SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
 			}
 			for k := range table.Columns {
-				table.Columns[k] = SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
+				table.Columns[k] = types.SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
 			}
 		case TypeCheckingDataTypesOnly:
 			for k := range testConfig.expectedTable.Columns {
-				testConfig.expectedTable.Columns[k] = SQLColumn{DataType: testConfig.expectedTable.Columns[k].DataType}
+				testConfig.expectedTable.Columns[k] = types.SQLColumn{DataType: testConfig.expectedTable.Columns[k].DataType}
 			}
 			for k := range table.Columns {
-				table.Columns[k] = SQLColumn{DataType: table.Columns[k].DataType}
+				table.Columns[k] = types.SQLColumn{DataType: table.Columns[k].DataType}
 			}
 		case TypeCheckingSQLTypesOnly:
 			for k := range testConfig.expectedTable.Columns {
-				testConfig.expectedTable.Columns[k] = SQLColumn{Type: testConfig.expectedTable.Columns[k].Type}
+				testConfig.expectedTable.Columns[k] = types.SQLColumn{Type: testConfig.expectedTable.Columns[k].Type}
 			}
 			for k := range table.Columns {
-				table.Columns[k] = SQLColumn{Type: table.Columns[k].Type}
+				table.Columns[k] = types.SQLColumn{Type: table.Columns[k].Type}
 			}
 		}
 		originalTableName := table.Name
@@ -516,7 +516,7 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 			partitionId := uuid.New()
 			newOptions := make([]bulker.StreamOption, len(testConfig.streamOptions))
 			copy(newOptions, testConfig.streamOptions)
-			newOptions = append(newOptions, WithPartition(partitionId))
+			newOptions = append(newOptions, bulker.WithPartition(partitionId))
 			testConfig.streamOptions = newOptions
 			//add partition id column to expectedTable
 			if len(testConfig.expectedTable.Columns) > 0 {
@@ -587,7 +587,7 @@ func PostStep(step string, testConfig bulkerTestConfig, mode bulker.BulkMode, re
 func justColumns(columns ...string) Columns {
 	colsMap := make(Columns, len(columns))
 	for _, col := range columns {
-		colsMap[col] = SQLColumn{}
+		colsMap[col] = types.SQLColumn{}
 	}
 	return colsMap
 }

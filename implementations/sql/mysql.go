@@ -13,7 +13,6 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
-	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	jsoniter "github.com/json-iterator/go"
 	"os"
@@ -119,7 +118,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		dataSource.SetMaxIdleConns(10)
 		return dataSource, nil
 	}
-	typecastFunc := func(placeholder string, column SQLColumn) string {
+	typecastFunc := func(placeholder string, column types.SQLColumn) string {
 		return placeholder
 	}
 	var queryLogger *logging.QueryLogger
@@ -134,9 +133,9 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		infileEnabled:  infileEnabled,
 	}
 	if infileEnabled {
-		m.batchFileFormat = implementations.CSV
+		m.batchFileFormat = types.FileFormatCSV
 	} else {
-		m.batchFileFormat = implementations.JSON
+		m.batchFileFormat = types.FileFormatNDJSON
 	}
 	m.tableHelper = NewTableHelper(m, 63, '`')
 	return m, err
@@ -363,7 +362,7 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 			continue
 		}
 		dt, _ := m.GetDataType(columnType)
-		table.Columns[columnName] = SQLColumn{Type: columnType, DataType: dt}
+		table.Columns[columnName] = types.SQLColumn{Type: columnType, DataType: dt}
 	}
 
 	if err := rows.Err(); err != nil {
@@ -480,7 +479,7 @@ func mySQLColumnDDL(quotedName, name string, table *Table) string {
 	return fmt.Sprintf("%s %s", quotedName, sqlType)
 }
 
-func mySQLMapColumnValue(value any, valuePresent bool, column SQLColumn) any {
+func mySQLMapColumnValue(value any, valuePresent bool, column types.SQLColumn) any {
 	if datetime, ok := value.(time.Time); ok {
 		if datetime.IsZero() {
 			// workaround for time.Time{} default value because of mysql driver internals

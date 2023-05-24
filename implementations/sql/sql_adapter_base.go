@@ -8,7 +8,6 @@ import (
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/objects"
 	"github.com/jitsucom/bulker/base/timestamp"
-	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	"strconv"
 	"strings"
@@ -36,7 +35,7 @@ var (
 	insertQueryTemplate, _           = template.New("insertQuery").Parse(insertQuery)
 	insertFromSelectQueryTemplate, _ = template.New("insertFromSelectQuery").Parse(insertFromSelectQuery)
 
-	unmappedValue ValueMappingFunction = func(val any, valPresent bool, column SQLColumn) any {
+	unmappedValue ValueMappingFunction = func(val any, valPresent bool, column types.SQLColumn) any {
 		return val
 	}
 )
@@ -48,22 +47,23 @@ type DbConnectFunction[T any] func(config *T) (*sql.DB, error)
 type ColumnDDLFunction func(quotedName, name string, table *Table) string
 
 // ValueMappingFunction maps object value to database value. For cases such default value substitution for null or missing values
-type ValueMappingFunction func(value any, valuePresent bool, column SQLColumn) any
+type ValueMappingFunction func(value any, valuePresent bool, column types.SQLColumn) any
 
 // TypeCastFunction wraps parameter(or placeholder) to a type cast expression if it is necessary (e.g. on types overrides)
-type TypeCastFunction func(placeholder string, column SQLColumn) string
+type TypeCastFunction func(placeholder string, column types.SQLColumn) string
 
 // ErrorAdapter is used to extract implementation specific payload and adapt to standard error
 type ErrorAdapter func(error) error
 
 type SQLAdapterBase[T any] struct {
 	objects.ServiceBase
-	typeId          string
-	config          *T
-	dataSource      *sql.DB
-	queryLogger     *logging.QueryLogger
-	batchFileFormat implementations.FileFormat
-	temporaryTables bool
+	typeId               string
+	config               *T
+	dataSource           *sql.DB
+	queryLogger          *logging.QueryLogger
+	batchFileFormat      types.FileFormat
+	batchFileCompression types.FileCompression
+	temporaryTables      bool
 
 	typesMapping        map[types.DataType]string
 	reverseTypesMapping map[string]types.DataType
@@ -90,7 +90,8 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunc
 		_columnDDLFunc:       columnDDLFunc,
 		checkErrFunc:         checkErrFunc,
 	}
-	s.batchFileFormat = implementations.JSON
+	s.batchFileFormat = types.FileFormatNDJSON
+	s.batchFileCompression = types.FileCompressionNONE
 	var err error
 	s.dataSource, err = dbConnectFunction(config)
 	s.initTypes(dataTypes)
@@ -119,8 +120,12 @@ func (b *SQLAdapterBase[T]) Type() string {
 	return b.typeId
 }
 
-func (b *SQLAdapterBase[T]) GetBatchFileFormat() implementations.FileFormat {
+func (b *SQLAdapterBase[T]) GetBatchFileFormat() types.FileFormat {
 	return b.batchFileFormat
+}
+
+func (b *SQLAdapterBase[T]) GetBatchFileCompression() types.FileCompression {
+	return b.batchFileCompression
 }
 
 func (b *SQLAdapterBase[T]) Ping(ctx context.Context) error {

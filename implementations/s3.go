@@ -18,12 +18,13 @@ import (
 
 // S3Config is a dto for config deserialization
 type S3Config struct {
-	AccessKeyID string `mapstructure:"access_key_id,omitempty" json:"access_key_id,omitempty" yaml:"access_key_id,omitempty"`
-	SecretKey   string `mapstructure:"secret_access_key,omitempty" json:"secret_access_key,omitempty" yaml:"secret_access_key,omitempty"`
-	Bucket      string `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
-	Region      string `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
-	Endpoint    string `mapstructure:"endpoint,omitempty" json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
-	FileConfig  `mapstructure:",squash" yaml:"-,inline"`
+	AccessKeyID string                `mapstructure:"access_key_id,omitempty" json:"access_key_id,omitempty" yaml:"access_key_id,omitempty"`
+	SecretKey   string                `mapstructure:"secret_access_key,omitempty" json:"secret_access_key,omitempty" yaml:"secret_access_key,omitempty"`
+	Bucket      string                `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
+	Region      string                `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
+	Endpoint    string                `mapstructure:"endpoint,omitempty" json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	Format      types.FileFormat      `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
+	Compression types.FileCompression `mapstructure:"compression,omitempty" json:"compression,omitempty" yaml:"compression,omitempty"`
 }
 
 // Validate returns err if invalid
@@ -65,17 +66,25 @@ func NewS3(s3Config *S3Config) (*S3, error) {
 		WithRegion(s3Config.Region)
 	if s3Config.Endpoint != "" {
 		awsConfig.WithEndpoint(s3Config.Endpoint)
+		awsConfig.WithS3ForcePathStyle(true)
 	}
 	if s3Config.Format == "" {
-		s3Config.Format = JSON
+		s3Config.Format = types.FileFormatNDJSON
 	}
-	s3Session := session.Must(session.NewSession())
+	s3Session, err := session.NewSession()
+	if err != nil {
+		return nil, errorj.SaveOnStageError.Wrap(err, "failed to create s3 session")
+	}
 
 	return &S3{client: s3.New(s3Session, awsConfig), config: s3Config, closed: atomic.NewBool(false)}, nil
 }
 
-func (a *S3) Format() FileFormat {
+func (a *S3) Format() types.FileFormat {
 	return a.config.Format
+}
+
+func (a *S3) Compression() types.FileCompression {
+	return a.config.Compression
 }
 
 func (a *S3) UploadBytes(fileName string, fileBytes []byte) error {
@@ -91,12 +100,13 @@ func (a *S3) Upload(fileName string, fileReader io.ReadSeeker) error {
 	params := &s3.PutObjectInput{
 		Bucket: aws.String(a.config.Bucket),
 	}
-	if a.config.Format == CSV {
+	if a.config.Compression == types.FileCompressionGZIP {
+		params.ContentEncoding = aws.String("gzip")
+	}
+	if a.config.Format == types.FileFormatCSV {
 		params.ContentType = aws.String("text/csv")
-	} else if a.config.Format == CSV_GZIP {
-		params.ContentType = aws.String("application/gzip")
-	} else if a.config.Format == JSON {
-		params.ContentType = aws.String("application/json")
+	} else if a.config.Format == types.FileFormatNDJSON || a.config.Format == types.FileFormatNDJSONFLAT {
+		params.ContentType = aws.String("application/x-ndjson")
 	}
 	params.Key = aws.String(fileName)
 	params.Body = fileReader
@@ -108,6 +118,37 @@ func (a *S3) Upload(fileName string, fileReader io.ReadSeeker) error {
 			})
 	}
 	return nil
+}
+
+// Download downloads file from s3 bucket
+func (a *S3) Download(fileName string) ([]byte, error) {
+	if a.closed.Load() {
+		return nil, fmt.Errorf("attempt to use closed S3 instance")
+	}
+
+	params := &s3.GetObjectInput{
+		Bucket: aws.String(a.config.Bucket),
+		Key:    aws.String(fileName),
+	}
+	resp, err := a.client.GetObject(params)
+	if err != nil {
+		return nil, errorj.SaveOnStageError.Wrap(err, "failed to read file from s3").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Bucket:    a.config.Bucket,
+				Statement: fmt.Sprintf("file: %s", fileName),
+			})
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errorj.SaveOnStageError.Wrap(err, "failed to read file from s3").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Bucket:    a.config.Bucket,
+				Statement: fmt.Sprintf("file: %s", fileName),
+			})
+	}
+	return data, nil
 }
 
 // DeleteObject deletes object from s3 bucket by key

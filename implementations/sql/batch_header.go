@@ -40,7 +40,7 @@ func (f Fields) Clone() Fields {
 	return clone
 }
 
-func (f Fields) OverrideTypes(newTypes SQLTypes) {
+func (f Fields) OverrideTypes(newTypes types.SQLTypes) {
 	for column, newType := range newTypes {
 		if currentField, ok := f[column]; ok {
 			//override type occurrences
@@ -72,7 +72,7 @@ func (f Fields) Header() (header []string) {
 // Field is a data type holder with sql type suggestion
 type Field struct {
 	dataType      *types.DataType
-	suggestedType *SQLColumn
+	suggestedType *types.SQLColumn
 }
 
 // NewField returns Field instance
@@ -83,7 +83,7 @@ func NewField(t types.DataType) Field {
 }
 
 // NewFieldWithSQLType returns Field instance with configured suggested sql types
-func NewFieldWithSQLType(t types.DataType, suggestedType *SQLColumn) Field {
+func NewFieldWithSQLType(t types.DataType, suggestedType *types.SQLColumn) Field {
 	return Field{
 		dataType:      &t,
 		suggestedType: suggestedType,
@@ -91,12 +91,12 @@ func NewFieldWithSQLType(t types.DataType, suggestedType *SQLColumn) Field {
 }
 
 // GetSuggestedSQLType returns suggested SQL type if configured
-func (f Field) GetSuggestedSQLType() (SQLColumn, bool) {
+func (f Field) GetSuggestedSQLType() (types.SQLColumn, bool) {
 	if f.suggestedType != nil {
-		return SQLColumn{Type: f.suggestedType.Type, DdlType: f.suggestedType.DdlType, Override: true, New: true}, true
+		return types.SQLColumn{Type: f.suggestedType.Type, DdlType: f.suggestedType.DdlType, Override: true, New: true}, true
 	}
 
-	return SQLColumn{}, false
+	return types.SQLColumn{}, false
 }
 
 // GetType get field type based on occurrence in one file

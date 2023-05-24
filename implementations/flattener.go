@@ -1,7 +1,8 @@
-package sql
+package implementations
 
 import (
 	"fmt"
+	"github.com/jitsucom/bulker/types"
 	jsoniter "github.com/json-iterator/go"
 	"reflect"
 )
@@ -9,7 +10,7 @@ import (
 var DefaultFlattener = NewFlattener()
 
 type Flattener interface {
-	FlattenObject(object map[string]any, sqlTypeHints SQLTypes) (map[string]any, error)
+	FlattenObject(object map[string]any, sqlTypeHints types.SQLTypes) (map[string]any, error)
 }
 
 type FlattenerImpl struct {
@@ -25,7 +26,7 @@ func NewFlattener() Flattener {
 // FlattenObject flatten object e.g. from {"key1":{"key2":123}} to {"key1_key2":123}
 // from {"$key1":1} to {"_key1":1}
 // from {"(key1)":1} to {"_key1_":1}
-func (f *FlattenerImpl) FlattenObject(object map[string]any, sqlTypeHints SQLTypes) (map[string]any, error) {
+func (f *FlattenerImpl) FlattenObject(object map[string]any, sqlTypeHints types.SQLTypes) (map[string]any, error) {
 	flattenMap := make(map[string]any)
 
 	err := f.flatten("", object, flattenMap, sqlTypeHints)
@@ -42,7 +43,7 @@ func (f *FlattenerImpl) FlattenObject(object map[string]any, sqlTypeHints SQLTyp
 
 // recursive function for flatten key (if value is inner object -> recursion call)
 // Reformat key
-func (f *FlattenerImpl) flatten(key string, value any, destination map[string]any, sqlTypeHints SQLTypes) error {
+func (f *FlattenerImpl) flatten(key string, value any, destination map[string]any, sqlTypeHints types.SQLTypes) error {
 	t := reflect.ValueOf(value)
 	switch t.Kind() {
 	case reflect.Slice:
@@ -89,6 +90,6 @@ func NewDummyFlattener() *DummyFlattener {
 }
 
 // FlattenObject return the same json object
-func (df *DummyFlattener) FlattenObject(object map[string]any, sqlTypeHints SQLTypes) (map[string]any, error) {
+func (df *DummyFlattener) FlattenObject(object map[string]any, sqlTypeHints types.SQLTypes) (map[string]any, error) {
 	return object, nil
 }

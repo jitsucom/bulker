@@ -7,7 +7,6 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
-	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	_ "github.com/lib/pq"
 	"strings"
@@ -86,7 +85,8 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return nil, err
 	}
 	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: &config.S3OptionConfig}
-	r.batchFileFormat = implementations.CSV_GZIP
+	r.batchFileFormat = types.FileFormatCSV
+	r.batchFileCompression = types.FileCompressionGZIP
 	r.temporaryTables = true
 	r._columnDDLFunc = redshiftColumnDDL
 	r.initTypes(redshiftTypes)

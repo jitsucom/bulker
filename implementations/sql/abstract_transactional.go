@@ -55,8 +55,7 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 	}
 	s3 := s3BatchFileOption.Get(&ps.options)
 	if s3 != nil {
-		s3Config := implementations.S3Config{AccessKeyID: s3.AccessKeyID, SecretKey: s3.SecretKey, Bucket: s3.Bucket, Region: s3.Region,
-			FileConfig: implementations.FileConfig{Format: ps.sqlAdapter.GetBatchFileFormat()}}
+		s3Config := implementations.S3Config{AccessKeyID: s3.AccessKeyID, SecretKey: s3.SecretKey, Bucket: s3.Bucket, Region: s3.Region, Format: ps.sqlAdapter.GetBatchFileFormat(), Compression: ps.sqlAdapter.GetBatchFileCompression()}
 		ps.s3, err = implementations.NewS3(&s3Config)
 		if err != nil {
 			return fmt.Errorf("failed to setup s3 client: %w", err)
@@ -69,13 +68,9 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 			return err
 		}
 		ps.marshaller = &types.JSONMarshaller{}
-		switch ps.sqlAdapter.GetBatchFileFormat() {
-		case implementations.CSV:
-			ps.targetMarshaller = &types.CSVMarshaller{}
-		case implementations.CSV_GZIP:
-			ps.targetMarshaller = &types.CSVMarshaller{Gzip: true}
-		default:
-			ps.targetMarshaller = &types.JSONMarshaller{}
+		ps.targetMarshaller, err = types.NewMarshaller(ps.sqlAdapter.GetBatchFileFormat(), ps.sqlAdapter.GetBatchFileCompression())
+		if err != nil {
+			return err
 		}
 	}
 	err = ps.AbstractSQLStream.init(ctx)
@@ -140,12 +135,17 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (e
 		_ = os.Remove(ps.batchFile.Name())
 	}()
 	if ps.eventsInBatch > 0 {
-		ps.marshaller.Flush()
-		ps.batchFile.Sync()
+		if err != nil {
+			return errorj.Decorate(err, "failed to flush marshaller")
+		}
+		err = ps.batchFile.Sync()
+		if err != nil {
+			return errorj.Decorate(err, "failed to sync batch file")
+		}
 		workingFile := ps.batchFile
 		needToConvert := false
 		convertStart := time.Now()
-		if ps.targetMarshaller.Format() != ps.marshaller.Format() {
+		if !ps.targetMarshaller.Equal(ps.marshaller) {
 			needToConvert = true
 		}
 		if len(ps.batchFileSkipLines) > 0 || needToConvert {

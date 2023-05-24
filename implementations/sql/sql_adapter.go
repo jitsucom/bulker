@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	"regexp"
 )
@@ -26,7 +25,8 @@ type SQLAdapter interface {
 	GetSQLType(dataType types.DataType) (string, bool)
 	//GetDataType return mapping from sql type to generic bulker type
 	GetDataType(sqlType string) (types.DataType, bool)
-	GetBatchFileFormat() implementations.FileFormat
+	GetBatchFileFormat() types.FileFormat
+	GetBatchFileCompression() types.FileCompression
 	OpenTx(ctx context.Context) (*TxSQLAdapter, error)
 	Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) error
 	Ping(ctx context.Context) error
@@ -63,7 +63,7 @@ const (
 
 type LoadSource struct {
 	Type     LoadSourceType
-	Format   implementations.FileFormat
+	Format   types.FileFormat
 	Path     string
 	S3Config *S3OptionConfig
 }
@@ -77,8 +77,12 @@ func (tx *TxSQLAdapter) Type() string {
 	return tx.sqlAdapter.Type()
 }
 
-func (tx *TxSQLAdapter) GetBatchFileFormat() implementations.FileFormat {
+func (tx *TxSQLAdapter) GetBatchFileFormat() types.FileFormat {
 	return tx.sqlAdapter.GetBatchFileFormat()
+}
+
+func (tx *TxSQLAdapter) GetBatchFileCompression() types.FileCompression {
+	return tx.sqlAdapter.GetBatchFileCompression()
 }
 
 func (tx *TxSQLAdapter) GetSQLType(dataType types.DataType) (string, bool) {

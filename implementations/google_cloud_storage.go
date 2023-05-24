@@ -23,11 +23,12 @@ import (
 var ErrMalformedBQDataset = errors.New("bq_dataset must be alphanumeric (plus underscores) and must be at most 1024 characters long")
 
 type GoogleConfig struct {
-	Bucket  string     `mapstructure:"gcsBucket,omitempty" json:"gcsBucket,omitempty" yaml:"gcsBucket,omitempty"`
-	Project string     `mapstructure:"project,omitempty" json:"project,omitempty" yaml:"project,omitempty"`
-	Dataset string     `mapstructure:"bqDataset,omitempty" json:"bqDataset,omitempty" yaml:"bqDataset,omitempty"`
-	KeyFile any        `mapstructure:"keyFile,omitempty" json:"keyFile,omitempty" yaml:"keyFile,omitempty"`
-	Format  FileFormat `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
+	Bucket      string                `mapstructure:"gcsBucket,omitempty" json:"gcsBucket,omitempty" yaml:"gcsBucket,omitempty"`
+	Project     string                `mapstructure:"project,omitempty" json:"project,omitempty" yaml:"project,omitempty"`
+	Dataset     string                `mapstructure:"bqDataset,omitempty" json:"bqDataset,omitempty" yaml:"bqDataset,omitempty"`
+	KeyFile     any                   `mapstructure:"keyFile,omitempty" json:"keyFile,omitempty" yaml:"keyFile,omitempty"`
+	Format      types.FileFormat      `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
+	Compression types.FileCompression `mapstructure:"compression,omitempty" json:"compression,omitempty" yaml:"compression,omitempty"`
 
 	//will be set on validation
 	Credentials option.ClientOption
@@ -84,32 +85,36 @@ func (gc *GoogleConfig) Validate() error {
 type GoogleCloudStorage struct {
 	config *GoogleConfig
 	client *storage.Client
-	ctx    context.Context
 
 	closed *atomic.Bool
 }
 
-func NewGoogleCloudStorage(ctx context.Context, config *GoogleConfig) (*GoogleCloudStorage, error) {
+func NewGoogleCloudStorage(config *GoogleConfig) (*GoogleCloudStorage, error) {
 	var client *storage.Client
 	var err error
+	err = config.Validate()
 	if config.Credentials == nil {
-		client, err = storage.NewClient(ctx)
+		client, err = storage.NewClient(context.Background())
 	} else {
-		client, err = storage.NewClient(ctx, config.Credentials)
+		client, err = storage.NewClient(context.Background(), config.Credentials)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("Error creating google cloud storage client: %v", err)
 	}
 
 	if config.Format == "" {
-		config.Format = JSON
+		config.Format = types.FileFormatNDJSON
 	}
 
-	return &GoogleCloudStorage{client: client, config: config, ctx: ctx, closed: atomic.NewBool(false)}, nil
+	return &GoogleCloudStorage{client: client, config: config, closed: atomic.NewBool(false)}, nil
 }
 
-func (gcs *GoogleCloudStorage) Format() FileFormat {
+func (gcs *GoogleCloudStorage) Format() types.FileFormat {
 	return gcs.config.Format
+}
+
+func (gcs *GoogleCloudStorage) Compression() types.FileCompression {
+	return gcs.config.Compression
 }
 
 func (gcs *GoogleCloudStorage) UploadBytes(fileName string, fileBytes []byte) error {
@@ -131,7 +136,7 @@ func (gcs *GoogleCloudStorage) Upload(fileName string, fileReader io.ReadSeeker)
 
 	bucket := gcs.client.Bucket(gcs.config.Bucket)
 	object := bucket.Object(fileName)
-	w := object.NewWriter(gcs.ctx)
+	w := object.NewWriter(context.Background())
 
 	if _, err := io.Copy(w, fileReader); err != nil {
 		return errorj.SaveOnStageError.Wrap(err, "failed to write file to google cloud storage").
@@ -148,8 +153,61 @@ func (gcs *GoogleCloudStorage) Upload(fileName string, fileReader io.ReadSeeker)
 				Statement: fmt.Sprintf("file: %s", fileName),
 			})
 	}
+	metadata := storage.ObjectAttrsToUpdate{}
+	if gcs.config.Compression == types.FileCompressionGZIP {
+		metadata.ContentEncoding = "gzip"
+	}
+	if gcs.config.Format == types.FileFormatCSV {
+		metadata.ContentType = "text/csv"
+	} else if gcs.config.Format == types.FileFormatNDJSON || gcs.config.Format == types.FileFormatNDJSONFLAT {
+		metadata.ContentType = "application/x-ndjson"
+	}
+	if _, err := object.Update(context.Background(), metadata); err != nil {
+		return errorj.SaveOnStageError.Wrap(err, "failed to set Content-Type metadata").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Bucket:    gcs.config.Bucket,
+				Statement: fmt.Sprintf("file: %s", fileName),
+			})
+	}
 
 	return nil
+}
+
+// Download downloads file from google cloud storage bucket
+func (gcs *GoogleCloudStorage) Download(key string) (fileBytes []byte, err error) {
+	//panic handler
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic while downloading file: %s from GCC project: %s bucket: %s dataset: %s : %v", key, gcs.config.Project, gcs.config.Bucket, gcs.config.Dataset, r)
+			logging.SystemErrorf(err.Error())
+		}
+	}()
+	if gcs.closed.Load() {
+		return nil, fmt.Errorf("attempt to use closed GoogleCloudStorage instance")
+	}
+	bucket := gcs.client.Bucket(gcs.config.Bucket)
+	obj := bucket.Object(key)
+
+	r, err := obj.NewReader(context.Background())
+	if err != nil {
+		return nil, errorj.SaveOnStageError.Wrap(err, "failed to create google cloud reader").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Bucket:    gcs.config.Bucket,
+				Statement: fmt.Sprintf("file: %s", key),
+			})
+	}
+	defer r.Close()
+
+	fileBytes, err = io.ReadAll(r)
+	if err != nil {
+		return nil, errorj.SaveOnStageError.Wrap(err, "failed to read google cloud reader").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Bucket:    gcs.config.Bucket,
+				Statement: fmt.Sprintf("file: %s", key),
+			})
+	}
+
+	return fileBytes, nil
 }
 
 // DeleteObject deletes object from google cloud storage bucket
@@ -167,7 +225,7 @@ func (gcs *GoogleCloudStorage) DeleteObject(key string) (err error) {
 	bucket := gcs.client.Bucket(gcs.config.Bucket)
 	obj := bucket.Object(key)
 
-	if err := obj.Delete(gcs.ctx); err != nil {
+	if err := obj.Delete(context.Background()); err != nil {
 		return errorj.SaveOnStageError.Wrap(err, "failed to delete from google cloud").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Bucket:    gcs.config.Bucket,

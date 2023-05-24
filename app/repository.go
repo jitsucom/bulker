@@ -168,6 +168,7 @@ func (r *repositoryInternal) initBulkerInstance(cfg *DestinationConfig) {
 		opt, err := bulker.ParseOption(name, serializedOption)
 		if err != nil {
 			metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
+			//TODO: don't create working instance on options parsing error
 			r.Errorf("destination %s – failed to parse option %s=%s : %v", cfg.Id(), name, serializedOption, err)
 			continue
 		}

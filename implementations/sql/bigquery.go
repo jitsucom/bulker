@@ -141,8 +141,12 @@ func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, str
 	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
 }
 
-func (bq *BigQuery) GetBatchFileFormat() implementations.FileFormat {
-	return implementations.CSV
+func (bq *BigQuery) GetBatchFileFormat() types.FileFormat {
+	return types.FileFormatCSV
+}
+
+func (bq *BigQuery) GetBatchFileCompression() types.FileCompression {
+	return types.FileCompressionNONE
 }
 
 func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
@@ -273,7 +277,7 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 	}
 	for _, field := range meta.Schema {
 		dt, _ := bq.GetDataType(string(field.Type))
-		table.Columns[field.Name] = SQLColumn{Type: string(field.Type), DataType: dt}
+		table.Columns[field.Name] = types.SQLColumn{Type: string(field.Type), DataType: dt}
 	}
 	pkFieldName := BuildConstraintName(table.Name)
 	pkFieldsString, ok := meta.Labels[pkFieldName]
@@ -559,11 +563,11 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	source := bigquery.NewReaderSource(file)
 	source.Schema = meta.Schema
 
-	if loadSource.Format == implementations.CSV {
+	if loadSource.Format == types.FileFormatCSV {
 		source.SourceFormat = bigquery.CSV
 		source.SkipLeadingRows = 1
 		source.CSVOptions.NullMarker = "\\N"
-	} else if loadSource.Format == implementations.JSON {
+	} else if loadSource.Format == types.FileFormatNDJSON {
 		source.SourceFormat = bigquery.JSON
 	}
 	loader := bq.client.Dataset(bq.config.Dataset).Table(tableName).LoaderFrom(source)

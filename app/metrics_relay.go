@@ -8,7 +8,6 @@ import (
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
-	"github.com/jitsucom/bulker/implementations/sql"
 	"github.com/jitsucom/bulker/types"
 	"github.com/prometheus/client_golang/prometheus"
 	prom "github.com/prometheus/client_model/go"
@@ -73,7 +72,7 @@ func (m *MetricsRelay) start() {
 // Push metrics to destination
 func (m *MetricsRelay) Push() (err error) {
 	stream, err := m.relayBulker.CreateStream("metrics_relays", "bulker_metrics", bulker.Batch,
-		sql.WithTimestamp("timestamp"))
+		bulker.WithTimestamp("timestamp"))
 	if err != nil {
 		return fmt.Errorf("error creating bulker stream: %v", err)
 	}

@@ -1,29 +1,18 @@
 package implementations
 
 import (
+	"github.com/jitsucom/bulker/types"
 	"io"
-)
-
-type FileFormat string
-
-const (
-	CSV      FileFormat = "csv"
-	CSV_GZIP FileFormat = "csv_gzip"
-	JSON     FileFormat = "json"
 )
 
 type FileAdapter interface {
 	io.Closer
 	UploadBytes(fileName string, fileBytes []byte) error
 	Upload(fileName string, fileReader io.ReadSeeker) error
+	Download(fileName string) ([]byte, error)
 	DeleteObject(key string) error
-	Format() FileFormat
-}
-
-type FileConfig struct {
-	Folder string     `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
-	Format FileFormat `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
-	//	Compression FileCompression    `mapstructure:"compression,omitempty" json:"compression,omitempty" yaml:"compression,omitempty"`
+	Format() types.FileFormat
+	Compression() types.FileCompression
 }
 
 //func (c FileConfig) PrepareFile(fileName *string, fileBytes *[]byte) error {

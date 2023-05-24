@@ -99,7 +99,7 @@ func (th *TableHelper) MapTableSchema(batchHeader *TypesHeader, object types.Obj
 		//map Jitsu type -> SQL type
 		sqlType, ok := th.sqlAdapter.GetSQLType(field.GetType())
 		if ok {
-			table.Columns[colName] = SQLColumn{DataType: field.GetType(), Type: sqlType, New: true}
+			table.Columns[colName] = types.SQLColumn{DataType: field.GetType(), Type: sqlType, New: true}
 		} else {
 			logging.SystemErrorf("Unknown column type %s mapping for %s", field.GetType(), th.sqlAdapter.Type())
 		}

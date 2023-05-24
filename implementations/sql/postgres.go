@@ -113,13 +113,13 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	utils.MapPutIfAbsent(config.Parameters, "write_timeout", "60000")
 	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "60000")
 
-	typecastFunc := func(placeholder string, column SQLColumn) string {
+	typecastFunc := func(placeholder string, column types.SQLColumn) string {
 		if column.Override {
 			return placeholder + "::" + column.Type
 		}
 		return placeholder
 	}
-	valueMappingFunc := func(value any, valuePresent bool, sqlColumn SQLColumn) any {
+	valueMappingFunc := func(value any, valuePresent bool, sqlColumn types.SQLColumn) any {
 		//replace zero byte character for text fields
 		if sqlColumn.Type == "text" {
 			if v, ok := value.(string); ok {
@@ -238,7 +238,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, tableName string) (*Table
 
 func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
-	table := &Table{Name: tableName, Columns: map[string]SQLColumn{}, PKFields: utils.Set[string]{}}
+	table := &Table{Name: tableName, Columns: map[string]types.SQLColumn{}, PKFields: utils.Set[string]{}}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, p.config.Schema, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -269,7 +269,7 @@ func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, erro
 			continue
 		}
 		dt, _ := p.GetDataType(columnPostgresType)
-		table.Columns[columnName] = SQLColumn{Type: columnPostgresType, DataType: dt}
+		table.Columns[columnName] = types.SQLColumn{Type: columnPostgresType, DataType: dt}
 	}
 
 	if err := rows.Err(); err != nil {

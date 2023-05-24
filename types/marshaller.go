@@ -3,6 +3,7 @@ package types
 import (
 	"compress/gzip"
 	"encoding/csv"
+	"fmt"
 	jsoniter "github.com/json-iterator/go"
 	"io"
 )
@@ -14,17 +15,39 @@ type Marshaller interface {
 	Marshal(...Object) error
 	Flush() error
 	NeedHeader() bool
-	Format() string
+	Format() FileFormat
+	Compression() FileCompression
+	Equal(Marshaller) bool
+}
+
+type AbstractMarshaller struct {
+	format      FileFormat
+	compression FileCompression
+}
+
+func (am *AbstractMarshaller) Equal(m Marshaller) bool {
+	return am.format == m.Format() && am.compression == m.Compression()
+}
+
+func NewMarshaller(format FileFormat, compression FileCompression) (Marshaller, error) {
+	switch format {
+	case FileFormatCSV:
+		return &CSVMarshaller{AbstractMarshaller: AbstractMarshaller{format: format, compression: compression}}, nil
+	case FileFormatNDJSON, FileFormatNDJSONFLAT:
+		return &JSONMarshaller{AbstractMarshaller: AbstractMarshaller{format: format, compression: compression}}, nil
+	default:
+		return nil, fmt.Errorf("Unknown file format: %s", format)
+	}
 }
 
 type JSONMarshaller struct {
-	gzip       bool
+	AbstractMarshaller
 	writer     io.Writer
 	gzipWriter *gzip.Writer
 }
 
 func (jm *JSONMarshaller) Init(writer io.Writer, header []string) error {
-	if jm.gzip {
+	if jm.compression == FileCompressionGZIP {
 		jm.gzipWriter = gzip.NewWriter(writer)
 		jm.writer = jm.gzipWriter
 	} else {
@@ -35,6 +58,9 @@ func (jm *JSONMarshaller) Init(writer io.Writer, header []string) error {
 
 // Marshal object as json
 func (jm *JSONMarshaller) Marshal(object ...Object) error {
+	if jm.writer == nil {
+		return fmt.Errorf("marshaller wasn't initialized. Run Init() first")
+	}
 	for _, obj := range object {
 		bytes, err := jsoniter.Marshal(obj)
 		if err != nil {
@@ -51,6 +77,9 @@ func (jm *JSONMarshaller) Marshal(object ...Object) error {
 }
 
 func (jm *JSONMarshaller) Flush() error {
+	if jm.writer == nil {
+		return fmt.Errorf("marshaller wasn't initialized. Run Init() first")
+	}
 	if jm.gzipWriter != nil {
 		return jm.gzipWriter.Close()
 	}
@@ -61,23 +90,23 @@ func (jm *JSONMarshaller) NeedHeader() bool {
 	return false
 }
 
-func (jm *JSONMarshaller) WriteHeader(fields []string, writer io.Writer) error {
-	return nil
+func (jm *JSONMarshaller) Format() FileFormat {
+	return jm.format
 }
 
-func (jm *JSONMarshaller) Format() string {
-	return "json"
+func (jm *JSONMarshaller) Compression() FileCompression {
+	return jm.compression
 }
 
 type CSVMarshaller struct {
-	Gzip       bool
+	AbstractMarshaller
 	writer     *csv.Writer
 	gzipWriter *gzip.Writer
 	fields     []string
 }
 
 func (cm *CSVMarshaller) Init(writer io.Writer, header []string) error {
-	if cm.Gzip {
+	if cm.compression == FileCompressionGZIP {
 		cm.gzipWriter = gzip.NewWriter(writer)
 		cm.writer = csv.NewWriter(cm.gzipWriter)
 	} else {
@@ -93,6 +122,9 @@ func (cm *CSVMarshaller) Init(writer io.Writer, header []string) error {
 
 // Marshal marshals input object as csv values string with delimiter
 func (cm *CSVMarshaller) Marshal(object ...Object) error {
+	if cm.writer == nil {
+		return fmt.Errorf("marshaller wasn't initialized. Run Init() first")
+	}
 	valuesArr := make([]string, len(cm.fields))
 	for _, obj := range object {
 		for i, field := range cm.fields {
@@ -139,14 +171,36 @@ func (cm *CSVMarshaller) NeedHeader() bool {
 	return true
 }
 
-func (cm *CSVMarshaller) Format() string {
-	return "csv"
+func (cm *CSVMarshaller) Format() FileFormat {
+	return cm.format
+}
+
+func (cm *CSVMarshaller) Compression() FileCompression {
+	return cm.compression
 }
 
 func (cm *CSVMarshaller) Flush() error {
+	if cm.writer == nil {
+		return fmt.Errorf("marshaller wasn't initialized. Run Init() first")
+	}
 	cm.writer.Flush()
 	if cm.gzipWriter != nil {
 		return cm.gzipWriter.Close()
 	}
 	return nil
 }
+
+type FileFormat string
+
+const (
+	FileFormatCSV        FileFormat = "csv"
+	FileFormatNDJSON     FileFormat = "ndjson"
+	FileFormatNDJSONFLAT FileFormat = "ndjson_flat"
+)
+
+type FileCompression string
+
+const (
+	FileCompressionGZIP FileCompression = "gzip"
+	FileCompressionNONE FileCompression = ""
+)

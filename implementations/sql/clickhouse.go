@@ -12,7 +12,6 @@ import (
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
-	"github.com/jitsucom/bulker/implementations"
 	"github.com/jitsucom/bulker/types"
 	jsoniter "github.com/json-iterator/go"
 	"os"
@@ -219,7 +218,7 @@ func NewClickHouse(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, dbConnectFunction, clickhouseTypes, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr)
-	sqlAdapterBase.batchFileFormat = implementations.JSON
+	sqlAdapterBase.batchFileFormat = types.FileFormatNDJSON
 
 	c := &ClickHouse{
 		SQLAdapterBase:        sqlAdapterBase,
@@ -419,7 +418,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 				})
 		}
 		dt, _ := ch.GetDataType(columnClickhouseType)
-		table.Columns[columnName] = SQLColumn{Type: columnClickhouseType, DataType: dt}
+		table.Columns[columnName] = types.SQLColumn{Type: columnClickhouseType, DataType: dt}
 		if isPk {
 			table.PKFields.Put(columnName)
 			table.PrimaryKeyName = BuildConstraintName(tableName)
@@ -731,7 +730,7 @@ func (ch *ClickHouse) localTableName(tableName string) string {
 	}
 }
 
-func convertType(value any, column SQLColumn) (any, error) {
+func convertType(value any, column types.SQLColumn) (any, error) {
 	v := types.ReformatValue(value)
 	//ch.Infof("%v (%T) was %v (%T)", v, v, value, value)
 
@@ -816,7 +815,7 @@ func chColumnDDL(quotedName, name string, table *Table, nullableFields []string)
 }
 
 // chTypecastFunc returns "?" placeholder or with typecast
-func chTypecastFunc(placeholder string, column SQLColumn) string {
+func chTypecastFunc(placeholder string, column types.SQLColumn) string {
 	if column.Override {
 		return fmt.Sprintf("cast(%s, '%s')", placeholder, column.Type)
 	}
@@ -840,7 +839,7 @@ func chGetDefaultValue(sqlType string) any {
 
 // if value is boolean - reformat it [true = 1; false = 0] ClickHouse supports UInt8 instead of boolean
 // otherwise return value as is
-func chReformatValue(value any, valuePresent bool, sqlColumn SQLColumn) any {
+func chReformatValue(value any, valuePresent bool, sqlColumn types.SQLColumn) any {
 	if !valuePresent {
 		return chGetDefaultValue(sqlColumn.Type)
 	}

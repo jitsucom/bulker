@@ -147,6 +147,11 @@ func ReformatTimeValue(value any) any {
 		return timeValue
 	}
 
+	timeValue, err = time.Parse(timestamp.DBLayout, stringValue)
+	if err == nil {
+		return timeValue
+	}
+
 	return value
 }
 

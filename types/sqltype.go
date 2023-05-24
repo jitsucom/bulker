@@ -1,6 +1,4 @@
-package sql
-
-import "github.com/jitsucom/bulker/types"
+package types
 
 type SQLTypes map[string]SQLColumn
 
@@ -8,7 +6,7 @@ type SQLColumn struct {
 	Type     string `json:"type,omitempty"`
 	DdlType  string `json:"ddlType,omitempty"`
 	Override bool   `json:"override,omitempty"`
-	DataType types.DataType
+	DataType DataType
 	// New column represents not commited part of a table schema
 	New bool
 }

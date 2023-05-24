@@ -51,6 +51,41 @@ var (
 	},
 	}
 
+	PrimaryKeyOption = ImplementationOption[utils.Set[string]]{
+		Key:          "primaryKey",
+		DefaultValue: utils.Set[string]{},
+		AdvancedParseFunc: func(o *ImplementationOption[utils.Set[string]], serializedValue any) (StreamOption, error) {
+			switch v := serializedValue.(type) {
+			case []string:
+				return withPrimaryKey(o, v...), nil
+			case string:
+				if v == "" {
+					return func(options *StreamOptions) {}, nil
+				}
+				return withPrimaryKey(o, v), nil
+			default:
+				return nil, fmt.Errorf("failed to parse 'primaryKey' option: %v incorrect type: %T expected string or []string", v, v)
+			}
+		},
+	}
+
+	MergeRowsOption = ImplementationOption[bool]{
+		Key:          "deduplicate",
+		DefaultValue: false,
+		ParseFunc:    utils.ParseBool,
+	}
+
+	PartitionIdOption = ImplementationOption[string]{
+		Key:       "partitionId",
+		ParseFunc: utils.ParseString,
+	}
+
+	// TimestampOption - field name that contains timestamp. For creating sorting indexes or partitions by that field in destination tables
+	TimestampOption = ImplementationOption[string]{
+		Key:       "timestampColumn",
+		ParseFunc: utils.ParseString,
+	}
+
 	// Not used by bulker. Just added here to be treated as known options
 	FunctionsOption  = ImplementationOption[any]{Key: "functions", ParseFunc: func(serialized any) (any, error) { return nil, nil }}
 	DataLayoutOption = ImplementationOption[string]{Key: "dataLayout", ParseFunc: utils.ParseString}
@@ -64,6 +99,10 @@ func init() {
 	RegisterOption(&BatchFrequencyOption)
 	RegisterOption(&RetryFrequencyOption)
 	RegisterOption(&RetryBatchSizeOption)
+	RegisterOption(&PrimaryKeyOption)
+	RegisterOption(&MergeRowsOption)
+	RegisterOption(&PartitionIdOption)
+	RegisterOption(&TimestampOption)
 
 	// Not used by bulker. Just added here to be treated as known options
 	RegisterOption(&FunctionsOption)
@@ -138,4 +177,59 @@ func (io *ImplementationOption[V]) Set(so *StreamOptions, value V) {
 	} else {
 		so.valuesMap[io.Key] = value
 	}
+}
+
+func withPrimaryKey(o *ImplementationOption[utils.Set[string]], pkFields ...string) StreamOption {
+	return func(options *StreamOptions) {
+		set := o.Get(options)
+		if len(set) == 0 {
+			o.Set(options, utils.NewSet(pkFields...))
+		} else {
+			set.PutAll(pkFields)
+		}
+	}
+}
+
+func WithPrimaryKey(pkFields ...string) StreamOption {
+	return withPrimaryKey(&PrimaryKeyOption, pkFields...)
+}
+
+// WithMergeRows - when true merge rows on primary keys collision.
+func withMergeRows(o *ImplementationOption[bool], b bool) StreamOption {
+	return func(options *StreamOptions) {
+		o.Set(options, b)
+	}
+}
+
+// WithMergeRows - when true merge rows on primary keys collision.
+func WithMergeRows() StreamOption {
+	return withMergeRows(&MergeRowsOption, true)
+}
+
+func WithoutMergeRows() StreamOption {
+	return withMergeRows(&MergeRowsOption, false)
+
+}
+
+func withPartition(o *ImplementationOption[string], partitionId string) StreamOption {
+	return func(options *StreamOptions) {
+		o.Set(options, partitionId)
+	}
+}
+
+// WithPartition settings for bulker.ReplacePartition mode only
+// partitionId - value of `__partition_id`  for current BulkerStream e.g. id of current partition
+// TODO: For bigquery require string in special format
+func WithPartition(partitionId string) StreamOption {
+	return withPartition(&PartitionIdOption, partitionId)
+}
+
+func withTimestamp(o *ImplementationOption[string], timestampField string) StreamOption {
+	return func(options *StreamOptions) {
+		o.Set(options, timestampField)
+	}
+}
+
+func WithTimestamp(timestampField string) StreamOption {
+	return withTimestamp(&TimestampOption, timestampField)
 }

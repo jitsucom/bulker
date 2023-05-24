@@ -4,39 +4,17 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
+	"github.com/jitsucom/bulker/types"
 )
 
 var (
-	PrimaryKeyOption = bulker.ImplementationOption[utils.Set[string]]{
-		Key:          "primaryKey",
-		DefaultValue: utils.Set[string]{},
-		AdvancedParseFunc: func(o *bulker.ImplementationOption[utils.Set[string]], serializedValue any) (bulker.StreamOption, error) {
-			switch v := serializedValue.(type) {
-			case []string:
-				return withPrimaryKey(o, v...), nil
-			case string:
-				if v == "" {
-					return func(options *bulker.StreamOptions) {}, nil
-				}
-				return withPrimaryKey(o, v), nil
-			default:
-				return nil, fmt.Errorf("failed to parse 'primaryKey' option: %v incorrect type: %T expected string or []string", v, v)
-			}
-		},
-	}
-	MergeRowsOption = bulker.ImplementationOption[bool]{
-		Key:          "deduplicate",
-		DefaultValue: false,
-		ParseFunc:    utils.ParseBool,
-	}
-
-	ColumnTypesOption = bulker.ImplementationOption[SQLTypes]{
+	ColumnTypesOption = bulker.ImplementationOption[types.SQLTypes]{
 		Key:          "columnTypes",
-		DefaultValue: SQLTypes{},
-		AdvancedParseFunc: func(o *bulker.ImplementationOption[SQLTypes], serializedValue any) (bulker.StreamOption, error) {
+		DefaultValue: types.SQLTypes{},
+		AdvancedParseFunc: func(o *bulker.ImplementationOption[types.SQLTypes], serializedValue any) (bulker.StreamOption, error) {
 			switch v := serializedValue.(type) {
 			case map[string]any:
-				sqlTypes := SQLTypes{}
+				sqlTypes := types.SQLTypes{}
 				for key, value := range v {
 					switch t := value.(type) {
 					case string:
@@ -57,16 +35,6 @@ var (
 			}
 		},
 	}
-	PartitionIdOption = bulker.ImplementationOption[string]{
-		Key:       "partitionId",
-		ParseFunc: utils.ParseString,
-	}
-
-	// TimestampOption - field name that contains timestamp. For creating sorting indexes or partitions by that field in destination tables
-	TimestampOption = bulker.ImplementationOption[string]{
-		Key:       "timestampColumn",
-		ParseFunc: utils.ParseString,
-	}
 
 	localBatchFileOption = bulker.ImplementationOption[string]{Key: "BULKER_OPTION_LOCAL_BATCH_FILE"}
 
@@ -74,12 +42,7 @@ var (
 )
 
 func init() {
-	bulker.RegisterOption(&PrimaryKeyOption)
-	bulker.RegisterOption(&MergeRowsOption)
 	bulker.RegisterOption(&ColumnTypesOption)
-	bulker.RegisterOption(&PartitionIdOption)
-	bulker.RegisterOption(&TimestampOption)
-
 }
 
 type S3OptionConfig struct {
@@ -88,55 +51,6 @@ type S3OptionConfig struct {
 	Bucket      string `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
 	Region      string `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
 	Folder      string `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
-}
-
-func withPrimaryKey(o *bulker.ImplementationOption[utils.Set[string]], pkFields ...string) bulker.StreamOption {
-	return func(options *bulker.StreamOptions) {
-		set := o.Get(options)
-		if len(set) == 0 {
-			o.Set(options, utils.NewSet(pkFields...))
-		} else {
-			set.PutAll(pkFields)
-		}
-	}
-}
-
-func WithPrimaryKey(pkFields ...string) bulker.StreamOption {
-	return withPrimaryKey(&PrimaryKeyOption, pkFields...)
-}
-
-// WithMergeRows - when true merge rows on primary keys collision.
-func withMergeRows(o *bulker.ImplementationOption[bool], b bool) bulker.StreamOption {
-	return func(options *bulker.StreamOptions) {
-		o.Set(options, b)
-	}
-}
-
-// WithMergeRows - when true merge rows on primary keys collision.
-func WithMergeRows() bulker.StreamOption {
-	return withMergeRows(&MergeRowsOption, true)
-}
-
-func WithoutMergeRows() bulker.StreamOption {
-	return withMergeRows(&MergeRowsOption, false)
-
-}
-
-func withPartition(o *bulker.ImplementationOption[string], partitionId string) bulker.StreamOption {
-	return func(options *bulker.StreamOptions) {
-		o.Set(options, partitionId)
-	}
-}
-
-// WithPartition settings for bulker.ReplacePartition mode only
-// partitionId - value of `__partition_id`  for current BulkerStream e.g. id of current partition
-// TODO: For bigquery require string in special format
-func WithPartition(partitionId string) bulker.StreamOption {
-	return withPartition(&PartitionIdOption, partitionId)
-}
-
-func WithTimestamp(timestampField string) bulker.StreamOption {
-	return withPartition(&TimestampOption, timestampField)
 }
 
 //func withBatchSize(o *bulker.ImplementationOption[int], batchSize int) bulker.StreamOption {
@@ -151,7 +65,7 @@ func WithTimestamp(timestampField string) bulker.StreamOption {
 //	return withBatchSize(&BatchSizeOption, batchSize)
 //}
 
-func withColumnTypes(o *bulker.ImplementationOption[SQLTypes], fields SQLTypes) bulker.StreamOption {
+func withColumnTypes(o *bulker.ImplementationOption[types.SQLTypes], fields types.SQLTypes) bulker.StreamOption {
 	return func(options *bulker.StreamOptions) {
 		sqlTypes := o.Get(options)
 		if len(sqlTypes) == 0 {
@@ -163,18 +77,18 @@ func withColumnTypes(o *bulker.ImplementationOption[SQLTypes], fields SQLTypes) 
 }
 
 // WithColumnTypes provides overrides for column types of current BulkerStream object fields
-func WithColumnTypes(fields SQLTypes) bulker.StreamOption {
+func WithColumnTypes(fields types.SQLTypes) bulker.StreamOption {
 	return withColumnTypes(&ColumnTypesOption, fields)
 }
 
 // WithColumnType provides overrides for column type of single column for current BulkerStream object fields
 func WithColumnType(columnName, sqlType string) bulker.StreamOption {
-	return withColumnTypes(&ColumnTypesOption, SQLTypes{}.With(columnName, sqlType))
+	return withColumnTypes(&ColumnTypesOption, types.SQLTypes{}.With(columnName, sqlType))
 }
 
 // WithColumnTypeDDL provides overrides for column type and DDL type of single column for current BulkerStream object fields
 func WithColumnTypeDDL(columnName, sqlType, ddlType string) bulker.StreamOption {
-	return withColumnTypes(&ColumnTypesOption, SQLTypes{}.WithDDL(columnName, sqlType, ddlType))
+	return withColumnTypes(&ColumnTypesOption, types.SQLTypes{}.WithDDL(columnName, sqlType, ddlType))
 }
 
 // WithLocalBatchFile setting for all modes except bulker.Stream

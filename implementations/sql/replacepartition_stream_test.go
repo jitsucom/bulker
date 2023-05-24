@@ -16,7 +16,7 @@ func TestReplacePartitionStream(t *testing.T) {
 			tableName:     "replace_partition_test",
 			modes:         []bulker.BulkMode{bulker.ReplacePartition},
 			dataFile:      "test_data/empty.ndjson",
-			streamOptions: []bulker.StreamOption{WithPartition("1")},
+			streamOptions: []bulker.StreamOption{bulker.WithPartition("1")},
 			configIds:     allBulkerConfigs,
 		},
 		{
@@ -32,7 +32,7 @@ func TestReplacePartitionStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 4, "name": "test4", "__partition_id": "1"},
 				{"_timestamp": constantTime, "id": 5, "name": "test5", "__partition_id": "1"},
 			},
-			streamOptions: []bulker.StreamOption{WithPartition("1")},
+			streamOptions: []bulker.StreamOption{bulker.WithPartition("1")},
 			configIds:     allBulkerConfigs,
 		},
 		{
@@ -58,7 +58,7 @@ func TestReplacePartitionStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 19, "name": "test19", "__partition_id": "2"},
 				{"_timestamp": constantTime, "id": 20, "name": "test20", "__partition_id": "2"},
 			},
-			streamOptions: []bulker.StreamOption{WithPartition("2")},
+			streamOptions: []bulker.StreamOption{bulker.WithPartition("2")},
 			configIds:     allBulkerConfigs,
 		},
 		{
@@ -84,7 +84,7 @@ func TestReplacePartitionStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 19, "name": "test19", "__partition_id": "2"},
 				{"_timestamp": constantTime, "id": 20, "name": "test20", "__partition_id": "2"},
 			},
-			streamOptions: []bulker.StreamOption{WithPartition("1")},
+			streamOptions: []bulker.StreamOption{bulker.WithPartition("1")},
 			configIds:     allBulkerConfigs,
 		},
 		{
@@ -100,7 +100,7 @@ func TestReplacePartitionStream(t *testing.T) {
 				{"_timestamp": constantTime, "id": 9, "name": "test9", "__partition_id": "1"},
 				{"_timestamp": constantTime, "id": 10, "name": "test10", "__partition_id": "1"},
 			},
-			streamOptions: []bulker.StreamOption{WithPartition("2")},
+			streamOptions: []bulker.StreamOption{bulker.WithPartition("2")},
 			configIds:     allBulkerConfigs,
 		},
 		{
@@ -108,7 +108,7 @@ func TestReplacePartitionStream(t *testing.T) {
 			tableName:     "replace_partition_test",
 			modes:         []bulker.BulkMode{bulker.ReplacePartition},
 			dataFile:      "test_data/empty.ndjson",
-			streamOptions: []bulker.StreamOption{WithPartition("1")},
+			streamOptions: []bulker.StreamOption{bulker.WithPartition("1")},
 			configIds:     allBulkerConfigs,
 		},
 	}

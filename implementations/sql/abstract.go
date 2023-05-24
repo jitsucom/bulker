@@ -26,7 +26,7 @@ type AbstractSQLStream struct {
 	state  bulker.State
 	inited bool
 
-	customTypes     SQLTypes
+	customTypes     types.SQLTypes
 	pkColumns       utils.Set[string]
 	timestampColumn string
 }
@@ -37,14 +37,14 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	for _, option := range streamOptions {
 		ps.options.Add(option)
 	}
-	ps.merge = MergeRowsOption.Get(&ps.options)
-	pkColumns := PrimaryKeyOption.Get(&ps.options)
+	ps.merge = bulker.MergeRowsOption.Get(&ps.options)
+	pkColumns := bulker.PrimaryKeyOption.Get(&ps.options)
 	if ps.merge && len(pkColumns) == 0 {
 		return AbstractSQLStream{}, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	var customFields = ColumnTypesOption.Get(&ps.options)
 	ps.pkColumns = pkColumns
-	ps.timestampColumn = TimestampOption.Get(&ps.options)
+	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
 
 	//TODO: max column?
 	ps.state = bulker.State{Status: bulker.Active}
@@ -164,7 +164,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(existingTable, desiredTable 
 	}
 	if len(unmappedObj) > 0 {
 		jsonSQLType, _ := ps.sqlAdapter.GetSQLType(types.JSON)
-		added := utils.MapPutIfAbsent(cloned, ps.sqlAdapter.ColumnName(unmappedDataColumn), SQLColumn{DataType: types.JSON, Type: jsonSQLType})
+		added := utils.MapPutIfAbsent(cloned, ps.sqlAdapter.ColumnName(unmappedDataColumn), types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
 		columnsAdded = columnsAdded || added
 		b, _ := jsoniter.Marshal(unmappedObj)
 		values[ps.sqlAdapter.ColumnName(unmappedDataColumn)] = string(b)
