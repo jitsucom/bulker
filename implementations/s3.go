@@ -18,8 +18,8 @@ import (
 
 // S3Config is a dto for config deserialization
 type S3Config struct {
-	AccessKey   string                `mapstructure:"accessKey,omitempty" json:"accessKey,omitempty" yaml:"accessKey,omitempty"`
-	SecretKey   string                `mapstructure:"secretKey,omitempty" json:"secretKey,omitempty" yaml:"secretKey,omitempty"`
+	AccessKey   string                `mapstructure:"accessKeyId,omitempty" json:"accessKeyId,omitempty" yaml:"accessKeyId,omitempty"`
+	SecretKey   string                `mapstructure:"secretAccessKey,omitempty" json:"secretAccessKey,omitempty" yaml:"secretAccessKey,omitempty"`
 	Bucket      string                `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
 	Folder      string                `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
 	Region      string                `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
