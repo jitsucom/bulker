@@ -10,7 +10,7 @@ import (
 const fastStoreServiceName = "fast_store"
 
 const fastStoreStreamIdsKey = "streamIds"
-const fastStoreStreamPublicKeys = "streamPublicKeys"
+const fastStoreApiKeys = "apiKeys"
 const fastStoreStreamDomainsKey = "streamDomains"
 
 type FastStore struct {
@@ -31,6 +31,12 @@ type ApiKey struct {
 	Plaintext string `json:"plaintext"`
 	Hash      string `json:"hash"`
 	Hint      string `json:"hint"`
+}
+
+type ApiKeyBinding struct {
+	Hash     string `json:"hash"`
+	KeyType  string `json:"keyType"`
+	StreamId string `json:"streamId"`
 }
 
 type StreamConfig struct {
@@ -75,19 +81,23 @@ func NewFastStore(config *AppConfig) (*FastStore, error) {
 	return &fs, nil
 }
 
-func (fs *FastStore) getPublicKeyStreamsIds() (map[string]string, error) {
+func (fs *FastStore) getStreamByKeyId(keyId string) (*ApiKeyBinding, error) {
 	connection := fs.redisPool.Get()
 	defer connection.Close()
 
-	streamMap, err := redis.StringMap(connection.Do("HGETALL", fastStoreStreamPublicKeys))
+	keyBytes, err := redis.Bytes(connection.Do("HGET", fastStoreApiKeys, keyId))
 	if err == redis.ErrNil {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fs.NewError("failed to get stream ids by hash mapping: %w", err)
+		return nil, fs.NewError("failed to get stream binding by keyId: %w", err)
 	}
-	
-	return streamMap, nil
+	binding := ApiKeyBinding{}
+	err = jsoniter.Unmarshal(keyBytes, &binding)
+	if err != nil {
+		return nil, fs.NewError("failed to unmarshal binding bytes for keyId [%s]: %w: %s", keyId, err, string(keyBytes))
+	}
+	return &binding, nil
 }
 
 func (fs *FastStore) GetStreamById(slug string) (*StreamWithDestinations, error) {

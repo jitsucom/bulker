@@ -284,22 +284,19 @@ func (r *Router) IngestHandler(c *gin.Context) {
 
 	var stream *StreamWithDestinations
 	if ingestMessage.WriteKey != "" {
-		stream, err = r.fastStore.GetStreamById(ingestMessage.WriteKey)
-		if stream == nil {
-			var hashes map[string]string
-			hashes, err = r.fastStore.getPublicKeyStreamsIds()
-			if err == nil {
-				for h, id := range hashes {
-					pk := strings.SplitN(h, ".", 2)
-					salt := pk[0]
-					hash := pk[1]
-					for _, globalSecret := range r.config.GlobalHashSecrets {
-						if hash == hashApiKey(ingestMessage.WriteKey, salt, globalSecret) {
-							eventsLogIds = []string{id}
-							stream, err = r.fastStore.GetStreamById(id)
-							break
-						}
-					}
+		parts := strings.Split(ingestMessage.WriteKey, ":")
+		if len(parts) == 1 {
+			stream, err = r.fastStore.GetStreamById(ingestMessage.WriteKey)
+		} else {
+			var binding *ApiKeyBinding
+			binding, err = r.fastStore.getStreamByKeyId(parts[0])
+			if err == nil && binding != nil {
+				if binding.KeyType != ingestMessage.IngestType {
+					err = fmt.Errorf("invalid key type: found %s, expected %s", binding.KeyType, ingestMessage.IngestType)
+				} else if !r.checkHash(binding.Hash, parts[1]) {
+					err = fmt.Errorf("invalid key secret")
+				} else {
+					stream, err = r.fastStore.GetStreamById(binding.StreamId)
 				}
 			}
 		}
@@ -611,6 +608,18 @@ func hashApiKey(token string, salt string, secret string) string {
 	return fmt.Sprintf("%x", res)
 }
 
+func (r *Router) checkHash(hash string, secret string) bool {
+	pk := strings.SplitN(hash, ".", 2)
+	salt := pk[0]
+	hashPart := pk[1]
+	for _, globalSecret := range r.config.GlobalHashSecrets {
+		if hashPart == hashApiKey(secret, salt, globalSecret) {
+			return true
+		}
+	}
+	return false
+}
+
 type IngestMessageOrigin struct {
 	BaseURL string `json:"baseUrl"`
 	Slug    string `json:"slug"`
@@ -618,6 +627,7 @@ type IngestMessageOrigin struct {
 }
 
 type IngestMessage struct {
+	IngestType     string              `json:"ingestType"`
 	ConnectionId   string              `json:"connectionId"`
 	MessageCreated time.Time           `json:"messageCreated"`
 	WriteKey       string              `json:"writeKey"`
