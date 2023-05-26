@@ -104,12 +104,14 @@ func (a *S3) Upload(fileName string, fileReader io.ReadSeeker) error {
 		Bucket: aws.String(a.config.Bucket),
 	}
 	if a.config.Compression == types.FileCompressionGZIP {
-		params.ContentEncoding = aws.String("gzip")
-	}
-	if a.config.Format == types.FileFormatCSV {
-		params.ContentType = aws.String("text/csv")
-	} else if a.config.Format == types.FileFormatNDJSON || a.config.Format == types.FileFormatNDJSONFLAT {
-		params.ContentType = aws.String("application/x-ndjson")
+		params.ContentType = aws.String("application/gzip")
+	} else {
+		switch a.config.Format {
+		case types.FileFormatCSV:
+			params.ContentType = aws.String("text/csv")
+		case types.FileFormatNDJSON, types.FileFormatNDJSONFLAT:
+			params.ContentType = aws.String("application/x-ndjson")
+		}
 	}
 	params.Key = aws.String(fileName)
 	params.Body = fileReader
@@ -209,8 +211,19 @@ func (a *S3) Close() error {
 }
 
 func (a *S3) Path(fileName string) string {
+	ext := ""
+	switch a.config.Format {
+	case types.FileFormatCSV:
+		ext = ".csv"
+	case types.FileFormatNDJSON, types.FileFormatNDJSONFLAT:
+		ext = ".ndjson"
+	}
+	switch a.config.Compression {
+	case types.FileCompressionGZIP:
+		ext += ".gz"
+	}
 	if a.config.Folder != "" {
-		return fmt.Sprintf("%s/%s", a.config.Folder, fileName)
+		return fmt.Sprintf("%s/%s%s", a.config.Folder, fileName, ext)
 	}
 	return fileName
 }

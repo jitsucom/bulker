@@ -158,12 +158,13 @@ func (gcs *GoogleCloudStorage) Upload(fileName string, fileReader io.ReadSeeker)
 	}
 	metadata := storage.ObjectAttrsToUpdate{}
 	if gcs.config.Compression == types.FileCompressionGZIP {
-		metadata.ContentEncoding = "gzip"
-	}
-	if gcs.config.Format == types.FileFormatCSV {
-		metadata.ContentType = "text/csv"
-	} else if gcs.config.Format == types.FileFormatNDJSON || gcs.config.Format == types.FileFormatNDJSONFLAT {
-		metadata.ContentType = "application/x-ndjson"
+		metadata.ContentType = "application/gzip"
+	} else {
+		if gcs.config.Format == types.FileFormatCSV {
+			metadata.ContentType = "text/csv"
+		} else if gcs.config.Format == types.FileFormatNDJSON || gcs.config.Format == types.FileFormatNDJSONFLAT {
+			metadata.ContentType = "application/x-ndjson"
+		}
 	}
 	if _, err := object.Update(context.Background(), metadata); err != nil {
 		return errorj.SaveOnStageError.Wrap(err, "failed to set Content-Type metadata").
@@ -266,8 +267,19 @@ func (gcs *GoogleCloudStorage) Close() error {
 }
 
 func (gcs *GoogleCloudStorage) Path(fileName string) string {
+	ext := ""
+	switch gcs.config.Format {
+	case types.FileFormatCSV:
+		ext = ".csv"
+	case types.FileFormatNDJSON, types.FileFormatNDJSONFLAT:
+		ext = ".ndjson"
+	}
+	switch gcs.config.Compression {
+	case types.FileCompressionGZIP:
+		ext += ".gz"
+	}
 	if gcs.config.Folder != "" {
-		return fmt.Sprintf("%s/%s", gcs.config.Folder, fileName)
+		return fmt.Sprintf("%s/%s%s", gcs.config.Folder, fileName, ext)
 	}
 	return fileName
 }
