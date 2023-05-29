@@ -225,5 +225,5 @@ func (a *S3) Path(fileName string) string {
 	if a.config.Folder != "" {
 		return fmt.Sprintf("%s/%s%s", a.config.Folder, fileName, ext)
 	}
-	return fileName
+	return fmt.Sprintf("%s%s", fileName, ext)
 }

@@ -281,5 +281,5 @@ func (gcs *GoogleCloudStorage) Path(fileName string) string {
 	if gcs.config.Folder != "" {
 		return fmt.Sprintf("%s/%s%s", gcs.config.Folder, fileName, ext)
 	}
-	return fileName
+	return fmt.Sprintf("%s%s", fileName, ext)
 }
