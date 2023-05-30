@@ -329,7 +329,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	asyncDestinations = utils.ArrayMap(stream.AsynchronousDestinations, func(d ShortDestinationConfig) string { return d.ConnectionId })
 	tagsDestinations = utils.ArrayMap(stream.SynchronousDestinations, func(d ShortDestinationConfig) string { return d.ConnectionId })
 
-	r.Infof("[ingest] Message ID: %s Domain: %s to Connections: [%s] Tags: [%s]", messageId, domain,
+	r.Debugf("[ingest] Message ID: %s Domain: %s to Connections: [%s] Tags: [%s]", messageId, domain,
 		strings.Join(asyncDestinations, ", "), strings.Join(tagsDestinations, ", "))
 	for _, destination := range stream.AsynchronousDestinations {
 		messageCopy := ingestMessage

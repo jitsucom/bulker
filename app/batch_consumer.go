@@ -105,7 +105,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		dec.UseNumber()
 		err = dec.Decode(&obj)
 		if err == nil {
-			bc.Infof("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
+			bc.Debugf("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
 			_, processedObjectsSample, err = bulkerStream.Consume(ctx, obj)
 			if err != nil {
 				bc.errorMetric("bulker_stream_error")

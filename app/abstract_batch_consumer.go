@@ -211,8 +211,10 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 				countersString := counters.String()
 				if countersString != "" {
 					countersString = ": " + countersString
+					bc.Infof("No messages were processed%s", countersString)
+				} else {
+					bc.Debugf("No messages were processed")
 				}
-				bc.Infof("No messages were processed%s", countersString)
 			}
 		}
 	}()
