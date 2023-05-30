@@ -20,9 +20,9 @@ func NewTransactionalStream(id string, p implementations.FileAdapter, tableName 
 	streamStartDate := timestamp.Now()
 	filenameFunc := func(ctx context.Context) string {
 		batchNumStr := ""
-		batchNum, ok := ctx.Value(bulker.BatchNumberCtxKey).(string)
+		batchNum, ok := ctx.Value(bulker.BatchNumberCtxKey).(int)
 		if ok {
-			batchNumStr = fmt.Sprintf("_%s", batchNum)
+			batchNumStr = fmt.Sprintf("_%d", batchNum)
 		}
 		return fmt.Sprintf("%s_%s%s", tableName, streamStartDate.Format(FilenameDate), batchNumStr)
 	}
