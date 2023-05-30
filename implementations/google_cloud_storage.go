@@ -23,13 +23,11 @@ import (
 var ErrMalformedBQDataset = errors.New("bq_dataset must be alphanumeric (plus underscores) and must be at most 1024 characters long")
 
 type GoogleConfig struct {
-	Bucket      string                `mapstructure:"gcsBucket,omitempty" json:"gcsBucket,omitempty" yaml:"gcsBucket,omitempty"`
-	Folder      string                `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
-	Project     string                `mapstructure:"project,omitempty" json:"project,omitempty" yaml:"project,omitempty"`
-	Dataset     string                `mapstructure:"bqDataset,omitempty" json:"bqDataset,omitempty" yaml:"bqDataset,omitempty"`
-	KeyFile     any                   `mapstructure:"keyFile,omitempty" json:"keyFile,omitempty" yaml:"keyFile,omitempty"`
-	Format      types.FileFormat      `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
-	Compression types.FileCompression `mapstructure:"compression,omitempty" json:"compression,omitempty" yaml:"compression,omitempty"`
+	FileConfig `mapstructure:",squash" json:",inline" yaml:",inline"`
+	Bucket     string `mapstructure:"gcsBucket,omitempty" json:"gcsBucket,omitempty" yaml:"gcsBucket,omitempty"`
+	Project    string `mapstructure:"project,omitempty" json:"project,omitempty" yaml:"project,omitempty"`
+	Dataset    string `mapstructure:"bqDataset,omitempty" json:"bqDataset,omitempty" yaml:"bqDataset,omitempty"`
+	KeyFile    any    `mapstructure:"keyFile,omitempty" json:"keyFile,omitempty" yaml:"keyFile,omitempty"`
 
 	//will be set on validation
 	Credentials option.ClientOption
@@ -84,6 +82,7 @@ func (gc *GoogleConfig) Validate() error {
 }
 
 type GoogleCloudStorage struct {
+	AbstractFileAdapter
 	config *GoogleConfig
 	client *storage.Client
 
@@ -107,15 +106,7 @@ func NewGoogleCloudStorage(config *GoogleConfig) (*GoogleCloudStorage, error) {
 		config.Format = types.FileFormatNDJSON
 	}
 
-	return &GoogleCloudStorage{client: client, config: config, closed: atomic.NewBool(false)}, nil
-}
-
-func (gcs *GoogleCloudStorage) Format() types.FileFormat {
-	return gcs.config.Format
-}
-
-func (gcs *GoogleCloudStorage) Compression() types.FileCompression {
-	return gcs.config.Compression
+	return &GoogleCloudStorage{AbstractFileAdapter: AbstractFileAdapter{config: &config.FileConfig}, client: client, config: config, closed: atomic.NewBool(false)}, nil
 }
 
 func (gcs *GoogleCloudStorage) UploadBytes(fileName string, fileBytes []byte) error {
@@ -264,22 +255,4 @@ func (gcs *GoogleCloudStorage) ValidateWritePermission() error {
 func (gcs *GoogleCloudStorage) Close() error {
 	gcs.closed.Store(true)
 	return gcs.client.Close()
-}
-
-func (gcs *GoogleCloudStorage) Path(fileName string) string {
-	ext := ""
-	switch gcs.config.Format {
-	case types.FileFormatCSV:
-		ext = ".csv"
-	case types.FileFormatNDJSON, types.FileFormatNDJSONFLAT:
-		ext = ".ndjson"
-	}
-	switch gcs.config.Compression {
-	case types.FileCompressionGZIP:
-		ext += ".gz"
-	}
-	if gcs.config.Folder != "" {
-		return fmt.Sprintf("%s/%s%s", gcs.config.Folder, fileName, ext)
-	}
-	return fmt.Sprintf("%s%s", fileName, ext)
 }

@@ -21,7 +21,7 @@ const originalTopicHeader = "original_topic"
 
 const pauseHeartBeatInterval = 1 * time.Second
 
-type BatchFunction func(destination *Destination, batchSize, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error)
+type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error)
 
 type BatchConsumer interface {
 	RunJob()
@@ -235,11 +235,12 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		maxBatchSize = bc.config.BatchRunnerDefaultBatchSize
 	}
 
+	batchNumber := 1
 	for {
 		if bc.retired.Load() {
 			return
 		}
-		batchStats, nextBatch, err2 := bc.processBatch(destination, maxBatchSize, retryBatchSize)
+		batchStats, nextBatch, err2 := bc.processBatch(destination, batchNumber, maxBatchSize, retryBatchSize)
 		if err2 != nil {
 			bc.Errorf("Batch finished with error: %w stats: %s nextBatch: %t", err2, batchStats, nextBatch)
 		}
@@ -248,6 +249,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 			err = err2
 			return
 		}
+		batchNumber++
 	}
 }
 
@@ -264,14 +266,14 @@ func (bc *AbstractBatchConsumer) close() error {
 	return nil
 }
 
-func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchSize, retryBatchSize int) (counters BatchCounters, nextBath bool, err error) {
+func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBath bool, err error) {
 	err = bc.resume()
 	if err != nil {
 		bc.errorMetric("resume_error")
 		err = bc.NewError("failed to resume kafka consumer to process batch: %w", err)
 		return
 	}
-	return bc.batchFunc(destination, batchSize, retryBatchSize)
+	return bc.batchFunc(destination, batchNum, batchSize, retryBatchSize)
 }
 
 // pause consumer.

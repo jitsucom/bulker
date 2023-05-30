@@ -1,9 +1,21 @@
 package implementations
 
 import (
+	"fmt"
 	"github.com/jitsucom/bulker/types"
 	"io"
+	"strings"
+	"time"
 )
+
+var folderMacro = map[string]func() string{
+	"[DATE]": func() string {
+		return time.Now().Format("2006-01-02")
+	},
+	"[TIMESTAMP]": func() string {
+		return fmt.Sprintf("%d", time.Now().Unix())
+	},
+}
 
 type FileAdapter interface {
 	io.Closer
@@ -14,6 +26,53 @@ type FileAdapter interface {
 	Path(fileName string) string
 	Format() types.FileFormat
 	Compression() types.FileCompression
+}
+
+type FileConfig struct {
+	Folder      string                `mapstructure:"folder" json:"folder,omitempty" yaml:"folder,omitempty"`
+	Format      types.FileFormat      `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
+	Compression types.FileCompression `mapstructure:"compression,omitempty" json:"compression,omitempty" yaml:"compression,omitempty"`
+}
+
+type AbstractFileAdapter struct {
+	config *FileConfig
+}
+
+func (a *AbstractFileAdapter) Format() types.FileFormat {
+	return a.config.Format
+}
+
+func (a *AbstractFileAdapter) Compression() types.FileCompression {
+	return a.config.Compression
+}
+
+func (a *AbstractFileAdapter) Path(fileName string) string {
+	ext := ""
+	switch a.config.Format {
+	case types.FileFormatCSV:
+		ext = ".csv"
+	case types.FileFormatNDJSON, types.FileFormatNDJSONFLAT:
+		ext = ".ndjson"
+	}
+	switch a.config.Compression {
+	case types.FileCompressionGZIP:
+		ext += ".gz"
+	}
+	folder := a.config.Folder
+	if folder != "" {
+		folder = replaceMacro(folder)
+		if !strings.HasSuffix(folder, "/") {
+			folder += "/"
+		}
+	}
+	return fmt.Sprintf("%s%s%s", folder, fileName, ext)
+}
+
+func replaceMacro(folder string) string {
+	for macro, fn := range folderMacro {
+		folder = strings.ReplaceAll(folder, macro, fn())
+	}
+	return folder
 }
 
 //func (c FileConfig) PrepareFile(fileName *string, fileBytes *[]byte) error {

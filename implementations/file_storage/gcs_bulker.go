@@ -6,7 +6,6 @@ import (
 	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/implementations"
-	"github.com/jitsucom/bulker/types"
 )
 
 const GCSBulkerTypeId = "gcs"
@@ -17,11 +16,9 @@ func init() {
 }
 
 type GCSConfig struct {
-	Bucket      string                `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
-	Folder      string                `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
-	AccessKey   any                   `mapstructure:"accessKey,omitempty" json:"accessKey,omitempty" yaml:"accessKey,omitempty"`
-	Format      types.FileFormat      `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
-	Compression types.FileCompression `mapstructure:"compression,omitempty" json:"compression,omitempty" yaml:"compression,omitempty"`
+	implementations.FileConfig `mapstructure:",squash" json:",inline" yaml:",inline"`
+	Bucket                     string `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
+	AccessKey                  any    `mapstructure:"accessKey,omitempty" json:"accessKey,omitempty" yaml:"accessKey,omitempty"`
 }
 type GCSBulker struct {
 	implementations.GoogleCloudStorage
@@ -33,11 +30,9 @@ func NewGCSBulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return nil, fmt.Errorf("failed to parse destination config: %w", err)
 	}
 	googleConfig := implementations.GoogleConfig{
-		Bucket:      gcsConfig.Bucket,
-		Folder:      gcsConfig.Folder,
-		KeyFile:     gcsConfig.AccessKey,
-		Format:      gcsConfig.Format,
-		Compression: gcsConfig.Compression,
+		FileConfig: gcsConfig.FileConfig,
+		Bucket:     gcsConfig.Bucket,
+		KeyFile:    gcsConfig.AccessKey,
 	}
 	//TODO: auto recoonect the same way as in SQL bulkers
 	gcsAdapter, err := implementations.NewGoogleCloudStorage(&googleConfig)

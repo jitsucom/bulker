@@ -26,7 +26,7 @@ func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodS
 	return &rc, nil
 }
 
-func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchSize, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error) {
+func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error) {
 	var firstPosition *kafka.TopicPartition
 	var lastPosition *kafka.TopicPartition
 

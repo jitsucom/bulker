@@ -40,6 +40,8 @@ const (
 	ReplaceTable BulkMode = "replace_table"
 
 	Unknown BulkMode = ""
+
+	BatchNumberCtxKey = "batch_number"
 )
 
 // TODO: Recommend to use JSON Number! or let all column be float?

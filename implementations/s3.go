@@ -18,14 +18,12 @@ import (
 
 // S3Config is a dto for config deserialization
 type S3Config struct {
-	AccessKey   string                `mapstructure:"accessKeyId,omitempty" json:"accessKeyId,omitempty" yaml:"accessKeyId,omitempty"`
-	SecretKey   string                `mapstructure:"secretAccessKey,omitempty" json:"secretAccessKey,omitempty" yaml:"secretAccessKey,omitempty"`
-	Bucket      string                `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
-	Folder      string                `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
-	Region      string                `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
-	Endpoint    string                `mapstructure:"endpoint,omitempty" json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
-	Format      types.FileFormat      `mapstructure:"format,omitempty" json:"format,omitempty" yaml:"format,omitempty"`
-	Compression types.FileCompression `mapstructure:"compression,omitempty" json:"compression,omitempty" yaml:"compression,omitempty"`
+	FileConfig `mapstructure:",squash" json:",inline" yaml:",inline"`
+	AccessKey  string `mapstructure:"accessKeyId,omitempty" json:"accessKeyId,omitempty" yaml:"accessKeyId,omitempty"`
+	SecretKey  string `mapstructure:"secretAccessKey,omitempty" json:"secretAccessKey,omitempty" yaml:"secretAccessKey,omitempty"`
+	Bucket     string `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
+	Region     string `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
+	Endpoint   string `mapstructure:"endpoint,omitempty" json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
 }
 
 // Validate returns err if invalid
@@ -50,6 +48,7 @@ func (s3c *S3Config) Validate() error {
 
 // S3 is a S3 adapter for uploading/deleting files
 type S3 struct {
+	AbstractFileAdapter
 	config *S3Config
 	client *s3.S3
 
@@ -77,15 +76,7 @@ func NewS3(s3Config *S3Config) (*S3, error) {
 		return nil, errorj.SaveOnStageError.Wrap(err, "failed to create s3 session")
 	}
 
-	return &S3{client: s3.New(s3Session, awsConfig), config: s3Config, closed: atomic.NewBool(false)}, nil
-}
-
-func (a *S3) Format() types.FileFormat {
-	return a.config.Format
-}
-
-func (a *S3) Compression() types.FileCompression {
-	return a.config.Compression
+	return &S3{AbstractFileAdapter: AbstractFileAdapter{config: &s3Config.FileConfig}, client: s3.New(s3Session, awsConfig), config: s3Config, closed: atomic.NewBool(false)}, nil
 }
 
 func (a *S3) UploadBytes(fileName string, fileBytes []byte) error {
@@ -208,22 +199,4 @@ func (a *S3) ValidateWritePermission() error {
 func (a *S3) Close() error {
 	a.closed.Store(true)
 	return nil
-}
-
-func (a *S3) Path(fileName string) string {
-	ext := ""
-	switch a.config.Format {
-	case types.FileFormatCSV:
-		ext = ".csv"
-	case types.FileFormatNDJSON, types.FileFormatNDJSONFLAT:
-		ext = ".ndjson"
-	}
-	switch a.config.Compression {
-	case types.FileCompressionGZIP:
-		ext += ".gz"
-	}
-	if a.config.Folder != "" {
-		return fmt.Sprintf("%s/%s%s", a.config.Folder, fileName, ext)
-	}
-	return fmt.Sprintf("%s%s", fileName, ext)
 }

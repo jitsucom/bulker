@@ -23,7 +23,7 @@ func NewReplacePartitionStream(id string, p implementations.FileAdapter, tableNa
 		return nil, errors.New("WithPartition is required option for ReplacePartitionStream")
 	}
 	var err error
-	filenameFunc := func() string {
+	filenameFunc := func(ctx context.Context) string {
 		return fmt.Sprintf("%s/%s", tableName, partitionId)
 	}
 	ps.AbstractFileStorageStream, err = newAbstractFileStorageStream(id, p, filenameFunc, bulker.ReplacePartition, streamOptions...)
@@ -50,7 +50,7 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 			}
 		} else {
 			//for ReplacePartitionStream  we should replace existing file with empty one
-			if err = ps.fileAdapter.UploadBytes(ps.filenameFunc(), []byte{}); err != nil {
+			if err = ps.fileAdapter.UploadBytes(ps.filenameFunc(ctx), []byte{}); err != nil {
 				return ps.state, err
 			}
 		}

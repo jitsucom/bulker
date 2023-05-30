@@ -1,6 +1,7 @@
 package file_storage
 
 import (
+	"context"
 	"fmt"
 	"github.com/jitsucom/bulker/base/timestamp"
 	"github.com/jitsucom/bulker/bulker"
@@ -17,8 +18,13 @@ func NewTransactionalStream(id string, p implementations.FileAdapter, tableName 
 	ps := TransactionalStream{}
 	var err error
 	streamStartDate := timestamp.Now()
-	filenameFunc := func() string {
-		return fmt.Sprintf("%s_%s", tableName, streamStartDate.Format(FilenameDate))
+	filenameFunc := func(ctx context.Context) string {
+		batchNumStr := ""
+		batchNum, ok := ctx.Value(bulker.BatchNumberCtxKey).(string)
+		if ok {
+			batchNumStr = fmt.Sprintf("_%s", batchNum)
+		}
+		return fmt.Sprintf("%s_%s%s", tableName, streamStartDate.Format(FilenameDate), batchNumStr)
 	}
 	ps.AbstractFileStorageStream, err = newAbstractFileStorageStream(id, p, filenameFunc, bulker.Batch, streamOptions...)
 	if err != nil {

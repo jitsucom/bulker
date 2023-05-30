@@ -25,7 +25,7 @@ type AbstractFileStorageStream struct {
 	mode         bulker.BulkMode
 	fileAdapter  implementations.FileAdapter
 	options      bulker.StreamOptions
-	filenameFunc func() string
+	filenameFunc func(ctx context.Context) string
 
 	flatten         bool
 	merge           bool
@@ -47,7 +47,7 @@ type AbstractFileStorageStream struct {
 	inited bool
 }
 
-func newAbstractFileStorageStream(id string, p implementations.FileAdapter, filenameFunc func() string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractFileStorageStream, error) {
+func newAbstractFileStorageStream(id string, p implementations.FileAdapter, filenameFunc func(ctx context.Context) string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractFileStorageStream, error) {
 	ps := AbstractFileStorageStream{id: id, fileAdapter: p, filenameFunc: filenameFunc, mode: mode}
 	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {
@@ -83,6 +83,10 @@ func (ps *AbstractFileStorageStream) init(ctx context.Context) error {
 		ps.targetMarshaller, err = types.NewMarshaller(ps.fileAdapter.Format(), ps.fileAdapter.Compression())
 		if err != nil {
 			return err
+		}
+		if !ps.merge && ps.fileAdapter.Format() == types.FileFormatNDJSON {
+			//without merge we can write file with compression - no need to convert
+			ps.marshaller, _ = types.NewMarshaller(ps.fileAdapter.Format(), ps.fileAdapter.Compression())
 		}
 		if ps.fileAdapter.Format() == types.FileFormatCSV || ps.fileAdapter.Format() == types.FileFormatNDJSONFLAT {
 			ps.flatten = true
@@ -208,7 +212,7 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 		if err != nil {
 			return errorj.Decorate(err, "failed to seek to beginning of tmp file")
 		}
-		fileName := ps.filenameFunc()
+		fileName := ps.filenameFunc(ctx)
 		ps.state.Representation = map[string]string{
 			"name": ps.fileAdapter.Path(fileName),
 		}
