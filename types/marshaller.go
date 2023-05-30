@@ -42,16 +42,16 @@ func NewMarshaller(format FileFormat, compression FileCompression) (Marshaller, 
 
 type JSONMarshaller struct {
 	AbstractMarshaller
-	writer     io.Writer
-	gzipWriter *gzip.Writer
+	writer io.Writer
 }
 
-func (jm *JSONMarshaller) Init(writer io.Writer, header []string) error {
-	if jm.compression == FileCompressionGZIP {
-		jm.gzipWriter = gzip.NewWriter(writer)
-		jm.writer = jm.gzipWriter
-	} else {
-		jm.writer = writer
+func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
+	if jm.writer == nil {
+		if jm.compression == FileCompressionGZIP {
+			jm.writer = gzip.NewWriter(writer)
+		} else {
+			jm.writer = writer
+		}
 	}
 	return nil
 }
@@ -80,8 +80,8 @@ func (jm *JSONMarshaller) Flush() error {
 	if jm.writer == nil {
 		return fmt.Errorf("marshaller wasn't initialized. Run Init() first")
 	}
-	if jm.gzipWriter != nil {
-		return jm.gzipWriter.Close()
+	if jm.compression == FileCompressionGZIP {
+		return jm.writer.(*gzip.Writer).Close()
 	}
 	return nil
 }
@@ -106,16 +106,18 @@ type CSVMarshaller struct {
 }
 
 func (cm *CSVMarshaller) Init(writer io.Writer, header []string) error {
-	if cm.compression == FileCompressionGZIP {
-		cm.gzipWriter = gzip.NewWriter(writer)
-		cm.writer = csv.NewWriter(cm.gzipWriter)
-	} else {
-		cm.writer = csv.NewWriter(writer)
-	}
-	cm.fields = header
-	err := cm.writer.Write(header)
-	if err != nil {
-		return err
+	if cm.writer == nil {
+		if cm.compression == FileCompressionGZIP {
+			cm.gzipWriter = gzip.NewWriter(writer)
+			cm.writer = csv.NewWriter(cm.gzipWriter)
+		} else {
+			cm.writer = csv.NewWriter(writer)
+		}
+		cm.fields = header
+		err := cm.writer.Write(header)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

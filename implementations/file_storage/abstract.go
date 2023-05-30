@@ -213,6 +213,7 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 			return errorj.Decorate(err, "failed to seek to beginning of tmp file")
 		}
 		fileName := ps.filenameFunc(ctx)
+		fileName = ps.fileAdapter.AddFileExtension(fileName)
 		ps.state.Representation = map[string]string{
 			"name": ps.fileAdapter.Path(fileName),
 		}

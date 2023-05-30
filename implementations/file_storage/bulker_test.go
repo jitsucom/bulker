@@ -3,6 +3,7 @@ package file_storage
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/jitsucom/bulker/types"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/require"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -54,15 +56,29 @@ func init() {
 		if err != nil {
 			panic(err)
 		}
+		configRegistry[S3BulkerTypeId+"_gzip"] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
+			FileConfig: implementations.FileConfig{
+				Folder:      "tests",
+				Format:      types.FileFormatNDJSON,
+				Compression: types.FileCompressionGZIP,
+			},
+			Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+			Region:    "us-east-1",
+			Bucket:    "bulkertests",
+			AccessKey: minioContainer.AccessKey,
+			SecretKey: minioContainer.SecretKey,
+		}}
 		configRegistry[S3BulkerTypeId] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
-			Endpoint:    fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
-			Region:      "us-east-1",
-			Bucket:      "bulkertests",
-			Folder:      "tests",
-			AccessKey:   minioContainer.AccessKey,
-			SecretKey:   minioContainer.SecretKey,
-			Format:      types.FileFormatNDJSON,
-			Compression: types.FileCompressionGZIP,
+			FileConfig: implementations.FileConfig{
+				Folder:      "tests",
+				Format:      types.FileFormatNDJSON,
+				Compression: types.FileCompressionNONE,
+			},
+			Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+			Region:    "us-east-1",
+			Bucket:    "bulkertests",
+			AccessKey: minioContainer.AccessKey,
+			SecretKey: minioContainer.SecretKey,
 		}}
 	}
 
@@ -111,7 +127,7 @@ type bulkerTestConfig struct {
 	batchSize int
 }
 
-func (c *bulkerTestConfig) adaptConfig(mode bulker.BulkMode) (id, tableName, expectedFileName string) {
+func (c *bulkerTestConfig) adaptConfig(mode bulker.BulkMode, fileAdapter implementations.FileAdapter) (id, tableName, expectedFileName string) {
 	tableName = c.tableName
 	if tableName == "" {
 		tableName = c.name
@@ -119,6 +135,16 @@ func (c *bulkerTestConfig) adaptConfig(mode bulker.BulkMode) (id, tableName, exp
 	tableName = tableName + "_" + strings.ToLower(string(mode))
 	id = fmt.Sprintf("%s_%s", c.config.BulkerType, tableName)
 	expectedFileName = tableName
+	ext := ""
+	switch fileAdapter.Format() {
+	case types.FileFormatNDJSON, types.FileFormatNDJSONFLAT:
+		ext = ".ndjson"
+	case types.FileFormatCSV:
+		ext = ".csv"
+	}
+	if fileAdapter.Compression() == types.FileCompressionGZIP {
+		ext = ext + ".gz"
+	}
 	switch mode {
 	case bulker.ReplacePartition:
 		if c.expectPartitionId {
@@ -132,6 +158,7 @@ func (c *bulkerTestConfig) adaptConfig(mode bulker.BulkMode) (id, tableName, exp
 	case bulker.Batch:
 		expectedFileName = fmt.Sprintf("%s_%s", expectedFileName, constantTime.Format(FilenameDate))
 	}
+	expectedFileName = expectedFileName + ext
 	return
 }
 
@@ -141,10 +168,11 @@ func TestBasics(t *testing.T) {
 	defer timestamp.UnfreezeTime()
 	tests := []bulkerTestConfig{
 		{
-			name:              "repeated_ids_no_pk",
-			modes:             []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
-			dataFile:          "test_data/repeated_ids.ndjson",
-			expectPartitionId: true,
+			name:               "repeated_ids_no_pk",
+			modes:              []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			dataFile:           "test_data/repeated_ids.ndjson",
+			expectPartitionId:  true,
+			leaveResultingFile: true,
 			expectedRows: []map[string]any{
 				{"_timestamp": constantTimeStr, "id": 1, "name": "test"},
 				{"_timestamp": constantTimeStr, "id": 2, "name": "test1"},
@@ -223,7 +251,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	fileAdapter, ok := blk.(implementations.FileAdapter)
 	reqr.True(ok)
 	ctx := context.Background()
-	id, tableName, expectedFileName := testConfig.adaptConfig(mode)
+	id, tableName, expectedFileName := testConfig.adaptConfig(mode, fileAdapter)
 
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingFile {
@@ -294,8 +322,14 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		//Check rows count and rows data when provided
 		rowBytes, err := fileAdapter.Download(expectedFileName)
 		rows := []map[string]any{}
+		var reader io.Reader
+		if fileAdapter.Compression() == types.FileCompressionGZIP {
+			reader, _ = gzip.NewReader(bytes.NewReader(rowBytes))
+		} else {
+			reader = bytes.NewReader(rowBytes)
+		}
 		//read rows from rowBytes using Scanner
-		scanner = bufio.NewScanner(bytes.NewReader(rowBytes))
+		scanner = bufio.NewScanner(reader)
 		for scanner.Scan() {
 			scannerBytes := scanner.Bytes()
 			row := map[string]any{}

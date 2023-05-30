@@ -24,6 +24,7 @@ type FileAdapter interface {
 	Download(fileName string) ([]byte, error)
 	DeleteObject(key string) error
 	Path(fileName string) string
+	AddFileExtension(fileName string) string
 	Format() types.FileFormat
 	Compression() types.FileCompression
 }
@@ -46,7 +47,8 @@ func (a *AbstractFileAdapter) Compression() types.FileCompression {
 	return a.config.Compression
 }
 
-func (a *AbstractFileAdapter) Path(fileName string) string {
+func (a *AbstractFileAdapter) AddFileExtension(fileName string) string {
+	gz := ""
 	ext := ""
 	switch a.config.Format {
 	case types.FileFormatCSV:
@@ -56,8 +58,18 @@ func (a *AbstractFileAdapter) Path(fileName string) string {
 	}
 	switch a.config.Compression {
 	case types.FileCompressionGZIP:
-		ext += ".gz"
+		gz += ".gz"
 	}
+	if strings.HasSuffix(fileName, ext) {
+		return fileName + gz
+	} else if strings.HasSuffix(fileName, ext+gz) {
+		return fileName
+	} else {
+		return fileName + ext + gz
+	}
+}
+
+func (a *AbstractFileAdapter) Path(fileName string) string {
 	folder := a.config.Folder
 	if folder != "" {
 		folder = replaceMacro(folder)
@@ -65,7 +77,7 @@ func (a *AbstractFileAdapter) Path(fileName string) string {
 			folder += "/"
 		}
 	}
-	return fmt.Sprintf("%s%s%s", folder, fileName, ext)
+	return fmt.Sprintf("%s%s", folder, fileName)
 }
 
 func replaceMacro(folder string) string {
