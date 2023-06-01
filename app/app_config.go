@@ -107,9 +107,9 @@ type AppConfig struct {
 
 	// # ERROR RETRYING
 
-	BatchRunnerRetryPeriodSec        int `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC" default:"300"`
-	BatchRunnerDefaultRetryBatchSize int `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE" default:"100"`
-	MessagesRetryCount               int `mapstructure:"MESSAGES_RETRY_COUNT" default:"5"`
+	BatchRunnerRetryPeriodSec            int     `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC" default:"300"`
+	BatchRunnerDefaultRetryBatchFraction float64 `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_BATCH_FRACTION" default:"0.1"`
+	MessagesRetryCount                   int     `mapstructure:"MESSAGES_RETRY_COUNT" default:"5"`
 	// MessagesRetryBackoffBase defines base for exponential backoff in minutes.
 	// For example, if retry count is 3 and base is 5, then retry delays will be 5, 25, 125 minutes.
 	// Default: 5

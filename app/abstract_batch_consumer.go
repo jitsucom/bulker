@@ -227,14 +227,14 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		destination.Release()
 	}()
 
-	retryBatchSize := bulker.RetryBatchSizeOption.Get(destination.streamOptions)
-	if retryBatchSize <= 0 {
-		retryBatchSize = bc.config.BatchRunnerDefaultRetryBatchSize
-	}
-
 	maxBatchSize := bulker.BatchSizeOption.Get(destination.streamOptions)
 	if maxBatchSize <= 0 {
 		maxBatchSize = bc.config.BatchRunnerDefaultBatchSize
+	}
+
+	retryBatchSize := bulker.RetryBatchSizeOption.Get(destination.streamOptions)
+	if retryBatchSize <= 0 {
+		retryBatchSize = int(float64(maxBatchSize) * bc.config.BatchRunnerDefaultRetryBatchFraction)
 	}
 
 	batchNumber := 1
