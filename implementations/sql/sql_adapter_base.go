@@ -275,8 +275,8 @@ func (b *SQLAdapterBase[T]) Delete(ctx context.Context, tableName string, delete
 	return nil
 }
 
-func (b *SQLAdapterBase[T]) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error {
-	quotedTableName := b.quotedTableName(tableName)
+func (b *SQLAdapterBase[T]) Update(ctx context.Context, table *Table, object types.Object, whenConditions *WhenConditions) error {
+	quotedTableName := b.quotedTableName(table.Name)
 
 	updateCondition, updateValues := b.ToWhenConditions(whenConditions, b.parameterPlaceholder, len(object))
 
@@ -284,8 +284,9 @@ func (b *SQLAdapterBase[T]) Update(ctx context.Context, tableName string, object
 	values := make([]any, len(object)+len(updateValues), len(object)+len(updateValues))
 	i := 0
 	for name, value := range object {
+		column := table.Columns[name]
 		columns[i] = b.quotedColumnName(name) + "= " + b.parameterPlaceholder(i+1, name) //$0 - wrong
-		values[i] = value
+		values[i] = b.valueMappingFunction(value, true, column)
 		i++
 	}
 	for a := 0; a < len(updateValues); a++ {

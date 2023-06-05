@@ -50,7 +50,7 @@ var (
 		types.STRING:    {"character varying(65535)"},
 		types.INT64:     {"bigint"},
 		types.FLOAT64:   {"double precision"},
-		types.TIMESTAMP: {"timestamp", "timestamp without time zone", "timestamp with time zone"},
+		types.TIMESTAMP: {"timestamp with time zone", "timestamp", "timestamp without time zone"},
 		types.BOOL:      {"boolean"},
 		types.JSON:      {"character varying(65535)"},
 		types.UNKNOWN:   {"character varying(65535)"},
@@ -160,7 +160,7 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 				})
 		}
 		if len(res) > 0 {
-			return p.Update(ctx, table.Name, object, pkMatchConditions)
+			return p.Update(ctx, table, object, pkMatchConditions)
 		} else {
 			return p.insert(ctx, table, []types.Object{object})
 		}

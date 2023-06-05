@@ -53,7 +53,7 @@ var (
 		types.STRING:    {"text", "VARCHAR(16777216)"},
 		types.INT64:     {"bigint", "NUMBER(38,0)"},
 		types.FLOAT64:   {"double precision", "FLOAT"},
-		types.TIMESTAMP: {"timestamp(6)", "TIMESTAMP_NTZ(6)"},
+		types.TIMESTAMP: {"TIMESTAMP_TZ(6)", "timestamp(6)", "TIMESTAMP_NTZ(6)"},
 		types.BOOL:      {"boolean", "BOOLEAN"},
 		types.JSON:      {"text", "VARCHAR(16777216)"},
 		types.UNKNOWN:   {"text", "VARCHAR(16777216)"},
@@ -166,6 +166,18 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	sqlAdapter, err := newSQLAdapterBase(bulkerConfig.Id, SnowflakeBulkerTypeId, config, dbConnectFunction, snowflakeTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)
 	s := &Snowflake{sqlAdapter}
 	s.batchFileFormat = types.FileFormatCSV
+	s.valueMappingFunction = func(value any, valuePresent bool, column types.SQLColumn) any {
+		if !valuePresent {
+			return nil
+		}
+		l := strings.ToLower(column.Type)
+		fmt.Println(l)
+		if strings.Contains(l, "timestamp") {
+			fmt.Println("formatting timestamp")
+			return value.(time.Time).Format(time.RFC3339Nano)
+		}
+		return value
+	}
 
 	s.tableHelper = NewTableHelper(s, 255, '"')
 	s.tableHelper.tableNameFunc = sfIdentifierFunction
@@ -415,7 +427,7 @@ func (s *Snowflake) Insert(ctx context.Context, table *Table, merge bool, object
 				})
 		}
 		if len(res) > 0 {
-			return s.Update(ctx, table.Name, object, pkMatchConditions)
+			return s.Update(ctx, table, object, pkMatchConditions)
 		} else {
 			return s.insert(ctx, table, []types.Object{object})
 		}

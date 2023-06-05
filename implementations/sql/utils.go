@@ -7,7 +7,6 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type ColumnScanner struct {
@@ -38,12 +37,6 @@ func (s *ColumnScanner) Scan(src any) error {
 		s.value = int(v.Int64())
 	case big.Float:
 		s.value, _ = v.Float64()
-	case time.Time:
-		//if v.Location().String() == "" {
-		s.value = v.UTC()
-	//} else {
-	//	s.value = v
-	//}
 	case string:
 		nullable, _ := s.ColumnType.Nullable()
 		if !nullable && v == "" {

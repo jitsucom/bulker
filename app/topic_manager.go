@@ -23,7 +23,7 @@ const (
 
 	allTablesToken = "_all_"
 
-	topicLengthLimit = 200
+	topicLengthLimit = 249
 )
 
 var topicUnsupportedCharacters = regexp.MustCompile(`[^a-zA-Z0-9._-]`)

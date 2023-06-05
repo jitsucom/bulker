@@ -168,7 +168,7 @@ func TestSQLTypeHints(t *testing.T) {
 				Columns: Columns{
 					"id":                              {Type: "bigint"},
 					"name":                            {Type: "text"},
-					"time1":                           {Type: "timestamp without time zone"},
+					"time1":                           {Type: "timestamp with time zone"},
 					"int1":                            {Type: "bigint"},
 					"nested_json1":                    {Type: "json"},
 					"nested_json2":                    {Type: "json"},

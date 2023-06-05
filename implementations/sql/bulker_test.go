@@ -499,7 +499,19 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		if testConfig.expectedRows == nil {
 			reqr.Equal(testConfig.expectedRowsCount, len(rows))
 		} else {
-			reqr.Equal(testConfig.expectedRows, rows)
+			reqr.Len(rows, len(testConfig.expectedRows))
+			for i, row := range rows {
+				exRow := testConfig.expectedRows[i]
+				for k, exV := range exRow {
+					switch exD := exV.(type) {
+					case time.Time:
+						reqr.IsType(exV, row[k], "row %d, columns '%s' type mismatch. Expected time.Time", i, k)
+						reqr.Equal(exD.Format(time.RFC3339Nano), row[k].(time.Time).Format(time.RFC3339Nano), "row %d, columns '%s' not equals", i, k)
+					default:
+						reqr.Equal(exV, row[k], "row %d, columns '%s' not equals", i, k)
+					}
+				}
+			}
 		}
 	}
 }

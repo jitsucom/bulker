@@ -70,7 +70,7 @@ var (
 		types.STRING:    {"text"},
 		types.INT64:     {"bigint"},
 		types.FLOAT64:   {"double precision"},
-		types.TIMESTAMP: {"timestamp", "timestamp without time zone", "timestamp with time zone"},
+		types.TIMESTAMP: {"timestamp with time zone", "timestamp", "timestamp without time zone"},
 		types.BOOL:      {"boolean"},
 		types.JSON:      {"jsonb"},
 		types.UNKNOWN:   {"text"},
