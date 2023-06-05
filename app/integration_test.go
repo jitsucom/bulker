@@ -171,9 +171,10 @@ func TestGoodAndBadStreams(t *testing.T) {
 // Test that retry consumer works
 func TestEventsRetry(t *testing.T) {
 	app, kafka, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "20",
-		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC": "1",
-		"BULKER_MESSAGES_RETRY_BACKOFF_BASE":           "0",
-		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC":       "1"})
+		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC":     "5",
+		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_BATCH_FRACTION": "1",
+		"BULKER_MESSAGES_RETRY_BACKOFF_BASE":               "0",
+		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC":           "1"})
 	t.Cleanup(func() {
 		app.Shutdown()
 		if postgresContainer != nil {
