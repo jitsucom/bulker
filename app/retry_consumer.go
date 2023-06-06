@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/jitsucom/bulker/base/utils"
 	"strconv"
 	"time"
 )
 
 type RetryConsumer struct {
-	AbstractBatchConsumer
+	*AbstractBatchConsumer
 }
 
 func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *AppConfig, kafkaConfig *kafka.ConfigMap) (*RetryConsumer, error) {
@@ -19,14 +18,14 @@ func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodS
 		return nil, err
 	}
 	rc := RetryConsumer{
-		AbstractBatchConsumer: *base,
+		AbstractBatchConsumer: base,
 	}
 	rc.batchFunc = rc.processBatchImpl
 	rc.pause()
 	return &rc, nil
 }
 
-func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error) {
+func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error) {
 	var firstPosition *kafka.TopicPartition
 	var lastPosition *kafka.TopicPartition
 
@@ -35,7 +34,7 @@ func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchNum, ba
 		if err != nil {
 			//cleanup
 			if firstPosition != nil {
-				_ = rc.consumer.Seek(*firstPosition, 10_000)
+				_, _ = rc.consumer.SeekPartitions([]kafka.TopicPartition{*firstPosition})
 			}
 			if txOpened {
 				_ = rc.producer.AbortTransaction(context.Background())
@@ -43,15 +42,17 @@ func (rc *RetryConsumer) processBatchImpl(destination *Destination, batchNum, ba
 			nextBatch = false
 		}
 	}()
+	_, highOffset, err := rc.consumer.QueryWatermarkOffsets(rc.topicId, 0, 10_000)
+
 	nextBatch = true
-	// we collect batchSize of messages but no longer than for 1/10 of batchPeriodSec
-	timeEnd := time.Now().Add(utils.MaxDuration(time.Duration(rc.batchPeriodSec/10)*time.Second, rc.waitForMessages))
 	for i := 0; i < retryBatchSize; i++ {
 		if rc.retired.Load() {
 			return
 		}
-		wait := timeEnd.Sub(time.Now())
-		if wait <= 0 {
+		if lastPosition != nil && int64(lastPosition.Offset) == highOffset-1 {
+			nextBatch = false
+			rc.Debugf("Reached watermark offset %d. Stopping batch", highOffset-1)
+			// we reached the end of the topic
 			break
 		}
 		message, err := rc.consumer.ReadMessage(rc.waitForMessages)

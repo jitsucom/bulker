@@ -101,13 +101,6 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		}
 	}
 
-	err = consumer.Subscribe(topicId, nil)
-	if err != nil {
-		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
-		_ = consumer.Close()
-		return nil, base.NewError("Failed to subscribe to topic: %w", err)
-	}
-
 	producerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"transactional.id": fmt.Sprintf("%s_failed_%s", topicId, config.InstanceId),
 	}, *kafkaConfig))
@@ -117,7 +110,8 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		_ = consumer.Close()
 		return nil, base.NewError("error creating kafka producer: %w", err)
 	}
-	ctx, _ := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
 	//enable transactions support for producer
 	err = producer.InitTransactions(ctx)
 	if err != nil {
@@ -125,8 +119,6 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		_ = consumer.Close()
 		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %w", err)
 	}
-	idle := atomic.Bool{}
-	idle.Store(true)
 	bc := &AbstractBatchConsumer{
 		ServiceBase:     base,
 		config:          config,
@@ -142,7 +134,14 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		waitForMessages: time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
 		closed:          make(chan struct{}),
 		resumeChannel:   make(chan struct{}),
-		idle:            idle,
+	}
+	bc.idle.Store(true)
+
+	err = consumer.Subscribe(topicId, bc.rebalanceCallback)
+	if err != nil {
+		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
+		_ = consumer.Close()
+		return nil, base.NewError("Failed to subscribe to topic: %w", err)
 	}
 
 	// Delivery reports channel for 'failed' producer messages
@@ -329,7 +328,7 @@ func (bc *AbstractBatchConsumer) pause() {
 			} else if message != nil {
 				bc.Debugf("Unexpected message on paused consumer: %v", message)
 				//If message slipped through pause, rollback offset and make sure consumer is paused
-				err = bc.consumer.Seek(message.TopicPartition, 10_000)
+				_, err = bc.consumer.SeekPartitions([]kafka.TopicPartition{message.TopicPartition})
 				if err != nil {
 					bc.errorMetric("ROLLBACK_ON_PAUSE_ERR")
 					bc.SystemErrorf("Failed to rollback offset on paused consumer: %v", err)
@@ -369,7 +368,7 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 				bc.Errorf("Error creating kafka consumer: %w", err)
 				break
 			}
-			err = consumer.SubscribeTopics([]string{bc.topicId}, nil)
+			err = consumer.SubscribeTopics([]string{bc.topicId}, bc.rebalanceCallback)
 			if err != nil {
 				bc.errorMetric("consumer_error:" + metrics.KafkaErrorCode(err))
 				_ = consumer.Close()
@@ -397,7 +396,24 @@ func (bc *AbstractBatchConsumer) pauseKafkaConsumer() {
 		if len(partitions) > 0 {
 			bc.Debugf("Consumer paused.")
 		}
+		// otherwise rebalanceCallback will handle pausing
 	}
+}
+
+func (bc *AbstractBatchConsumer) rebalanceCallback(consumer *kafka.Consumer, event kafka.Event) error {
+	assignedParts, ok := event.(kafka.AssignedPartitions)
+	bc.Debugf("Rebalance event: %v . Paused: %t", event, bc.paused.Load())
+	if ok && bc.paused.Load() {
+		err := consumer.Pause(assignedParts.Partitions)
+		if err != nil {
+			bc.errorMetric("pause_error")
+			bc.SystemErrorf("Failed to pause kafka consumer: %w", err)
+			return err
+		} else {
+			bc.Debugf("Consumer paused.")
+		}
+	}
+	return nil
 }
 
 func (bc *AbstractBatchConsumer) resume() (err error) {

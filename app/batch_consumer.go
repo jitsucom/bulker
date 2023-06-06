@@ -8,7 +8,6 @@ import (
 	"github.com/jitsucom/bulker/app/metrics"
 	"github.com/jitsucom/bulker/base/logging"
 	"github.com/jitsucom/bulker/base/timestamp"
-	"github.com/jitsucom/bulker/base/utils"
 	"github.com/jitsucom/bulker/bulker"
 	"github.com/jitsucom/bulker/types"
 	jsoniter "github.com/json-iterator/go"
@@ -17,7 +16,7 @@ import (
 )
 
 type BatchConsumerImpl struct {
-	AbstractBatchConsumer
+	*AbstractBatchConsumer
 	eventsLogService EventsLogService
 }
 
@@ -28,7 +27,7 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 		return nil, err
 	}
 	bc := BatchConsumerImpl{
-		AbstractBatchConsumer: *base,
+		AbstractBatchConsumer: base,
 		eventsLogService:      eventsLogService,
 	}
 	bc.batchFunc = bc.processBatchImpl
@@ -66,7 +65,12 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		}
 	}()
 	// we collect batchSize of messages but no longer than for 1/10 of batchPeriodSec
-	timeEnd := time.Now().Add(utils.MaxDuration(time.Duration(bc.batchPeriodSec/10)*time.Second, bc.waitForMessages))
+	_, highOffset, err := bc.consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+	if err != nil {
+		bc.errorMetric("query_watermark_failed")
+		err = bc.NewError("Failed to query watermark offsets: %w", err)
+		return
+	}
 	var latestMessage *kafka.Message
 	var processedObjectsSample []types.Object
 	processed := 0
@@ -75,8 +79,10 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			_, _ = bulkerStream.Abort(ctx)
 			return
 		}
-		wait := timeEnd.Sub(time.Now())
-		if wait <= 0 {
+		if latestMessage != nil && int64(latestMessage.TopicPartition.Offset) == highOffset-1 {
+			nextBatch = false
+			bc.Debugf("Reached watermark offset %d. Stopping batch", highOffset-1)
+			// we reached the end of the topic
 			break
 		}
 		message, err := bc.consumer.ReadMessage(bc.waitForMessages)
@@ -167,7 +173,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 
 	bc.Infof("Rolling back to first offset %d (failed at %d)", firstPosition.Offset, failedPosition.Offset)
 	//Rollback consumer to committed offset
-	err = bc.consumer.Seek(*firstPosition, 10_000)
+	_, err = bc.consumer.SeekPartitions([]kafka.TopicPartition{*firstPosition})
 	if err != nil {
 		bc.errorMetric("SEEK_ERROR")
 		return BatchCounters{}, fmt.Errorf("failed to rollback kafka consumer offset: %w", err)
@@ -180,7 +186,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		if err != nil {
 			//cleanup
 			_ = bc.producer.AbortTransaction(context.Background())
-			err = bc.consumer.Seek(*firstPosition, 10_000)
+			_, err = bc.consumer.SeekPartitions([]kafka.TopicPartition{*firstPosition})
 			if err != nil {
 				bc.errorMetric("SEEK_ERROR")
 			}
