@@ -49,6 +49,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 	var firstPosition *kafka.TopicPartition
 	defer func() {
 		if err != nil {
+			nextBatch = false
 			counters.failed = counters.consumed - counters.processed
 			if failedPosition != nil {
 				cnts, err2 := bc.processFailed(firstPosition, failedPosition)
@@ -57,8 +58,9 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 				if err2 != nil {
 					bc.errorMetric("PROCESS_FAILED_ERROR")
 					logging.SystemError(err2)
-					nextBatch = false
-				} else {
+				} else if cnts.failed > 1 {
+					// if we fail right on the first message - that probably means connection problems. No need to move further.
+					// otherwise we can try to consume next batch
 					nextBatch = true
 				}
 			}

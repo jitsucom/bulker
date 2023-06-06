@@ -243,7 +243,9 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		}
 		batchStats, nextBatch, err2 := bc.processBatch(destination, batchNumber, maxBatchSize, retryBatchSize)
 		if err2 != nil {
-			bc.Errorf("Batch finished with error: %w stats: %s nextBatch: %t", err2, batchStats, nextBatch)
+			if nextBatch {
+				bc.Errorf("Batch finished with error: %w stats: %s nextBatch: %t", err2, batchStats, nextBatch)
+			}
 		}
 		counters.accumulate(batchStats)
 		if !nextBatch {
