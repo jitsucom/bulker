@@ -472,7 +472,7 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 		if err != nil {
 			ch.Errorf("Error altering distributed table for [%s] with statement [%s]: %v", patchSchema.Name, query, err)
 			// fallback for older clickhouse versions: drop and create distributed table if ReplicatedMergeTree engine
-			ch.dropTable(ctx, ch.quotedTableName(patchSchema.Name), true)
+			ch.dropTable(ctx, ch.quotedTableName(patchSchema.Name), ch.getOnClusterClause(), true)
 			return ch.createDistributedTableInTransaction(ctx, patchSchema)
 		}
 
@@ -627,22 +627,30 @@ func (ch *ClickHouse) TruncateTable(ctx context.Context, tableName string) error
 }
 
 func (ch *ClickHouse) DropTable(ctx context.Context, tableName string, ifExists bool) error {
-	err := ch.dropTable(ctx, ch.quotedTableName(tableName), ifExists)
+	err := ch.dropTable(ctx, ch.quotedTableName(tableName), ch.getOnClusterClause(), ifExists)
 	if err != nil {
 		return err
 	}
 	if ch.distributed {
-		return ch.dropTable(ctx, ch.quotedLocalTableName(tableName), true)
+		return ch.dropTable(ctx, ch.quotedLocalTableName(tableName), ch.getOnClusterClause(), true)
 	}
 	return nil
 }
 
-func (ch *ClickHouse) dropTable(ctx context.Context, fullTableName string, ifExists bool) error {
+func (ch *ClickHouse) Drop(ctx context.Context, table *Table, ifExists bool) error {
+	if table.Temporary {
+		return ch.dropTable(ctx, ch.quotedTableName(table.Name), "", ifExists)
+	} else {
+		return ch.DropTable(ctx, table.Name, ifExists)
+	}
+}
+
+func (ch *ClickHouse) dropTable(ctx context.Context, fullTableName string, onClusterClause string, ifExists bool) error {
 	ifExs := ""
 	if ifExists {
 		ifExs = "IF EXISTS "
 	}
-	query := fmt.Sprintf(chDropTableTemplate, ifExs, fullTableName, ch.getOnClusterClause())
+	query := fmt.Sprintf(chDropTableTemplate, ifExs, fullTableName, onClusterClause)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 

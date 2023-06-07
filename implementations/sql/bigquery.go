@@ -611,6 +611,10 @@ func (bq *BigQuery) DropTable(ctx context.Context, tableName string, ifExists bo
 	return nil
 }
 
+func (bq *BigQuery) Drop(ctx context.Context, table *Table, ifExists bool) error {
+	return bq.DropTable(ctx, table.Name, ifExists)
+}
+
 func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
 	targetTableName = bq.TableName(targetTableName)
 	replacementTableName := bq.TableName(replacementTable.Name)

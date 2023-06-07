@@ -42,6 +42,8 @@ type SQLAdapter interface {
 	//(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error
 	Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error
 	DropTable(ctx context.Context, tableName string, ifExists bool) error
+	Drop(ctx context.Context, table *Table, ifExists bool) error
+
 	ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) error
 
 	Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error)
@@ -149,6 +151,10 @@ func (tx *TxSQLAdapter) Delete(ctx context.Context, tableName string, deleteCond
 func (tx *TxSQLAdapter) DropTable(ctx context.Context, tableName string, ifExists bool) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.DropTable(ctx, tableName, ifExists)
+}
+func (tx *TxSQLAdapter) Drop(ctx context.Context, table *Table, ifExists bool) error {
+	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	return tx.sqlAdapter.Drop(ctx, table, ifExists)
 }
 func (tx *TxSQLAdapter) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)

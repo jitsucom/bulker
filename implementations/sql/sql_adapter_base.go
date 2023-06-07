@@ -329,6 +329,10 @@ func (b *SQLAdapterBase[T]) DropTable(ctx context.Context, tableName string, ifE
 	return nil
 }
 
+func (b *SQLAdapterBase[T]) Drop(ctx context.Context, table *Table, ifExists bool) error {
+	return b.DropTable(ctx, table.Name, ifExists)
+}
+
 // TruncateTable deletes all records in tableName table
 func (b *SQLAdapterBase[T]) TruncateTable(ctx context.Context, tableName string) error {
 	quotedTableName := b.quotedTableName(tableName)

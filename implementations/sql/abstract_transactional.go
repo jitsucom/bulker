@@ -102,14 +102,14 @@ func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err 
 		ps.state.SuccessfulRows = 0
 		if ps.tx != nil {
 			if ps.tmpTable != nil {
-				_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
+				_ = ps.tx.Drop(ctx, ps.tmpTable, true)
 			}
 			_ = ps.tx.Rollback()
 		}
 	} else {
 		if ps.tx != nil {
 			if ps.tmpTable != nil {
-				_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
+				_ = ps.tx.Drop(ctx, ps.tmpTable, true)
 			}
 			err = ps.tx.Commit()
 		}
@@ -343,7 +343,7 @@ func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulk
 	}
 	if ps.tx != nil {
 		if ps.tmpTable != nil {
-			_ = ps.tx.DropTable(ctx, ps.tmpTable.Name, true)
+			_ = ps.tx.Drop(ctx, ps.tmpTable, true)
 		}
 		_ = ps.tx.Rollback()
 	}
