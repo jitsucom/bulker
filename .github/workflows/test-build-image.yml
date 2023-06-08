@@ -14,40 +14,55 @@ env:
   BULKER_TEST_MILLION_ROWS_BATCHED: postgres
 
 jobs:
-  bulker-test:
+  init:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
-        ref: ${{ github.head_ref }}
-        # Make sure the value of GITHUB_TOKEN will not be persisted in repo's config
-        persist-credentials: false
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+          # Make sure the value of GITHUB_TOKEN will not be persisted in repo's config
+          persist-credentials: false
 
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.20.5
+          cache: false
+
+      - name: Install go-test-report
+        run: |
+          go install github.com/vakenbolt/go-test-report@latest
+
+  bulker-test:
+    strategy:
+      matrix:
+        module: [ jitsubase, bulkerlib, bulkerapp ]
+    runs-on: ubuntu-latest
+    steps:
     - name: Set up Go
       uses: actions/setup-go@v3
       with:
         go-version: 1.20.5
+        cache-dependency-path: ${{ matrix.module }}/go.sum
         cache: true
-
 
     - name: Bulker Test
       run: |
-        go test -parallel=10 -timeout 60m -json ./jitsubase/... ./bulkerlib/... ./bulkerapp/... > test_report.json
+        go test -parallel=10 -timeout 60m -json ./${{ matrix.module }}/... > test_report_${{ matrix.module }}.json
 
     - name: Test Report
       if: ${{ always() }}
       run: |
-        go install github.com/vakenbolt/go-test-report@latest
-        cat test_report.json | ~/go/bin/go-test-report
+        cat test_report_${{ matrix.module }}.json | ~/go/bin/go-test-report
 
     - uses: actions/upload-artifact@v3
       if: ${{ always() }}
       with:
-        name: test-report
+        name: test-report-${{ matrix.module }}
         path: |
-          test_report.html
-          test_report.json
+          test_report_${{ matrix.module }}.html
+          test_report_${{ matrix.module }}.json
 
   docker:
     needs: bulker-test
