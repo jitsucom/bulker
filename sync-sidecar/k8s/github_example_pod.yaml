@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: github-source-config
+  namespace: default
+data:
+  # JSON of selected streams from catalog of the source
+  catalog: "{}"
+  # JSON of the source configuration (credentials, etc)
+  config: "{}"
+  # JSON of the saved state of the source from previous sync
+  state: "{}"
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: github-source
+  namespace: default
+  labels:
+    app: github_source
+spec:
+  restartPolicy: Never
+  volumes:
+    # Mount ConfigMap with source configuration as files since airbyte requires config in files
+    - name: config
+      configMap:
+        name: github-source-config
+        items:
+          - key: config
+            path: config.json
+          - key: catalog
+            path: catalog.json
+    - name: pipes
+      emptyDir: {}
+  containers:
+    - name: sidecar
+      image: jitsucom/sidecar:latest
+      env:
+        - name: SOURCE_ID
+          value: github
+        - name: TASK_ID
+          value: "1"
+        - name: BULKER_URL
+          value: http://localhost:3042
+        - name: BULKER_AUTH_TOKEN
+          value: 123
+        - name: CONNECTION_ID
+          value: clfsezba10007ccitcu9x2axk
+        - name: TASKS_CONNECTION_ID
+          value: tasks
+        - name: STATE_CONNECTION_ID
+          value: tasks_state
+        - name: STDOUT_PIPE_FILE
+          value: /pipes/stdout
+        - name: STDERR_PIPE_FILE
+          value: /pipes/stderr
+      volumeMounts:
+        - name: pipes
+          mountPath: /pipes
+    - name: github
+      image: airbyte/source-github:0.4.3
+      # Modified entrypoint that directs output to pipes
+      command: ['sh', '-c', 'eval "$AIRBYTE_ENTRYPOINT read --config /config/config.json --catalog /config/catalog.json --state /config/state.json" 2> /pipes/stderr > /pipes/stdout' ]
+      volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: pipes
+          mountPath: /pipes
+  initContainers:
+    - name: init
+      image: busybox:1.36.0
+      # Create pipes in init container
+      command: ["sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr"]
+      volumeMounts:
+        - name: pipes
+          mountPath: /pipes
+

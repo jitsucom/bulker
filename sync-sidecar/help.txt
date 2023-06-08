@@ -1,0 +1,4 @@
+kubectl create clusterrolebinding deployment-controller --clusterrole=cluster-admin --serviceaccount=default:default
+
+https://stackoverflow.com/questions/53852530/how-to-get-logs-from-kubernetes-using-go
+https://stackoverflow.com/questions/71074992/how-to-get-the-names-of-pods-in-job-in-kubernetes-through-client-go-api
