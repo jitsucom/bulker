@@ -18,15 +18,29 @@ RUN apt-get install gcc libc6-dev
 RUN mkdir /app
 WORKDIR /app
 
-COPY go.mod .
-COPY go.sum .
+RUN mkdir jitsubase
+RUN mkdir bulkerlib
+RUN mkdir bulkerapp
+
+COPY jitsubase/go.mod ./jitsubase/
+COPY jitsubase/go.sum ./jitsubase/
+COPY bulkerlib/go.mod ./bulkerlib/
+COPY bulkerlib/go.sum ./bulkerlib/
+COPY bulkerapp/go.mod ./bulkerapp/
+COPY bulkerapp/go.sum ./bulkerapp/
+
+RUN go work init jitsubase bulkerlib bulkerapp
+
+WORKDIR /app/bulkerapp
 
 RUN go mod download
 
-COPY . .
+WORKDIR /app
+
+COPY .. .
 
 # Build bulker
-RUN go build -o bulkerapp
+RUN go build -o bulkerapp ./bulkerapp
 
 #######################################
 # FINAL STAGE
@@ -36,7 +50,7 @@ RUN mkdir /app
 WORKDIR /app
 
 # Copy bulkerapp
-COPY --from=build /app/bulkerapp ./bulkerapp
+COPY --from=build /app/bulkerapp/bulkerapp ./bulkerapp
 #COPY ./config.yaml ./
 
 CMD ["/app/bulkerapp"]

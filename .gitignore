@@ -1,5 +1,5 @@
-/config.yaml
-/bulker.env
+/bulkerapp/config.yaml
+/bulkerapp/bulker.env
 
 # Binaries for programs and plugins
 *.exe
@@ -15,3 +15,6 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+/bulkerapp/bulker.env
+/go.work
+/go.work.sum
