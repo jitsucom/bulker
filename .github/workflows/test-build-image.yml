@@ -35,6 +35,7 @@ jobs:
           go install github.com/vakenbolt/go-test-report@latest
 
   bulker-test:
+    needs: init
     strategy:
       matrix:
         module: [ jitsubase, bulkerlib, bulkerapp ]
