@@ -2,7 +2,7 @@ package app
 
 import (
 	"context"
-	"github.com/jitsucom/bulker/bulkerapp/testcontainers"
+	"github.com/jitsucom/bulker/bulkerapp/app/testcontainers"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/stretchr/testify/require"
 	"testing"

@@ -6,7 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"github.com/jitsucom/bulker/bulkerapp/testcontainers/kafka"
+	"github.com/jitsucom/bulker/bulkerapp/app/testcontainers/kafka"
 	_ "github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers"
 	"github.com/jitsucom/bulker/jitsubase/logging"
