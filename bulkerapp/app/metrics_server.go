@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
 	"time"
 )
 
 type MetricsServer struct {
-	objects.ServiceBase
+	appbase.Service
 	server *http.Server
 }
 
-func NewMetricsServer(appconfig *AppConfig) *MetricsServer {
-	base := objects.NewServiceBase("metrics_server")
+func NewMetricsServer(appconfig *Config) *MetricsServer {
+	base := appbase.NewServiceBase("metrics_server")
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	//expose prometheus metrics
@@ -29,7 +29,7 @@ func NewMetricsServer(appconfig *AppConfig) *MetricsServer {
 		ReadHeaderTimeout: time.Second * 60,
 		IdleTimeout:       time.Second * 65,
 	}
-	m := &MetricsServer{ServiceBase: base, server: server}
+	m := &MetricsServer{Service: base, server: server}
 	m.start()
 	return m
 }

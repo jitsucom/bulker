@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/objects"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"strconv"
 	"strings"
@@ -56,7 +56,7 @@ type TypeCastFunction func(placeholder string, column types2.SQLColumn) string
 type ErrorAdapter func(error) error
 
 type SQLAdapterBase[T any] struct {
-	objects.ServiceBase
+	appbase.Service
 	typeId               string
 	config               *T
 	dataSource           *sql.DB
@@ -79,7 +79,7 @@ type SQLAdapterBase[T any] struct {
 
 func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) (SQLAdapterBase[T], error) {
 	s := SQLAdapterBase[T]{
-		ServiceBase:          objects.NewServiceBase(id),
+		Service:              appbase.NewServiceBase(id),
 		typeId:               typeId,
 		config:               config,
 		dbConnectFunction:    dbConnectFunction,

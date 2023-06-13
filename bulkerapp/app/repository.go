@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/objects"
 	"sync"
 )
 
@@ -16,7 +16,7 @@ type RepositoryChange struct {
 }
 
 type Repository struct {
-	objects.ServiceBase
+	appbase.Service
 	sync.Mutex
 	configurationSource ConfigurationSource
 	repository          *repositoryInternal
@@ -44,9 +44,9 @@ func (r *Repository) GetDestinations() []*Destination {
 }
 
 func (r *Repository) init() error {
-	base := objects.NewServiceBase("repository")
+	base := appbase.NewServiceBase("repository")
 	internal := &repositoryInternal{
-		ServiceBase:  base,
+		Service:      base,
 		destinations: make(map[string]*Destination),
 	}
 	err := internal.init(r.configurationSource)
@@ -115,15 +115,15 @@ func (r *Repository) Close() error {
 }
 
 type repositoryInternal struct {
-	objects.ServiceBase
+	appbase.Service
 	sync.Mutex
 	destinations map[string]*Destination
 }
 
-func NewRepository(config *AppConfig, configurationSource ConfigurationSource) (*Repository, error) {
-	base := objects.NewServiceBase("repository")
+func NewRepository(config *Config, configurationSource ConfigurationSource) (*Repository, error) {
+	base := appbase.NewServiceBase("repository")
 	r := Repository{
-		ServiceBase:         base,
+		Service:             base,
 		configurationSource: configurationSource,
 		changesChan:         make(chan RepositoryChange, 10),
 	}

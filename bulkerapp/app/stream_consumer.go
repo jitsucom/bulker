@@ -7,7 +7,7 @@ import (
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
@@ -19,8 +19,8 @@ import (
 const streamConsumerMessageWaitTimeout = 1 * time.Second
 
 type StreamConsumer struct {
-	objects.ServiceBase
-	config         *AppConfig
+	appbase.Service
+	config         *Config
 	repository     *Repository
 	destination    *Destination
 	stream         atomic.Pointer[bulker.BulkerStream]
@@ -37,8 +37,8 @@ type StreamConsumer struct {
 	closed chan struct{}
 }
 
-func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *AppConfig, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService EventsLogService) (*StreamConsumer, error) {
-	base := objects.NewServiceBase(topicId)
+func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService EventsLogService) (*StreamConsumer, error) {
+	base := appbase.NewServiceBase(topicId)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, "stream", "INVALID_TOPIC", "INVALID_TOPIC:"+topicId, "failed to parse topic").Inc()
@@ -72,7 +72,7 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 	//}
 
 	sc := &StreamConsumer{
-		ServiceBase:      base,
+		Service:          base,
 		config:           config,
 		repository:       repository,
 		destination:      destination,

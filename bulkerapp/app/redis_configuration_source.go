@@ -5,7 +5,7 @@ import (
 	"crypto/x509"
 	"github.com/gomodule/redigo/redis"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"strings"
 	"sync"
@@ -16,7 +16,7 @@ const redisDestinationsKey = "enrichedConnections"
 const redisConfigurationSourceServiceName = "redis_configuration"
 
 type RedisConfigurationSource struct {
-	objects.ServiceBase
+	appbase.Service
 	sync.Mutex
 	currentHash uint64
 	refreshChan chan bool
@@ -27,12 +27,12 @@ type RedisConfigurationSource struct {
 	destinations map[string]*DestinationConfig
 }
 
-func NewRedisConfigurationSource(appconfig *AppConfig) (*RedisConfigurationSource, error) {
-	base := objects.NewServiceBase(redisConfigurationSourceServiceName)
+func NewRedisConfigurationSource(appconfig *Config) (*RedisConfigurationSource, error) {
+	base := appbase.NewServiceBase(redisConfigurationSourceServiceName)
 	base.Debugf("Creating RedisConfigurationSource with redisURL: %s", appconfig.ConfigSource)
 	redisPool := newPool(appconfig.ConfigSource, appconfig.RedisTLSCA)
 	r := RedisConfigurationSource{
-		ServiceBase:  base,
+		Service:      base,
 		redisPool:    redisPool,
 		refreshChan:  make(chan bool, 1),
 		changesChan:  make(chan bool, 1),

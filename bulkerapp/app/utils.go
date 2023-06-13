@@ -35,7 +35,7 @@ func GetKafkaTimeHeader(message *kafka.Message, name string) (time.Time, error) 
 	}
 }
 
-func RetryBackOffTime(config *AppConfig, attempt int) time.Time {
+func RetryBackOffTime(config *Config, attempt int) time.Time {
 	backOffDelay := time.Duration(math.Min(math.Pow(config.MessagesRetryBackoffBase, float64(attempt)), config.MessagesRetryBackoffMaxDelay)) * time.Minute
 	return time.Now().Add(backOffDelay)
 }

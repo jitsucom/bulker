@@ -2,7 +2,7 @@ package app
 
 import (
 	"github.com/gomodule/redigo/redis"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	jsoniter "github.com/json-iterator/go"
 	"strings"
 )
@@ -14,7 +14,7 @@ const fastStoreApiKeys = "apiKeys"
 const fastStoreStreamDomainsKey = "streamDomains"
 
 type FastStore struct {
-	objects.ServiceBase
+	appbase.Service
 	redisPool *redis.Pool
 }
 
@@ -70,13 +70,13 @@ type StreamWithDestinations struct {
 	AsynchronousDestinations []ShortDestinationConfig `json:"asynchronousDestinations"`
 }
 
-func NewFastStore(config *AppConfig) (*FastStore, error) {
-	base := objects.NewServiceBase(fastStoreServiceName)
+func NewFastStore(config *Config) (*FastStore, error) {
+	base := appbase.NewServiceBase(fastStoreServiceName)
 	base.Debugf("Creating FastStore with redisURL: %s", config.RedisURL)
 	redisPool := newPool(config.RedisURL, config.RedisTLSCA)
 	fs := FastStore{
-		ServiceBase: base,
-		redisPool:   redisPool,
+		Service:   base,
+		redisPool: redisPool,
 	}
 	return &fs, nil
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/jitsucom/bulker/bulkerapp/app/testcontainers/kafka"
 	_ "github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/stretchr/testify/require"
 	"io"
@@ -45,7 +46,7 @@ var testConfigSource string
 //go:embed test_data/bulker.env
 var testBulkerEnv string
 
-func initApp(t *testing.T, envVars map[string]string) (app *AppContext, kafkaContainer *kafka.KafkaContainer, postgresContainer *testcontainers.PostgresContainer) {
+func initApp(t *testing.T, envVars map[string]string) (app *Context, kafkaContainer *kafka.KafkaContainer, postgresContainer *testcontainers.PostgresContainer) {
 	var err error
 	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background(), true)
 	if err != nil {
@@ -73,9 +74,16 @@ func initApp(t *testing.T, envVars map[string]string) (app *AppContext, kafkaCon
 	for k, v := range envVars {
 		t.Setenv(k, v)
 	}
-	app = InitAppContext()
+	settings := &appbase.AppSettings{
+		ConfigPath: os.Getenv("BULKER_CONFIG_PATH"),
+		Name:       "bulker",
+		EnvPrefix:  "BULKER",
+		ConfigName: "bulker",
+		ConfigType: "env",
+	}
+	application := appbase.NewApp[app.Config](&Context{}, settings)
 	go func() {
-		app.server.ListenAndServe()
+		application.Run()
 	}()
 	ready := false
 	//wait in loop for server readiness

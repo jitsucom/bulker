@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/hjson/hjson-go/v4"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/objects"
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
 	"io"
@@ -36,7 +36,7 @@ type ConfigurationSource interface {
 	//Equals(other ConfigurationSource) bool
 }
 
-func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
+func InitConfigurationSource(config *Config) (ConfigurationSource, error) {
 	cfgSource := config.ConfigSource
 	if cfgSource == "" {
 		logging.Infof("BULKER_CONFIG_SOURCE is not set. Using environment variables configuration source with prefix: %s", defaultEnvDestinationPrefix)
@@ -74,7 +74,7 @@ func InitConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
 	return NewMultiConfigurationSource([]ConfigurationSource{internalDestinationsSource, configurationSource}), nil
 }
 
-func initConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
+func initConfigurationSource(config *Config) (ConfigurationSource, error) {
 	cfgSource := config.ConfigSource
 	if cfgSource == "" {
 		logging.Infof("BULKER_CONFIG_SOURCE is not set. Using environment variables configuration source with prefix: %s", defaultEnvDestinationPrefix)
@@ -110,7 +110,7 @@ func initConfigurationSource(config *AppConfig) (ConfigurationSource, error) {
 }
 
 type YamlConfigurationSource struct {
-	objects.ServiceBase
+	appbase.Service
 
 	changesChan chan bool
 
@@ -119,14 +119,14 @@ type YamlConfigurationSource struct {
 }
 
 func NewYamlConfigurationSource(data []byte) (*YamlConfigurationSource, error) {
-	base := objects.NewServiceBase("yaml_configuration")
+	base := appbase.NewServiceBase("yaml_configuration")
 	cfg := make(map[string]any)
 	err := yaml.Unmarshal(data, cfg)
 	if err != nil {
 		return nil, err
 	}
 	y := &YamlConfigurationSource{
-		ServiceBase: base,
+		Service:     base,
 		changesChan: make(chan bool),
 		config:      cfg,
 	}
@@ -198,7 +198,7 @@ func (ycp *YamlConfigurationSource) Close() error {
 }
 
 type EnvConfigurationSource struct {
-	objects.ServiceBase
+	appbase.Service
 
 	changesChan chan bool
 
@@ -206,7 +206,7 @@ type EnvConfigurationSource struct {
 }
 
 func NewEnvConfigurationSource(prefix string) *EnvConfigurationSource {
-	base := objects.NewServiceBase("env_configuration")
+	base := appbase.NewServiceBase("env_configuration")
 	results := make(map[string]*DestinationConfig)
 	envs := os.Environ()
 	for _, env := range envs {
@@ -231,7 +231,7 @@ func NewEnvConfigurationSource(prefix string) *EnvConfigurationSource {
 		results[id] = cfg
 	}
 	y := &EnvConfigurationSource{
-		ServiceBase:  base,
+		Service:      base,
 		changesChan:  make(chan bool),
 		destinations: results,
 	}

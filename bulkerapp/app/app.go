@@ -4,19 +4,15 @@ import (
 	"context"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 )
 
-var exitChannel = make(chan os.Signal, 1)
-
-type AppContext struct {
-	config              *AppConfig
+type Context struct {
+	config              *Config
 	kafkaConfig         *kafka.ConfigMap
 	configurationSource ConfigurationSource
 	repository          *Repository
@@ -30,103 +26,74 @@ type AppContext struct {
 	metricsRelay        *MetricsRelay
 }
 
-// TODO: graceful shutdown and cleanups. Flush producer
-func Run() {
-	logging.SetTextFormatter()
-
-	signal.Notify(exitChannel, os.Interrupt, os.Kill, syscall.SIGTERM)
-
-	appContext := InitAppContext()
-
-	go func() {
-		signal := <-exitChannel
-		logging.Infof("Received signal: %s. Shutting down...", signal)
-		appContext.Shutdown()
-		os.Exit(0)
-	}()
-	logging.Infof("Starting http server on %s", appContext.server.Addr)
-	logging.Info(appContext.server.ListenAndServe())
-}
-
-func Exit(signal os.Signal) {
-	logging.Infof("App Triggered Exit...")
-	exitChannel <- signal
-}
-
-func InitAppContext() *AppContext {
-	appContext := AppContext{}
+func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	var err error
-	appContext.config, err = InitAppConfig()
+	a.config = &Config{}
+	err = appbase.InitAppConfig(a.config, settings)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	appContext.kafkaConfig = appContext.config.GetKafkaConfig()
+	a.kafkaConfig = a.config.GetKafkaConfig()
 
 	if err != nil {
-		panic(err)
+		return err
 	}
-	appContext.configurationSource, err = InitConfigurationSource(appContext.config)
+	a.configurationSource, err = InitConfigurationSource(a.config)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	appContext.repository, err = NewRepository(appContext.config, appContext.configurationSource)
+	a.repository, err = NewRepository(a.config, a.configurationSource)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	appContext.cron = NewCron(appContext.config)
-	appContext.producer, err = NewProducer(appContext.config, appContext.kafkaConfig)
+	a.cron = NewCron(a.config)
+	a.producer, err = NewProducer(a.config, a.kafkaConfig)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	appContext.producer.Start()
+	a.producer.Start()
 
-	appContext.eventsLogService = &DummyEventsLogService{}
-	eventsLogRedisUrl := utils.NvlString(appContext.config.EventsLogRedisURL, appContext.config.RedisURL)
+	a.eventsLogService = &DummyEventsLogService{}
+	eventsLogRedisUrl := utils.NvlString(a.config.EventsLogRedisURL, a.config.RedisURL)
 	if eventsLogRedisUrl != "" {
-		appContext.eventsLogService, err = NewRedisEventsLog(appContext.config, eventsLogRedisUrl)
+		a.eventsLogService, err = NewRedisEventsLog(a.config, eventsLogRedisUrl)
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
 
-	appContext.topicManager, err = NewTopicManager(&appContext)
+	a.topicManager, err = NewTopicManager(a)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	appContext.topicManager.Start()
+	a.topicManager.Start()
 
-	appContext.fastStore, err = NewFastStore(appContext.config)
+	a.fastStore, err = NewFastStore(a.config)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	var jobRunner *JobRunner
-	if appContext.config.KubernetesClientConfig != "" {
-		jobRunner, err = NewJobRunner(&appContext)
-		if err != nil {
-			panic(err)
-		}
-	}
-	router := NewRouter(&appContext, jobRunner)
-	appContext.server = &http.Server{
-		Addr:              fmt.Sprintf("0.0.0.0:%d", appContext.config.HTTPPort),
-		Handler:           router.GetEngine(),
+	router := NewRouter(a)
+	a.server = &http.Server{
+		Addr:              fmt.Sprintf("0.0.0.0:%d", a.config.HTTPPort),
+		Handler:           router.Engine(),
 		ReadTimeout:       time.Second * 60,
 		ReadHeaderTimeout: time.Second * 60,
 		IdleTimeout:       time.Second * 65,
 	}
-	metricsServer := NewMetricsServer(appContext.config)
-	appContext.metricsServer = metricsServer
+	metricsServer := NewMetricsServer(a.config)
+	a.metricsServer = metricsServer
 
-	metricsRelay, err := NewMetricsRelay(appContext.config)
+	metricsRelay, err := NewMetricsRelay(a.config)
 	if err != nil {
 		logging.Errorf("Error initializing metrics relay: %v", err)
 	}
-	appContext.metricsRelay = metricsRelay
-	return &appContext
+	a.metricsRelay = metricsRelay
+	return nil
 }
 
-func (a *AppContext) Shutdown() {
+// TODO: graceful shutdown and cleanups. Flush producer
+func (a *Context) Shutdown() error {
 	_ = a.producer.Close()
 	_ = a.topicManager.Close()
 	a.cron.Close()
@@ -142,4 +109,13 @@ func (a *AppContext) Shutdown() {
 	_ = a.server.Shutdown(context.Background())
 	_ = a.eventsLogService.Close()
 	_ = a.fastStore.Close()
+	return nil
+}
+
+func (a *Context) Config() *Config {
+	return a.config
+}
+
+func (a *Context) Server() *http.Server {
+	return a.server
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"reflect"
 	"strings"
@@ -34,8 +34,8 @@ type BatchConsumer interface {
 
 type AbstractBatchConsumer struct {
 	sync.Mutex
-	objects.ServiceBase
-	config         *AppConfig
+	appbase.Service
+	config         *Config
 	repository     *Repository
 	destinationId  string
 	batchPeriodSec int
@@ -62,8 +62,8 @@ type AbstractBatchConsumer struct {
 	batchFunc BatchFunction
 }
 
-func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *AppConfig, kafkaConfig *kafka.ConfigMap) (*AbstractBatchConsumer, error) {
-	base := objects.NewServiceBase(topicId)
+func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *Config, kafkaConfig *kafka.ConfigMap) (*AbstractBatchConsumer, error) {
+	base := appbase.NewServiceBase(topicId)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, "INVALID_TOPIC", "INVALID_TOPIC", "failed to parse topic").Inc()
@@ -120,7 +120,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %w", err)
 	}
 	bc := &AbstractBatchConsumer{
-		ServiceBase:     base,
+		Service:         base,
 		config:          config,
 		repository:      repository,
 		destinationId:   destinationId,
