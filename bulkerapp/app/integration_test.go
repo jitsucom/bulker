@@ -81,7 +81,7 @@ func initApp(t *testing.T, envVars map[string]string) (app *Context, kafkaContai
 		ConfigName: "bulker",
 		ConfigType: "env",
 	}
-	application := appbase.NewApp[app.Config](&Context{}, settings)
+	application := appbase.NewApp[Config](&Context{}, settings)
 	go func() {
 		application.Run()
 	}()
