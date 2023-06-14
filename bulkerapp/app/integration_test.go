@@ -46,7 +46,7 @@ var testConfigSource string
 //go:embed test_data/bulker.env
 var testBulkerEnv string
 
-func initApp(t *testing.T, envVars map[string]string) (app *Context, kafkaContainer *kafka.KafkaContainer, postgresContainer *testcontainers.PostgresContainer) {
+func initApp(t *testing.T, envVars map[string]string) (app *appbase.App[Config], kafkaContainer *kafka.KafkaContainer, postgresContainer *testcontainers.PostgresContainer) {
 	var err error
 	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background(), true)
 	if err != nil {
@@ -81,9 +81,9 @@ func initApp(t *testing.T, envVars map[string]string) (app *Context, kafkaContai
 		ConfigName: "bulker",
 		ConfigType: "env",
 	}
-	application := appbase.NewApp[Config](&Context{}, settings)
+	app = appbase.NewApp[Config](&Context{}, settings)
 	go func() {
-		application.Run()
+		app.Run()
 	}()
 	ready := false
 	//wait in loop for server readiness
@@ -107,7 +107,7 @@ func TestGoodAndBadStreams(t *testing.T) {
 	app, kafka, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "0",
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC": "1"})
 	t.Cleanup(func() {
-		app.Shutdown()
+		app.Exit(appbase.SIG_SHUTDOWN_FOR_TESTS)
 		if postgresContainer != nil {
 			_ = postgresContainer.Close()
 		}
@@ -184,7 +184,7 @@ func TestEventsRetry(t *testing.T) {
 		"BULKER_MESSAGES_RETRY_BACKOFF_BASE":               "0",
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC":           "1"})
 	t.Cleanup(func() {
-		app.Shutdown()
+		app.Exit(appbase.SIG_SHUTDOWN_FOR_TESTS)
 		if postgresContainer != nil {
 			_ = postgresContainer.Close()
 		}

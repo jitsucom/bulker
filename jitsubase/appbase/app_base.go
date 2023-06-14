@@ -143,6 +143,8 @@ func (a *AppSettings) EnvPrefixWithUnderscore() string {
 	return a.EnvPrefix + "_"
 }
 
+const SIG_SHUTDOWN_FOR_TESTS = syscall.Signal(0x42)
+
 type App[C any] struct {
 	appContext  Context[C]
 	settings    *AppSettings
@@ -150,6 +152,11 @@ type App[C any] struct {
 }
 
 func NewApp[C any](appContext Context[C], appSettings *AppSettings) *App[C] {
+	logging.SetTextFormatter()
+	err := appContext.InitContext(appSettings)
+	if err != nil {
+		panic(fmt.Errorf("failed to start app: %w", err))
+	}
 	return &App[C]{
 		appContext:  appContext,
 		settings:    appSettings,
@@ -158,23 +165,20 @@ func NewApp[C any](appContext Context[C], appSettings *AppSettings) *App[C] {
 }
 
 func (a *App[C]) Run() {
-	logging.SetTextFormatter()
 
 	signal.Notify(a.exitChannel, os.Interrupt, os.Kill, syscall.SIGTERM)
 
-	err := a.appContext.InitContext(a.settings)
-	if err != nil {
-		panic(fmt.Errorf("failed to start app: %w", err))
-	}
-
 	go func() {
-		signal := <-a.exitChannel
-		logging.Infof("Received signal: %s. Shutting down...", signal)
-		err = a.appContext.Shutdown()
+		sig := <-a.exitChannel
+		logging.Infof("Received signal: %s. Shutting down...", sig)
+		err := a.appContext.Shutdown()
 		if err != nil {
 			logging.Errorf("error during shutdown: %s", err)
 		}
-		os.Exit(0)
+		if sig != SIG_SHUTDOWN_FOR_TESTS {
+			// we don't want to exit when running tests
+			os.Exit(0)
+		}
 	}()
 	server := a.appContext.Server()
 	if server != nil {
