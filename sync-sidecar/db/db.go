@@ -10,8 +10,8 @@ const (
 	upsertSpecSQL = `INSERT INTO source_spec (package, version, specs, timestamp ,error ) VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT ON CONSTRAINT source_spec_pk DO UPDATE SET specs = $3, timestamp = $4, error=$5`
 
-	upsertCatalogSQL = `INSERT INTO source_catalog (source_id, package, version, config_hash, catalog, timestamp, error) VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT ON CONSTRAINT source_catalog_pk DO UPDATE SET catalog=$5, timestamp = $6, error=$7`
+	upsertCatalogSQL = `INSERT INTO source_catalog (package, version, key, catalog, timestamp, error) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT ON CONSTRAINT source_catalog_pk DO UPDATE SET catalog=$4, timestamp = $5, error=$6`
 
 	upsertStateSQL = `INSERT INTO source_state (sync_id, state, timestamp) VALUES ($1, $2, $3)
 ON CONFLICT ON CONSTRAINT source_state_pk DO UPDATE SET state=$2, timestamp = $3`
@@ -20,10 +20,10 @@ ON CONFLICT ON CONSTRAINT source_state_pk DO UPDATE SET state=$2, timestamp = $3
 ON CONFLICT ON CONSTRAINT source_task_pk DO UPDATE SET updated_at=$6, status = $7, description=$8`
 
 	upsertRunningTaskSQL = `INSERT INTO source_task as st (sync_id, task_id, package, version, started_at, updated_at, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8 )
-ON CONFLICT ON CONSTRAINT source_task_pk DO UPDATE SET updated_at=$6, status = $7, description=$8 where st.status not in ('FAILED', 'SUCCESS')`
+ON CONFLICT ON CONSTRAINT source_task_pk DO UPDATE SET updated_at=$6, status = $7, description=$8 where st.status not in ('FAILED', 'SUCCESS', $7)`
 
-	upsertCheckSQL = `INSERT INTO source_check (source_id, package, version, config_hash, status, description, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT ON CONSTRAINT source_check_pk DO UPDATE SET status = $5, description=$6, timestamp=$7`
+	upsertCheckSQL = `INSERT INTO source_check (package, version, key, status, description, timestamp) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT ON CONSTRAINT source_check_pk DO UPDATE SET status = $4, description=$5, timestamp=$6`
 )
 
 func UpsertSpec(dbpool *pgxpool.Pool, packageName, packageVersion, specs any, timestamp time.Time, error string) error {
@@ -31,8 +31,8 @@ func UpsertSpec(dbpool *pgxpool.Pool, packageName, packageVersion, specs any, ti
 	return err
 }
 
-func UpsertCatalog(dbpool *pgxpool.Pool, sourceId, packageName, packageVersion, configHash, catalog any, timestamp time.Time, error string) error {
-	_, err := dbpool.Exec(context.Background(), upsertCatalogSQL, sourceId, packageName, packageVersion, configHash, catalog, timestamp, error)
+func UpsertCatalog(dbpool *pgxpool.Pool, packageName, packageVersion, storageKey, catalog any, timestamp time.Time, error string) error {
+	_, err := dbpool.Exec(context.Background(), upsertCatalogSQL, packageName, packageVersion, storageKey, catalog, timestamp, error)
 	return err
 }
 
@@ -51,7 +51,7 @@ func UpsertRunningTask(dbpool *pgxpool.Pool, syncId, taskId, packageName, packag
 	return err
 }
 
-func UpsertCheck(dbpool *pgxpool.Pool, sourceId, packageName, packageVersion, configHash, status, description string, timestamp time.Time) error {
-	_, err := dbpool.Exec(context.Background(), upsertCheckSQL, sourceId, packageName, packageVersion, configHash, status, description, timestamp)
+func UpsertCheck(dbpool *pgxpool.Pool, packageName, packageVersion, storageKey, status, description string, timestamp time.Time) error {
+	_, err := dbpool.Exec(context.Background(), upsertCheckSQL, packageName, packageVersion, storageKey, status, description, timestamp)
 	return err
 }

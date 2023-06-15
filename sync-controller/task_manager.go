@@ -29,7 +29,7 @@ func NewTaskManager(appContext *Context) (*TaskManager, error) {
 }
 
 func (t *TaskManager) SpecHandler(c *gin.Context) {
-	image := c.Query("image")
+	image := c.Query("package")
 	version := c.Query("version")
 	taskDescriptor := TaskDescriptor{
 		TaskType:       "spec",
@@ -55,10 +55,9 @@ func (t *TaskManager) CheckHandler(c *gin.Context) {
 	}
 	taskDescriptor := TaskDescriptor{
 		TaskType:       "check",
-		Package:        c.Query("image"),
+		Package:        c.Query("package"),
 		PackageVersion: c.Query("version"),
-		SourceID:       c.Query("sourceId"),
-		ConfigHash:     c.Query("configHash"),
+		StorageKey:     c.Query("storageKey"),
 		StartedAt:      time.Now().Format(time.RFC3339),
 	}
 
@@ -79,10 +78,9 @@ func (t *TaskManager) DiscoverHandler(c *gin.Context) {
 	}
 	taskDescriptor := TaskDescriptor{
 		TaskType:       "discover",
-		Package:        c.Query("image"),
+		Package:        c.Query("package"),
 		PackageVersion: c.Query("version"),
-		SourceID:       c.Query("sourceId"),
-		ConfigHash:     c.Query("configHash"),
+		StorageKey:     c.Query("storageKey"),
 		StartedAt:      time.Now().Format(time.RFC3339),
 	}
 
@@ -106,7 +104,7 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 	}
 	taskDescriptor := TaskDescriptor{
 		TaskType:       "read",
-		Package:        c.Query("image"),
+		Package:        c.Query("package"),
 		PackageVersion: c.Query("version"),
 		SyncID:         c.Query("syncId"),
 		TaskID:         c.Query("taskId"),
@@ -137,14 +135,14 @@ func (t *TaskManager) listenTaskStatus() {
 				}
 			case "catalog":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err := db.UpsertCatalog(t.dbpool, st.SourceID, st.Package, st.PackageVersion, st.ConfigHash, nil, st.StartedAtTime(), st.Description)
+					err := db.UpsertCatalog(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, nil, st.StartedAtTime(), st.Description)
 					if err != nil {
 						t.Errorf("Unable to update catalog status: %v\n", err)
 					}
 				}
 			case "check":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err := db.UpsertCheck(t.dbpool, st.SourceID, st.Package, st.PackageVersion, st.ConfigHash, "FAILED", strings.Join([]string{string(st.Status), st.Description}, ":"), st.StartedAtTime())
+					err := db.UpsertCheck(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, "FAILED", strings.Join([]string{string(st.Status), st.Description}, ":"), st.StartedAtTime())
 					if err != nil {
 						t.Errorf("Unable to update catalog status: %v\n", err)
 					}

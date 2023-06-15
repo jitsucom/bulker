@@ -28,8 +28,7 @@ InitContainer can be used to create named pipes in advance.
  - `DATABASE_URL` - URL of Postgres database where spec, discover, check results and read task statuses should be stored
  - `PACKAGE` - Name of Source connector package
  - `PACKAGE_VERSION` - Version of Source connector package
- - `SOURCE_ID` - id of credentials entity. For `check` and `discover` commands.
- - `CONFIG_HASH` - Hash of Source connector credentials.  For `check` and `discover` commands.
+ - `STORAGE_KEY` - key to store results of `check` and `discover` commands in a database.
  - `SYNC_ID` - id of sync entity (bulker destination id) where pulled events should be sent. For `read` command.
  - `TASK_ID` - id of current running task
  - `LOGS_CONNECTION_ID` - id of bulker internal destination where task logs should be sent

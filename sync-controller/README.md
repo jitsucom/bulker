@@ -32,7 +32,7 @@ The endpoint is async. Run task to obtain Source connector specification. Result
 
 Query parameters:
 
- - `package`* - source package image (for airbyte it's docker image)
+ - `package`* - source package image (for airbyte-based sources it's docker image)
  - `version`* - source package version
  - `connectorType` (optional) - `airbyte` by default 
 
@@ -47,8 +47,8 @@ Check result is stored in database table `source_check`.
 
 Query parameters:
 
- - `cacheKey` - id of source credentials entity
- - `package` - source package image
+ - `storageKey` - key to store results of check in a database
+ - `package` - source package image (for airbyte-based sources it's docker image)
  - `version` - source package version
  
 Request body:
@@ -70,8 +70,8 @@ Catalog is stored in database table `source_catalog`.
 
 Query parameters:
 
- - `cacheKey` - id of source credentials entity
- - `package` - source package image
+ - `storageKey` - key to store results of discover in a database
+ - `package` - source package image (for airbyte-based sources it's docker image)
  - `version` - source package version
 
 Request body:
@@ -97,9 +97,9 @@ Run task to pull data from Source connector.
 
 Query parameters:
 
- - `package` - source package image
+ - `package` - source package image (for airbyte-based sources it's docker image)
  - `version` - source package version
- - `taskId` - id this task. Should be unique for each task
+ - `taskId` - id of this task. Should be unique for each task
  - `syncId` - id of sync entity (bulker destination id) where pulled events should be sent
 
 Request body:

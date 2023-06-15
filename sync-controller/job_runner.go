@@ -275,14 +275,11 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	if task.SyncID != "" {
 		sideCarEnv["SYNC_ID"] = task.SyncID
 	}
-	if task.SourceID != "" {
-		sideCarEnv["SOURCE_ID"] = task.SourceID
-	}
 	if task.TaskID != "" {
 		sideCarEnv["TASK_ID"] = task.TaskID
 	}
-	if task.ConfigHash != "" {
-		sideCarEnv["CONFIG_HASH"] = task.ConfigHash
+	if task.StorageKey != "" {
+		sideCarEnv["STORAGE_KEY"] = task.StorageKey
 	}
 	//utils.MapPutAll(sideCarEnv, envMap)
 	sideCarEnvVar := make([]v1.EnvVar, 0, len(sideCarEnv))

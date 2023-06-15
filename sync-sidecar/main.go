@@ -20,9 +20,8 @@ import (
 
 type SideCar struct {
 	syncId     string
-	sourceId   string
 	taskId     string
-	configHash string
+	storageKey string
 	command    string
 
 	packageName    string
@@ -58,10 +57,9 @@ func main() {
 
 	sidecar := &SideCar{
 		syncId:          os.Getenv("SYNC_ID"),
-		sourceId:        os.Getenv("SOURCE_ID"),
 		taskId:          os.Getenv("TASK_ID"),
 		command:         os.Getenv("COMMAND"),
-		configHash:      os.Getenv("CONFIG_HASH"),
+		storageKey:      os.Getenv("STORAGE_KEY"),
 		packageName:     os.Getenv("PACKAGE"),
 		packageVersion:  os.Getenv("PACKAGE_VERSION"),
 		stdOutPipeFile:  os.Getenv("STDOUT_PIPE_FILE"),
@@ -196,18 +194,18 @@ func (s *SideCar) processSpec(spec map[string]any) {
 
 func (s *SideCar) processConnectionStatus(status *StatusRow) {
 	s.log("CONNECTION STATUS: %s", joinStrings(status.Status, status.Message))
-	err := db.UpsertCheck(s.dbpool, s.sourceId, s.packageName, s.packageVersion, s.configHash, status.Status, status.Message, s.startedAt)
+	err := db.UpsertCheck(s.dbpool, s.packageName, s.packageVersion, s.storageKey, status.Status, status.Message, s.startedAt)
 	if err != nil {
-		s.panic("error updating connection status for sourceId: %s: %v", s.sourceId, err)
+		s.panic("error updating connection status for: %s: %v", s.storageKey, err)
 	}
 }
 
 func (s *SideCar) processCatalog(catalog *CatalogRow) {
 	catalogJson, _ := json.Marshal(catalog)
 	s.log("CATALOG: %s", catalogJson)
-	err := db.UpsertCatalog(s.dbpool, s.sourceId, s.packageName, s.packageVersion, s.configHash, string(catalogJson), s.startedAt, "")
+	err := db.UpsertCatalog(s.dbpool, s.packageName, s.packageVersion, s.storageKey, string(catalogJson), s.startedAt, "")
 	if err != nil {
-		s.panic("error updating catalog for sourceId: %s: %v", s.sourceId, err)
+		s.panic("error updating catalog for: %s: %v", s.storageKey, err)
 	}
 }
 
