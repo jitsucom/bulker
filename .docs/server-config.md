@@ -34,7 +34,7 @@ Bulker is configured via environment variables. All variables are prefixed with
 
 *Optional, default value: `random uuid`*
 
-ID of bulker instance. It is used for identifying Kafka consumers. If is not set,
+ID of bulker instance. It is used for identifying Kafka consumers and metrics. If is not set,
 instance id will be generated and persisted to disk (`~/.bulkerapp/instance_id`) and
 reused on next restart.
 

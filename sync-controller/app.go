@@ -59,8 +59,9 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 }
 
 func (a *Context) Shutdown() error {
+	a.taskManager.Close()
+	a.jobRunner.Close()
 	a.dbpool.Close()
-	_ = a.jobRunner.Close()
 	_ = a.server.Shutdown(context.Background())
 	return nil
 }

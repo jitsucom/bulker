@@ -12,13 +12,15 @@ type Config struct {
 	appbase.Config `mapstructure:",squash"`
 
 	DatabaseURL string `mapstructure:"DATABASE_URL"`
+	// in case of different visibility of database side car may require different db hostname
+	SidecarDatabaseURL string `mapstructure:"SIDECAR_DATABASE_URL"`
 
 	// # Bulker
 
 	BulkerURL       string `mapstructure:"BULKER_URL" default:"http://localhost:3042"`
 	BulkerAuthToken string `mapstructure:"BULKER_AUTH_TOKEN"`
 
-	BulkerTaskConnectionId string `mapstructure:"BULKER_TASK_CONNECTION_ID"`
+	BulkerLogsConnectionId string `mapstructure:"BULKER_LOGS_CONNECTION_ID"`
 
 	// # Kubernetes
 
@@ -27,7 +29,7 @@ type Config struct {
 	KubernetesClientConfig string `mapstructure:"KUBERNETES_CLIENT_CONFIG"`
 
 	ContainerStatusCheckSeconds int `mapstructure:"CONTAINER_STATUS_CHECK_SECONDS" default:"10"`
-	ContainerInitTimeoutSeconds int `mapstructure:"CONTAINER_INIT_TIMEOUT_SECONDS" default:"100"`
+	ContainerInitTimeoutSeconds int `mapstructure:"CONTAINER_INIT_TIMEOUT_SECONDS" default:"180"`
 
 	SidecarImage string `mapstructure:"SIDECAR_IMAGE" default:"jitsucom/sidecar:latest"`
 }

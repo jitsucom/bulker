@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -78,18 +79,12 @@ func (j *JobRunner) watchPodStatuses() {
 				return
 			}
 			for _, pod := range list.Items {
-				labels := make(map[string]string, len(pod.Labels))
-				for k, v := range pod.Labels {
-					if strings.HasPrefix(k, k8sLabelPrefix) {
-						labels[strings.TrimPrefix(k, k8sLabelPrefix)] = v
-					}
-				}
 				taskStatus := TaskStatus{}
-				_ = mapstructure.Decode(labels, &taskStatus)
+				_ = mapstructure.Decode(pod.Annotations, &taskStatus)
 				taskStatus.PodName = pod.Name
 				status := pod.Status
 				bytes, _ := json.Marshal(status)
-				j.Infof("Pod %s Status %s:\n%s", pod.Name, status.Phase, string(bytes))
+				j.Debugf("Pod %s Status %s:\n%s", pod.Name, status.Phase, string(bytes))
 				switch status.Phase {
 				case v1.PodSucceeded:
 					taskStatus.Status = StatusSuccess
@@ -97,7 +92,7 @@ func (j *JobRunner) watchPodStatuses() {
 					j.cleanupPod(pod.Name)
 				case v1.PodFailed:
 					taskStatus.Status = StatusFailed
-					taskStatus.Description = accumulatePodStatus(status)
+					taskStatus.Description = j.accumulateErrorLogs(pod.Name, status)
 					j.Infof("Pod %s failed. Cleaning up.", pod.Name)
 					j.cleanupPod(pod.Name)
 				case v1.PodRunning:
@@ -119,11 +114,19 @@ func (j *JobRunner) watchPodStatuses() {
 					taskStatus.Description = accumulatePodStatus(status)
 					j.SystemErrorf("Pod %s is in unknown state %s", pod.Name, status.Phase)
 				}
-				j.taskStatusCh <- &taskStatus
+				j.sendStatus(&taskStatus)
 			}
 		}
 	}
 
+}
+
+func (j *JobRunner) sendStatus(taskStatus *TaskStatus) {
+	select {
+	case j.taskStatusCh <- taskStatus:
+	default:
+		j.SystemErrorf("taskStatusCh is full. Dropping task status: %+v", *taskStatus)
+	}
 }
 
 func (j *JobRunner) cleanupPod(name string) {
@@ -151,16 +154,59 @@ func accumulatePodStatus(status v1.PodStatus) string {
 	return stb.String()
 }
 
+func (j *JobRunner) accumulateErrorLogs(podName string, status v1.PodStatus) string {
+	stb := strings.Builder{}
+	//gather status from all containers
+	c := make([]v1.ContainerStatus, 0, len(status.ContainerStatuses)+len(status.InitContainerStatuses))
+	c = append(c, status.InitContainerStatuses...)
+	c = append(c, status.ContainerStatuses...)
+	for _, s := range c {
+		state := s.State
+		if state.Terminated != nil && state.Terminated.ExitCode != 0 {
+			stb.WriteString(j.getPodLogs(podName, s.Name))
+			stb.WriteRune('\n')
+		}
+	}
+	return stb.String()
+}
+
+func (j *JobRunner) getPodLogs(podName, container string) string {
+	tailLines := int64(50)
+	req := j.clientset.CoreV1().Pods(j.namespace).GetLogs(podName, &v1.PodLogOptions{Container: container, TailLines: &tailLines})
+	podLogs, err := req.Stream(context.Background())
+	if err != nil {
+		return fmt.Sprintf("ERR_FAILED_TO_READ_POD_LOGS:%s", err.Error())
+	}
+	defer podLogs.Close()
+	buf := strings.Builder{}
+	scanner := bufio.NewScanner(podLogs)
+	errFound := false
+	for scanner.Scan() {
+		t := scanner.Text()
+		tL := strings.ToLower(t)
+		if !errFound && strings.Contains(tL, "error") || strings.Contains(tL, "panic") {
+			errFound = true
+		}
+		if errFound {
+			buf.WriteString(fmt.Sprintf("[%s]: %s\n", container, scanner.Text()))
+		}
+	}
+	if scanner.Err() != nil {
+		return fmt.Sprintf("ERR_FAILED_TO_READ_POD_LOGS:%s", err.Error())
+	}
+	return buf.String()
+}
+
 func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {
 	taskStatus := TaskStatus{TaskDescriptor: taskDescriptor}
 	podName := nonAlphaNum.ReplaceAllLiteralString(taskDescriptor.Package, "-") + "." + taskDescriptor.PackageVersion + "-" + uuid.NewLettersNumbers()
 	if !configuration.IsEmpty() {
-		configMap := j.createConfigMap(podName, taskDescriptor, configuration)
-		_, err := j.clientset.CoreV1().ConfigMaps(j.namespace).Create(context.Background(), configMap, metav1.CreateOptions{})
+		secret := j.createSecret(podName, taskDescriptor, configuration)
+		_, err := j.clientset.CoreV1().Secrets(j.namespace).Create(context.Background(), secret, metav1.CreateOptions{})
 		if err != nil {
 			taskStatus.Status = StatusCreateFailed
 			taskStatus.Description = err.Error()
-			j.taskStatusCh <- &taskStatus
+			j.sendStatus(&taskStatus)
 			return taskStatus
 		}
 	}
@@ -173,25 +219,27 @@ func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *Task
 		taskStatus.Status = StatusCreated
 		taskStatus.PodName = pod.Name
 	}
-	j.taskStatusCh <- &taskStatus
+	j.sendStatus(&taskStatus)
 	return taskStatus
 }
 
-func (j *JobRunner) createConfigMap(podName string, task TaskDescriptor, configuration *TaskConfiguration) *v1.ConfigMap {
+func (j *JobRunner) createSecret(podName string, task TaskDescriptor, configuration *TaskConfiguration) *v1.Secret {
+	trueVar := true
 	configMapName := podName + "-config"
 	if configuration.IsEmpty() {
 		return nil
 	}
-	cm := &v1.ConfigMap{
+	cm := &v1.Secret{
 		TypeMeta: metav1.TypeMeta{
-			Kind: "ConfigMap",
+			Kind: "Secret",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configMapName,
-			Labels:    task.ExtractLabels(),
+			Labels:    map[string]string{k8sCreatorLabel: k8sCreatorLabelValue},
 			Namespace: j.namespace,
 		},
-		Data: configuration.ToMap(),
+		Immutable:  &trueVar,
+		StringData: configuration.ToMap(),
 	}
 	return cm
 }
@@ -208,15 +256,24 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	case "spec":
 		command = "spec"
 	}
+	databaseURL := j.config.SidecarDatabaseURL
+	if databaseURL == "" {
+		databaseURL = j.config.DatabaseURL
+	}
 	sideCarEnv := map[string]string{
-		"STDOUT_PIPE_FILE":    "/pipes/stdout",
-		"STDERR_PIPE_FILE":    "/pipes/stderr",
-		"BULKER_URL":          j.config.BulkerURL,
-		"BULKER_AUTH_TOKEN":   j.config.BulkerAuthToken,
-		"TASKS_CONNECTION_ID": j.config.BulkerTaskConnectionId,
-		"STATE_CONNECTION_ID": "tasks_state",
-		"PACKAGE":             task.Package,
-		"PACKAGE_VERSION":     task.PackageVersion,
+		"STDOUT_PIPE_FILE":   "/pipes/stdout",
+		"STDERR_PIPE_FILE":   "/pipes/stderr",
+		"BULKER_URL":         j.config.BulkerURL,
+		"BULKER_AUTH_TOKEN":  j.config.BulkerAuthToken,
+		"LOGS_CONNECTION_ID": j.config.BulkerLogsConnectionId,
+		"PACKAGE":            task.Package,
+		"PACKAGE_VERSION":    task.PackageVersion,
+		"COMMAND":            task.TaskType,
+		"STARTED_AT":         task.StartedAt,
+		"DATABASE_URL":       databaseURL,
+	}
+	if task.SyncID != "" {
+		sideCarEnv["SYNC_ID"] = task.SyncID
 	}
 	if task.SourceID != "" {
 		sideCarEnv["SOURCE_ID"] = task.SourceID
@@ -224,8 +281,8 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	if task.TaskID != "" {
 		sideCarEnv["TASK_ID"] = task.TaskID
 	}
-	if task.DestinationId != "" {
-		sideCarEnv["CONNECTION_ID"] = task.DestinationId
+	if task.ConfigHash != "" {
+		sideCarEnv["CONFIG_HASH"] = task.ConfigHash
 	}
 	//utils.MapPutAll(sideCarEnv, envMap)
 	sideCarEnvVar := make([]v1.EnvVar, 0, len(sideCarEnv))
@@ -257,11 +314,9 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 		cmVolume := v1.Volume{
 			Name: "config",
 			VolumeSource: v1.VolumeSource{
-				ConfigMap: &v1.ConfigMapVolumeSource{
-					LocalObjectReference: v1.LocalObjectReference{
-						Name: podName + "-config",
-					},
-					Items: items,
+				Secret: &v1.SecretVolumeSource{
+					SecretName: podName + "-config",
+					Items:      items,
 				},
 			},
 		}
@@ -276,9 +331,10 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			Kind: "Pod",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      podName,
-			Labels:    task.ExtractLabels(),
-			Namespace: j.namespace,
+			Name:        podName,
+			Labels:      map[string]string{k8sCreatorLabel: k8sCreatorLabelValue},
+			Annotations: task.ExtractAnnotations(),
+			Namespace:   j.namespace,
 		},
 		Spec: v1.PodSpec{
 			RestartPolicy: v1.RestartPolicyNever,
@@ -320,14 +376,16 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	return pod
 }
 
-func (j *JobRunner) Close() error {
+func (j *JobRunner) TaskStatusChannel() <-chan *TaskStatus {
+	return j.taskStatusCh
+}
+
+func (j *JobRunner) Close() {
 	select {
 	case <-j.closeCh:
-		return nil
 	default:
 		close(j.closeCh)
 	}
-	return nil
 }
 
 // Pod status watcher code

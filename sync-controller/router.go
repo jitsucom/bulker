@@ -20,10 +20,10 @@ func NewRouter(appContext *Context) *Router {
 		Router: base,
 	}
 	engine := router.Engine()
-	engine.GET("/source/spec", appContext.taskManager.SpecHandler)
-	engine.POST("/source/check", appContext.taskManager.CheckHandler)
-	engine.POST("/source/discover", appContext.taskManager.DiscoverHandler)
-	engine.POST("/source/read", appContext.taskManager.ReadHandler)
+	engine.GET("/spec", appContext.taskManager.SpecHandler)
+	engine.POST("/check", appContext.taskManager.CheckHandler)
+	engine.POST("/discover", appContext.taskManager.DiscoverHandler)
+	engine.POST("/read", appContext.taskManager.ReadHandler)
 
 	engine.GET("/health", func(c *gin.Context) {
 		c.Status(http.StatusOK)

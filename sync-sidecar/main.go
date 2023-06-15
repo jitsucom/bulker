@@ -8,62 +8,69 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
 
-const (
-	upsertSpecSQL = `INSERT INTO source_spec (package, version, specs, timestamp ,error ) VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT ON CONSTRAINT source_spec_pk DO UPDATE SET specs = $3, timestamp = $4, error=$5`
-
-	upsertCatalogSQL = `INSERT INTO source_catalog (source_id, package, version, config_hash, catalog, timestamp, error) VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT ON CONSTRAINT source_catalog_pk DO UPDATE SET catalog=$5, timestamp = $6, error=$7`
-
-	upsertStateSQL = `INSERT INTO source_state (source_id, state, timestamp) VALUES ($1, $2, $3)
-ON CONFLICT ON CONSTRAINT source_state_pk DO UPDATE SET state=$2, timestamp = $3`
-)
-
 type SideCar struct {
-	sourceId string
-	taskId   string
+	syncId     string
+	sourceId   string
+	taskId     string
+	configHash string
+	command    string
 
 	packageName    string
 	packageVersion string
 
-	stdOutPipeFile  string
-	stdErrPipeFile  string
-	connectionId    string
-	tasksConnection string
-	stateConnection string
+	stdOutPipeFile string
+	stdErrPipeFile string
+	logsConnection string
 
 	bulkerURL       string
 	bulkerAuthToken string
 
 	databaseURL string
+	dbpool      *pgxpool.Pool
+
+	startedAt time.Time
 
 	//first error occurred during sync
-	firstErr      error
-	currentStream *io.PipeWriter
+	firstErr error
+	// write stream of io.Pipe. Bulker reads from this read stream of this pipe
+	currentStream     *io.PipeWriter
+	currentStreamName string
+	processedStreams  map[string]int
+	eventsCounter     int
+	streamsWaitGroup  sync.WaitGroup
 }
 
 func main() {
+	startedAt, err := time.Parse(time.RFC3339, os.Getenv("STARTED_AT"))
+	if err != nil {
+		startedAt = time.Now()
+	}
+
 	sidecar := &SideCar{
+		syncId:          os.Getenv("SYNC_ID"),
 		sourceId:        os.Getenv("SOURCE_ID"),
 		taskId:          os.Getenv("TASK_ID"),
+		command:         os.Getenv("COMMAND"),
+		configHash:      os.Getenv("CONFIG_HASH"),
 		packageName:     os.Getenv("PACKAGE"),
 		packageVersion:  os.Getenv("PACKAGE_VERSION"),
 		stdOutPipeFile:  os.Getenv("STDOUT_PIPE_FILE"),
 		stdErrPipeFile:  os.Getenv("STDERR_PIPE_FILE"),
-		connectionId:    os.Getenv("CONNECTION_ID"),
-		tasksConnection: os.Getenv("TASKS_CONNECTION_ID"),
-		stateConnection: os.Getenv("STATE_CONNECTION_ID"),
+		logsConnection:  os.Getenv("LOGS_CONNECTION_ID"),
 		bulkerURL:       os.Getenv("BULKER_URL"),
 		bulkerAuthToken: os.Getenv("BULKER_AUTH_TOKEN"),
 		databaseURL:     os.Getenv("DATABASE_URL"),
+		startedAt:       startedAt,
 	}
 
 	sidecar.Run()
@@ -72,224 +79,254 @@ func main() {
 
 func (s *SideCar) Run() {
 	//TODO: read catalog to detect full sync or incremental mode
-	syncStarted := false
-	s.sendStatus("sidecar_started", "")
-	s.log("Sidecar. stdout: %s, stderr: %s, connectionId: %s, bulkerURL: %s", s.stdOutPipeFile, s.stdErrPipeFile, s.connectionId, s.bulkerURL)
-	dbpool, err := pgxpool.New(context.Background(), s.databaseURL)
+	var err error
+	s.dbpool, err = pgxpool.New(context.Background(), s.databaseURL)
 	if err != nil {
-		e := fmt.Sprintf("Unable to create postgres connection pool: %v", err)
-		s.sendStatus("sidecar_failed", e)
-		s.err(e)
-		return
+		s.panic("Unable to create postgres connection pool: %v", err)
 	}
-	defer dbpool.Close()
-	var wg sync.WaitGroup
+	defer s.dbpool.Close()
+
+	defer func() {
+		//recover
+		if r := recover(); r != nil {
+			s.sendStatus(s.command, "FAILED", fmt.Sprint(r))
+		} else if s.isErr() {
+			s.sendStatus(s.command, "FAILED", s.firstErr.Error())
+		} else {
+			if len(s.processedStreams) > 0 {
+				processedStreamsJson, _ := json.Marshal(s.processedStreams)
+				s.sendStatus(s.command, "SUCCESS", string(processedStreamsJson))
+			} else {
+				s.sendStatus(s.command, "SUCCESS", "")
+			}
+		}
+	}()
+	s.log("Sidecar. stdout: %s, stderr: %s, syncId: %s, bulkerURL: %s, startedAt: %s", s.stdOutPipeFile, s.stdErrPipeFile, s.syncId, s.bulkerURL, s.startedAt.Format(time.RFC3339))
+
+	var stdOutErrWaitGroup sync.WaitGroup
 
 	errPipe, _ := os.Open(s.stdErrPipeFile)
 	defer errPipe.Close()
-	wg.Add(1)
+	stdOutErrWaitGroup.Add(1)
 	// read from stderr
 	go func() {
-		defer wg.Done()
+		defer stdOutErrWaitGroup.Done()
 		scanner := bufio.NewScanner(errPipe)
 		for scanner.Scan() {
 			line := scanner.Text()
-			s.err(line)
+			s.sourceLog("ERRSTD", line)
 		}
 		if err := scanner.Err(); err != nil {
-			s.err("error reading from pipe: %v", err)
+			s.panic("error reading from err pipe: %v", err)
 		}
 	}()
 
-	processedStreams := map[string]int{}
-	eventsCounter := 0
+	s.processedStreams = map[string]int{}
 	outPipe, _ := os.Open(s.stdOutPipeFile)
 	defer outPipe.Close()
-	wg.Add(1)
+	stdOutErrWaitGroup.Add(1)
 	// read from stdout
 	go func() {
-		defer wg.Done()
+		defer stdOutErrWaitGroup.Done()
 
 		scanner := bufio.NewScanner(outPipe)
 		scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
-		currentStreamName := ""
-		var streamsWaitGroup sync.WaitGroup
 		for scanner.Scan() {
 			line := scanner.Bytes()
 			row := &Row{}
 			err := json.Unmarshal(line, row)
 			if err != nil {
-				s.err("error parsing airbyte line %s: %v", string(line), err)
-			}
-			if !syncStarted {
-				syncStarted = true
-				s.sendStatus("started", "")
+				s.panic("error parsing airbyte line %s: %v", string(line), err)
 			}
 			switch row.Type {
 			case LogType:
-				switch row.Log.Level {
-				case "ERROR":
-					s.err(row.Log.Message)
-				default:
-					s.log(row.Log.Message)
-				}
+				s.sourceLog(row.Log.Level, row.Log.Message)
 			case StateType:
-				//TODO: support STATE
-				s.log("state: %v\n", row.State.Data)
-				if !s.isErr() {
-					err := s.sendState(row.State.Data)
-					if err != nil {
-						s.err("error sending state: %v", err)
-					}
-				}
-			case RecordType:
-				if s.isErr() {
-					//don't send records after first error
-					continue
-				}
-				rec := row.Record
-				streamName := rec.Stream
-				if streamName != currentStreamName {
-					if s.currentStream != nil {
-						processedStreams[currentStreamName] = eventsCounter
-						eventsCounter = 0
-						_ = s.currentStream.Close()
-					}
-					if _, ok := processedStreams[streamName]; ok {
-						s.err("stream '%s' was already processed. We assume that airbyte doesn't mix streams", streamName)
-						continue
-					}
-					r, w := io.Pipe()
-					s.currentStream = w
-					currentStreamName = streamName
-					streamsWaitGroup.Add(1)
-					go func() {
-						defer streamsWaitGroup.Done()
-						s.log("creating stream: %s", streamName)
-						bd, err := s.bulkerRequest(fmt.Sprintf("%s/bulk/%s?tableName=%s", s.bulkerURL, s.connectionId, url.QueryEscape(streamName)), r)
-						if err != nil {
-							s.err("error sending bulk: %v", err)
-							return
-						}
-						s.log("bulk response: %s", string(bd))
-					}()
-				}
-				data, err := json.Marshal(rec.Data)
-				if err != nil {
-					s.err("error marshalling record: %v", err)
-					break
-				}
-				_, err = s.currentStream.Write(data)
-				if err != nil {
-					s.err("error writing to bulk pipe: %v", err)
-					break
-				}
-				_, _ = s.currentStream.Write([]byte("\n"))
-				eventsCounter++
+				s.processState(row.State)
 			case SpecType:
-				spec, _ := json.Marshal(row.Spec)
-				dbpool.Exec(context.Background(), upsertSpecSQL, s.packageName, s.packageVersion, spec, time.Now(), nil)
-				s.log("spec: %v", row.Spec)
+				s.processSpec(row.Spec)
 			case ConnectionStatusType:
-				s.log("Connection Status: %s: %v", row.ConnectionStatus.Status, row.ConnectionStatus.Message)
+				s.processConnectionStatus(row.ConnectionStatus)
 			case CatalogType:
-				catalog, _ := json.Marshal(row.Catalog)
-				s.log("Catalog: %s", string(catalog))
+				s.processCatalog(row.Catalog)
+			case RecordType:
+				s.processRecord(row.Record)
 			case TraceType:
 			default:
-				s.err("not supported type: %s", row.Type)
+				s.panic("not supported type: %s", row.Type)
 			}
 		}
 		if err := scanner.Err(); err != nil {
-			s.err("error reading from pipe: %v", err)
+			s.panic("error reading from pipe: %v", err)
 		}
 		if s.currentStream != nil {
-			processedStreams[currentStreamName] = eventsCounter
+			if s.isErr() {
+				// intentionally break ndjson stream with that error. Bulker will definitely abort this stream
+				_, _ = s.currentStream.Write([]byte("ABORT with error: " + s.firstErr.Error() + "\n"))
+			} else {
+				s.processedStreams[s.currentStreamName] = s.eventsCounter
+			}
 			_ = s.currentStream.Close()
 		}
-		streamsWaitGroup.Wait()
+		s.streamsWaitGroup.Wait()
 	}()
 
-	wg.Wait()
-	if s.isErr() {
-		s.sendStatus("failed", s.firstErr.Error())
-	} else {
-		s.sendStatus("completed", fmt.Sprint(processedStreams))
-	}
-	s.log("Sidecar finished")
+	stdOutErrWaitGroup.Wait()
 }
+
+func (s *SideCar) processState(state *StateRow) {
+	stateJson, err := json.Marshal(state.Data)
+	if err != nil {
+		s.panic("error marshalling state %+v: %v", state.Data, err)
+	}
+	s.log("STATE: %s", stateJson)
+	if !s.isErr() {
+		s.sendState(string(stateJson))
+	}
+}
+
+func (s *SideCar) processSpec(spec map[string]any) {
+	specJson, _ := json.Marshal(spec)
+	err := db.UpsertSpec(s.dbpool, s.packageName, s.packageVersion, string(specJson), s.startedAt, "")
+	if err != nil {
+		s.panic("error updating spec for %s:%s: %v", s.packageName, s.packageVersion, err)
+	}
+	s.log("Spec: %s", specJson)
+}
+
+func (s *SideCar) processConnectionStatus(status *StatusRow) {
+	s.log("CONNECTION STATUS: %s", joinStrings(status.Status, status.Message))
+	err := db.UpsertCheck(s.dbpool, s.sourceId, s.packageName, s.packageVersion, s.configHash, status.Status, status.Message, s.startedAt)
+	if err != nil {
+		s.panic("error updating connection status for sourceId: %s: %v", s.sourceId, err)
+	}
+}
+
+func (s *SideCar) processCatalog(catalog *CatalogRow) {
+	catalogJson, _ := json.Marshal(catalog)
+	s.log("CATALOG: %s", catalogJson)
+	err := db.UpsertCatalog(s.dbpool, s.sourceId, s.packageName, s.packageVersion, s.configHash, string(catalogJson), s.startedAt, "")
+	if err != nil {
+		s.panic("error updating catalog for sourceId: %s: %v", s.sourceId, err)
+	}
+}
+
+func (s *SideCar) processRecord(rec *RecordRow) {
+	if s.isErr() {
+		//don't send records after first error
+		return
+	}
+	streamName := rec.Stream
+	if streamName != s.currentStreamName {
+		if s.currentStream != nil {
+			s.processedStreams[s.currentStreamName] = s.eventsCounter
+			s.eventsCounter = 0
+			_ = s.currentStream.Close()
+		}
+		if _, ok := s.processedStreams[streamName]; ok {
+			s.panic("stream '%s' was already processed. We assume that airbyte doesn't mix streams", streamName)
+		}
+		// we create pipe. everything that is written to w will be sent to bulker via r as reader payload
+		r, w := io.Pipe()
+		s.currentStream = w
+		s.currentStreamName = streamName
+		s.streamsWaitGroup.Add(1)
+		go func() {
+			defer s.streamsWaitGroup.Done()
+			s.log("creating stream: %s", streamName)
+			bd, err := s.bulkerRequest(fmt.Sprintf("%s/bulk/%s?tableName=%s", s.bulkerURL, s.syncId, url.QueryEscape(streamName)), r)
+			if err != nil {
+				s.panic("error sending bulk: %v", err)
+				return
+			}
+			s.log("bulk response: %s", string(bd))
+		}()
+	}
+	data, err := json.Marshal(rec.Data)
+	if err != nil {
+		s.panic("error marshalling record: %v", err)
+	}
+	_, err = s.currentStream.Write(data)
+	if err != nil {
+		s.panic("error writing to bulk pipe: %v", err)
+	}
+	_, _ = s.currentStream.Write([]byte("\n"))
+	s.eventsCounter++
+}
+
 func (s *SideCar) log(message string, args ...any) {
-	s._log(fmt.Sprintf(message, args...))
+	s._log("jitsu", "INFO", fmt.Sprintf(message, args...))
+}
+
+func (s *SideCar) sourceLog(level, message string, args ...any) {
+	message = strings.TrimPrefix(message, "INFO ")
+	message = strings.TrimPrefix(message, "ERROR ")
+	message = strings.TrimPrefix(message, "WARN ")
+	message = strings.TrimPrefix(message, "DEBUG ")
+
+	text := fmt.Sprintf(message, args...)
+	if level == "ERROR" && s.firstErr == nil {
+		s.firstErr = errors.New(text)
+	}
+	s._log(s.packageName, level, text)
 }
 
 func (s *SideCar) err(message string, args ...any) {
 	text := fmt.Sprintf(message, args...)
 	if s.firstErr == nil {
 		s.firstErr = errors.New(text)
-		if s.currentStream != nil {
-			_, _ = s.currentStream.Write([]byte("ABORT with error: " + text + "\n"))
-			_ = s.currentStream.Close()
-		}
 	}
-	s._err(text)
+	s._log("jitsu", "ERROR", text)
+}
+
+func (s *SideCar) panic(message string, args ...any) {
+	text := fmt.Sprintf(message, args...)
+	if s.firstErr == nil {
+		s.firstErr = errors.New(text)
+	}
+	s._log("jitsu", "ERROR", text)
+	panic(text)
 }
 
 func (s *SideCar) isErr() bool {
 	return s.firstErr != nil
 }
 
-func (s *SideCar) _log(message string) {
-	fmt.Printf("INFO : %s\n", message)
-	err := s.sendLog("INFO", message)
+func (s *SideCar) _log(logger, level, message string) {
+	fmt.Printf("%s : %s\n", level, message)
+	err := s.sendLog(logger, level, message)
 	if err != nil {
-		fmt.Printf("ERROR: %v\n", err)
+		fmt.Printf("%s: %v\n", level, err)
 	}
 }
 
-func (s *SideCar) _err(message string) {
-	fmt.Printf("ERROR: %s\n", message)
-	err := s.sendLog("ERROR", message)
-	if err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-	}
-}
-
-func (s *SideCar) sendLog(level string, message string) error {
+func (s *SideCar) sendLog(logger, level string, message string) error {
 	logMessage := map[string]any{
 		"timestamp": time.Now(),
-		"source_id": s.sourceId,
+		"source_id": s.syncId,
 		"task_id":   s.taskId,
+		"logger":    logger,
 		"level":     level,
 		"message":   message,
 	}
-	return s.bulkerEvent(s.tasksConnection, "task_log", logMessage)
+	return s.bulkerEvent(s.logsConnection, "task_log", logMessage)
 }
 
-func (s *SideCar) sendStatus(status string, description string) {
-	statusMessage := map[string]any{
-		"timestamp":   time.Now(),
-		"source_id":   s.sourceId,
-		"task_id":     s.taskId,
-		"status":      status,
-		"description": description,
-	}
-	err := s.bulkerEvent(s.tasksConnection, "task_status", statusMessage)
-	if err != nil {
-		s.err("failed to send status: %v", err)
+func (s *SideCar) sendStatus(command string, status string, description string) {
+	s.log("%s STATUS: %s", command, joinStrings(status, description))
+	if command == "read" && s.dbpool != nil {
+		err := db.UpsertTask(s.dbpool, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt, status, description)
+		if err != nil {
+			s.panic("error updating task: %v", err)
+		}
 	}
 }
 
-func (s *SideCar) sendState(state any) error {
-	bt, err := json.Marshal(state)
+func (s *SideCar) sendState(state string) {
+	err := db.UpsertState(s.dbpool, s.syncId, state, time.Now())
 	if err != nil {
-		return fmt.Errorf("error marshalling state: %v", err)
+		s.panic("error updating state: %v", err)
 	}
-	stateObj := map[string]any{
-		"timestamp": time.Now(),
-		"source_id": s.sourceId,
-		"state":     string(bt),
-	}
-	return s.bulkerEvent(s.stateConnection, "task_state", stateObj)
 }
 func (s *SideCar) bulkerEvent(connection, tableName string, payload any) error {
 	v, err := json.Marshal(payload)
@@ -323,4 +360,14 @@ func (s *SideCar) bulkerRequest(url string, payload io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("POST %s error %v: %s", url, res.Status, string(bd))
 	}
 	return bd, nil
+}
+
+func joinStrings(str1, str2 string) string {
+	if str1 == "" {
+		return str2
+	} else if str2 == "" {
+		return str1
+	}
+
+	return str1 + ":" + str2
 }

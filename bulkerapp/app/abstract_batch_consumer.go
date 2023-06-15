@@ -189,9 +189,9 @@ func (bc *AbstractBatchConsumer) RunJob() {
 func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error) {
 	bc.Lock()
 	defer bc.Unlock()
-	if bc.consumerClosed.Load() {
-		bc.Errorf("No messages were consumed. Consumer is closed.")
-		return BatchCounters{}, bc.NewError("Consumer is closed")
+	if bc.retired.Load() {
+		bc.Errorf("No messages were consumed. Consumer is retired.")
+		return BatchCounters{}, bc.NewError("Consumer is retired")
 	}
 	bc.Debugf("Starting consuming messages from topic")
 	bc.idle.Store(false)

@@ -3,30 +3,40 @@ package main
 import (
 	"encoding/json"
 	"github.com/mitchellh/mapstructure"
+	"time"
 )
 
 type TaskDescriptor struct {
 	TaskID         string `json:"taskId"`
 	TaskType       string `json:"taskType"` //spec, discover, read, check
+	SyncID         string `json:"syncId"`
 	SourceID       string `json:"sourceId"`
 	SourceType     string `json:"sourceType"`
-	DestinationId  string `json:"destinationId"`
+	ConfigHash     string `json:"configHash"`
 	Protocol       string `json:"protocol"`
 	Package        string `json:"package"`
 	PackageVersion string `json:"packageVersion"`
+	StartedAt      string `json:"startedAt"`
 }
 
-func (t *TaskDescriptor) ExtractLabels() map[string]string {
-	rawLabels := map[string]string{}
-	_ = mapstructure.Decode(t, &rawLabels)
-	labels := make(map[string]string, len(rawLabels)+1)
-	for k, v := range rawLabels {
+func (t *TaskDescriptor) StartedAtTime() time.Time {
+	tm, err := time.Parse(time.RFC3339, t.StartedAt)
+	if err != nil {
+		return time.Now()
+	}
+	return tm
+}
+
+func (t *TaskDescriptor) ExtractAnnotations() map[string]string {
+	rawAnnotations := map[string]string{}
+	_ = mapstructure.Decode(t, &rawAnnotations)
+	annotations := make(map[string]string, len(rawAnnotations))
+	for k, v := range rawAnnotations {
 		if v != "" {
-			labels[k8sLabelPrefix+k] = labelUnsupportedChars.ReplaceAllLiteralString(v, "_")
+			annotations[k] = v
 		}
 	}
-	labels[k8sCreatorLabel] = k8sCreatorLabelValue
-	return labels
+	return annotations
 }
 
 type TaskStatus struct {
@@ -56,7 +66,7 @@ type TaskConfiguration struct {
 }
 
 func (t *TaskConfiguration) IsEmpty() bool {
-	return t == nil && t.Config == nil && t.Catalog == nil && t.State == nil
+	return t == nil || (t.Config == nil && t.Catalog == nil && t.State == nil)
 }
 
 func (t *TaskConfiguration) ToMap() map[string]string {

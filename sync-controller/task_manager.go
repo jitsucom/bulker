@@ -4,6 +4,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/sync-sidecar/db"
+	"strings"
+	"time"
+
 	"net/http"
 )
 
@@ -20,6 +24,7 @@ func NewTaskManager(appContext *Context) (*TaskManager, error) {
 
 	t := &TaskManager{Service: base, config: appContext.config, jobRunner: appContext.jobRunner, dbpool: appContext.dbpool,
 		closeCh: make(chan struct{})}
+	go t.listenTaskStatus()
 	return t, nil
 }
 
@@ -30,6 +35,7 @@ func (t *TaskManager) SpecHandler(c *gin.Context) {
 		TaskType:       "spec",
 		Package:        image,
 		PackageVersion: version,
+		StartedAt:      time.Now().Format(time.RFC3339),
 	}
 
 	taskStatus := t.jobRunner.CreatePod(taskDescriptor, nil)
@@ -41,8 +47,6 @@ func (t *TaskManager) SpecHandler(c *gin.Context) {
 }
 
 func (t *TaskManager) CheckHandler(c *gin.Context) {
-	image := c.Query("image")
-	version := c.Query("version")
 	taskConfig := TaskConfiguration{}
 	err := c.BindJSON(&taskConfig)
 	if err != nil {
@@ -51,8 +55,11 @@ func (t *TaskManager) CheckHandler(c *gin.Context) {
 	}
 	taskDescriptor := TaskDescriptor{
 		TaskType:       "check",
-		Package:        image,
-		PackageVersion: version,
+		Package:        c.Query("image"),
+		PackageVersion: c.Query("version"),
+		SourceID:       c.Query("sourceId"),
+		ConfigHash:     c.Query("configHash"),
+		StartedAt:      time.Now().Format(time.RFC3339),
 	}
 
 	taskStatus := t.jobRunner.CreatePod(taskDescriptor, &taskConfig)
@@ -64,8 +71,6 @@ func (t *TaskManager) CheckHandler(c *gin.Context) {
 }
 
 func (t *TaskManager) DiscoverHandler(c *gin.Context) {
-	image := c.Query("image")
-	version := c.Query("version")
 	taskConfig := TaskConfiguration{}
 	err := c.BindJSON(&taskConfig)
 	if err != nil {
@@ -74,8 +79,11 @@ func (t *TaskManager) DiscoverHandler(c *gin.Context) {
 	}
 	taskDescriptor := TaskDescriptor{
 		TaskType:       "discover",
-		Package:        image,
-		PackageVersion: version,
+		Package:        c.Query("image"),
+		PackageVersion: c.Query("version"),
+		SourceID:       c.Query("sourceId"),
+		ConfigHash:     c.Query("configHash"),
+		StartedAt:      time.Now().Format(time.RFC3339),
 	}
 
 	taskStatus := t.jobRunner.CreatePod(taskDescriptor, &taskConfig)
@@ -87,9 +95,6 @@ func (t *TaskManager) DiscoverHandler(c *gin.Context) {
 }
 
 func (t *TaskManager) ReadHandler(c *gin.Context) {
-	image := c.Query("image")
-	version := c.Query("version")
-	destinationId := c.Query("destinationId")
 	taskConfig := TaskConfiguration{}
 	err := c.BindJSON(&taskConfig)
 	if err != nil {
@@ -101,9 +106,11 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 	}
 	taskDescriptor := TaskDescriptor{
 		TaskType:       "read",
-		Package:        image,
-		PackageVersion: version,
-		DestinationId:  destinationId,
+		Package:        c.Query("image"),
+		PackageVersion: c.Query("version"),
+		SyncID:         c.Query("syncId"),
+		TaskID:         c.Query("taskId"),
+		StartedAt:      time.Now().Format(time.RFC3339),
 	}
 
 	taskStatus := t.jobRunner.CreatePod(taskDescriptor, &taskConfig)
@@ -112,4 +119,63 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (t *TaskManager) listenTaskStatus() {
+	for {
+		select {
+		case <-t.closeCh:
+			return
+		case st := <-t.jobRunner.TaskStatusChannel():
+			switch st.TaskType {
+			case "spec":
+				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
+					err := db.UpsertSpec(t.dbpool, st.Package, st.PackageVersion, nil, st.StartedAtTime(), st.Description)
+					if err != nil {
+						t.Errorf("Unable to update spec status: %v\n", err)
+					}
+				}
+			case "catalog":
+				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
+					err := db.UpsertCatalog(t.dbpool, st.SourceID, st.Package, st.PackageVersion, st.ConfigHash, nil, st.StartedAtTime(), st.Description)
+					if err != nil {
+						t.Errorf("Unable to update catalog status: %v\n", err)
+					}
+				}
+			case "check":
+				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
+					err := db.UpsertCheck(t.dbpool, st.SourceID, st.Package, st.PackageVersion, st.ConfigHash, "FAILED", strings.Join([]string{string(st.Status), st.Description}, ":"), st.StartedAtTime())
+					if err != nil {
+						t.Errorf("Unable to update catalog status: %v\n", err)
+					}
+				}
+			case "read":
+				var err error
+				switch st.Status {
+				case StatusCreateFailed, StatusFailed, StatusInitTimeout:
+					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", strings.Join([]string{string(st.Status), st.Description}, ":"))
+				case StatusCreated, StatusRunning:
+					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "RUNNING", strings.Join([]string{string(st.Status), st.Description}, ":"))
+				case StatusSuccess:
+					//do nothing. sidecar manages success status.
+				}
+				if err != nil {
+					t.Errorf("Unable to update task status: %v\n", err)
+				}
+			}
+			if st.Status != StatusPending {
+				t.Infof("taskStatus: %+v\n", *st)
+			} else {
+				t.Debugf("taskStatus: %+v\n", *st)
+			}
+		}
+	}
+}
+
+func (t *TaskManager) Close() {
+	select {
+	case <-t.closeCh:
+	default:
+		close(t.closeCh)
+	}
 }
