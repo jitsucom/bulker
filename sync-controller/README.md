@@ -28,28 +28,29 @@ If `SYNCCTL_AUTH_TOKENS` is not configured, then no authorization is required.
 
 ### `GET /spec`
 
-Run task to obtain Source connector specification.
-Resulting specification is stored in database table `source_spec`.
+The endpoint is async. Run task to obtain Source connector specification. Resulting specification is stored in database table `source_spec`. 
 
 Query parameters:
 
- - `image` - source package image
- - `version` - source package version
+ - `package`* - source package image (for airbyte it's docker image)
+ - `version`* - source package version
+ - `connectorType` (optional) - `airbyte` by default 
 
-Result table: `source_spec`
+Result table: `source_spec`. It writes a last JSON schema with update time by `[connectorType, package, version]`.
+
+It returns either `{"status": "ok"}` or `{"error": ...}`
 
 ### `POST /check`
 
-Run task to check Source connector credentials.
+The endpoint is async. Run task to check Source connector credentials.
 Check result is stored in database table `source_check`.
 
 Query parameters:
 
- - `image` - source package image
+ - `cacheKey` - id of source credentials entity
+ - `package` - source package image
  - `version` - source package version
- - `sourceId` - id of source credentials entity
- - `configHash` - hash of credentials object
-
+ 
 Request body:
 
 ```json
@@ -69,10 +70,9 @@ Catalog is stored in database table `source_catalog`.
 
 Query parameters:
 
- - `image` - source package image
+ - `cacheKey` - id of source credentials entity
+ - `package` - source package image
  - `version` - source package version
- - `sourceId` - id of source credentials entity
- - `configHash` - hash of credentials object
 
 Request body:
 
@@ -92,12 +92,12 @@ Run task to pull data from Source connector.
 
 - Pulled data is sent to Bulker instance to `syncId` connection.
 - Task logs are sent to Bulker instance to `SYNCCTL_BULKER_LOGS_CONNECTION_ID` connection.
-- Task state is kept updated in `source_task` database table.
+- Task status is kept updated in `source_task` database table.
 - Saved state of task if any is stored in `source_state` database table.
 
 Query parameters:
 
- - `image` - source package image
+ - `package` - source package image
  - `version` - source package version
  - `taskId` - id this task. Should be unique for each task
  - `syncId` - id of sync entity (bulker destination id) where pulled events should be sent
