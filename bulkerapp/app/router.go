@@ -3,7 +3,6 @@ package app
 import (
 	"bufio"
 	"crypto/sha512"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -12,13 +11,12 @@ import (
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/objects"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/penglongli/gin-metrics/ginmetrics"
 	"io"
 	"net/http"
 	"regexp"
@@ -30,32 +28,23 @@ import (
 var TimestampPattern = regexp.MustCompile(`^\d{13}$`)
 
 type Router struct {
-	objects.ServiceBase
-	engine           *gin.Engine
-	config           *AppConfig
+	*appbase.Router
+	config           *Config
 	kafkaConfig      *kafka.ConfigMap
 	repository       *Repository
 	topicManager     *TopicManager
 	producer         *Producer
 	eventsLogService EventsLogService
 	fastStore        *FastStore
-	authTokens       []string
-	tokenSecrets     []string
-	noAuthPaths      []string
 }
 
-func NewRouter(appContext *AppContext, jobRunner *JobRunner) *Router {
-	base := objects.NewServiceBase("router")
+func NewRouter(appContext *Context) *Router {
 	authTokens := strings.Split(appContext.config.AuthTokens, ",")
-	if len(authTokens) == 1 && authTokens[0] == "" {
-		authTokens = nil
-		base.Warnf("⚠️ No auth tokens provided. All requests will be allowed")
-	}
 	tokenSecrets := strings.Split(appContext.config.TokenSecrets, ",")
+	base := appbase.NewRouterBase(authTokens, tokenSecrets, []string{"/ready"})
 
 	router := &Router{
-		ServiceBase:      base,
-		authTokens:       authTokens,
+		Router:           base,
 		config:           appContext.config,
 		kafkaConfig:      appContext.kafkaConfig,
 		repository:       appContext.repository,
@@ -63,29 +52,14 @@ func NewRouter(appContext *AppContext, jobRunner *JobRunner) *Router {
 		producer:         appContext.producer,
 		eventsLogService: appContext.eventsLogService,
 		fastStore:        appContext.fastStore,
-		tokenSecrets:     tokenSecrets,
-		noAuthPaths:      []string{"/ready"},
 	}
-	gin.SetMode(gin.ReleaseMode)
-	engine := gin.New()
-	// get global Monitor object
-	m := ginmetrics.GetMonitor()
-	m.SetSlowTime(1)
-	// set request duration, default {0.1, 0.3, 1.2, 5, 10}
-	// used to p95, p99
-	m.SetDuration([]float64{0.01, 0.05, 0.1, 0.3, 1.0, 2.0, 3.0, 10})
-	m.UseWithoutExposingEndpoint(engine)
-	engine.Use(gin.Recovery())
-	engine.Use(router.AuthMiddleware)
+	engine := router.Engine()
 	engine.POST("/post/:destinationId", router.EventsHandler)
 	engine.POST("/bulk/:destinationId", router.BulkHandler)
 	engine.POST("/test", router.TestConnectionHandler)
 	engine.POST("/ingest", router.IngestHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
 	engine.GET("/log/:eventType/:actorId", router.EventsLogHandler)
-	if jobRunner != nil {
-		engine.GET("/source/spec", jobRunner.SpecHandler)
-	}
 
 	engine.GET("/ready", func(c *gin.Context) {
 		if router.topicManager.IsReady() {
@@ -95,20 +69,14 @@ func NewRouter(appContext *AppContext, jobRunner *JobRunner) *Router {
 			c.AbortWithStatus(http.StatusServiceUnavailable)
 		}
 	})
-	router.engine = engine
 	return router
-}
-
-// GetEngine returns gin router
-func (r *Router) GetEngine() *gin.Engine {
-	return r.engine
 }
 
 func (r *Router) EventsHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
 	mode := ""
-	var rError RouterError
+	var rError appbase.RouterError
 	defer func() {
 		if rError.Error != nil {
 			metrics.EventsHandlerRequests(destinationId, mode, tableName, "error", rError.ErrorType).Inc()
@@ -161,7 +129,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	tableName := c.Query("tableName")
 	jobId := c.DefaultQuery("jobId", fmt.Sprintf("%s_%s_%s", destinationId, tableName, uuid.New()))
 	mode := ""
-	var rError RouterError
+	var rError appbase.RouterError
 	defer func() {
 		if rError.Error != nil {
 			metrics.BulkHandlerRequests(destinationId, mode, tableName, "error", rError.ErrorType).Inc()
@@ -231,7 +199,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	domain := ""
 	// TODO: use workspaceId as default for all stream identification errors
 	var eventsLogIds []string
-	var rError RouterError
+	var rError appbase.RouterError
 	var body []byte
 	var asyncDestinations []string
 	var tagsDestinations []string
@@ -518,70 +486,6 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 	}
 }
 
-func (r *Router) AuthMiddleware(c *gin.Context) {
-	if len(r.authTokens) == 0 {
-		return
-	}
-	if utils.ArrayContains(r.noAuthPaths, c.FullPath()) {
-		//no auth for this path
-		return
-	}
-	authorizationHeader := c.GetHeader("Authorization")
-	token := strings.TrimPrefix(authorizationHeader, "Bearer ")
-	if token == "" {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header with Bearer token is required"})
-		return
-	}
-	for _, authToken := range r.authTokens {
-		if !strings.Contains(authToken, ".") {
-			if token == authToken {
-				//logging.Debugf("Token %s is valid", token)
-				return
-			}
-		} else {
-			hashedToken := strings.Split(authToken, ".")
-			salt := hashedToken[0]
-			hash := hashedToken[1]
-			for _, secret := range r.tokenSecrets {
-				//a := hashToken(token, salt, secret)
-				//logging.Debugf("Hashed token: %s. Hash: %s ", a, hash)
-				if hashToken(token, salt, secret) == hash {
-					//logging.Debugf("Token %s is valid", token)
-					return
-				}
-			}
-		}
-	}
-	c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token: " + token})
-	return
-}
-
-func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, logFormat string, logArgs ...any) RouterError {
-	routerError := RouterError{Error: err, ErrorType: errorType}
-	if err != nil {
-		if maskError {
-			errorID := uuid.NewLettersNumbers()
-			err = fmt.Errorf("error# %s: %s: %w", errorID, errorType, err)
-			routerError.PublicError = fmt.Errorf("error# %s: %s", errorID, errorType)
-		} else {
-			err = fmt.Errorf("%s: %w", errorType, err)
-			routerError.PublicError = err
-		}
-	} else {
-		err = fmt.Errorf(errorType)
-		routerError.PublicError = err
-	}
-	if logFormat == "" {
-		logFormat = "%v"
-	} else {
-		logFormat = logFormat + " %v"
-	}
-	logArgs = append(logArgs, err)
-	r.Errorf(logFormat, logArgs...)
-	c.JSON(code, gin.H{"error": routerError.PublicError.Error()})
-	return routerError
-}
-
 func parseDateQueryParam(param string) (time.Time, error) {
 	if param != "" {
 		if TimestampPattern.MatchString(param) {
@@ -592,13 +496,6 @@ func parseDateQueryParam(param string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, nil
-}
-
-func hashToken(token string, salt string, secret string) string {
-	//logging.Infof("Hashing token: %s. Salt: %s. Secret: %s", token, salt, secret)
-	hash := sha512.New()
-	hash.Write([]byte(token + salt + secret))
-	return base64.RawStdEncoding.EncodeToString(hash.Sum(nil))
 }
 
 func hashApiKey(token string, salt string, secret string) string {
@@ -636,10 +533,4 @@ type IngestMessage struct {
 	Origin         IngestMessageOrigin `json:"origin"`
 	HttpHeaders    map[string]string   `json:"httpHeaders"`
 	HttpPayload    map[string]any      `json:"httpPayload"`
-}
-
-type RouterError struct {
-	Error       error
-	PublicError error
-	ErrorType   string
 }

@@ -18,3 +18,5 @@
 /bulkerapp/bulker.env
 /go.work
 /go.work.sum
+/sync-controller/syncctl.env
+/bulkerapp/bulkerapp

@@ -31,7 +31,7 @@ func MapHasSameKeys[K comparable, V any, J any](a map[K]V, b map[K]J) bool {
 }
 
 func MapClear[K comparable, V any](mp map[K]V) {
-	for key, _ := range mp {
+	for key := range mp {
 		delete(mp, key)
 	}
 }

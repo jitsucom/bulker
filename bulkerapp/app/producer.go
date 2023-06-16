@@ -5,7 +5,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"time"
 )
@@ -13,7 +13,7 @@ import (
 const MessageIdHeader = "message_id"
 
 type Producer struct {
-	objects.ServiceBase
+	appbase.Service
 	producer *kafka.Producer
 
 	asyncDeliveryChannel chan kafka.Event
@@ -22,8 +22,8 @@ type Producer struct {
 }
 
 // NewProducer creates new Producer
-func NewProducer(config *AppConfig, kafkaConfig *kafka.ConfigMap) (*Producer, error) {
-	base := objects.NewServiceBase("producer")
+func NewProducer(config *Config, kafkaConfig *kafka.ConfigMap) (*Producer, error) {
+	base := appbase.NewServiceBase("producer")
 
 	producerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		//TODO: add producer specific config here
@@ -34,7 +34,7 @@ func NewProducer(config *AppConfig, kafkaConfig *kafka.ConfigMap) (*Producer, er
 
 	}
 	return &Producer{
-		ServiceBase:          base,
+		Service:              base,
 		producer:             producer,
 		asyncDeliveryChannel: make(chan kafka.Event, 1000),
 		closed:               make(chan struct{}),
@@ -70,7 +70,7 @@ func (p *Producer) Start() {
 			case <-p.closed:
 				return
 			case <-ticker.C:
-				metrics.ProducerQueueLength.Set(float64(len(p.producer.ProduceChannel())))
+				metrics.ProducerQueueLength.Set(float64(p.producer.Len()))
 			}
 		}
 	}()

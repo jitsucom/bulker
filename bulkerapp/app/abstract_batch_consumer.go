@@ -6,7 +6,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"reflect"
 	"strings"
@@ -34,8 +34,8 @@ type BatchConsumer interface {
 
 type AbstractBatchConsumer struct {
 	sync.Mutex
-	objects.ServiceBase
-	config         *AppConfig
+	appbase.Service
+	config         *Config
 	repository     *Repository
 	destinationId  string
 	batchPeriodSec int
@@ -62,8 +62,8 @@ type AbstractBatchConsumer struct {
 	batchFunc BatchFunction
 }
 
-func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *AppConfig, kafkaConfig *kafka.ConfigMap) (*AbstractBatchConsumer, error) {
-	base := objects.NewServiceBase(topicId)
+func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *Config, kafkaConfig *kafka.ConfigMap) (*AbstractBatchConsumer, error) {
+	base := appbase.NewServiceBase(topicId)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, "INVALID_TOPIC", "INVALID_TOPIC", "failed to parse topic").Inc()
@@ -120,7 +120,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %w", err)
 	}
 	bc := &AbstractBatchConsumer{
-		ServiceBase:     base,
+		Service:         base,
 		config:          config,
 		repository:      repository,
 		destinationId:   destinationId,
@@ -189,9 +189,9 @@ func (bc *AbstractBatchConsumer) RunJob() {
 func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error) {
 	bc.Lock()
 	defer bc.Unlock()
-	if bc.consumerClosed.Load() {
-		bc.Errorf("No messages were consumed. Consumer is closed.")
-		return BatchCounters{}, bc.NewError("Consumer is closed")
+	if bc.retired.Load() {
+		bc.Errorf("No messages were consumed. Consumer is retired.")
+		return BatchCounters{}, bc.NewError("Consumer is retired")
 	}
 	bc.Debugf("Starting consuming messages from topic")
 	bc.idle.Store(false)
@@ -477,10 +477,10 @@ func (bs *BatchCounters) accumulate(batchStats BatchCounters) {
 }
 
 // to string
-func (bs BatchCounters) String() string {
+func (bs *BatchCounters) String() string {
 	// print non-zero values
 	var sb strings.Builder
-	countersValue := reflect.ValueOf(bs)
+	countersValue := reflect.ValueOf(*bs)
 	countersType := countersValue.Type()
 	for i := 0; i < countersValue.NumField(); i++ {
 		value := countersValue.Field(i).Int()

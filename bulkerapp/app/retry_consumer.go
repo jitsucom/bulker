@@ -12,7 +12,7 @@ type RetryConsumer struct {
 	*AbstractBatchConsumer
 }
 
-func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *AppConfig, kafkaConfig *kafka.ConfigMap) (*RetryConsumer, error) {
+func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *Config, kafkaConfig *kafka.ConfigMap) (*RetryConsumer, error) {
 	base, err := NewAbstractBatchConsumer(repository, destinationId, batchPeriodSec, topicId, "retry", config, kafkaConfig)
 	if err != nil {
 		return nil, err

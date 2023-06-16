@@ -12,7 +12,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
@@ -84,7 +83,7 @@ type PostgresConfig struct {
 
 // Postgres is adapter for creating,patching (schema or table), inserting data to postgres
 type Postgres struct {
-	SQLAdapterBase[PostgresConfig]
+	*SQLAdapterBase[PostgresConfig]
 	dbConnectFunction DbConnectFunction[PostgresConfig]
 	tmpDir            string
 }
@@ -583,6 +582,6 @@ func getSSLFilePath(name, dir, payload string) (string, error) {
 	}
 
 	filepath := path.Join(dir, name)
-	err := ioutil.WriteFile(filepath, []byte(payload), 0600)
+	err := os.WriteFile(filepath, []byte(payload), 0600)
 	return filepath, err
 }

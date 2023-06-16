@@ -5,7 +5,7 @@ RUN apt-get install -y ca-certificates curl
 
 ENV TZ=UTC
 
-FROM golang:1.20.4-bullseye as build
+FROM golang:1.20.5-bullseye as build
 
 RUN apt-get install gcc libc6-dev
 
@@ -37,7 +37,7 @@ RUN go mod download
 
 WORKDIR /app
 
-COPY .. .
+COPY . .
 
 # Build bulker
 RUN go build -o bulkerapp ./bulkerapp
@@ -50,7 +50,7 @@ RUN mkdir /app
 WORKDIR /app
 
 # Copy bulkerapp
-COPY --from=build /app/bulkerapp/bulkerapp ./bulkerapp
+COPY --from=build /app/bulkerapp ./bulkerapp
 #COPY ./config.yaml ./
 
 CMD ["/app/bulkerapp"]

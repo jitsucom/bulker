@@ -4,49 +4,24 @@ import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/hjson/hjson-go/v4"
-	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/spf13/viper"
 	"os"
-	"path/filepath"
-	"reflect"
 	"strings"
 )
 
-const instanceIdFilePath = "~/.bulkerapp/instance_id"
-
-// AppConfig is a struct for bulker app configuration
+// Config is a struct for bulker app configuration
 // It is loaded from `bulker.env` config file or environment variables.
 //
 // Environment variables requires prefix `BULKER_`
-type AppConfig struct {
-	// InstanceId ID of bulker instance. It is used for identifying Kafka consumers.
-	// If is not set, instance id will be generated and persisted to disk (~/.bulkerapp/instance_id) and reused on next restart.
-	// Default: random uuid
-	InstanceId string `mapstructure:"INSTANCE_ID"`
+type Config struct {
+	appbase.Config `mapstructure:",squash"`
 
-	// HTTPPort port for bulker http server. Default: 3042
-	HTTPPort int `mapstructure:"HTTP_PORT"`
-
-	// # AUTH
-
-	// AuthTokens A list of auth tokens that authorizes user in HTTP interface separated by comma. Each token can be either:
-	// - `${token}` un-encrypted token value
-	// - `${salt}.${hash}` hashed token.` ${salt}` should be random string. Hash is `base64(sha512($token + $salt + TokenSecrets)`.
-	// - Token is `[0-9a-zA-Z_\-]` (only letters, digits, underscore and dash)
-	AuthTokens string `mapstructure:"AUTH_TOKENS"`
-	// See AuthTokens
-	TokenSecrets string `mapstructure:"TOKEN_SECRET"`
 	// For ingest endpoint only
 	GlobalHashSecret string `mapstructure:"GLOBAL_HASH_SECRET" default:"dea42a58-acf4-45af-85bb-e77e94bd5025"`
 	// For ingest endpoint only
 	GlobalHashSecrets []string
-
-	// # LOGGING
-
-	// LogFormat log format. Can be `text` or `json`. Default: `text`
-	LogFormat string `mapstructure:"LOG_FORMAT"`
 
 	// # DESTINATIONS CONFIGS
 
@@ -60,12 +35,6 @@ type AppConfig struct {
 	// RedisURL that will be used by default by all services that need Redis
 	RedisURL   string `mapstructure:"REDIS_URL"`
 	RedisTLSCA string `mapstructure:"REDIS_TLS_CA"`
-
-	// # Kubernetes
-
-	// KubernetesNamespace namespace of bulker app. Default: `default`
-	KubernetesNamespace    string `mapstructure:"KUBERNETES_NAMESPACE" default:"default"`
-	KubernetesClientConfig string `mapstructure:"KUBERNETES_CLIENT_CONFIG"`
 
 	// # KAFKA
 
@@ -137,82 +106,22 @@ type AppConfig struct {
 }
 
 func init() {
-	initViperVariables()
 	viper.SetDefault("HTTP_PORT", utils.NvlString(os.Getenv("PORT"), "3042"))
 	viper.SetDefault("REDIS_URL", os.Getenv("REDIS_URL"))
 	viper.SetDefault("EVENTS_LOG_REDIS_URL", utils.NvlString(os.Getenv("BULKER_REDIS_URL"), os.Getenv("REDIS_URL")))
 }
 
-func initViperVariables() {
-	elem := reflect.TypeOf(AppConfig{})
-	fieldsCount := elem.NumField()
-	for i := 0; i < fieldsCount; i++ {
-		field := elem.Field(i)
-		variable := field.Tag.Get("mapstructure")
-		if variable != "" {
-			defaultValue := field.Tag.Get("default")
-			if defaultValue != "" {
-				viper.SetDefault(variable, defaultValue)
-			} else {
-				_ = viper.BindEnv(variable)
-			}
-		}
-	}
-}
-
-func InitAppConfig() (*AppConfig, error) {
-	appConfig := AppConfig{}
-	configPath := os.Getenv("BULKER_CONFIG_PATH")
-	if configPath == "" {
-		configPath = "."
-	}
-	viper.AddConfigPath(configPath)
-	viper.SetConfigName("bulker")
-	viper.SetConfigType("env")
-	viper.SetEnvPrefix("BULKER")
-	viper.AutomaticEnv()
-
-	if err := viper.ReadInConfig(); err != nil {
-		//it is ok to not have config file
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, fmt.Errorf("❗error reading config file: %s", err)
-		}
-	}
-	err := viper.Unmarshal(&appConfig)
+func (ac *Config) PostInit(settings *appbase.AppSettings) error {
+	err := ac.Config.PostInit(settings)
 	if err != nil {
-		return nil, fmt.Errorf("❗error unmarshalling config: %s", err)
+		return err
 	}
-	if appConfig.LogFormat == "json" {
-		logging.SetJsonFormatter()
-	}
-	if strings.HasPrefix(appConfig.InstanceId, "env://") {
-		env := appConfig.InstanceId[len("env://"):]
-		appConfig.InstanceId = os.Getenv(env)
-		if appConfig.InstanceId != "" {
-			logging.Infof("Loaded instance id from env %s: %s", env, appConfig.InstanceId)
-		}
-	}
-	if appConfig.InstanceId == "" {
-		instId, _ := os.ReadFile(instanceIdFilePath)
-		if len(instId) > 0 {
-			appConfig.InstanceId = string(instId)
-			logging.Infof("Loaded instance id from file: %s", appConfig.InstanceId)
-		} else {
-			appConfig.InstanceId = uuid.New()
-			logging.Infof("Generated instance id: %s", appConfig.InstanceId)
-			_ = os.MkdirAll(filepath.Dir(instanceIdFilePath), 0755)
-			err = os.WriteFile(instanceIdFilePath, []byte(appConfig.InstanceId), 0644)
-			if err != nil {
-				logging.Errorf("error persisting instance id file: %s", err)
-			}
-		}
-	}
-	appConfig.GlobalHashSecrets = strings.Split(appConfig.GlobalHashSecret, ",")
-	return &appConfig, nil
+	ac.GlobalHashSecrets = strings.Split(ac.GlobalHashSecret, ",")
+	return nil
 }
 
 // GetKafkaConfig returns kafka config
-func (ac *AppConfig) GetKafkaConfig() *kafka.ConfigMap {
+func (ac *Config) GetKafkaConfig() *kafka.ConfigMap {
 	if ac.KafkaBootstrapServers == "" {
 		panic("❗️Kafka bootstrap servers are not set. Please set BULKER_KAFKA_BOOTSTRAP_SERVERS env variable")
 	}

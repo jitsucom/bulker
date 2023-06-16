@@ -193,7 +193,7 @@ type bulkerTestConfig struct {
 	postStepFunctions map[string]StepFunction
 	//don't clean up resulting table before and after test run. See also forceLeaveResultingTables
 	leaveResultingTable bool
-	//file with objects to consume in ngjson format
+	//file with objects to consume in ndjson format
 	dataFile string
 	//bulker stream mode-s to test
 	modes []bulker.BulkMode
@@ -360,7 +360,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		defer func() {
-			sqlAdapter.DropTable(ctx, tableName, true)
+			_ = sqlAdapter.DropTable(ctx, tableName, true)
 		}()
 	}
 	stream, err := blk.CreateStream(id, tableName, mode, testConfig.streamOptions...)

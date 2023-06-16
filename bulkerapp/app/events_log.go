@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/gomodule/redigo/redis"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	jsoniter "github.com/json-iterator/go"
 	"io"
 	"regexp"
@@ -57,19 +57,19 @@ type EventsLogService interface {
 }
 
 type RedisEventsLog struct {
-	objects.ServiceBase
+	appbase.Service
 	redisPool *redis.Pool
 	maxSize   int
 }
 
-func NewRedisEventsLog(config *AppConfig, redisUrl string) (*RedisEventsLog, error) {
-	base := objects.NewServiceBase(redisEventsLogServiceName)
+func NewRedisEventsLog(config *Config, redisUrl string) (*RedisEventsLog, error) {
+	base := appbase.NewServiceBase(redisEventsLogServiceName)
 	base.Debugf("Creating RedisEventsLog with redisURL: %s", redisUrl)
 	redisPool := newPool(redisUrl, config.RedisTLSCA)
 	r := RedisEventsLog{
-		ServiceBase: base,
-		redisPool:   redisPool,
-		maxSize:     config.EventsLogMaxSize,
+		Service:   base,
+		redisPool: redisPool,
+		maxSize:   config.EventsLogMaxSize,
 	}
 	return &r, nil
 }

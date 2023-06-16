@@ -6,7 +6,7 @@ import (
 	"github.com/hjson/hjson-go/v4"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,15 +16,15 @@ import (
 )
 
 type MetricsRelay struct {
-	objects.ServiceBase
+	appbase.Service
 	instanceId  string
 	relayBulker bulker.Bulker
 	ticker      *utils.Ticker
 	counters    map[string]float64
 }
 
-func NewMetricsRelay(appConfig *AppConfig) (*MetricsRelay, error) {
-	base := objects.NewServiceBase("metrics_relay")
+func NewMetricsRelay(appConfig *Config) (*MetricsRelay, error) {
+	base := appbase.NewServiceBase("metrics_relay")
 	if appConfig.MetricsRelayDestination == "" || appConfig.MetricsRelayPeriodSec == 0 {
 		return nil, nil
 	}
@@ -39,7 +39,7 @@ func NewMetricsRelay(appConfig *AppConfig) (*MetricsRelay, error) {
 	}
 	period := time.Duration(appConfig.MetricsRelayPeriodSec) * time.Second
 	m := &MetricsRelay{
-		ServiceBase: base,
+		Service:     base,
 		instanceId:  appConfig.InstanceId,
 		relayBulker: bulkerInstance,
 		ticker:      utils.NewTicker(period, period),

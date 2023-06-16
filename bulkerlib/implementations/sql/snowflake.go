@@ -105,7 +105,7 @@ func (sc *SnowflakeConfig) Validate() error {
 
 // Snowflake is adapter for creating,patching (schema or table), inserting data to snowflake
 type Snowflake struct {
-	SQLAdapterBase[SnowflakeConfig]
+	*SQLAdapterBase[SnowflakeConfig]
 }
 
 // NewSnowflake returns configured Snowflake adapter instance

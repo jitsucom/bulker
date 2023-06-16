@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/objects"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"strconv"
 	"strings"
@@ -56,7 +56,7 @@ type TypeCastFunction func(placeholder string, column types2.SQLColumn) string
 type ErrorAdapter func(error) error
 
 type SQLAdapterBase[T any] struct {
-	objects.ServiceBase
+	appbase.Service
 	typeId               string
 	config               *T
 	dataSource           *sql.DB
@@ -77,9 +77,9 @@ type SQLAdapterBase[T any] struct {
 	checkErrFunc         ErrorAdapter
 }
 
-func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) (SQLAdapterBase[T], error) {
+func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) (*SQLAdapterBase[T], error) {
 	s := SQLAdapterBase[T]{
-		ServiceBase:          objects.NewServiceBase(id),
+		Service:              appbase.NewServiceBase(id),
 		typeId:               typeId,
 		config:               config,
 		dbConnectFunction:    dbConnectFunction,
@@ -95,7 +95,7 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunc
 	var err error
 	s.dataSource, err = dbConnectFunction(config)
 	s.initTypes(dataTypes)
-	return s, err
+	return &s, err
 }
 
 func (b *SQLAdapterBase[T]) initTypes(dataTypes map[types2.DataType][]string) {
@@ -462,11 +462,11 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 		UpdateSet:      strings.Join(updateColumns, ","),
 	}
 	buf := strings.Builder{}
-	template := insertFromSelectQueryTemplate
+	queryTemplate := insertFromSelectQueryTemplate
 	if mergeQuery != nil {
-		template = mergeQuery
+		queryTemplate = mergeQuery
 	}
-	err := template.Execute(&buf, insertPayload)
+	err := queryTemplate.Execute(&buf, insertPayload)
 	if err != nil {
 		return errorj.ExecuteInsertError.Wrap(err, "failed to build query from template")
 	}

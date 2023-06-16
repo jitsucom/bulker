@@ -7,7 +7,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"regexp"
 	"sync"
@@ -30,10 +30,10 @@ var topicUnsupportedCharacters = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 var topicPattern = regexp.MustCompile(`^in[.]id[.](.*)[.]m[.](.*)[.](t|b64)[.](.*)$`)
 
 type TopicManager struct {
-	objects.ServiceBase
+	appbase.Service
 	sync.Mutex
 	ready                     bool
-	config                    *AppConfig
+	config                    *Config
 	kafkaConfig               *kafka.ConfigMap
 	requiredDestinationTopics map[string]map[string]string
 
@@ -60,14 +60,14 @@ type TopicManager struct {
 }
 
 // NewTopicManager returns TopicManager
-func NewTopicManager(appContext *AppContext) (*TopicManager, error) {
-	base := objects.NewServiceBase("topic-manager")
+func NewTopicManager(appContext *Context) (*TopicManager, error) {
+	base := appbase.NewServiceBase("topic-manager")
 	admin, err := kafka.NewAdminClient(appContext.kafkaConfig)
 	if err != nil {
 		return nil, base.NewError("Error creating kafka admin client: %w", err)
 	}
 	return &TopicManager{
-		ServiceBase:          base,
+		Service:              base,
 		config:               appContext.config,
 		kafkaConfig:          appContext.kafkaConfig,
 		repository:           appContext.repository,
@@ -145,7 +145,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 
 	allTopics := utils.NewSet[string]()
 
-	for topic, _ := range metadata.Topics {
+	for topic := range metadata.Topics {
 		allTopics.Put(topic)
 		if tm.abandonedTopics.Contains(topic) {
 			abandonedTopicsCount++

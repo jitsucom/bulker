@@ -2,24 +2,24 @@ package app
 
 import (
 	"github.com/go-co-op/gocron"
-	"github.com/jitsucom/bulker/jitsubase/objects"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"math/rand"
 	"time"
 )
 
 type Cron struct {
-	objects.ServiceBase
-	config    *AppConfig
+	appbase.Service
+	config    *Config
 	scheduler *gocron.Scheduler
 }
 
-func NewCron(config *AppConfig) *Cron {
-	base := objects.NewServiceBase("cron")
+func NewCron(config *Config) *Cron {
+	base := appbase.NewServiceBase("cron")
 	s := gocron.NewScheduler(time.UTC)
 	s.TagsUnique()
 	s.StartAsync()
 	s.SingletonModeAll()
-	return &Cron{ServiceBase: base, scheduler: s, config: config}
+	return &Cron{Service: base, scheduler: s, config: config}
 }
 
 func (c *Cron) AddBatchConsumer(batchConsumer BatchConsumer) (*gocron.Job, error) {

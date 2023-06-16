@@ -9,6 +9,7 @@ import (
 	"github.com/jitsucom/bulker/bulkerapp/app/testcontainers/kafka"
 	_ "github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/stretchr/testify/require"
 	"io"
@@ -45,7 +46,7 @@ var testConfigSource string
 //go:embed test_data/bulker.env
 var testBulkerEnv string
 
-func initApp(t *testing.T, envVars map[string]string) (app *AppContext, kafkaContainer *kafka.KafkaContainer, postgresContainer *testcontainers.PostgresContainer) {
+func initApp(t *testing.T, envVars map[string]string) (app *appbase.App[Config], kafkaContainer *kafka.KafkaContainer, postgresContainer *testcontainers.PostgresContainer) {
 	var err error
 	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background(), true)
 	if err != nil {
@@ -73,9 +74,16 @@ func initApp(t *testing.T, envVars map[string]string) (app *AppContext, kafkaCon
 	for k, v := range envVars {
 		t.Setenv(k, v)
 	}
-	app = InitAppContext()
+	settings := &appbase.AppSettings{
+		ConfigPath: os.Getenv("BULKER_CONFIG_PATH"),
+		Name:       "bulker",
+		EnvPrefix:  "BULKER",
+		ConfigName: "bulker",
+		ConfigType: "env",
+	}
+	app = appbase.NewApp[Config](&Context{}, settings)
 	go func() {
-		app.server.ListenAndServe()
+		app.Run()
 	}()
 	ready := false
 	//wait in loop for server readiness
@@ -96,15 +104,15 @@ func initApp(t *testing.T, envVars map[string]string) (app *AppContext, kafkaCon
 
 // Test streams in autocommit and bath mode. Both with good batches and batches with primary key violation error
 func TestGoodAndBadStreams(t *testing.T) {
-	app, kafka, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "0",
+	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "0",
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC": "1"})
 	t.Cleanup(func() {
-		app.Shutdown()
+		app.Exit(appbase.SIG_SHUTDOWN_FOR_TESTS)
 		if postgresContainer != nil {
 			_ = postgresContainer.Close()
 		}
-		if kafka != nil {
-			_ = kafka.Close()
+		if kafkaContainer != nil {
+			_ = kafkaContainer.Close()
 		}
 	})
 
@@ -170,18 +178,18 @@ func TestGoodAndBadStreams(t *testing.T) {
 
 // Test that retry consumer works
 func TestEventsRetry(t *testing.T) {
-	app, kafka, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "20",
+	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "20",
 		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC":     "5",
 		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_BATCH_FRACTION": "1",
 		"BULKER_MESSAGES_RETRY_BACKOFF_BASE":               "0",
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC":           "1"})
 	t.Cleanup(func() {
-		app.Shutdown()
+		app.Exit(appbase.SIG_SHUTDOWN_FOR_TESTS)
 		if postgresContainer != nil {
 			_ = postgresContainer.Close()
 		}
-		if kafka != nil {
-			_ = kafka.Close()
+		if kafkaContainer != nil {
+			_ = kafkaContainer.Close()
 		}
 	})
 	tests := []AppTestConfig{

@@ -19,7 +19,7 @@ func TestEventsLog(t *testing.T) {
 
 	//1519073278252
 	//1668686118735
-	appConfig := AppConfig{}
+	appConfig := Config{}
 	appConfig.EventsLogMaxSize = 1000
 	appConfig.EventsLogRedisURL = redis.URL()
 	redisEl, err := NewRedisEventsLog(&appConfig, redis.URL())
@@ -47,7 +47,7 @@ func TestEventsLog(t *testing.T) {
 		if i == 65 {
 			tsEnd, _ = parseTimestamp(string(id))
 		}
-		time.Sleep(1 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	// Get last 10 events

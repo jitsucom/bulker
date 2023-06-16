@@ -10,9 +10,9 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/implementations"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/objects"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
 	"google.golang.org/api/googleapi"
@@ -82,7 +82,7 @@ func init() {
 
 // BigQuery adapter for creating,patching (schema or table), inserting and copying data from gcs to BigQuery
 type BigQuery struct {
-	objects.ServiceBase
+	appbase.Service
 	client      *bigquery.Client
 	config      *implementations.GoogleConfig
 	queryLogger *logging.QueryLogger
@@ -116,8 +116,8 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
 	b := &BigQuery{
-		ServiceBase: objects.NewServiceBase(bulkerConfig.Id),
-		client:      client, config: config, queryLogger: queryLogger}
+		Service: appbase.NewServiceBase(bulkerConfig.Id),
+		client:  client, config: config, queryLogger: queryLogger}
 	b.tableHelper = NewTableHelper(b, 1024, '`')
 	b.tableHelper.columnNameFunc = columnNameFunc
 	b.tableHelper.tableNameFunc = tableNameFunc

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/objects"
 	"sync"
 )
 
@@ -16,7 +16,7 @@ type RepositoryChange struct {
 }
 
 type Repository struct {
-	objects.ServiceBase
+	appbase.Service
 	sync.Mutex
 	configurationSource ConfigurationSource
 	repository          *repositoryInternal
@@ -44,9 +44,9 @@ func (r *Repository) GetDestinations() []*Destination {
 }
 
 func (r *Repository) init() error {
-	base := objects.NewServiceBase("repository")
+	base := appbase.NewServiceBase("repository")
 	internal := &repositoryInternal{
-		ServiceBase:  base,
+		Service:      base,
 		destinations: make(map[string]*Destination),
 	}
 	err := internal.init(r.configurationSource)
@@ -70,7 +70,7 @@ func (r *Repository) init() error {
 	if oldInternal != nil {
 		oldDestinations = oldInternal.destinations
 	}
-	for id, _ := range oldDestinations {
+	for id := range oldDestinations {
 		newDst, ok := internal.destinations[id]
 		if !ok {
 			repositoryChange.RemovedDestinationIds = append(repositoryChange.RemovedDestinationIds, id)
@@ -115,15 +115,15 @@ func (r *Repository) Close() error {
 }
 
 type repositoryInternal struct {
-	objects.ServiceBase
+	appbase.Service
 	sync.Mutex
 	destinations map[string]*Destination
 }
 
-func NewRepository(config *AppConfig, configurationSource ConfigurationSource) (*Repository, error) {
-	base := objects.NewServiceBase("repository")
+func NewRepository(_ *Config, configurationSource ConfigurationSource) (*Repository, error) {
+	base := appbase.NewServiceBase("repository")
 	r := Repository{
-		ServiceBase:         base,
+		Service:             base,
 		configurationSource: configurationSource,
 		changesChan:         make(chan RepositoryChange, 10),
 	}
@@ -248,13 +248,13 @@ func (d *Destination) Mode() bulker.BulkMode {
 	return d.mode
 }
 
-func (d *Destination) retire() error {
+func (d *Destination) retire() {
 	d.retired = true
 	if d.leasesCount == 0 {
 		logging.Infof("[%s] closing retired destination. Ver: %s", d.Id(), d.config.UpdatedAt)
 		_ = d.bulker.Close()
 	}
-	return nil
+	return
 }
 
 func (d *Destination) incLeases() {

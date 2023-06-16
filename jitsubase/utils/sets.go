@@ -24,13 +24,13 @@ func (s Set[K]) PutAll(keys []K) {
 }
 
 func (s Set[K]) PutAllKeys(m map[K]any) {
-	for key, _ := range m {
+	for key := range m {
 		s.Put(key)
 	}
 }
 
 func (s Set[K]) PutSet(keys Set[K]) {
-	for key, _ := range keys {
+	for key := range keys {
 		s.Put(key)
 	}
 }
@@ -40,7 +40,7 @@ func (s Set[K]) Remove(key K) {
 }
 
 func (s Set[K]) Clear() {
-	for key, _ := range s {
+	for key := range s {
 		delete(s, key)
 	}
 }
