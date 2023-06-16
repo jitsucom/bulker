@@ -47,7 +47,7 @@ func TestEventsLog(t *testing.T) {
 		if i == 65 {
 			tsEnd, _ = parseTimestamp(string(id))
 		}
-		time.Sleep(1 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	// Get last 10 events

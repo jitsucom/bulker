@@ -480,7 +480,7 @@ func (bs *BatchCounters) accumulate(batchStats BatchCounters) {
 func (bs *BatchCounters) String() string {
 	// print non-zero values
 	var sb strings.Builder
-	countersValue := reflect.ValueOf(bs)
+	countersValue := reflect.ValueOf(*bs)
 	countersType := countersValue.Type()
 	for i := 0; i < countersValue.NumField(); i++ {
 		value := countersValue.Field(i).Int()
