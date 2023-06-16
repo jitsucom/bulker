@@ -477,7 +477,7 @@ func (bs *BatchCounters) accumulate(batchStats BatchCounters) {
 }
 
 // to string
-func (bs BatchCounters) String() string {
+func (bs *BatchCounters) String() string {
 	// print non-zero values
 	var sb strings.Builder
 	countersValue := reflect.ValueOf(bs)

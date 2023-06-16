@@ -67,7 +67,7 @@ var (
 
 // MySQL is adapter for creating, patching (schema or table), inserting data to mySQL database
 type MySQL struct {
-	SQLAdapterBase[DataSourceConfig]
+	*SQLAdapterBase[DataSourceConfig]
 	infileEnabled bool
 }
 

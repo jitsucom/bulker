@@ -145,7 +145,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 
 	allTopics := utils.NewSet[string]()
 
-	for topic, _ := range metadata.Topics {
+	for topic := range metadata.Topics {
 		allTopics.Put(topic)
 		if tm.abandonedTopics.Contains(topic) {
 			abandonedTopicsCount++

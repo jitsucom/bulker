@@ -152,7 +152,7 @@ type FieldConfig struct {
 
 // ClickHouse is adapter for creating,patching (schema or table), inserting data to clickhouse
 type ClickHouse struct {
-	SQLAdapterBase[ClickHouseConfig]
+	*SQLAdapterBase[ClickHouseConfig]
 	httpMode              bool
 	distributed           bool
 	tableStatementFactory *TableStatementFactory
@@ -302,7 +302,7 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 	var dbname string
 	row := ch.txOrDb(ctx).QueryRowContext(ctx, chDatabaseQuery, ch.config.Database)
 	if row != nil {
-		row.Scan(&dbname)
+		_ = row.Scan(&dbname)
 	}
 	if dbname == "" {
 		query := fmt.Sprintf(chCreateDatabaseTemplate, ch.config.Database, ch.getOnClusterClause())
@@ -518,7 +518,7 @@ func (ch *ClickHouse) Count(ctx context.Context, tableName string, whenCondition
 	return strconv.Atoi(fmt.Sprint(scnt))
 }
 
-func (ch *ClickHouse) Insert(ctx context.Context, table *Table, merge bool, objects ...types.Object) (err error) {
+func (ch *ClickHouse) Insert(ctx context.Context, table *Table, _ bool, objects ...types.Object) (err error) {
 	return ch.insert(ctx, table, objects)
 }
 
@@ -590,7 +590,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	return nil
 }
 
-func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) (err error) {
+func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, _ bool) (err error) {
 	return ch.copy(ctx, targetTable, sourceTable)
 }
 
@@ -976,7 +976,7 @@ func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName
 		partitionClause, orderByClause, primaryKeyClause)
 }
 
-func (ch *ClickHouse) Ping(ctx context.Context) error {
+func (ch *ClickHouse) Ping(_ context.Context) error {
 	if ch.dataSource != nil {
 		err := chPing(ch.dataSource, ch.httpMode)
 		if err != nil {

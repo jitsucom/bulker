@@ -70,7 +70,7 @@ func (r *Repository) init() error {
 	if oldInternal != nil {
 		oldDestinations = oldInternal.destinations
 	}
-	for id, _ := range oldDestinations {
+	for id := range oldDestinations {
 		newDst, ok := internal.destinations[id]
 		if !ok {
 			repositoryChange.RemovedDestinationIds = append(repositoryChange.RemovedDestinationIds, id)
@@ -120,7 +120,7 @@ type repositoryInternal struct {
 	destinations map[string]*Destination
 }
 
-func NewRepository(config *Config, configurationSource ConfigurationSource) (*Repository, error) {
+func NewRepository(_ *Config, configurationSource ConfigurationSource) (*Repository, error) {
 	base := appbase.NewServiceBase("repository")
 	r := Repository{
 		Service:             base,
@@ -248,13 +248,13 @@ func (d *Destination) Mode() bulker.BulkMode {
 	return d.mode
 }
 
-func (d *Destination) retire() error {
+func (d *Destination) retire() {
 	d.retired = true
 	if d.leasesCount == 0 {
 		logging.Infof("[%s] closing retired destination. Ver: %s", d.Id(), d.config.UpdatedAt)
 		_ = d.bulker.Close()
 	}
-	return nil
+	return
 }
 
 func (d *Destination) incLeases() {

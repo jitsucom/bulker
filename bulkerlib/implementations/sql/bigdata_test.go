@@ -105,7 +105,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		defer func() {
-			sqlAdapter.DropTable(ctx, tableName, true)
+			_ = sqlAdapter.DropTable(ctx, tableName, true)
 		}()
 	}
 	stream, err := blk.CreateStream(t.Name(), tableName, mode, testConfig.streamOptions...)

@@ -70,7 +70,7 @@ func (p *Producer) Start() {
 			case <-p.closed:
 				return
 			case <-ticker.C:
-				metrics.ProducerQueueLength.Set(float64(len(p.producer.ProduceChannel())))
+				metrics.ProducerQueueLength.Set(float64(p.producer.Len()))
 			}
 		}
 	}()

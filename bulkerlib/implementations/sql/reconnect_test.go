@@ -30,6 +30,9 @@ func TestReconnect(t *testing.T) {
 			},
 			postStepFunctions: map[string]StepFunction{
 				"consume_object_2": func(testConfig bulkerTestConfig, mode bulker.BulkMode) error {
+					defer func() {
+						time.Sleep(1 * time.Second)
+					}()
 					switch testConfig.config.BulkerType {
 					case PostgresBulkerTypeId:
 						return postgresContainer.Stop()
@@ -42,7 +45,7 @@ func TestReconnect(t *testing.T) {
 				},
 				"consume_object_5": func(testConfig bulkerTestConfig, mode bulker.BulkMode) error {
 					defer func() {
-						time.Sleep(1 * time.Second)
+						time.Sleep(3 * time.Second)
 					}()
 					switch testConfig.config.BulkerType {
 					case PostgresBulkerTypeId:
@@ -85,6 +88,9 @@ func TestReconnect(t *testing.T) {
 			},
 			postStepFunctions: map[string]StepFunction{
 				"stream_complete_0": func(testConfig bulkerTestConfig, mode bulker.BulkMode) error {
+					defer func() {
+						time.Sleep(1 * time.Second)
+					}()
 					switch testConfig.config.BulkerType {
 					case PostgresBulkerTypeId:
 						return postgresContainer.Stop()
@@ -97,7 +103,7 @@ func TestReconnect(t *testing.T) {
 				},
 				"stream_complete_1": func(testConfig bulkerTestConfig, mode bulker.BulkMode) error {
 					defer func() {
-						time.Sleep(1 * time.Second)
+						time.Sleep(3 * time.Second)
 					}()
 					switch testConfig.config.BulkerType {
 					case PostgresBulkerTypeId:
@@ -131,6 +137,9 @@ func TestReconnect(t *testing.T) {
 			postStepFunctions: map[string]StepFunction{
 				//stop containers before initing bulker
 				"init": func(testConfig bulkerTestConfig, mode bulker.BulkMode) error {
+					defer func() {
+						time.Sleep(1 * time.Second)
+					}()
 					switch testConfig.config.BulkerType {
 					case PostgresBulkerTypeId:
 						return postgresContainer.Stop()
@@ -144,7 +153,7 @@ func TestReconnect(t *testing.T) {
 				//start containers back after 2nd message
 				"consume_object_1": func(testConfig bulkerTestConfig, mode bulker.BulkMode) error {
 					defer func() {
-						time.Sleep(1 * time.Second)
+						time.Sleep(3 * time.Second)
 					}()
 					switch testConfig.config.BulkerType {
 					case PostgresBulkerTypeId:

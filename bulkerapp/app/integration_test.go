@@ -104,15 +104,15 @@ func initApp(t *testing.T, envVars map[string]string) (app *appbase.App[Config],
 
 // Test streams in autocommit and bath mode. Both with good batches and batches with primary key violation error
 func TestGoodAndBadStreams(t *testing.T) {
-	app, kafka, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "0",
+	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "0",
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC": "1"})
 	t.Cleanup(func() {
 		app.Exit(appbase.SIG_SHUTDOWN_FOR_TESTS)
 		if postgresContainer != nil {
 			_ = postgresContainer.Close()
 		}
-		if kafka != nil {
-			_ = kafka.Close()
+		if kafkaContainer != nil {
+			_ = kafkaContainer.Close()
 		}
 	})
 
@@ -178,7 +178,7 @@ func TestGoodAndBadStreams(t *testing.T) {
 
 // Test that retry consumer works
 func TestEventsRetry(t *testing.T) {
-	app, kafka, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "20",
+	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "20",
 		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC":     "5",
 		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_BATCH_FRACTION": "1",
 		"BULKER_MESSAGES_RETRY_BACKOFF_BASE":               "0",
@@ -188,8 +188,8 @@ func TestEventsRetry(t *testing.T) {
 		if postgresContainer != nil {
 			_ = postgresContainer.Close()
 		}
-		if kafka != nil {
-			_ = kafka.Close()
+		if kafkaContainer != nil {
+			_ = kafkaContainer.Close()
 		}
 	})
 	tests := []AppTestConfig{

@@ -48,7 +48,7 @@ type StreamConfig struct {
 	Domains                     []string `json:"domains"`
 	AuthorizedJavaScriptDomains string   `json:"authorizedJavaScriptDomains"`
 	PublicKeys                  []ApiKey `json:"publicKeys"`
-	PrivateKeys                 []ApiKey `json:"privateKeys""`
+	PrivateKeys                 []ApiKey `json:"privateKeys"`
 	DataLayout                  string   `json:"dataLayout"`
 }
 

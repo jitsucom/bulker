@@ -77,7 +77,7 @@ type SQLAdapterBase[T any] struct {
 	checkErrFunc         ErrorAdapter
 }
 
-func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) (SQLAdapterBase[T], error) {
+func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) (*SQLAdapterBase[T], error) {
 	s := SQLAdapterBase[T]{
 		Service:              appbase.NewServiceBase(id),
 		typeId:               typeId,
@@ -95,7 +95,7 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunc
 	var err error
 	s.dataSource, err = dbConnectFunction(config)
 	s.initTypes(dataTypes)
-	return s, err
+	return &s, err
 }
 
 func (b *SQLAdapterBase[T]) initTypes(dataTypes map[types2.DataType][]string) {
@@ -462,11 +462,11 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 		UpdateSet:      strings.Join(updateColumns, ","),
 	}
 	buf := strings.Builder{}
-	template := insertFromSelectQueryTemplate
+	queryTemplate := insertFromSelectQueryTemplate
 	if mergeQuery != nil {
-		template = mergeQuery
+		queryTemplate = mergeQuery
 	}
-	err := template.Execute(&buf, insertPayload)
+	err := queryTemplate.Execute(&buf, insertPayload)
 	if err != nil {
 		return errorj.ExecuteInsertError.Wrap(err, "failed to build query from template")
 	}
