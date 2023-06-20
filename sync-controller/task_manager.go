@@ -31,11 +31,12 @@ func NewTaskManager(appContext *Context) (*TaskManager, error) {
 func (t *TaskManager) SpecHandler(c *gin.Context) {
 	image := c.Query("package")
 	version := c.Query("version")
+	startedAt := time.Now().Round(time.Second)
 	taskDescriptor := TaskDescriptor{
 		TaskType:       "spec",
 		Package:        image,
 		PackageVersion: version,
-		StartedAt:      time.Now().Format(time.RFC3339),
+		StartedAt:      startedAt.Format(time.RFC3339),
 	}
 
 	taskStatus := t.jobRunner.CreatePod(taskDescriptor, nil)
@@ -43,7 +44,7 @@ func (t *TaskManager) SpecHandler(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Description})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "startedAt": startedAt.Unix()})
 }
 
 func (t *TaskManager) CheckHandler(c *gin.Context) {
@@ -142,7 +143,7 @@ func (t *TaskManager) listenTaskStatus() {
 				}
 			case "check":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err := db.UpsertCheck(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, "FAILED", strings.Join([]string{string(st.Status), st.Description}, ":"), st.StartedAtTime())
+					err := db.UpsertCheck(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "), st.StartedAtTime())
 					if err != nil {
 						t.Errorf("Unable to update catalog status: %v\n", err)
 					}
@@ -151,9 +152,9 @@ func (t *TaskManager) listenTaskStatus() {
 				var err error
 				switch st.Status {
 				case StatusCreateFailed, StatusFailed, StatusInitTimeout:
-					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", strings.Join([]string{string(st.Status), st.Description}, ":"))
+					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "))
 				case StatusCreated, StatusRunning:
-					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "RUNNING", strings.Join([]string{string(st.Status), st.Description}, ":"))
+					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "RUNNING", strings.Join([]string{string(st.Status), st.Description}, ": "))
 				case StatusSuccess:
 					//do nothing. sidecar manages success status.
 				}

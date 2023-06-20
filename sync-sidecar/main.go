@@ -88,8 +88,10 @@ func (s *SideCar) Run() {
 		//recover
 		if r := recover(); r != nil {
 			s.sendStatus(s.command, "FAILED", fmt.Sprint(r))
+			os.Exit(1)
 		} else if s.isErr() {
 			s.sendStatus(s.command, "FAILED", s.firstErr.Error())
+			os.Exit(1)
 		} else {
 			if len(s.processedStreams) > 0 {
 				processedStreamsJson, _ := json.Marshal(s.processedStreams)
@@ -184,6 +186,8 @@ func (s *SideCar) processState(state *StateRow) {
 }
 
 func (s *SideCar) processSpec(spec map[string]any) {
+	// ignore previous error messages since we got result
+	s.firstErr = nil
 	specJson, _ := json.Marshal(spec)
 	err := db.UpsertSpec(s.dbpool, s.packageName, s.packageVersion, string(specJson), s.startedAt, "")
 	if err != nil {
@@ -193,6 +197,8 @@ func (s *SideCar) processSpec(spec map[string]any) {
 }
 
 func (s *SideCar) processConnectionStatus(status *StatusRow) {
+	// ignore previous error messages since we got result
+	s.firstErr = nil
 	s.log("CONNECTION STATUS: %s", joinStrings(status.Status, status.Message))
 	err := db.UpsertCheck(s.dbpool, s.packageName, s.packageVersion, s.storageKey, status.Status, status.Message, s.startedAt)
 	if err != nil {
@@ -201,6 +207,8 @@ func (s *SideCar) processConnectionStatus(status *StatusRow) {
 }
 
 func (s *SideCar) processCatalog(catalog *CatalogRow) {
+	// ignore previous error messages since we got result
+	s.firstErr = nil
 	catalogJson, _ := json.Marshal(catalog)
 	s.log("CATALOG: %s", catalogJson)
 	err := db.UpsertCatalog(s.dbpool, s.packageName, s.packageVersion, s.storageKey, string(catalogJson), s.startedAt, "")
@@ -261,9 +269,10 @@ func (s *SideCar) sourceLog(level, message string, args ...any) {
 	message = strings.TrimPrefix(message, "ERROR ")
 	message = strings.TrimPrefix(message, "WARN ")
 	message = strings.TrimPrefix(message, "DEBUG ")
+	message = strings.TrimPrefix(message, "FATAL ")
 
 	text := fmt.Sprintf(message, args...)
-	if level == "ERROR" && s.firstErr == nil {
+	if (level == "ERROR" || level == "FATAL") && s.firstErr == nil {
 		s.firstErr = errors.New(text)
 	}
 	s._log(s.packageName, level, text)
@@ -311,7 +320,7 @@ func (s *SideCar) sendLog(logger, level string, message string) error {
 }
 
 func (s *SideCar) sendStatus(command string, status string, description string) {
-	s.log("%s STATUS: %s", command, joinStrings(status, description))
+	s.log("%s %s", strings.ToUpper(command), joinStrings(status, description))
 	if command == "read" && s.dbpool != nil {
 		err := db.UpsertTask(s.dbpool, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt, status, description)
 		if err != nil {
@@ -367,5 +376,5 @@ func joinStrings(str1, str2 string) string {
 		return str1
 	}
 
-	return str1 + ":" + str2
+	return str1 + ": " + str2
 }

@@ -30,7 +30,7 @@ var ddls = []string{
 	`alter table source_check add column if not exists status varchar`,
 	`alter table source_check add column if not exists description varchar`,
 	`alter table source_check add column if not exists timestamp timestamp with time zone`,
-	`alter table source_check add constraint source_check_pk primary key (package, version, key)`,
+	`alter table source_check add constraint source_check_pk primary key (key)`,
 	`create table if not exists source_state()`,
 	`alter table source_state add column if not exists sync_id varchar not null`,
 	`alter table source_state add column if not exists state json`,

@@ -108,6 +108,7 @@ func (j *JobRunner) watchPodStatuses() {
 						taskStatus.Status = StatusPending
 						taskStatus.Description = accumulatePodStatus(status)
 						j.Debugf("Pod %s is pending", pod.Name)
+						continue
 					}
 				default:
 					taskStatus.Status = StatusUnknown
@@ -188,13 +189,17 @@ func (j *JobRunner) getPodLogs(podName, container string) string {
 			errFound = true
 		}
 		if errFound {
-			buf.WriteString(fmt.Sprintf("[%s]: %s\n", container, scanner.Text()))
+			buf.WriteString(fmt.Sprintf("%s\n", scanner.Text()))
 		}
 	}
 	if scanner.Err() != nil {
 		return fmt.Sprintf("ERR_FAILED_TO_READ_POD_LOGS:%s", err.Error())
 	}
-	return buf.String()
+	if buf.Len() > 0 {
+		return fmt.Sprintf("[%s]: %s", container, buf.String())
+	} else {
+		return ""
+	}
 }
 
 func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {

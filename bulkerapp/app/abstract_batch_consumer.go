@@ -270,12 +270,7 @@ func (bc *AbstractBatchConsumer) close() error {
 }
 
 func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBath bool, err error) {
-	err = bc.resume()
-	if err != nil {
-		bc.errorMetric("resume_error")
-		err = bc.NewError("failed to resume kafka consumer to process batch: %w", err)
-		return
-	}
+	bc.resume()
 	return bc.batchFunc(destination, batchNum, batchSize, retryBatchSize)
 }
 
@@ -418,19 +413,27 @@ func (bc *AbstractBatchConsumer) rebalanceCallback(consumer *kafka.Consumer, eve
 	return nil
 }
 
-func (bc *AbstractBatchConsumer) resume() (err error) {
+func (bc *AbstractBatchConsumer) resume() {
 	if !bc.paused.Load() {
-		return nil
+		return
 	}
+	var err error
+	defer func() {
+		if err != nil {
+			bc.errorMetric("resume_error")
+			bc.SystemErrorf("failed to resume kafka consumer.: %w", err)
+			bc.restartConsumer()
+		}
+	}()
 	partitions, err := bc.consumer.Assignment()
 	if err != nil {
-		return err
+		return
 	}
 	select {
 	case bc.resumeChannel <- struct{}{}:
-		return bc.consumer.Resume(partitions)
+		err = bc.consumer.Resume(partitions)
 	case <-time.After(pauseHeartBeatInterval * 2):
-		return bc.NewError("Resume timeout.")
+		err = bc.NewError("Resume timeout.")
 		//return bc.consumer.Resume(partitions)
 	}
 }

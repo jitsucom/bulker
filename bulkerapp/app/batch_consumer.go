@@ -168,10 +168,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 			err = bc.NewError("Failed to put unsuccessful batch to 'failed' producer: %w", err)
 		}
 	}()
-	err = bc.resume()
-	if err != nil {
-		return BatchCounters{}, fmt.Errorf("failed to resume kafka consumer: %w", err)
-	}
+	bc.resume()
 
 	bc.Infof("Rolling back to first offset %d (failed at %d)", firstPosition.Offset, failedPosition.Offset)
 	//Rollback consumer to committed offset
