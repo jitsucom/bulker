@@ -126,41 +126,34 @@ func (t *TaskManager) listenTaskStatus() {
 		case <-t.closeCh:
 			return
 		case st := <-t.jobRunner.TaskStatusChannel():
+			var err error
 			switch st.TaskType {
 			case "spec":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err := db.UpsertSpec(t.dbpool, st.Package, st.PackageVersion, nil, st.StartedAtTime(), st.Description)
-					if err != nil {
-						t.Errorf("Unable to update spec status: %v\n", err)
-					}
+					err = db.UpsertSpec(t.dbpool, st.Package, st.PackageVersion, nil, st.StartedAtTime(), st.Description)
 				}
-			case "catalog":
+			case "discover":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err := db.UpsertCatalog(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, nil, st.StartedAtTime(), st.Description)
-					if err != nil {
-						t.Errorf("Unable to update catalog status: %v\n", err)
-					}
+					err = db.UpsertCatalog(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, nil, st.StartedAtTime(), "FAILED", st.Description)
+				} else if st.Status == StatusCreated {
+					err = db.UpsertCatalog(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, nil, st.StartedAtTime(), "RUNNING", st.Description)
 				}
 			case "check":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err := db.UpsertCheck(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "), st.StartedAtTime())
-					if err != nil {
-						t.Errorf("Unable to update catalog status: %v\n", err)
-					}
+					err = db.UpsertCheck(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "), st.StartedAtTime())
 				}
 			case "read":
-				var err error
 				switch st.Status {
 				case StatusCreateFailed, StatusFailed, StatusInitTimeout:
 					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "))
-				case StatusCreated, StatusRunning:
+				case StatusCreated:
 					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "RUNNING", strings.Join([]string{string(st.Status), st.Description}, ": "))
-				case StatusSuccess:
+				default:
 					//do nothing. sidecar manages success status.
 				}
-				if err != nil {
-					t.Errorf("Unable to update task status: %v\n", err)
-				}
+			}
+			if err != nil {
+				t.Errorf("Unable to update '%s' status: %v\n", st.TaskType, err)
 			}
 			if st.Status != StatusPending {
 				t.Infof("taskStatus: %+v\n", *st)

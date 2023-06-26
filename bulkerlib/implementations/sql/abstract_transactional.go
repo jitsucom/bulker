@@ -172,6 +172,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (e
 				return errorj.Decorate(err, "failed to open tmp file")
 			}
 			scanner := bufio.NewScanner(file)
+			scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
 			i := 0
 			for scanner.Scan() {
 				if !ps.batchFileSkipLines.Contains(i) {
@@ -193,6 +194,9 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (e
 					}
 				}
 				i++
+			}
+			if err = scanner.Err(); err != nil {
+				return errorj.Decorate(err, "failed to read batch file")
 			}
 			ps.targetMarshaller.Flush()
 			workingFile.Sync()

@@ -12,9 +12,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 	"math"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -40,18 +40,9 @@ type JobRunner struct {
 
 func NewJobRunner(appContext *Context) (*JobRunner, error) {
 	base := appbase.NewServiceBase("job-runner")
-	clientconfig, err := clientcmd.NewClientConfigFromBytes([]byte(appContext.config.KubernetesClientConfig))
+	clientset, err := GetK8SClientSet(appContext.config.KubernetesClientConfig)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing kubernetes client config: %v", err)
-	}
-	cc, err := clientconfig.ClientConfig()
-	if err != nil {
-		return nil, fmt.Errorf("error creating kubernetes client config: %v", err)
-	}
-	// creates the clientset
-	clientset, err := kubernetes.NewForConfig(cc)
-	if err != nil {
-		return nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
+		return nil, err
 	}
 	j := &JobRunner{Service: base, config: appContext.config, clientset: clientset, namespace: appContext.config.KubernetesNamespace,
 		closeCh:      make(chan struct{}),
@@ -65,7 +56,8 @@ func (j *JobRunner) watchPodStatuses() {
 		//recover from panic
 		defer func() {
 			if r := recover(); r != nil {
-				j.Errorf("watchPodStatuses Recovered from panic: %v", r)
+				fmt.Printf("watchPodStatuses Recovered from panic: %v %s\n", r, debug.Stack())
+				j.Errorf("watchPodStatuses Recovered from panic: %+v", r)
 			}
 		}()
 		ticker := utils.NewTicker(time.Second*time.Duration(j.config.ContainerStatusCheckSeconds), time.Second*time.Duration(j.config.ContainerStatusCheckSeconds))
@@ -97,9 +89,10 @@ func (j *JobRunner) watchPodStatuses() {
 					j.cleanupPod(pod.Name)
 				case v1.PodRunning:
 					taskStatus.Status = StatusRunning
+					//TODO check running for errors
 					j.Debugf("Pod %s is running", pod.Name)
 				case v1.PodPending:
-					if time.Now().Sub(status.StartTime.Time) > time.Second*time.Duration(j.config.ContainerInitTimeoutSeconds) {
+					if time.Now().Sub(taskStatus.StartedAtTime()) > time.Second*time.Duration(j.config.ContainerInitTimeoutSeconds) {
 						taskStatus.Status = StatusInitTimeout
 						taskStatus.Description = accumulatePodStatus(status)
 						j.Errorf("Pod %s is pending for more than %d seconds. Deleting", pod.Name, j.config.ContainerInitTimeoutSeconds)
@@ -181,6 +174,7 @@ func (j *JobRunner) getPodLogs(podName, container string) string {
 	defer podLogs.Close()
 	buf := strings.Builder{}
 	scanner := bufio.NewScanner(podLogs)
+	scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
 	errFound := false
 	for scanner.Scan() {
 		t := scanner.Text()
@@ -192,7 +186,7 @@ func (j *JobRunner) getPodLogs(podName, container string) string {
 			buf.WriteString(fmt.Sprintf("%s\n", scanner.Text()))
 		}
 	}
-	if scanner.Err() != nil {
+	if err = scanner.Err(); err != nil {
 		return fmt.Sprintf("ERR_FAILED_TO_READ_POD_LOGS:%s", err.Error())
 	}
 	if buf.Len() > 0 {
@@ -204,7 +198,9 @@ func (j *JobRunner) getPodLogs(podName, container string) string {
 
 func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {
 	taskStatus := TaskStatus{TaskDescriptor: taskDescriptor}
-	podName := nonAlphaNum.ReplaceAllLiteralString(taskDescriptor.Package, "-") + "." + taskDescriptor.PackageVersion + "-" + uuid.NewLettersNumbers()
+	taskId := utils.NvlString(taskDescriptor.TaskID, uuid.NewLettersNumbers())
+	podId := utils.JoinNonEmptyStrings(".", taskStatus.SyncID, taskId)
+	podName := strings.ToLower(nonAlphaNum.ReplaceAllLiteralString(taskDescriptor.Package, "-") + "." + podId)
 	if !configuration.IsEmpty() {
 		secret := j.createSecret(podName, taskDescriptor, configuration)
 		_, err := j.clientset.CoreV1().Secrets(j.namespace).Create(context.Background(), secret, metav1.CreateOptions{})
@@ -348,7 +344,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 				},
 				{
 					Name:            "sidecar",
-					ImagePullPolicy: v1.PullIfNotPresent,
+					ImagePullPolicy: v1.PullAlways,
 					Image:           j.config.SidecarImage,
 					Env:             sideCarEnvVar,
 					VolumeMounts: []v1.VolumeMount{

@@ -26,7 +26,7 @@ type Config struct {
 
 	// KubernetesNamespace namespace of bulker app. Default: `default`
 	KubernetesNamespace    string `mapstructure:"KUBERNETES_NAMESPACE" default:"default"`
-	KubernetesClientConfig string `mapstructure:"KUBERNETES_CLIENT_CONFIG"`
+	KubernetesClientConfig string `mapstructure:"KUBERNETES_CLIENT_CONFIG" default:"local"`
 
 	ContainerStatusCheckSeconds int `mapstructure:"CONTAINER_STATUS_CHECK_SECONDS" default:"10"`
 	ContainerInitTimeoutSeconds int `mapstructure:"CONTAINER_INIT_TIMEOUT_SECONDS" default:"180"`

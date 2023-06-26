@@ -342,6 +342,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		return err
 	}
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
 	for scanner.Scan() {
 		object := map[string]any{}
 		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
@@ -358,6 +359,9 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		if _, err := stmt.ExecContext(ctx, args...); err != nil {
 			return checkErr(err)
 		}
+	}
+	if err = scanner.Err(); err != nil {
+		return fmt.Errorf("LoadTable: failed to read file: %v", err)
 	}
 	_, err = stmt.ExecContext(ctx)
 	if err != nil {

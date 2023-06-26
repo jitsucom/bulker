@@ -280,6 +280,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 			return err
 		}
 		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
 		for scanner.Scan() {
 			object := map[string]any{}
 			decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
@@ -297,7 +298,9 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 				return checkErr(err)
 			}
 		}
-
+		if err = scanner.Err(); err != nil {
+			return fmt.Errorf("LoadTable: failed to read file: %v", err)
+		}
 		return nil
 	}
 }

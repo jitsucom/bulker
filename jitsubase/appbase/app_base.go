@@ -5,9 +5,11 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/spf13/viper"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -110,15 +112,14 @@ func InitAppConfig[C InstanceConfig](appConfig C, settings *AppSettings) error {
 		configPath = "."
 	}
 	initViperVariables(appConfig)
-	viper.AddConfigPath(configPath)
-	viper.SetConfigName(settings.ConfigName)
+	viper.SetConfigFile(path.Join(configPath, fmt.Sprintf("%s.%s", settings.ConfigName, settings.ConfigType)))
 	viper.SetConfigType(settings.ConfigType)
 	viper.SetEnvPrefix(settings.EnvPrefix)
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
 		//it is ok to not have config file
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		if _, ok := err.(*fs.PathError); !ok {
 			return fmt.Errorf("❗error reading config file: %s", err)
 		}
 	}

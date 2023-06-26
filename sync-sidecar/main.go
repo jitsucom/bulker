@@ -112,6 +112,7 @@ func (s *SideCar) Run() {
 	go func() {
 		defer stdOutErrWaitGroup.Done()
 		scanner := bufio.NewScanner(errPipe)
+		scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
 		for scanner.Scan() {
 			line := scanner.Text()
 			s.sourceLog("ERRSTD", line)
@@ -200,7 +201,8 @@ func (s *SideCar) processConnectionStatus(status *StatusRow) {
 	// ignore previous error messages since we got result
 	s.firstErr = nil
 	s.log("CONNECTION STATUS: %s", joinStrings(status.Status, status.Message))
-	err := db.UpsertCheck(s.dbpool, s.packageName, s.packageVersion, s.storageKey, status.Status, status.Message, s.startedAt)
+	st := strings.ReplaceAll(status.Status, "SUCCEEDED", "SUCCESS")
+	err := db.UpsertCheck(s.dbpool, s.packageName, s.packageVersion, s.storageKey, st, status.Message, s.startedAt)
 	if err != nil {
 		s.panic("error updating connection status for: %s: %v", s.storageKey, err)
 	}
@@ -211,7 +213,7 @@ func (s *SideCar) processCatalog(catalog *CatalogRow) {
 	s.firstErr = nil
 	catalogJson, _ := json.Marshal(catalog)
 	s.log("CATALOG: %s", catalogJson)
-	err := db.UpsertCatalog(s.dbpool, s.packageName, s.packageVersion, s.storageKey, string(catalogJson), s.startedAt, "")
+	err := db.UpsertCatalog(s.dbpool, s.packageName, s.packageVersion, s.storageKey, string(catalogJson), s.startedAt, "SUCCESS", "")
 	if err != nil {
 		s.panic("error updating catalog for: %s: %v", s.storageKey, err)
 	}
@@ -310,7 +312,7 @@ func (s *SideCar) _log(logger, level, message string) {
 func (s *SideCar) sendLog(logger, level string, message string) error {
 	logMessage := map[string]any{
 		"timestamp": time.Now(),
-		"source_id": s.syncId,
+		"sync_id":   s.syncId,
 		"task_id":   s.taskId,
 		"logger":    logger,
 		"level":     level,

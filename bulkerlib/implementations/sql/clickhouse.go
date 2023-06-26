@@ -558,6 +558,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		return err
 	}
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
 	for scanner.Scan() {
 		object := map[string]any{}
 		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
@@ -581,11 +582,15 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 			args = append(args, l)
 		}
 		placeholdersBuilder.WriteString(")")
-
 	}
-	copyStatement = fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
-	if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
-		return checkErr(err)
+	if err = scanner.Err(); err != nil {
+		return fmt.Errorf("LoadTable: failed to read file: %v", err)
+	}
+	if len(args) > 0 {
+		copyStatement = fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
+		if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
+			return checkErr(err)
+		}
 	}
 	return nil
 }
