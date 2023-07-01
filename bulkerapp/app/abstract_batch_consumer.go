@@ -338,8 +338,10 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 		return
 	}
 	bc.Infof("Restarting consumer")
-	err := bc.consumer.Load().Close()
-	bc.Infof("Previous consumer closed: %v", err)
+	go func(c *kafka.Consumer) {
+		err := c.Close()
+		bc.Infof("Previous consumer closed: %v", err)
+	}(bc.consumer.Load())
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -416,7 +418,6 @@ func (bc *AbstractBatchConsumer) resume() {
 		if err != nil {
 			bc.errorMetric("resume_error")
 			bc.SystemErrorf("failed to resume kafka consumer.: %v", err)
-			bc.restartConsumer()
 		}
 	}()
 	partitions, err := bc.consumer.Load().Assignment()

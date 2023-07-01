@@ -97,8 +97,10 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 
 func (sc *StreamConsumer) restartConsumer() {
 	sc.Infof("Restarting consumer")
-	err := sc.consumer.Close()
-	sc.Infof("Previous consumer closed: %v", err)
+	go func(c *kafka.Consumer) {
+		err := c.Close()
+		sc.Infof("Previous consumer closed: %v", err)
+	}(sc.consumer)
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {

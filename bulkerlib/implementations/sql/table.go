@@ -151,7 +151,7 @@ func (t *Table) FitsToTable(destination *Table) bool {
 }
 
 func BuildConstraintName(tableName string) string {
-	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers()[10:10])
+	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers()[10:20])
 }
 
 func (c Columns) Clone() Columns {
