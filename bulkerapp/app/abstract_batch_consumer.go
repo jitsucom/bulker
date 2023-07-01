@@ -7,6 +7,7 @@ import (
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"reflect"
 	"strings"
@@ -35,14 +36,12 @@ type BatchConsumer interface {
 type AbstractBatchConsumer struct {
 	sync.Mutex
 	appbase.Service
-	config         *Config
-	repository     *Repository
-	destinationId  string
-	batchPeriodSec int
-	consumerConfig kafka.ConfigMap
-	consumer       *kafka.Consumer
-	//it is not allowed to close consumer twice
-	consumerClosed  atomic.Bool
+	config          *Config
+	repository      *Repository
+	destinationId   string
+	batchPeriodSec  int
+	consumerConfig  kafka.ConfigMap
+	consumer        atomic.Pointer[kafka.Consumer]
 	producer        *kafka.Producer
 	topicId         string
 	mode            string
@@ -67,7 +66,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, "INVALID_TOPIC", "INVALID_TOPIC", "failed to parse topic").Inc()
-		return nil, base.NewError("Failed to parse topic: %w", err)
+		return nil, base.NewError("Failed to parse topic: %v", err)
 	}
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"group.id":                      topicId,
@@ -83,13 +82,13 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	consumer, err := kafka.NewConsumer(&consumerConfig)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
-		return nil, base.NewError("Error creating consumer: %w", err)
+		return nil, base.NewError("Error creating consumer: %v", err)
 	}
 	// check topic partitions count
 	metadata, err := consumer.GetMetadata(&topicId, false, 10000)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
-		return nil, base.NewError("Failed to get consumer metadata: %w", err)
+		return nil, base.NewError("Failed to get consumer metadata: %v", err)
 	}
 	for _, topic := range metadata.Topics {
 		if topic.Topic == topicId {
@@ -108,7 +107,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		_ = consumer.Close()
-		return nil, base.NewError("error creating kafka producer: %w", err)
+		return nil, base.NewError("error creating kafka producer: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
@@ -117,8 +116,10 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		_ = consumer.Close()
-		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %w", err)
+		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %v", err)
 	}
+	var atomicConsumer atomic.Pointer[kafka.Consumer]
+	atomicConsumer.Store(consumer)
 	bc := &AbstractBatchConsumer{
 		Service:         base,
 		config:          config,
@@ -129,7 +130,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		topicId:         topicId,
 		mode:            mode,
 		consumerConfig:  consumerConfig,
-		consumer:        consumer,
+		consumer:        atomicConsumer,
 		producer:        producer,
 		waitForMessages: time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
 		closed:          make(chan struct{}),
@@ -141,11 +142,11 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		_ = consumer.Close()
-		return nil, base.NewError("Failed to subscribe to topic: %w", err)
+		return nil, base.NewError("Failed to subscribe to topic: %v", err)
 	}
 
 	// Delivery reports channel for 'failed' producer messages
-	go func() {
+	safego.RunWithRestart(func() {
 		for {
 			select {
 			case <-bc.closed:
@@ -162,11 +163,11 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 						bc.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 					}
 					//case kafka.Error:
-					//	bc.Errorf("Producer error: %w", ev)
+					//	bc.Errorf("Producer error: %v", ev)
 				}
 			}
 		}
-	}()
+	})
 	return bc, nil
 }
 
@@ -201,11 +202,11 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.countersMetric(counters)
 		if err != nil {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "fail").Inc()
-			bc.Errorf("Consume finished with error: %w stats: %s", err, counters)
+			bc.Errorf("Consume finished with error: %v stats: %s", err, counters)
 		} else {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "success").Inc()
 			if counters.processed > 0 {
-				bc.Infof("Successfully %s", counters)
+				bc.Infof("Successfully %s", counters.String())
 			} else {
 				countersString := counters.String()
 				if countersString != "" {
@@ -244,7 +245,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		batchStats, nextBatch, err2 := bc.processBatch(destination, batchNumber, maxBatchSize, retryBatchSize)
 		if err2 != nil {
 			if nextBatch {
-				bc.Errorf("Batch finished with error: %w stats: %s nextBatch: %t", err2, batchStats, nextBatch)
+				bc.Errorf("Batch finished with error: %v stats: %s nextBatch: %t", err2, batchStats, nextBatch)
 			}
 		}
 		counters.accumulate(batchStats)
@@ -262,11 +263,7 @@ func (bc *AbstractBatchConsumer) close() error {
 	default:
 		close(bc.closed)
 	}
-	if bc.consumerClosed.CompareAndSwap(false, true) {
-		err := bc.consumer.Close()
-		return err
-	}
-	return nil
+	return bc.consumer.Load().Close()
 }
 
 func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBath bool, err error) {
@@ -287,7 +284,7 @@ func (bc *AbstractBatchConsumer) pause() {
 	}
 	bc.pauseKafkaConsumer()
 
-	go func() {
+	safego.RunWithRestart(func() {
 		errorReported := false
 		//this loop keeps heatbeating consumer to prevent it from being kicked out from group
 	loop:
@@ -305,7 +302,7 @@ func (bc *AbstractBatchConsumer) pause() {
 				break loop
 			default:
 			}
-			message, err := bc.consumer.ReadMessage(pauseHeartBeatInterval)
+			message, err := bc.consumer.Load().ReadMessage(pauseHeartBeatInterval)
 			if err != nil {
 				kafkaErr := err.(kafka.Error)
 				if kafkaErr.Code() == kafka.ErrTimedOut {
@@ -325,7 +322,7 @@ func (bc *AbstractBatchConsumer) pause() {
 			} else if message != nil {
 				bc.Debugf("Unexpected message on paused consumer: %v", message)
 				//If message slipped through pause, rollback offset and make sure consumer is paused
-				_, err = bc.consumer.SeekPartitions([]kafka.TopicPartition{message.TopicPartition})
+				_, err = bc.consumer.Load().SeekPartitions([]kafka.TopicPartition{message.TopicPartition})
 				if err != nil {
 					bc.errorMetric("ROLLBACK_ON_PAUSE_ERR")
 					bc.SystemErrorf("Failed to rollback offset on paused consumer: %v", err)
@@ -333,17 +330,16 @@ func (bc *AbstractBatchConsumer) pause() {
 				bc.pauseKafkaConsumer()
 			}
 		}
-	}()
+	})
 }
 
 func (bc *AbstractBatchConsumer) restartConsumer() {
 	if bc.retired.Load() {
 		return
 	}
-	if bc.consumerClosed.CompareAndSwap(false, true) {
-		err := bc.consumer.Close()
-		bc.Infof("Previous consumer closed: %v", err)
-	}
+	bc.Infof("Restarting consumer")
+	err := bc.consumer.Load().Close()
+	bc.Infof("Previous consumer closed: %v", err)
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -362,33 +358,31 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 			consumer, err := kafka.NewConsumer(&bc.consumerConfig)
 			if err != nil {
 				bc.errorMetric("consumer_error:" + metrics.KafkaErrorCode(err))
-				bc.Errorf("Error creating kafka consumer: %w", err)
+				bc.Errorf("Error creating kafka consumer: %v", err)
 				break
 			}
 			err = consumer.SubscribeTopics([]string{bc.topicId}, bc.rebalanceCallback)
 			if err != nil {
 				bc.errorMetric("consumer_error:" + metrics.KafkaErrorCode(err))
 				_ = consumer.Close()
-				bc.Errorf("Failed to subscribe to topic: %w", err)
+				bc.Errorf("Failed to subscribe to topic: %v", err)
 				break
 			}
-			bc.Lock()
-			bc.consumer = consumer
-			bc.consumerClosed.Store(false)
-			bc.Unlock()
+			bc.consumer.Store(consumer)
+			bc.Infof("Restarted successfully")
 			return
 		}
 	}
 }
 
 func (bc *AbstractBatchConsumer) pauseKafkaConsumer() {
-	partitions, err := bc.consumer.Assignment()
+	partitions, err := bc.consumer.Load().Assignment()
 	if len(partitions) > 0 {
-		err = bc.consumer.Pause(partitions)
+		err = bc.consumer.Load().Pause(partitions)
 	}
 	if err != nil {
 		bc.errorMetric("pause_error")
-		bc.SystemErrorf("Failed to pause kafka consumer: %w", err)
+		bc.SystemErrorf("Failed to pause kafka consumer: %v", err)
 	} else {
 		if len(partitions) > 0 {
 			bc.Debugf("Consumer paused.")
@@ -404,7 +398,7 @@ func (bc *AbstractBatchConsumer) rebalanceCallback(consumer *kafka.Consumer, eve
 		err := consumer.Pause(assignedParts.Partitions)
 		if err != nil {
 			bc.errorMetric("pause_error")
-			bc.SystemErrorf("Failed to pause kafka consumer: %w", err)
+			bc.SystemErrorf("Failed to pause kafka consumer: %v", err)
 			return err
 		} else {
 			bc.Debugf("Consumer paused.")
@@ -421,17 +415,17 @@ func (bc *AbstractBatchConsumer) resume() {
 	defer func() {
 		if err != nil {
 			bc.errorMetric("resume_error")
-			bc.SystemErrorf("failed to resume kafka consumer.: %w", err)
+			bc.SystemErrorf("failed to resume kafka consumer.: %v", err)
 			bc.restartConsumer()
 		}
 	}()
-	partitions, err := bc.consumer.Assignment()
+	partitions, err := bc.consumer.Load().Assignment()
 	if err != nil {
 		return
 	}
 	select {
 	case bc.resumeChannel <- struct{}{}:
-		err = bc.consumer.Resume(partitions)
+		err = bc.consumer.Load().Resume(partitions)
 	case <-time.After(pauseHeartBeatInterval * 2):
 		err = bc.NewError("Resume timeout.")
 		//return bc.consumer.Resume(partitions)

@@ -8,6 +8,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
@@ -26,8 +27,7 @@ type StreamConsumer struct {
 	stream         atomic.Pointer[bulker.BulkerStream]
 	consumerConfig kafka.ConfigMap
 	consumer       *kafka.Consumer
-	//it is not allowed to close consumer twice
-	consumerClosed   bool
+
 	bulkerProducer   *Producer
 	eventsLogService EventsLogService
 
@@ -56,14 +56,14 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 	consumer, err := kafka.NewConsumer(&consumerConfig)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, "stream", destination.Id(), tableName, metrics.KafkaErrorCode(err)).Inc()
-		return nil, base.NewError("Error creating kafka consumer: %w", err)
+		return nil, base.NewError("Error creating kafka consumer: %v", err)
 	}
 
 	err = consumer.SubscribeTopics([]string{topicId}, nil)
 	if err != nil {
 		_ = consumer.Close()
 		metrics.ConsumerErrors(topicId, "stream", destination.Id(), tableName, metrics.KafkaErrorCode(err)).Inc()
-		return nil, base.NewError("Failed to subscribe to topic: %w", err)
+		return nil, base.NewError("Failed to subscribe to topic: %v", err)
 	}
 
 	//destination := repository.LeaseDestination(destinationId)
@@ -87,7 +87,7 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 	bulkerStream, err := sc.destination.bulker.CreateStream(sc.topicId, sc.tableName, bulker.Stream, sc.destination.streamOptions.Options...)
 	if err != nil {
 		metrics.ConsumerErrors(sc.topicId, "stream", destination.Id(), tableName, "failed to create bulker stream").Inc()
-		return nil, base.NewError("Failed to create bulker stream: %w", err)
+		return nil, base.NewError("Failed to create bulker stream: %v", err)
 	}
 	sc.stream.Store(&bulkerStream)
 	sc.start()
@@ -96,8 +96,8 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 }
 
 func (sc *StreamConsumer) restartConsumer() {
+	sc.Infof("Restarting consumer")
 	err := sc.consumer.Close()
-	sc.consumerClosed = true
 	sc.Infof("Previous consumer closed: %v", err)
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -110,18 +110,18 @@ func (sc *StreamConsumer) restartConsumer() {
 			consumer, err := kafka.NewConsumer(&sc.consumerConfig)
 			if err != nil {
 				metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, metrics.KafkaErrorCode(err)).Inc()
-				sc.Errorf("Error creating kafka consumer: %w", err)
+				sc.Errorf("Error creating kafka consumer: %v", err)
 				break
 			}
 			err = consumer.SubscribeTopics([]string{sc.topicId}, nil)
 			if err != nil {
 				metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, metrics.KafkaErrorCode(err)).Inc()
 				_ = consumer.Close()
-				sc.Errorf("Failed to subscribe to topic: %w", err)
+				sc.Errorf("Failed to subscribe to topic: %v", err)
 				break
 			}
 			sc.consumer = consumer
-			sc.consumerClosed = false
+			sc.Infof("Restarted successfully")
 			return
 		}
 	}
@@ -130,15 +130,12 @@ func (sc *StreamConsumer) restartConsumer() {
 // start consuming messages from kafka
 func (sc *StreamConsumer) start() {
 	sc.Infof("Starting stream consumer for topic. Ver: %s", sc.destination.config.UpdatedAt)
-	go func() {
+	safego.RunWithRestart(func() {
 		var err error
 		for {
 			select {
 			case <-sc.closed:
-				if !sc.consumerClosed {
-					sc.consumerClosed = true
-					_ = sc.consumer.Close()
-				}
+				_ = sc.consumer.Close()
 				var state bulker.State
 				if err != nil {
 					state, _ = (*sc.stream.Load()).Abort(context.Background())
@@ -154,7 +151,7 @@ func (sc *StreamConsumer) start() {
 					kafkaErr := err.(kafka.Error)
 					if kafkaErr.Code() != kafka.ErrTimedOut {
 						metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, metrics.KafkaErrorCode(kafkaErr)).Inc()
-						sc.Errorf("Error reading message from topic: %w", kafkaErr)
+						sc.Errorf("Error reading message from topic: %v retriable: %t", kafkaErr, kafkaErr.IsRetriable())
 						if kafkaErr.IsRetriable() {
 							time.Sleep(streamConsumerMessageWaitTimeout * 10)
 						} else {
@@ -171,7 +168,7 @@ func (sc *StreamConsumer) start() {
 				if err != nil {
 					metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "parse_event_error").Inc()
 					sc.postEventsLog(message.Value, nil, nil, err)
-					sc.Errorf("Failed to parse event from message: %s offset: %s: %w", message.Value, message.TopicPartition.Offset.String(), err)
+					sc.Errorf("Failed to parse event from message: %s offset: %s: %v", message.Value, message.TopicPartition.Offset.String(), err)
 				} else {
 					sc.Debugf("Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), sc.destination.config.BulkerType)
 					var state bulker.State
@@ -189,7 +186,7 @@ func (sc *StreamConsumer) start() {
 					failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, allTablesToken, false)
 					retries, err := GetKafkaIntHeader(message, retriesCountHeader)
 					if err != nil {
-						sc.Errorf("failed to read retry header: %w", err)
+						sc.Errorf("failed to read retry header: %v", err)
 					}
 					status := "retryScheduled"
 					if retries >= sc.config.MessagesRetryCount {
@@ -218,7 +215,7 @@ func (sc *StreamConsumer) start() {
 
 			}
 		}
-	}()
+	})
 }
 
 // Close consumer
@@ -238,7 +235,7 @@ func (sc *StreamConsumer) UpdateDestination(destination *Destination) error {
 	//create new stream
 	bulkerStream, err := destination.bulker.CreateStream(sc.topicId, sc.tableName, bulker.Stream, destination.streamOptions.Options...)
 	if err != nil {
-		return sc.NewError("Failed to create bulker stream: %w", err)
+		return sc.NewError("Failed to create bulker stream: %v", err)
 	}
 	oldBulkerStream := sc.stream.Swap(&bulkerStream)
 	state, err := (*oldBulkerStream).Complete(context.Background())
@@ -267,11 +264,11 @@ func (sc *StreamConsumer) postEventsLog(message []byte, representation any, proc
 		object["status"] = "FAILED"
 		_, err := sc.eventsLogService.PostEvent(EventTypeProcessedError, sc.destination.Id(), object)
 		if err != nil {
-			sc.Errorf("Failed to post event to events log service: %w", err)
+			sc.Errorf("Failed to post event to events log service: %v", err)
 		}
 	}
 	_, err := sc.eventsLogService.PostEvent(EventTypeProcessedAll, sc.destination.Id(), object)
 	if err != nil {
-		sc.Errorf("Failed to post event to events log service: %w", err)
+		sc.Errorf("Failed to post event to events log service: %v", err)
 	}
 }

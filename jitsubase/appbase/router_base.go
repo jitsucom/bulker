@@ -96,10 +96,10 @@ func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskE
 	if err != nil {
 		if maskError {
 			errorID := uuid.NewLettersNumbers()
-			err = fmt.Errorf("error# %s: %s: %w", errorID, errorType, err)
+			err = fmt.Errorf("error# %s: %s: %v", errorID, errorType, err)
 			routerError.PublicError = fmt.Errorf("error# %s: %s", errorID, errorType)
 		} else {
-			err = fmt.Errorf("%s: %w", errorType, err)
+			err = fmt.Errorf("%s: %v", errorType, err)
 			routerError.PublicError = err
 		}
 	} else {

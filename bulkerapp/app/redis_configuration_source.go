@@ -6,6 +6,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"strings"
 	"sync"
@@ -51,14 +52,14 @@ func (rcs *RedisConfigurationSource) init() error {
 	defer conn.Close()
 	_, err := conn.Do("CONFIG", "SET", "notify-keyspace-events", "Kg")
 	if err != nil {
-		rcs.Warnf("failed to set 'notify-keyspace-events' config setting: %w", err)
+		rcs.Warnf("failed to set 'notify-keyspace-events' config setting: %v", err)
 	}
 	err = rcs.load(false)
 	if err != nil {
-		return rcs.NewError("failed to load initial config: %w", err)
+		return rcs.NewError("failed to load initial config: %v", err)
 	}
-	go rcs.pubsub()
-	go rcs.refresh()
+	safego.RunWithRestart(rcs.pubsub)
+	safego.RunWithRestart(rcs.refresh)
 
 	return nil
 }

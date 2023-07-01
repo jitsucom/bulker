@@ -135,3 +135,75 @@ func TestTransactionalSequentialRepeatPK(t *testing.T) {
 		sequentialGroup.Add(1)
 	}
 }
+
+func TestTransactionalSequentialRepeatPKMulti(t *testing.T) {
+	t.Parallel()
+	tests := []bulkerTestConfig{
+		{
+			//deletes any table leftovers from previous tests
+			name:           "dummy_test_table_cleanup",
+			tableName:      "transactional_test_pk_multi",
+			modes:          []bulker.BulkMode{bulker.Batch, bulker.Stream},
+			dataFile:       "test_data/empty.ndjson",
+			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id", "id2"), bulker.WithMergeRows()},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+		},
+		{
+			name:                "first_run_batch",
+			tableName:           "transactional_test_pk_multi",
+			modes:               []bulker.BulkMode{bulker.Batch, bulker.Stream},
+			leaveResultingTable: true,
+			dataFile:            "test_data/repeated_ids_multi.ndjson",
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "id2": "a", "name": "test8"},
+				{"_timestamp": constantTime, "id": 2, "id2": "b", "name": "test1"},
+				{"_timestamp": constantTime, "id": 3, "id2": "c", "name": "test7"},
+				{"_timestamp": constantTime, "id": 4, "id2": "d", "name": "test5"},
+				{"_timestamp": constantTime, "id": 4, "id2": "dd", "name": "test6"},
+			},
+			configIds:      allBulkerConfigs,
+			orderBy:        []string{"id", "id2"},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id", "id2"), bulker.WithMergeRows()},
+		},
+		{
+			name:                "second_run_batch",
+			tableName:           "transactional_test_pk_multi",
+			modes:               []bulker.BulkMode{bulker.Batch, bulker.Stream},
+			leaveResultingTable: true,
+			dataFile:            "test_data/repeated_ids_multi2.ndjson",
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "id2": "a", "name": "test17"},
+				{"_timestamp": constantTime, "id": 2, "id2": "b", "name": "test1"},
+				{"_timestamp": constantTime, "id": 3, "id2": "c", "name": "test7"},
+				{"_timestamp": constantTime, "id": 4, "id2": "d", "name": "test16"},
+				{"_timestamp": constantTime, "id": 4, "id2": "dd", "name": "test15"},
+				{"_timestamp": constantTime, "id": 5, "id2": "d", "name": "test14"},
+			},
+			orderBy:        []string{"id", "id2"},
+			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id", "id2"), bulker.WithMergeRows()},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+		},
+		{
+			name:           "dummy_test_table_cleanup",
+			tableName:      "transactional_test_pk_multi",
+			modes:          []bulker.BulkMode{bulker.Batch, bulker.Stream},
+			dataFile:       "test_data/empty.ndjson",
+			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id", "id2"), bulker.WithMergeRows()},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+		},
+	}
+	sequentialGroup := sync.WaitGroup{}
+	sequentialGroup.Add(1)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runTestConfig(t, tt, testStream)
+			sequentialGroup.Done()
+		})
+		sequentialGroup.Wait()
+		sequentialGroup.Add(1)
+	}
+}

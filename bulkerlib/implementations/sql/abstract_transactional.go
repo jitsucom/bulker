@@ -58,7 +58,7 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		s3Config := implementations.S3Config{AccessKey: s3.AccessKeyID, SecretKey: s3.SecretKey, Bucket: s3.Bucket, Region: s3.Region, FileConfig: implementations.FileConfig{Format: ps.sqlAdapter.GetBatchFileFormat(), Compression: ps.sqlAdapter.GetBatchFileCompression()}}
 		ps.s3, err = implementations.NewS3(&s3Config)
 		if err != nil {
-			return fmt.Errorf("failed to setup s3 client: %w", err)
+			return fmt.Errorf("failed to setup s3 client: %v", err)
 		}
 	}
 	localBatchFile := localBatchFileOption.Get(&ps.options)
@@ -86,8 +86,6 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		if err != nil {
 			return err
 		}
-		//set transactional adapter so all table modification will be performed inside transaction
-		ps.sqlAdapter.TableHelper().SetSQLAdapter(ps.tx)
 	}
 
 	return nil
@@ -300,7 +298,7 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 func (ps *AbstractTransactionalSQLStream) insert(ctx context.Context, targetTable *Table, processedObject types.Object) (err error) {
 	ps.adjustTables(ctx, targetTable, processedObject)
 	ps.updateRepresentationTable(ps.tmpTable)
-	ps.tmpTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.id, ps.tmpTable)
+	ps.tmpTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, ps.tmpTable)
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure table")
 	}
@@ -360,29 +358,19 @@ func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulk
 }
 
 func (ps *AbstractTransactionalSQLStream) getPKValue(object types.Object) (string, error) {
-	l := len(ps.pkColumns)
+	pkColumns := ps.pkColumns
+	l := len(pkColumns)
 	if l == 0 {
 		return "", fmt.Errorf("primary key is not set")
 	}
 	if l == 1 {
-		for col := range ps.pkColumns {
-			pkValue, ok := object[ps.sqlAdapter.ColumnName(col)]
-			if !ok {
-				return "", fmt.Errorf("primary key [%s] is not found in the object", col)
-			}
-			return fmt.Sprint(pkValue), nil
-		}
+		pkValue, _ := object[ps.sqlAdapter.ColumnName(pkColumns[0])]
+		return fmt.Sprint(pkValue), nil
 	}
-	var builder strings.Builder
-	for col := range ps.pkColumns {
-		pkValue, ok := object[col]
-		if ok {
-			builder.WriteString(fmt.Sprint(pkValue))
-			builder.WriteString("_")
-		}
+	pkArr := make([]string, 0, l)
+	for _, col := range pkColumns {
+		pkValue, _ := object[ps.sqlAdapter.ColumnName(col)]
+		pkArr = append(pkArr, fmt.Sprint(pkValue))
 	}
-	if builder.Len() > 0 {
-		return builder.String(), nil
-	}
-	return "", fmt.Errorf("primary key columns not found in the object")
+	return strings.Join(pkArr, "_###_"), nil
 }

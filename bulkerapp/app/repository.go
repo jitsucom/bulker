@@ -6,6 +6,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"sync"
 )
 
@@ -103,7 +104,7 @@ func (r *Repository) changeListener() {
 	for range r.configurationSource.ChangesChannel() {
 		err := r.init()
 		if err != nil {
-			r.Errorf("failed to reload repository: %w", err)
+			r.Errorf("failed to reload repository: %v", err)
 		}
 	}
 	r.Infof("change listener stopped.")
@@ -131,7 +132,7 @@ func NewRepository(_ *Config, configurationSource ConfigurationSource) (*Reposit
 	if err != nil {
 		return nil, err
 	}
-	go r.changeListener()
+	safego.RunWithRestart(r.changeListener)
 	return &r, nil
 }
 

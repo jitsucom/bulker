@@ -29,7 +29,7 @@ type AbstractFileStorageStream struct {
 
 	flatten         bool
 	merge           bool
-	pkColumns       utils.Set[string]
+	pkColumns       []string
 	timestampColumn string
 
 	batchFile          *os.File
@@ -58,7 +58,7 @@ func newAbstractFileStorageStream(id string, p implementations2.FileAdapter, fil
 	if ps.merge && len(pkColumns) == 0 {
 		return AbstractFileStorageStream{}, fmt.Errorf("MergeRows option requires primary key option. Please provide WithPrimaryKey option")
 	}
-	ps.pkColumns = pkColumns
+	ps.pkColumns = pkColumns.ToSlice()
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
 	if ps.merge {
 		ps.batchFileLinesByPK = make(map[string]int)
@@ -230,31 +230,21 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 }
 
 func (ps *AbstractFileStorageStream) getPKValue(object types2.Object) (string, error) {
-	l := len(ps.pkColumns)
+	pkColumns := ps.pkColumns
+	l := len(pkColumns)
 	if l == 0 {
 		return "", fmt.Errorf("primary key is not set")
 	}
 	if l == 1 {
-		for col := range ps.pkColumns {
-			pkValue, ok := object[col]
-			if !ok {
-				return "", fmt.Errorf("primary key [%s] is not found in the object", col)
-			}
-			return fmt.Sprint(pkValue), nil
-		}
+		pkValue, _ := object[pkColumns[0]]
+		return fmt.Sprint(pkValue), nil
 	}
-	var builder strings.Builder
-	for col := range ps.pkColumns {
-		pkValue, ok := object[col]
-		if ok {
-			builder.WriteString(fmt.Sprint(pkValue))
-			builder.WriteString("_")
-		}
+	pkArr := make([]string, 0, l)
+	for _, col := range pkColumns {
+		pkValue, _ := object[col]
+		pkArr = append(pkArr, fmt.Sprint(pkValue))
 	}
-	if builder.Len() > 0 {
-		return builder.String(), nil
-	}
-	return "", fmt.Errorf("primary key columns not found in the object")
+	return strings.Join(pkArr, "_###_"), nil
 }
 
 func (ps *AbstractFileStorageStream) writeToBatchFile(ctx context.Context, processedObject types2.Object) error {

@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"net/http"
+	"runtime/debug"
 	"time"
 )
 
@@ -32,6 +35,12 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	err = appbase.InitAppConfig(a.config, settings)
 	if err != nil {
 		return err
+	}
+	safego.GlobalRecoverHandler = func(value interface{}) {
+		logging.Error("panic")
+		logging.Error(value)
+		logging.Error(string(debug.Stack()))
+		metrics.Panics().Inc()
 	}
 	a.kafkaConfig = a.config.GetKafkaConfig()
 

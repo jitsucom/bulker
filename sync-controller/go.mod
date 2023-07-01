@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/gin-gonic/gin v1.9.1
-	github.com/jackc/pgx/v5 v5.3.1
+	github.com/jackc/pgx/v5 v5.4.1
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/spf13/viper v1.13.0
 	k8s.io/api v0.26.3

@@ -2,7 +2,10 @@ module github.com/jitsucom/bulker/sync-sidecar
 
 go 1.20
 
-require github.com/jackc/pgx/v5 v5.3.1
+require (
+    github.com/jackc/pgx/v5 v5.4.1
+	github.com/google/uuid v1.3.0
+)
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect

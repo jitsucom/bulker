@@ -27,7 +27,7 @@ type GCSBulker struct {
 func NewGCSBulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	gcsConfig := &GCSConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, gcsConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse destination config: %w", err)
+		return nil, fmt.Errorf("failed to parse destination config: %v", err)
 	}
 	googleConfig := implementations2.GoogleConfig{
 		FileConfig: gcsConfig.FileConfig,

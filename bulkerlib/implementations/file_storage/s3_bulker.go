@@ -22,7 +22,7 @@ type S3Bulker struct {
 func NewS3Bulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	s3Config := &implementations.S3Config{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, s3Config); err != nil {
-		return nil, fmt.Errorf("failed to parse destination config: %w", err)
+		return nil, fmt.Errorf("failed to parse destination config: %v", err)
 	}
 	s3adapter, err := implementations.NewS3(s3Config)
 	if err != nil {

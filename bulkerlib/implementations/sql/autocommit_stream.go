@@ -34,14 +34,14 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	if err != nil {
 		return
 	}
-	dstTable, err := ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.id, table)
+	dstTable, err := ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
 	if err == nil {
 		// for autocommit mode this method only tries to convert values to existing column types
 		columnsAdded := ps.adjustTableColumnTypes(dstTable, table, processedObject)
 		if columnsAdded {
 			ps.updateRepresentationTable(dstTable)
 			// if new columns were added - update table. (for _unmapped_data column)
-			dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.id, dstTable)
+			dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, dstTable)
 		}
 		if err == nil {
 			ps.updateRepresentationTable(dstTable)
@@ -50,7 +50,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	}
 	if err != nil {
 		// give another try without using table cache
-		dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.id, table)
+		dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.sqlAdapter, ps.id, table)
 		if err != nil {
 			ps.updateRepresentationTable(table)
 			err = errorj.Decorate(err, "failed to ensure table")
@@ -61,7 +61,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		if columnsAdded {
 			ps.updateRepresentationTable(dstTable)
 			// if new columns were added - update table. (for _unmapped_data column)
-			dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.id, dstTable)
+			dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, dstTable)
 			if err != nil {
 				err = errorj.Decorate(err, "failed to ensure table")
 				return

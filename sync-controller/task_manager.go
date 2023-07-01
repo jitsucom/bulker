@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"strings"
 	"time"
@@ -24,7 +25,7 @@ func NewTaskManager(appContext *Context) (*TaskManager, error) {
 
 	t := &TaskManager{Service: base, config: appContext.config, jobRunner: appContext.jobRunner, dbpool: appContext.dbpool,
 		closeCh: make(chan struct{})}
-	go t.listenTaskStatus()
+	safego.RunWithRestart(t.listenTaskStatus)
 	return t, nil
 }
 

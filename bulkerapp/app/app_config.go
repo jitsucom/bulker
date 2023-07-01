@@ -145,7 +145,7 @@ func (ac *Config) GetKafkaConfig() *kafka.ConfigMap {
 		sasl := map[string]interface{}{}
 		err := hjson.Unmarshal([]byte(ac.KafkaSASL), &sasl)
 		if err != nil {
-			panic(fmt.Errorf("error parsing Kafka SASL config: %w", err))
+			panic(fmt.Errorf("error parsing Kafka SASL config: %v", err))
 		}
 		for k, v := range sasl {
 			_ = kafkaConfig.SetKey("sasl."+k, v)

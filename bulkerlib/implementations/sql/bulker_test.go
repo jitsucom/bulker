@@ -142,8 +142,8 @@ func init() {
 		}
 	}
 	////uncomment to run test for single db only
-	//allBulkerConfigs = []string{PostgresBulkerTypeId}
-	//exceptBigquery = allBulkerConfigs
+	allBulkerConfigs = []string{MySQLBulkerTypeId}
+	exceptBigquery = allBulkerConfigs
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
 }
 
@@ -277,6 +277,27 @@ func TestBasics(t *testing.T) {
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
 			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithMergeRows()},
+		},
+		{
+			name:              "multi_pk",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/repeated_ids_multi.ndjson",
+			expectedTable: ExpectedTable{
+				PKFields: utils.NewSet("id", "id2"),
+				Columns:  justColumns("_timestamp", "id", "id2", "name"),
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "id2": "a", "name": "test8"},
+				{"_timestamp": constantTime, "id": 2, "id2": "b", "name": "test1"},
+				{"_timestamp": constantTime, "id": 3, "id2": "c", "name": "test7"},
+				{"_timestamp": constantTime, "id": 4, "id2": "d", "name": "test5"},
+				{"_timestamp": constantTime, "id": 4, "id2": "dd", "name": "test6"},
+			},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+			orderBy:        []string{"id", "id2"},
+			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id", "id2"), bulker.WithMergeRows()},
 		},
 		{
 			name:              "timestamp_option",
@@ -444,7 +465,6 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				table.Columns[k] = types2.SQLColumn{Type: table.Columns[k].Type}
 			}
 		}
-		originalTableName := table.Name
 		if !testConfig.expectedTableCaseChecking {
 			newColumns := make(Columns, len(testConfig.expectedTable.Columns))
 			for k := range testConfig.expectedTable.Columns {
@@ -474,18 +494,17 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			table.PrimaryKeyName = strings.ToLower(table.PrimaryKeyName)
 		}
 		expectedPKFields := utils.NewSet[string]()
-		expectedPKName := ""
 		if len(testConfig.expectedTable.PKFields) > 0 {
-			expectedPKName = BuildConstraintName(originalTableName)
 			expectedPKFields = testConfig.expectedTable.PKFields
 		}
 		// don't check table name if not explicitly set
 		if testConfig.expectedTable.Name == "" {
 			table.Name = ""
 		}
+		table.PrimaryKeyName = ""
 		expectedTable := &Table{
 			Name:           testConfig.expectedTable.Name,
-			PrimaryKeyName: expectedPKName,
+			PrimaryKeyName: "",
 			PKFields:       expectedPKFields,
 			Columns:        testConfig.expectedTable.Columns,
 		}

@@ -106,7 +106,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		if ok && kafkaErr.Code() == kafka.ErrTopicAlreadyExists {
 			r.Warnf("Topic %s already exists", topicId)
 		} else {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't create topic", false, fmt.Errorf("topicId %s: %w", topicId, err), "")
+			rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't create topic", false, fmt.Errorf("topicId %s: %v", topicId, err), "")
 			return
 		}
 	}
@@ -127,7 +127,11 @@ func (r *Router) EventsHandler(c *gin.Context) {
 func (r *Router) BulkHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
-	jobId := c.DefaultQuery("jobId", fmt.Sprintf("%s_%s_%s", destinationId, tableName, uuid.New()))
+	taskId := c.DefaultQuery("taskId", uuid.New())
+	jobId := c.DefaultQuery("jobId", fmt.Sprintf("%s_%s_%s", destinationId, tableName, taskId))
+	bulkMode := bulker.BulkMode(c.DefaultQuery("mode", string(bulker.ReplaceTable)))
+	pkeys := c.QueryArray("pk")
+
 	mode := ""
 	var rError appbase.RouterError
 	defer func() {
@@ -148,8 +152,11 @@ func (r *Router) BulkHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), "")
 		return
 	}
-	//TODO: Replace hardcoded ReplaceTable mode with value from destination
-	bulkerStream, err := destination.bulker.CreateStream(jobId, tableName, bulker.ReplaceTable, destination.streamOptions.Options...)
+	var streamOptions []bulker.StreamOption
+	if len(pkeys) > 0 {
+		streamOptions = append(streamOptions, bulker.WithPrimaryKey(pkeys...), bulker.WithMergeRows())
+	}
+	bulkerStream, err := destination.bulker.CreateStream(jobId, tableName, bulkMode, streamOptions...)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "create stream error", true, err, "")
 		return
@@ -212,7 +219,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			for _, streamId := range eventsLogIds {
 				_, e := r.eventsLogService.PostEvent(EventTypeIncomingError, streamId, eventsLogObj)
 				if e != nil {
-					r.Errorf("Failed to post event to events log service: %w", e)
+					r.Errorf("Failed to post event to events log service: %v", e)
 				}
 			}
 			metrics.IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
@@ -230,7 +237,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		for _, streamId := range eventsLogIds {
 			_, e := r.eventsLogService.PostEvent(EventTypeIncomingAll, streamId, eventsLogObj)
 			if e != nil {
-				r.Errorf("Failed to post event to events log service: %w", e)
+				r.Errorf("Failed to post event to events log service: %v", e)
 			}
 		}
 	}()
@@ -242,7 +249,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	ingestMessage := IngestMessage{}
 	err = jsoniter.Unmarshal(body, &ingestMessage)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing IngestMessage", false, fmt.Errorf("%w: %s", err, string(body)), "")
+		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing IngestMessage", false, fmt.Errorf("%v: %s", err, string(body)), "")
 		return
 	}
 	messageId := ingestMessage.MessageId
@@ -365,7 +372,7 @@ func (r *Router) FailedHandler(c *gin.Context) {
 				break
 			}
 			errorID := uuid.NewLettersNumbers()
-			err = fmt.Errorf("error# %s: couldn't read kafka message from topic: %s : %w", errorID, topicId, kafkaErr)
+			err = fmt.Errorf("error# %s: couldn't read kafka message from topic: %s : %v", errorID, topicId, kafkaErr)
 			r.Errorf(err.Error())
 			jsn["ERROR"] = fmt.Errorf("error# %s: couldn't read kafka message", errorID).Error()
 		} else {

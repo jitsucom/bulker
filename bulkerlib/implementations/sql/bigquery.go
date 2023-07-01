@@ -93,12 +93,12 @@ type BigQuery struct {
 func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &implementations.GoogleConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
-		return nil, fmt.Errorf("failed to parse destination config: %w", err)
+		return nil, fmt.Errorf("failed to parse destination config: %v", err)
 	}
 	var err error
 	err = config.Validate()
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate config: %w", err)
+		return nil, fmt.Errorf("failed to validate config: %v", err)
 	}
 	var client *bigquery.Client
 	ctx := context.Background()
@@ -109,7 +109,7 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 
 	if err != nil {
-		err = fmt.Errorf("error creating BigQuery client: %w", err)
+		err = fmt.Errorf("error creating BigQuery client: %v", err)
 	}
 	var queryLogger *logging.QueryLogger
 	if bulkerConfig.LogLevel == bulker.Verbose {
@@ -118,7 +118,7 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	b := &BigQuery{
 		Service: appbase.NewServiceBase(bulkerConfig.Id),
 		client:  client, config: config, queryLogger: queryLogger}
-	b.tableHelper = NewTableHelper(b, 1024, '`')
+	b.tableHelper = NewTableHelper(1024, '`')
 	b.tableHelper.columnNameFunc = columnNameFunc
 	b.tableHelper.tableNameFunc = tableNameFunc
 	return b, err
@@ -282,7 +282,7 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 	pkFieldName := BuildConstraintName(table.Name)
 	pkFieldsString, ok := meta.Labels[pkFieldName]
 	if ok {
-		pkFields := strings.Split(pkFieldsString, ",")
+		pkFields := strings.Split(pkFieldsString, "---")
 		for _, pkField := range pkFields {
 			table.PKFields.Put(pkField)
 		}
@@ -321,7 +321,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	}
 	var labels map[string]string
 	if len(table.PKFields) > 0 && table.PrimaryKeyName != "" {
-		labels = map[string]string{table.PrimaryKeyName: strings.Join(table.GetPKFields(), ",")}
+		labels = map[string]string{table.PrimaryKeyName: strings.Join(table.GetPKFields(), "---")}
 	}
 	tableMetaData := bigquery.TableMetadata{Name: tableName, Schema: bqSchema, Labels: labels}
 	if table.Partition.Field == "" && table.TimestampColumn != "" {

@@ -73,7 +73,7 @@ type Redshift struct {
 func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &RedshiftConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
-		return nil, fmt.Errorf("failed to parse destination config: %w", err)
+		return nil, fmt.Errorf("failed to parse destination config: %v", err)
 	}
 	if config.Port == 0 {
 		config.Port = 5439
@@ -90,7 +90,7 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	r.temporaryTables = true
 	r._columnDDLFunc = redshiftColumnDDL
 	r.initTypes(redshiftTypes)
-	r.tableHelper = NewTableHelper(r, 127, '"')
+	r.tableHelper = NewTableHelper(127, '"')
 	//// Redshift is case insensitive by default
 	//r._columnNameFunc = strings.ToLower
 	//r._tableNameFunc = func(config *DataSourceConfig, tableName string) string { return tableName }
@@ -275,9 +275,8 @@ func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table
 	table.PKFields = pkFields
 	table.PrimaryKeyName = primaryKeyName
 
-	jitsuPrimaryKeyName := BuildConstraintName(table.Name)
-	if primaryKeyName != "" && primaryKeyName != jitsuPrimaryKeyName {
-		p.Warnf("table: %s.%s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", p.config.Schema, table.Name, primaryKeyName)
+	if primaryKeyName != "" && !strings.HasPrefix(primaryKeyName, BulkerManagedPkConstraintPrefix) {
+		p.Infof("table: %s.%s has a primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key configuration provided in Jitsu config will be ignored.", p.config.Schema, table.Name, primaryKeyName)
 	}
 	return table, nil
 }

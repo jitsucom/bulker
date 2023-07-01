@@ -27,7 +27,7 @@ type AbstractSQLStream struct {
 	inited bool
 
 	customTypes     types.SQLTypes
-	pkColumns       utils.Set[string]
+	pkColumns       []string
 	timestampColumn string
 }
 
@@ -43,7 +43,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 		return AbstractSQLStream{}, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	var customFields = ColumnTypesOption.Get(&ps.options)
-	ps.pkColumns = pkColumns
+	ps.pkColumns = pkColumns.ToSlice()
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
 
 	//TODO: max column?
@@ -60,7 +60,7 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Obje
 	if err != nil {
 		return nil, nil, err
 	}
-	table, processedObject := ps.sqlAdapter.TableHelper().MapTableSchema(batchHeader, processedObject, ps.pkColumns, ps.timestampColumn)
+	table, processedObject := ps.sqlAdapter.TableHelper().MapTableSchema(ps.sqlAdapter, batchHeader, processedObject, ps.pkColumns, ps.timestampColumn)
 	ps.state.ProcessedRows++
 	return table, processedObject, nil
 }

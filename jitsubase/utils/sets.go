@@ -1,8 +1,13 @@
 package utils
 
-type Set[K comparable] map[K]struct{}
+import (
+	"golang.org/x/exp/constraints"
+	"sort"
+)
 
-func NewSet[K comparable](values ...K) Set[K] {
+type Set[K constraints.Ordered] map[K]struct{}
+
+func NewSet[K constraints.Ordered](values ...K) Set[K] {
 	s := make(Set[K])
 	s.PutAll(values)
 	return s
@@ -61,6 +66,9 @@ func (s Set[K]) ToSlice() []K {
 	for k := range s {
 		slice = append(slice, k)
 	}
+	sort.Slice(slice, func(i, j int) bool {
+		return slice[i] < slice[j]
+	})
 	return slice
 }
 

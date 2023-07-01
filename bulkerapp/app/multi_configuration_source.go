@@ -1,6 +1,9 @@
 package app
 
-import "reflect"
+import (
+	"github.com/jitsucom/bulker/jitsubase/safego"
+	"reflect"
+)
 
 type MultiConfigurationSource struct {
 	configurationSources []ConfigurationSource
@@ -13,7 +16,7 @@ func NewMultiConfigurationSource(configurationSources []ConfigurationSource) *Mu
 		changesChan: make(chan bool, 1),
 		closeChan:   make(chan struct{})}
 	// gather signals from all changes channels from configuration sources into one channel
-	go func() {
+	safego.RunWithRestart(func() {
 		cases := make([]reflect.SelectCase, len(configurationSources))
 		for i, cs := range configurationSources {
 			cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(cs.ChangesChannel())}
@@ -33,7 +36,7 @@ func NewMultiConfigurationSource(configurationSources []ConfigurationSource) *Mu
 				}
 			}
 		}
-	}()
+	})
 	return &mcs
 }
 

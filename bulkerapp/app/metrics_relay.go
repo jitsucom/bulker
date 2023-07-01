@@ -7,6 +7,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/prometheus/client_golang/prometheus"
@@ -53,7 +54,7 @@ func NewMetricsRelay(appConfig *Config) (*MetricsRelay, error) {
 // start metrics relay
 func (m *MetricsRelay) start() {
 	m.Infof("Starting metrics relay")
-	go func() {
+	safego.RunWithRestart(func() {
 		for {
 			select {
 			case <-m.ticker.C:
@@ -66,7 +67,7 @@ func (m *MetricsRelay) start() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 // Push metrics to destination

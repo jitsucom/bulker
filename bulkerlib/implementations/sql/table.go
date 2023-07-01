@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"sort"
 	"strings"
 )
@@ -116,7 +117,7 @@ func (t *Table) Diff(another *Table) *Table {
 
 	jitsuPrimaryKeyName := BuildConstraintName(t.Name)
 	//check if primary key is maintained by Jitsu (for Postgres and Redshift)
-	if t.PrimaryKeyName != "" && strings.ToLower(t.PrimaryKeyName) != strings.ToLower(jitsuPrimaryKeyName) {
+	if t.PrimaryKeyName != "" && !strings.HasPrefix(strings.ToLower(t.PrimaryKeyName), BulkerManagedPkConstraintPrefix) {
 		//primary key isn't maintained by Jitsu: do nothing
 		return diff
 	}
@@ -150,7 +151,7 @@ func (t *Table) FitsToTable(destination *Table) bool {
 }
 
 func BuildConstraintName(tableName string) string {
-	return fmt.Sprintf("%s%x_pk", BulkerManagedPkConstraintPrefix, utils.HashString(tableName))
+	return fmt.Sprintf("%s%s_pk", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers())
 }
 
 func (c Columns) Clone() Columns {

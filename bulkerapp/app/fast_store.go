@@ -90,12 +90,12 @@ func (fs *FastStore) getStreamByKeyId(keyId string) (*ApiKeyBinding, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fs.NewError("failed to get stream binding by keyId: %w", err)
+		return nil, fs.NewError("failed to get stream binding by keyId: %v", err)
 	}
 	binding := ApiKeyBinding{}
 	err = jsoniter.Unmarshal(keyBytes, &binding)
 	if err != nil {
-		return nil, fs.NewError("failed to unmarshal binding bytes for keyId [%s]: %w: %s", keyId, err, string(keyBytes))
+		return nil, fs.NewError("failed to unmarshal binding bytes for keyId [%s]: %v: %s", keyId, err, string(keyBytes))
 	}
 	return &binding, nil
 }
@@ -109,12 +109,12 @@ func (fs *FastStore) GetStreamById(slug string) (*StreamWithDestinations, error)
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fs.NewError("failed to get stream by slug [%s]: %w", slug, err)
+		return nil, fs.NewError("failed to get stream by slug [%s]: %v", slug, err)
 	}
 	stream := StreamWithDestinations{}
 	err = jsoniter.Unmarshal(streamBytes, &stream)
 	if err != nil {
-		return nil, fs.NewError("failed to unmarshal stream bytes for slug [%s]: %w: %s", slug, err, string(streamBytes))
+		return nil, fs.NewError("failed to unmarshal stream bytes for slug [%s]: %v: %s", slug, err, string(streamBytes))
 	}
 	return &stream, nil
 }
@@ -130,12 +130,12 @@ func (fs *FastStore) GetStreamsByDomain(domain string) ([]StreamWithDestinations
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fs.NewError("failed to get stream by domain [%s]: %w", domain, err)
+		return nil, fs.NewError("failed to get stream by domain [%s]: %v", domain, err)
 	}
 	stream := make([]StreamWithDestinations, 0, 2)
 	err = jsoniter.Unmarshal(streamBytes, &stream)
 	if err != nil {
-		return nil, fs.NewError("failed to unmarshal stream bytes for domain [%s]: %w: %s", domain, err, string(streamBytes))
+		return nil, fs.NewError("failed to unmarshal stream bytes for domain [%s]: %v: %s", domain, err, string(streamBytes))
 	}
 	return stream, nil
 }

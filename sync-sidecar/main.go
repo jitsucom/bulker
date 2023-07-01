@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"io"
@@ -45,6 +46,8 @@ type SideCar struct {
 	currentStream     *io.PipeWriter
 	currentStreamName string
 	processedStreams  map[string]int
+	catalog           map[string]*Stream
+	state             *StateRow
 	eventsCounter     int
 	streamsWaitGroup  sync.WaitGroup
 }
@@ -101,7 +104,17 @@ func (s *SideCar) Run() {
 			}
 		}
 	}()
-	s.log("Sidecar. stdout: %s, stderr: %s, syncId: %s, bulkerURL: %s, startedAt: %s", s.stdOutPipeFile, s.stdErrPipeFile, s.syncId, s.bulkerURL, s.startedAt.Format(time.RFC3339))
+	s.log("Sidecar. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
+	//load file from /config/catalog.json and parse it
+	err = s.loadCatalog()
+	if err != nil {
+		s.panic("Error loading catalog: %v", err)
+	}
+	s.log("Catalog loaded. %d streams selected", len(s.catalog))
+	state, ok := s.loadState()
+	if ok {
+		s.log("State loaded: %s", state)
+	}
 
 	var stdOutErrWaitGroup sync.WaitGroup
 
@@ -171,16 +184,29 @@ func (s *SideCar) Run() {
 		}
 		s.streamsWaitGroup.Wait()
 	}()
-
 	stdOutErrWaitGroup.Wait()
+	s.saveState()
+
 }
 
 func (s *SideCar) processState(state *StateRow) {
-	stateJson, err := json.Marshal(state.Data)
-	if err != nil {
-		s.panic("error marshalling state %+v: %v", state.Data, err)
+	s.log("STATE: %+v", state.Data)
+	s.state = state
+}
+
+func (s *SideCar) saveState() {
+	if s.state == nil {
+		return
 	}
-	s.log("STATE: %s", stateJson)
+	if s.isErr() {
+		s.err("STATE: not saving state because of previous errors")
+		return
+	}
+	stateJson, err := json.Marshal(s.state.Data)
+	if err != nil {
+		s.panic("error marshalling state %+v: %v", s.state.Data, err)
+	}
+	s.log("SAVING STATE: %s", stateJson)
 	if !s.isErr() {
 		s.sendState(string(stateJson))
 	}
@@ -208,12 +234,11 @@ func (s *SideCar) processConnectionStatus(status *StatusRow) {
 	}
 }
 
-func (s *SideCar) processCatalog(catalog *CatalogRow) {
+func (s *SideCar) processCatalog(catalog string) {
 	// ignore previous error messages since we got result
 	s.firstErr = nil
-	catalogJson, _ := json.Marshal(catalog)
-	s.log("CATALOG: %s", catalogJson)
-	err := db.UpsertCatalog(s.dbpool, s.packageName, s.packageVersion, s.storageKey, string(catalogJson), s.startedAt, "SUCCESS", "")
+	s.log("CATALOG: %s", catalog)
+	err := db.UpsertCatalog(s.dbpool, s.packageName, s.packageVersion, s.storageKey, catalog, s.startedAt, "SUCCESS", "")
 	if err != nil {
 		s.panic("error updating catalog for: %s: %v", s.storageKey, err)
 	}
@@ -241,13 +266,26 @@ func (s *SideCar) processRecord(rec *RecordRow) {
 		s.streamsWaitGroup.Add(1)
 		go func() {
 			defer s.streamsWaitGroup.Done()
-			s.log("creating stream: %s", streamName)
-			bd, err := s.bulkerRequest(fmt.Sprintf("%s/bulk/%s?tableName=%s", s.bulkerURL, s.syncId, url.QueryEscape(streamName)), r)
+			str, ok := s.catalog[streamName]
+			if !ok {
+				s.panic("stream '%s' is not in catalog", streamName)
+				return
+			}
+			s.log("creating stream: %s mode: %s primary keys: %s", streamName, str.SyncMode, str.GetPrimaryKeys())
+			mode := "replace_table"
+			if str.SyncMode == "incremental" {
+				mode = "batch"
+			}
+			bulkerUrl := fmt.Sprintf("%s/bulk/%s?tableName=%s&mode=%s&taskId=%s", s.bulkerURL, s.syncId, url.QueryEscape(streamName), mode, s.taskId)
+			for _, v := range str.GetPrimaryKeys() {
+				bulkerUrl += fmt.Sprintf("&pk=%s", url.QueryEscape(v))
+			}
+			_, err := s.bulkerRequest(bulkerUrl, r)
 			if err != nil {
 				s.panic("error sending bulk: %v", err)
 				return
 			}
-			s.log("bulk response: %s", string(bd))
+			s.log("stream %s: bulker response: OK", streamName)
 		}()
 	}
 	data, err := json.Marshal(rec.Data)
@@ -311,7 +349,8 @@ func (s *SideCar) _log(logger, level, message string) {
 
 func (s *SideCar) sendLog(logger, level string, message string) error {
 	logMessage := map[string]any{
-		"timestamp": time.Now(),
+		"id":        uuid.New().String(),
+		"timestamp": time.Now().Format(time.RFC3339Nano),
 		"sync_id":   s.syncId,
 		"task_id":   s.taskId,
 		"logger":    logger,
@@ -369,6 +408,42 @@ func (s *SideCar) bulkerRequest(url string, payload io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("POST %s error %v: %s", url, res.Status, string(bd))
 	}
 	return bd, nil
+}
+
+func (s *SideCar) loadState() (string, bool) {
+	//load catalog from file /config/catalog.json and parse it
+	statePath := "/config/state.json"
+	if _, err := os.Stat(statePath); os.IsNotExist(err) {
+		return "", false
+	}
+	state, err := os.ReadFile(statePath)
+	if err != nil {
+		return "", false
+	}
+	return string(state), true
+}
+
+func (s *SideCar) loadCatalog() error {
+	//load catalog from file /config/catalog.json and parse it
+	catalogPath := "/config/catalog.json"
+	if _, err := os.Stat(catalogPath); os.IsNotExist(err) {
+		return fmt.Errorf("catalog file %s doesn't exist", catalogPath)
+	}
+	catalogFile, err := os.ReadFile(catalogPath)
+	if err != nil {
+		return fmt.Errorf("error opening catalog file: %v", err)
+	}
+	catalog := Catalog{}
+	err = json.Unmarshal(catalogFile, &catalog)
+	if err != nil {
+		return fmt.Errorf("error parsing catalog file: %v", err)
+	}
+	mp := make(map[string]*Stream, len(catalog.Streams))
+	for _, stream := range catalog.Streams {
+		mp[stream.Name] = stream
+	}
+	s.catalog = mp
+	return nil
 }
 
 func joinStrings(str1, str2 string) string {

@@ -162,7 +162,7 @@ type ClickHouse struct {
 func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	config := &ClickHouseConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
-		return nil, fmt.Errorf("failed to parse destination config: %w", err)
+		return nil, fmt.Errorf("failed to parse destination config: %v", err)
 	}
 	err := config.Validate()
 	if err != nil {
@@ -225,7 +225,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 		tableStatementFactory: tableStatementFactory,
 		httpMode:              httpMode,
 	}
-	c.tableHelper = NewTableHelper(c, 63, '`')
+	c.tableHelper = NewTableHelper(63, '`')
 	return c, err
 }
 
@@ -674,7 +674,7 @@ func (ch *ClickHouse) dropTable(ctx context.Context, fullTableName string, onClu
 func (ch *ClickHouse) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
 	targetTable, err := ch.GetTableSchema(ctx, targetTableName)
 	if err != nil {
-		return fmt.Errorf("failed to check existence of target table: %s : %w", targetTableName, err)
+		return fmt.Errorf("failed to check existence of target table: %s : %v", targetTableName, err)
 	}
 	if targetTable.Exists() {
 		//exchange local tables only.
@@ -726,7 +726,7 @@ func (ch *ClickHouse) createDistributedTableInTransaction(ctx context.Context, o
 		ch.quotedTableName(originTable.Name), ch.getOnClusterClause(), ch.quotedLocalTableName(originTableName), ch.config.Cluster, ch.config.Database, ch.quotedLocalTableName(originTableName), shardingKey)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
-		return fmt.Errorf("error creating distributed table statement with statement [%s] for [%s] : %w", statement, ch.quotedTableName(originTableName), err)
+		return fmt.Errorf("error creating distributed table statement with statement [%s] for [%s] : %v", statement, ch.quotedTableName(originTableName), err)
 	}
 	return nil
 }
@@ -757,7 +757,7 @@ func convertType(value any, column types.SQLColumn) (any, error) {
 		case string:
 			f, err := strconv.ParseFloat(n, 64)
 			if err != nil {
-				return v, fmt.Errorf("error converting string to float64: %w", err)
+				return v, fmt.Errorf("error converting string to float64: %v", err)
 			}
 			return f, nil
 		}
@@ -774,7 +774,7 @@ func convertType(value any, column types.SQLColumn) (any, error) {
 		case string:
 			f, err := strconv.Atoi(n)
 			if err != nil {
-				return v, fmt.Errorf("error converting string to int: %w", err)
+				return v, fmt.Errorf("error converting string to int: %v", err)
 			}
 			return int64(f), nil
 		}
@@ -783,7 +783,7 @@ func convertType(value any, column types.SQLColumn) (any, error) {
 		case string:
 			f, err := strconv.ParseBool(n)
 			if err != nil {
-				return v, fmt.Errorf("error converting string to bool: %w", err)
+				return v, fmt.Errorf("error converting string to bool: %v", err)
 			}
 			return f, nil
 		}

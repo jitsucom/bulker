@@ -7,6 +7,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/mitchellh/mapstructure"
+	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 	"io"
 	"os"
@@ -15,7 +16,7 @@ import (
 )
 
 const destinationsKey = "destinations"
-const defaultEnvDestinationPrefix = "BULKER_DESTINATION"
+const defaultEnvDestinationPrefix = "DESTINATION"
 
 type DestinationConfig struct {
 	UpdatedAt           time.Time `mapstructure:"updatedAt" json:"updatedAt"`
@@ -37,10 +38,11 @@ type ConfigurationSource interface {
 }
 
 func InitConfigurationSource(config *Config) (ConfigurationSource, error) {
+	envPrefix := config.AppSetting.EnvPrefixWithUnderscore()
 	cfgSource := config.ConfigSource
 	if cfgSource == "" {
-		logging.Infof("BULKER_CONFIG_SOURCE is not set. Using environment variables configuration source with prefix: %s", defaultEnvDestinationPrefix)
-		return NewEnvConfigurationSource(defaultEnvDestinationPrefix), nil
+		logging.Infof("%sCONFIG_SOURCE is not set. Using environment variables configuration source with prefix: %s%s", envPrefix, envPrefix, defaultEnvDestinationPrefix)
+		return NewEnvConfigurationSource(envPrefix, defaultEnvDestinationPrefix), nil
 	} else if cfgSource == "redis" {
 		config.ConfigSource = config.RedisURL
 		cfgSource = config.RedisURL
@@ -51,7 +53,7 @@ func InitConfigurationSource(config *Config) (ConfigurationSource, error) {
 		filePath := strings.TrimPrefix(cfgSource, "file://")
 		yamlConfig, err := os.ReadFile(filePath)
 		if err != nil {
-			return nil, fmt.Errorf("❗️error reading yaml config file: %s: %w", filePath, err)
+			return nil, fmt.Errorf("❗️error reading yaml config file: %s: %v", filePath, err)
 		}
 		configurationSource, err = NewYamlConfigurationSource(yamlConfig)
 		if err != nil {
@@ -61,52 +63,20 @@ func InitConfigurationSource(config *Config) (ConfigurationSource, error) {
 		var err error
 		configurationSource, err = NewRedisConfigurationSource(config)
 		if err != nil {
-			return nil, fmt.Errorf("❗️error while init redis configuration source: %s: %w", cfgSource, err)
+			return nil, fmt.Errorf("❗️error while init redis configuration source: %s: %v", cfgSource, err)
 		}
-	} else if strings.HasPrefix(cfgSource, "env://BULKER_DESTINATION") {
-		envPrefix := strings.TrimPrefix(cfgSource, "env://")
-		configurationSource = NewEnvConfigurationSource(envPrefix)
+	} else if strings.HasPrefix(cfgSource, "env://") {
+		if !strings.HasPrefix(cfgSource, "env://"+envPrefix) {
+			return nil, fmt.Errorf("❗environement variable for configuration source must start with application prefix: %s got: %s", envPrefix, strings.TrimPrefix(cfgSource, "env://"))
+		}
+		dstPrefix := strings.TrimPrefix(cfgSource, "env://"+envPrefix)
+		configurationSource = NewEnvConfigurationSource(envPrefix, dstPrefix)
 	} else {
 		return nil, fmt.Errorf("❗unsupported configuration source: %s", cfgSource)
 	}
 
-	internalDestinationsSource := NewEnvConfigurationSource("BULKER_INTERNAL")
+	internalDestinationsSource := NewEnvConfigurationSource(envPrefix, "INTERNAL")
 	return NewMultiConfigurationSource([]ConfigurationSource{internalDestinationsSource, configurationSource}), nil
-}
-
-func initConfigurationSource(config *Config) (ConfigurationSource, error) {
-	cfgSource := config.ConfigSource
-	if cfgSource == "" {
-		logging.Infof("BULKER_CONFIG_SOURCE is not set. Using environment variables configuration source with prefix: %s", defaultEnvDestinationPrefix)
-		return NewEnvConfigurationSource(defaultEnvDestinationPrefix), nil
-	} else if cfgSource == "redis" {
-		config.ConfigSource = config.RedisURL
-		cfgSource = config.RedisURL
-	}
-
-	if strings.HasPrefix(cfgSource, "file://") || !strings.Contains(cfgSource, "://") {
-		filePath := strings.TrimPrefix(cfgSource, "file://")
-		yamlConfig, err := os.ReadFile(filePath)
-		if err != nil {
-			return nil, fmt.Errorf("❗️error reading yaml config file: %s: %w", filePath, err)
-		}
-		cfgSrc, err := NewYamlConfigurationSource(yamlConfig)
-		if err != nil {
-			return nil, fmt.Errorf("❗error creating yaml configuration source from config file: %s: %v", filePath, err)
-		}
-		return cfgSrc, nil
-	} else if strings.HasPrefix(cfgSource, "redis://") || strings.HasPrefix(cfgSource, "rediss://") {
-		redisConfigSource, err := NewRedisConfigurationSource(config)
-		if err != nil {
-			return nil, fmt.Errorf("❗️error while init redis configuration source: %s: %w", cfgSource, err)
-		}
-		return redisConfigSource, nil
-	} else if strings.HasPrefix(cfgSource, "env://BULKER_DESTINATION") {
-		envPrefix := strings.TrimPrefix(cfgSource, "env://")
-		return NewEnvConfigurationSource(envPrefix), nil
-	} else {
-		return nil, fmt.Errorf("❗unsupported configuration source: %s", cfgSource)
-	}
 }
 
 type YamlConfigurationSource struct {
@@ -205,9 +175,10 @@ type EnvConfigurationSource struct {
 	destinations map[string]*DestinationConfig
 }
 
-func NewEnvConfigurationSource(prefix string) *EnvConfigurationSource {
+func NewEnvConfigurationSource(envPrefix, prefix string) *EnvConfigurationSource {
 	base := appbase.NewServiceBase("env_configuration")
 	results := make(map[string]*DestinationConfig)
+	// look for all envs starting with prefix
 	envs := os.Environ()
 	for _, env := range envs {
 		parts := strings.SplitN(env, "=", 2)
@@ -215,10 +186,10 @@ func NewEnvConfigurationSource(prefix string) *EnvConfigurationSource {
 			continue
 		}
 		id := parts[0]
-		if !strings.HasPrefix(id, prefix) {
+		if !strings.HasPrefix(id, envPrefix+prefix) {
 			continue
 		}
-		id = strings.TrimPrefix(id, prefix+"_")
+		id = strings.TrimPrefix(id, envPrefix+prefix+"_")
 		value := parts[1]
 		cfg := &DestinationConfig{}
 		err := hjson.Unmarshal([]byte(value), &cfg)
@@ -226,7 +197,30 @@ func NewEnvConfigurationSource(prefix string) *EnvConfigurationSource {
 			base.Errorf("Failed to parse destination config %s: %v:\n%s", id, err, value)
 			continue
 		}
+		if len(cfg.Config.Id) > 0 {
+			id = cfg.Config.Id
+		}
 		cfg.Config.Id = id
+		base.Debugf("parsed config for destination %s: %+v", id, cfg)
+		results[id] = cfg
+	}
+	// look for all viper keys starting with prefix
+	prefix = strings.ToLower(prefix)
+	for _, env := range viper.GetViper().AllKeys() {
+		if !strings.HasPrefix(env, prefix) {
+			continue
+		}
+		id := strings.TrimPrefix(env, prefix+"_")
+		value := viper.GetString(env)
+		cfg := &DestinationConfig{}
+		err := hjson.Unmarshal([]byte(value), &cfg)
+		if err != nil {
+			base.Errorf("Failed to parse destination config %s: %v:\n%s", id, err, value)
+			continue
+		}
+		if len(cfg.Config.Id) > 0 {
+			id = cfg.Config.Id
+		}
 		base.Debugf("parsed config for destination %s: %+v", id, cfg)
 		results[id] = cfg
 	}

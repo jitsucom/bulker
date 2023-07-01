@@ -24,7 +24,6 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	if err != nil {
 		return err
 	}
-	taskStatusChan := make(chan *TaskStatus, 100)
 	a.dbpool, err = pgxpool.New(context.Background(), a.config.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("Unable to create postgres connection pool: %v\n", err)
@@ -39,14 +38,6 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	}
 	a.taskManager, err = NewTaskManager(a)
 
-	go func() {
-		for {
-			select {
-			case taskStatus := <-taskStatusChan:
-				fmt.Printf("taskStatus: %+v\n", *taskStatus)
-			}
-		}
-	}()
 	router := NewRouter(a)
 	a.server = &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", a.config.HTTPPort),

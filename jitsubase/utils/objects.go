@@ -23,7 +23,7 @@ func ParseObject[K any](inputObject any, result *K) error {
 		*result = cfg
 	case map[string]any:
 		if err := mapstructure.Decode(cfg, result); err != nil {
-			return fmt.Errorf("failed to parse map as %T : %w", result, err)
+			return fmt.Errorf("failed to parse map as %T : %v", result, err)
 		}
 	case []byte:
 		if len(cfg) == 0 {
@@ -31,11 +31,11 @@ func ParseObject[K any](inputObject any, result *K) error {
 		}
 		if cfg[0] == '{' {
 			if err := jsoniter.Unmarshal(cfg, result); err != nil {
-				return fmt.Errorf("failed to parse json as %T : %w", result, err)
+				return fmt.Errorf("failed to parse json as %T : %v", result, err)
 			}
 		} else {
 			if err := yaml.Unmarshal(cfg, result); err != nil {
-				return fmt.Errorf("failed to parse yaml as %T : %w", result, err)
+				return fmt.Errorf("failed to parse yaml as %T : %v", result, err)
 			}
 		}
 	case string:
@@ -44,11 +44,11 @@ func ParseObject[K any](inputObject any, result *K) error {
 		}
 		if cfg[0] == '{' {
 			if err := jsoniter.Unmarshal([]byte(cfg), result); err != nil {
-				return fmt.Errorf("failed to parse json as %T : %w", result, err)
+				return fmt.Errorf("failed to parse json as %T : %v", result, err)
 			}
 		} else {
 			if err := yaml.Unmarshal([]byte(cfg), result); err != nil {
-				return fmt.Errorf("failed to parse yaml as %T : %w", result, err)
+				return fmt.Errorf("failed to parse yaml as %T : %v", result, err)
 			}
 		}
 	default:

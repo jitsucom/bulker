@@ -15,6 +15,7 @@ require (
 	github.com/spf13/viper v1.13.0
 	github.com/stretchr/testify v1.8.3
 	go.uber.org/atomic v1.10.0
+	golang.org/x/exp v0.0.0-20220827204233-334a2380cb91
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v3 v3.0.1
 )

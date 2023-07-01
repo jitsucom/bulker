@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
 	"time"
@@ -35,10 +36,10 @@ func NewMetricsServer(appconfig *Config) *MetricsServer {
 }
 
 func (s *MetricsServer) start() {
-	go func() {
+	safego.RunWithRestart(func() {
 		s.Infof("Starting metrics server on %s", s.server.Addr)
 		s.Infof("%v", s.server.ListenAndServe())
-	}()
+	})
 }
 
 func (s *MetricsServer) Stop() error {

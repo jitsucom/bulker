@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"regexp"
 	"sync"
@@ -64,7 +65,7 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 	base := appbase.NewServiceBase("topic-manager")
 	admin, err := kafka.NewAdminClient(appContext.kafkaConfig)
 	if err != nil {
-		return nil, base.NewError("Error creating kafka admin client: %w", err)
+		return nil, base.NewError("Error creating kafka admin client: %v", err)
 	}
 	return &TopicManager{
 		Service:              base,
@@ -103,7 +104,7 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 // Start starts TopicManager
 func (tm *TopicManager) Start() {
 	tm.LoadMetadata()
-	go func() {
+	safego.RunWithRestart(func() {
 		ticker := time.NewTicker(time.Duration(tm.config.TopicManagerRefreshPeriodSec) * time.Second)
 		defer ticker.Stop()
 		for {
@@ -121,7 +122,7 @@ func (tm *TopicManager) Start() {
 				tm.LoadMetadata()
 			}
 		}
-	}()
+	})
 }
 
 func (tm *TopicManager) LoadMetadata() {
@@ -435,12 +436,12 @@ func (tm *TopicManager) createDestinationTopic(topic string, config map[string]s
 		if err, ok := err.(kafka.Error); ok {
 			errorType = metrics.KafkaErrorCode(err)
 		}
-		return tm.NewError("Error creating topic %s: %w", topic, err)
+		return tm.NewError("Error creating topic %s: %v", topic, err)
 	}
 	for _, res := range topicRes {
 		if res.Error.Code() != kafka.ErrNoError && res.Error.Code() != kafka.ErrTopicAlreadyExists {
 			errorType = metrics.KafkaErrorCode(res.Error)
-			return tm.NewError("Error creating topic %s: %w", res.Topic, res.Error)
+			return tm.NewError("Error creating topic %s: %v", res.Topic, res.Error)
 		}
 	}
 	tm.Infof("Created topic: %s", topic)
@@ -477,12 +478,12 @@ func (tm *TopicManager) createTopic(topic string, partitions int, config map[str
 		if err, ok := err.(kafka.Error); ok {
 			errorType = metrics.KafkaErrorCode(err)
 		}
-		return tm.NewError("Error creating topic %s: %w", topic, err)
+		return tm.NewError("Error creating topic %s: %v", topic, err)
 	}
 	for _, res := range topicRes {
 		if res.Error.Code() != kafka.ErrNoError && res.Error.Code() != kafka.ErrTopicAlreadyExists {
 			errorType = metrics.KafkaErrorCode(res.Error)
-			return tm.NewError("Error creating topic %s: %w", res.Topic, res.Error)
+			return tm.NewError("Error creating topic %s: %v", res.Topic, res.Error)
 		}
 	}
 	tm.Infof("Created topic: %s", topic)
@@ -532,7 +533,7 @@ func ParseTopicId(topic string) (destinationId, mode, tableName string, err erro
 		if tableEncoding == "b64" {
 			b, err := base64.RawURLEncoding.DecodeString(tableName)
 			if err != nil {
-				return "", "", "", fmt.Errorf("error decoding table name from topic: %s: %w", topic, err)
+				return "", "", "", fmt.Errorf("error decoding table name from topic: %s: %v", topic, err)
 			}
 			tableName = string(b)
 		}

@@ -88,6 +88,7 @@ var (
 
 	// Not used by bulker. Just added here to be treated as known options
 	FunctionsOption  = ImplementationOption[any]{Key: "functions", ParseFunc: func(serialized any) (any, error) { return nil, nil }}
+	StreamsOption    = ImplementationOption[any]{Key: "streams", ParseFunc: func(serialized any) (any, error) { return nil, nil }}
 	DataLayoutOption = ImplementationOption[string]{Key: "dataLayout", ParseFunc: utils.ParseString}
 	EventsOption     = ImplementationOption[string]{Key: "events", ParseFunc: utils.ParseString}
 	HostsOption      = ImplementationOption[string]{Key: "hosts", ParseFunc: utils.ParseString}
@@ -106,6 +107,7 @@ func init() {
 
 	// Not used by bulker. Just added here to be treated as known options
 	RegisterOption(&FunctionsOption)
+	RegisterOption(&StreamsOption)
 	RegisterOption(&DataLayoutOption)
 	RegisterOption(&EventsOption)
 	RegisterOption(&HostsOption)
@@ -153,7 +155,7 @@ func (io *ImplementationOption[V]) Parse(serializedValue any) (StreamOption, err
 	if io.ParseFunc != nil {
 		val, err := io.ParseFunc(serializedValue)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse '%s' option: %w", io.Key, err)
+			return nil, fmt.Errorf("failed to parse '%s' option: %v", io.Key, err)
 		}
 		return func(options *StreamOptions) {
 			io.Set(options, val)

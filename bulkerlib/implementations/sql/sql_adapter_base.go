@@ -698,6 +698,13 @@ func (b *SQLAdapterBase[T]) GetSQLType(dataType types2.DataType) (string, bool) 
 
 func (b *SQLAdapterBase[T]) GetDataType(sqlType string) (types2.DataType, bool) {
 	v, ok := b.reverseTypesMapping[sqlType]
+	if !ok {
+		for k, v := range b.reverseTypesMapping {
+			if strings.HasPrefix(sqlType, k) {
+				return v, true
+			}
+		}
+	}
 	return v, ok
 }
 

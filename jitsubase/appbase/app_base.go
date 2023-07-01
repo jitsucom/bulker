@@ -24,6 +24,7 @@ type Context[C any] interface {
 }
 
 type Config struct {
+	AppSetting *AppSettings
 	// InstanceId ID of bulker instance. It is used for identifying Kafka consumers.
 	// If is not set, instance id will be generated and persisted to disk (~/.{appName}/instance_id) and reused on next restart.
 	// Default: random uuid
@@ -49,6 +50,7 @@ type Config struct {
 }
 
 func (c *Config) PostInit(settings *AppSettings) error {
+	c.AppSetting = settings
 	if c.LogFormat == "json" {
 		logging.SetJsonFormatter()
 	}
@@ -156,7 +158,7 @@ func NewApp[C any](appContext Context[C], appSettings *AppSettings) *App[C] {
 	logging.SetTextFormatter()
 	err := appContext.InitContext(appSettings)
 	if err != nil {
-		panic(fmt.Errorf("failed to start app: %w", err))
+		panic(fmt.Errorf("failed to start app: %v", err))
 	}
 	return &App[C]{
 		appContext:  appContext,

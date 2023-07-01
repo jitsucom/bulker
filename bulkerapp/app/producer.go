@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"time"
 )
@@ -30,7 +31,7 @@ func NewProducer(config *Config, kafkaConfig *kafka.ConfigMap) (*Producer, error
 	}, *kafkaConfig))
 	producer, err := kafka.NewProducer(&producerConfig)
 	if err != nil {
-		return nil, base.NewError("error creating kafka producer: %w", err)
+		return nil, base.NewError("error creating kafka producer: %v", err)
 
 	}
 	return &Producer{
@@ -43,7 +44,7 @@ func NewProducer(config *Config, kafkaConfig *kafka.ConfigMap) (*Producer, error
 }
 
 func (p *Producer) Start() {
-	go func() {
+	safego.RunWithRestart(func() {
 		for e := range p.producer.Events() {
 			switch ev := e.(type) {
 			case *kafka.Message:
@@ -57,13 +58,13 @@ func (p *Producer) Start() {
 					p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 				}
 				//case kafka.Error:
-				//	p.Debugf("Producer error: %w", ev)
+				//	p.Debugf("Producer error: %v", ev)
 			}
 		}
 		p.Infof("Producer closed")
-	}()
+	})
 	// report size metrics
-	go func() {
+	safego.RunWithRestart(func() {
 		ticker := time.NewTicker(time.Second * 15)
 		for {
 			select {
@@ -73,7 +74,7 @@ func (p *Producer) Start() {
 				metrics.ProducerQueueLength.Set(float64(p.producer.Len()))
 			}
 		}
-	}()
+	})
 }
 
 // ProduceSync TODO: transactional delivery?

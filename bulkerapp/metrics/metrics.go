@@ -172,6 +172,15 @@ var (
 	EventsLogError = func(errorType string) prometheus.Counter {
 		return eventsLogError.WithLabelValues(errorType)
 	}
+
+	panics = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "safego",
+		Name:      "panic",
+	})
+	Panics = func() prometheus.Counter {
+		return panics
+	}
 )
 
 func KafkaErrorCode(err error) string {

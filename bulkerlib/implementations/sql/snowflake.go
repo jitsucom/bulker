@@ -112,7 +112,7 @@ type Snowflake struct {
 func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &SnowflakeConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
-		return nil, fmt.Errorf("failed to parse destination config: %w", err)
+		return nil, fmt.Errorf("failed to parse destination config: %v", err)
 	}
 
 	if config.Parameters == nil {
@@ -179,7 +179,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return value
 	}
 
-	s.tableHelper = NewTableHelper(s, 255, '"')
+	s.tableHelper = NewTableHelper(255, '"')
 	s.tableHelper.tableNameFunc = sfIdentifierFunction
 	s.tableHelper.columnNameFunc = sfIdentifierFunction
 	return s, err
@@ -289,7 +289,7 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 
 	jitsuPrimaryKeyName := BuildConstraintName(table.Name)
 	if primaryKeyName != "" && strings.ToLower(primaryKeyName) != strings.ToLower(jitsuPrimaryKeyName) {
-		logging.Warnf("table: %s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
+		logging.Debugf("table: %s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
 	}
 
 	return table, nil

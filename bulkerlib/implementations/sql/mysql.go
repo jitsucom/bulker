@@ -50,10 +50,10 @@ var (
 	mySQLBulkMergeQueryTemplate, _ = template.New("mysqlBulkMergeQuery").Parse(mySQLBulkMergeQuery)
 
 	mysqlTypes = map[types2.DataType][]string{
-		types2.STRING:    {"text"},
+		types2.STRING:    {"text", "varchar(255)", "varchar"},
 		types2.INT64:     {"bigint"},
 		types2.FLOAT64:   {"double"},
-		types2.TIMESTAMP: {"timestamp(6)"},
+		types2.TIMESTAMP: {"timestamp(6)", "timestamp"},
 		types2.BOOL:      {"boolean", "tinyint(1)"},
 		types2.JSON:      {"JSON"},
 		types2.UNKNOWN:   {"text"},
@@ -61,7 +61,7 @@ var (
 
 	//mySQLPrimaryKeyTypesMapping forces to use a special type in primary keys
 	mySQLPrimaryKeyTypesMapping = map[string]string{
-		"TEXT": "VARCHAR(255)",
+		"text": "varchar(255)",
 	}
 )
 
@@ -75,7 +75,7 @@ type MySQL struct {
 func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &DataSourceConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
-		return nil, fmt.Errorf("failed to parse destination config: %w", err)
+		return nil, fmt.Errorf("failed to parse destination config: %v", err)
 	}
 
 	if config.Parameters == nil {
@@ -137,7 +137,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	} else {
 		m.batchFileFormat = types2.FileFormatNDJSON
 	}
-	m.tableHelper = NewTableHelper(m, 63, '`')
+	m.tableHelper = NewTableHelper(63, '`')
 	return m, err
 }
 
@@ -187,6 +187,7 @@ func (m *MySQL) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 }
 
 func (m *MySQL) Insert(ctx context.Context, table *Table, merge bool, objects ...types2.Object) error {
+	//fmt.Printf("Inserting %d objects into %s merge %t\n", len(objects), table.Name, merge)
 	if !merge {
 		return m.insert(ctx, table, objects)
 	} else {

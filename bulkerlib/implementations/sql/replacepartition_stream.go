@@ -87,7 +87,7 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 				}
 			}
 			var dstTable *Table
-			dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.id, ps.dstTable)
+			dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, ps.dstTable)
 			if err != nil {
 				ps.updateRepresentationTable(ps.dstTable)
 				return ps.state, errorj.Decorate(err, "failed to ensure destination table")

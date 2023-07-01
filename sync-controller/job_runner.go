@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/mitchellh/mapstructure"
@@ -47,7 +48,7 @@ func NewJobRunner(appContext *Context) (*JobRunner, error) {
 	j := &JobRunner{Service: base, config: appContext.config, clientset: clientset, namespace: appContext.config.KubernetesNamespace,
 		closeCh:      make(chan struct{}),
 		taskStatusCh: make(chan *TaskStatus, 100)}
-	go j.watchPodStatuses()
+	safego.RunWithRestart(j.watchPodStatuses)
 	return j, nil
 }
 
@@ -295,7 +296,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			},
 		},
 	}
-	sourceVolumeMounts := []v1.VolumeMount{
+	volumeMounts := []v1.VolumeMount{
 		{
 			Name:      "pipes",
 			MountPath: "/pipes",
@@ -319,7 +320,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			},
 		}
 		volumes = append(volumes, cmVolume)
-		sourceVolumeMounts = append(sourceVolumeMounts, v1.VolumeMount{
+		volumeMounts = append(volumeMounts, v1.VolumeMount{
 			Name:      "config",
 			MountPath: "/config",
 		})
@@ -340,19 +341,14 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 				{Name: "source",
 					Image:        fmt.Sprintf("%s:%s", task.Package, task.PackageVersion),
 					Command:      []string{"sh", "-c", fmt.Sprintf("eval \"$AIRBYTE_ENTRYPOINT %s\" 2> /pipes/stderr > /pipes/stdout", command)},
-					VolumeMounts: sourceVolumeMounts,
+					VolumeMounts: volumeMounts,
 				},
 				{
 					Name:            "sidecar",
 					ImagePullPolicy: v1.PullAlways,
 					Image:           j.config.SidecarImage,
 					Env:             sideCarEnvVar,
-					VolumeMounts: []v1.VolumeMount{
-						{
-							Name:      "pipes",
-							MountPath: "/pipes",
-						},
-					},
+					VolumeMounts:    volumeMounts,
 				},
 			},
 			InitContainers: []v1.Container{

@@ -1,6 +1,8 @@
 package safego
 
 import (
+	"fmt"
+	"runtime/debug"
 	"time"
 )
 
@@ -10,13 +12,21 @@ type RecoverHandler func(value any)
 
 var GlobalRecoverHandler RecoverHandler
 
+func init() {
+	GlobalRecoverHandler = func(value interface{}) {
+		fmt.Println("panic")
+		fmt.Println(value)
+		fmt.Println(string(debug.Stack()))
+	}
+}
+
 type Execution struct {
 	f              func()
 	recoverHandler RecoverHandler
 	restartTimeout time.Duration
 }
 
-//Run runs a new goroutine and add panic handler (without restart)
+// Run runs a new goroutine and add panic handler (without restart)
 func Run(f func()) *Execution {
 	exec := Execution{
 		f:              f,
@@ -26,8 +36,8 @@ func Run(f func()) *Execution {
 	return exec.run()
 }
 
-//RunWithRestart run a new goroutine and add panic handler:
-//write logs, wait 2 seconds and restart the goroutine
+// RunWithRestart run a new goroutine and add panic handler:
+// write logs, wait 2 seconds and restart the goroutine
 func RunWithRestart(f func()) *Execution {
 	exec := Execution{
 		f:              f,

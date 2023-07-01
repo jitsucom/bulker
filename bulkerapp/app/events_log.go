@@ -83,7 +83,7 @@ func (r *RedisEventsLog) PostEvent(eventType EventType, actorId string, event an
 		serialized, err = jsoniter.Marshal(event)
 		if err != nil {
 			metrics.EventsLogError("marshal_error").Inc()
-			return "", r.NewError("failed to serialize event entity [%v]: %w", event, err)
+			return "", r.NewError("failed to serialize event entity [%v]: %v", event, err)
 		}
 	}
 
@@ -95,7 +95,7 @@ func (r *RedisEventsLog) PostEvent(eventType EventType, actorId string, event an
 	idString, err := redis.String(connection.Do("XADD", streamKey, "MAXLEN", "~", r.maxSize, "*", "event", serialized))
 	if err != nil {
 		metrics.EventsLogError(RedisError(err)).Inc()
-		return "", r.NewError("failed to post event to stream [%s]: %w", streamKey, err)
+		return "", r.NewError("failed to post event to stream [%s]: %v", streamKey, err)
 	}
 	return EventsLogRecordId(idString), nil
 }
@@ -106,7 +106,7 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *
 	start, end, err := filter.GetStartAndEndIds()
 	if err != nil {
 		metrics.EventsLogError("filter_error").Inc()
-		return nil, r.NewError("%w", err)
+		return nil, r.NewError("%v", err)
 	}
 	args := []interface{}{streamKey, end, start}
 	if limit > 0 {
@@ -118,7 +118,7 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *
 	recordsRaw, err := connection.Do("XREVRANGE", args...)
 	if err != nil {
 		metrics.EventsLogError(RedisError(err)).Inc()
-		return nil, r.NewError("failed to get events from stream [%s]: %w", streamKey, err)
+		return nil, r.NewError("failed to get events from stream [%s]: %v", streamKey, err)
 	}
 	records := recordsRaw.([]any)
 	//r.Infof("Got %d events from stream [%s]", len(records), streamKey)
@@ -132,12 +132,12 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *
 		err = jsoniter.Unmarshal([]byte(mp["event"]), &event)
 		if err != nil {
 			metrics.EventsLogError("unmarshal_error").Inc()
-			return nil, r.NewError("failed to unmarshal event from stream [%s] %s: %w", streamKey, mp["event"], err)
+			return nil, r.NewError("failed to unmarshal event from stream [%s] %s: %v", streamKey, mp["event"], err)
 		}
 		date, err := parseTimestamp(id)
 		if err != nil {
 			metrics.EventsLogError("parse_timestamp_error").Inc()
-			return nil, r.NewError("failed to parse timestamp from id [%s]: %w", id, err)
+			return nil, r.NewError("failed to parse timestamp from id [%s]: %v", id, err)
 		}
 		if (filter == nil || filter.Filter == nil) || filter.Filter(event) {
 			results = append(results, EventsLogRecord{

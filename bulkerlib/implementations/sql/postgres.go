@@ -66,12 +66,12 @@ var (
 	pgBulkMergeQueryTemplate, _ = template.New("postgresBulkMergeQuery").Parse(pgBulkMergeQuery)
 
 	postgresDataTypes = map[types2.DataType][]string{
-		types2.STRING:    {"text"},
+		types2.STRING:    {"text", "uuid"},
 		types2.INT64:     {"bigint"},
 		types2.FLOAT64:   {"double precision"},
 		types2.TIMESTAMP: {"timestamp with time zone", "timestamp", "timestamp without time zone"},
 		types2.BOOL:      {"boolean"},
-		types2.JSON:      {"jsonb"},
+		types2.JSON:      {"jsonb", "json"},
 		types2.UNKNOWN:   {"text"},
 	}
 )
@@ -92,7 +92,7 @@ type Postgres struct {
 func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &PostgresConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
-		return nil, fmt.Errorf("failed to parse destination config: %w", err)
+		return nil, fmt.Errorf("failed to parse destination config: %v", err)
 	}
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	//create tmp dir for ssl certs if any
 	tmpDir, err := os.MkdirTemp("", "postgres_"+bulkerConfig.Id)
 	if err != nil && (config.SSLMode == "verify-ca" || config.SSLMode == "verify-full") {
-		return nil, fmt.Errorf("failed to create tmp dir for postgres ssl certs: %w", err)
+		return nil, fmt.Errorf("failed to create tmp dir for postgres ssl certs: %v", err)
 	}
 	if err = ProcessSSL(tmpDir, config); err != nil {
 		return nil, err
@@ -109,8 +109,8 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		config.Parameters = map[string]string{}
 	}
 	utils.MapPutIfAbsent(config.Parameters, "connect_timeout", "60")
-	utils.MapPutIfAbsent(config.Parameters, "write_timeout", "60000")
-	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "60000")
+	utils.MapPutIfAbsent(config.Parameters, "write_timeout", "120000")
+	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "120000")
 
 	typecastFunc := func(placeholder string, column types2.SQLColumn) string {
 		if column.Override {
@@ -157,7 +157,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)
 	p := &Postgres{sqlAdapterBase, dbConnectFunction, tmpDir}
-	p.tableHelper = NewTableHelper(p, 63, '"')
+	p.tableHelper = NewTableHelper(63, '"')
 	return p, err
 }
 
@@ -228,9 +228,8 @@ func (p *Postgres) GetTableSchema(ctx context.Context, tableName string) (*Table
 	table.PKFields = pkFields
 	table.PrimaryKeyName = primaryKeyName
 
-	jitsuPrimaryKeyName := BuildConstraintName(table.Name)
-	if primaryKeyName != "" && primaryKeyName != jitsuPrimaryKeyName {
-		p.Warnf("table: %s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
+	if primaryKeyName != "" && !strings.HasPrefix(primaryKeyName, BulkerManagedPkConstraintPrefix) {
+		p.Infof("table: %s has a primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
 	}
 	return table, nil
 }
