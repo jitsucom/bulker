@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const BulkerManagedPkConstraintPrefix = "bulker_pk_"
+const BulkerManagedPkConstraintPrefix = "jitsu_pk_"
 
 // Columns is a list of columns representation
 type Columns map[string]types.SQLColumn
@@ -151,7 +151,7 @@ func (t *Table) FitsToTable(destination *Table) bool {
 }
 
 func BuildConstraintName(tableName string) string {
-	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers()[10:20])
+	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers())
 }
 
 func (c Columns) Clone() Columns {

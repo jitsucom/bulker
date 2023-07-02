@@ -26,7 +26,9 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 
 const forceLeaveResultingTables = false
 
-var allBulkerConfigs []string
+var allBulkerConfigs = []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless", SnowflakeBulkerTypeId, PostgresBulkerTypeId,
+	MySQLBulkerTypeId, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}
+
 var exceptBigquery []string
 
 type TestConfig struct {
@@ -49,102 +51,146 @@ type ExpectedTable struct {
 var postgresContainer *testcontainers2.PostgresContainer
 var mysqlContainer *testcontainers2.MySQLContainer
 var clickhouseContainer *testcontainers2.ClickHouseContainer
+var clickhouseClusterContainer *clickhouse.ClickHouseClusterContainer
+var clickhouseClusterContainerNoShards *clickhouse_noshards.ClickHouseClusterContainerNoShards
 
 func init() {
-	bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
-	if bigqueryConfig != "" {
-		configRegistry[BigqueryBulkerTypeId] = TestConfig{BulkerType: BigqueryBulkerTypeId, Config: bigqueryConfig}
-	}
+	//uncomment to run tests locally with just one bulker type
+	//allBulkerConfigs = []string{PostgresBulkerTypeId}
 
-	redshiftConfig := os.Getenv("BULKER_TEST_REDSHIFT")
-	if redshiftConfig != "" {
-		configRegistry[RedshiftBulkerTypeId] = TestConfig{BulkerType: RedshiftBulkerTypeId, Config: redshiftConfig}
-	}
-
-	redshiftServerlessConfig := os.Getenv("BULKER_TEST_REDSHIFT_SERVERLESS")
-	if redshiftServerlessConfig != "" {
-		configRegistry[RedshiftBulkerTypeId+"_serverless"] = TestConfig{BulkerType: RedshiftBulkerTypeId, Config: redshiftServerlessConfig}
-	}
-
-	snowflakeConfig := os.Getenv("BULKER_TEST_SNOWFLAKE")
-	if snowflakeConfig != "" {
-		configRegistry[SnowflakeBulkerTypeId] = TestConfig{BulkerType: SnowflakeBulkerTypeId, Config: snowflakeConfig}
-	}
-	var err error
-	postgresContainer, err = testcontainers2.NewPostgresContainer(context.Background(), false)
-	if err != nil {
-		panic(err)
-	}
-	configRegistry[PostgresBulkerTypeId] = TestConfig{BulkerType: PostgresBulkerTypeId, Config: PostgresConfig{
-		DataSourceConfig: DataSourceConfig{
-			Host:       postgresContainer.Host,
-			Port:       postgresContainer.Port,
-			Username:   postgresContainer.Username,
-			Password:   postgresContainer.Password,
-			Db:         postgresContainer.Database,
-			Schema:     postgresContainer.Schema,
-			Parameters: map[string]string{"sslmode": "disable"},
-		},
-	}}
-
-	mysqlContainer, err = testcontainers2.NewMySQLContainer(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	configRegistry[MySQLBulkerTypeId] = TestConfig{BulkerType: MySQLBulkerTypeId, Config: DataSourceConfig{
-		Host:       mysqlContainer.Host,
-		Port:       mysqlContainer.Port,
-		Username:   mysqlContainer.Username,
-		Password:   mysqlContainer.Password,
-		Db:         mysqlContainer.Database,
-		Parameters: map[string]string{"tls": "false", "parseTime": "true"},
-	}}
-
-	clickhouseContainer, err = testcontainers2.NewClickhouseContainer(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	configRegistry[ClickHouseBulkerTypeId] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
-		Hosts:    clickhouseContainer.Hosts,
-		Username: "default",
-		Database: clickhouseContainer.Database,
-	}}
-
-	clickhouseClusterContainer, err := clickhouse.NewClickhouseClusterContainer(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	configRegistry[ClickHouseBulkerTypeId+"_cluster"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
-		Hosts:    clickhouseClusterContainer.Hosts,
-		Username: "default",
-		Database: clickhouseClusterContainer.Database,
-		Cluster:  clickhouseClusterContainer.Cluster,
-	}}
-	clickhouseClusterContainerNoShards, err := clickhouse_noshards.NewClickHouseClusterContainerNoShards(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	configRegistry[ClickHouseBulkerTypeId+"_cluster_noshards"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
-		//also test HTTP mode with this config
-		Hosts:    clickhouseClusterContainerNoShards.HostsHTTP,
-		Protocol: ClickHouseProtocolHTTP,
-		Username: "default",
-		Database: clickhouseClusterContainerNoShards.Database,
-		Cluster:  clickhouseClusterContainerNoShards.Cluster,
-	}}
-
-	allBulkerConfigs = make([]string, 0, len(configRegistry))
-	exceptBigquery = make([]string, 0, len(configRegistry))
-	for k := range configRegistry {
-		allBulkerConfigs = append(allBulkerConfigs, k)
-		if k != BigqueryBulkerTypeId {
-			exceptBigquery = append(exceptBigquery, k)
+	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {
+		bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
+		if bigqueryConfig != "" {
+			configRegistry[BigqueryBulkerTypeId] = TestConfig{BulkerType: BigqueryBulkerTypeId, Config: bigqueryConfig}
+		} else {
+			allBulkerConfigs = utils.ArrayExcluding(allBulkerConfigs, BigqueryBulkerTypeId)
 		}
 	}
-	////uncomment to run test for single db only
-	//allBulkerConfigs = []string{BigqueryBulkerTypeId}
-	//exceptBigquery = allBulkerConfigs
+
+	if utils.ArrayContains(allBulkerConfigs, RedshiftBulkerTypeId) {
+		redshiftConfig := os.Getenv("BULKER_TEST_REDSHIFT")
+		if redshiftConfig != "" {
+			configRegistry[RedshiftBulkerTypeId] = TestConfig{BulkerType: RedshiftBulkerTypeId, Config: redshiftConfig}
+		} else {
+			allBulkerConfigs = utils.ArrayExcluding(allBulkerConfigs, RedshiftBulkerTypeId)
+		}
+	}
+
+	if utils.ArrayContains(allBulkerConfigs, RedshiftBulkerTypeId+"_serverless") {
+		redshiftServerlessConfig := os.Getenv("BULKER_TEST_REDSHIFT_SERVERLESS")
+		if redshiftServerlessConfig != "" {
+			configRegistry[RedshiftBulkerTypeId+"_serverless"] = TestConfig{BulkerType: RedshiftBulkerTypeId, Config: redshiftServerlessConfig}
+		} else {
+			allBulkerConfigs = utils.ArrayExcluding(allBulkerConfigs, RedshiftBulkerTypeId+"_serverless")
+		}
+	}
+
+	if utils.ArrayContains(allBulkerConfigs, SnowflakeBulkerTypeId) {
+		snowflakeConfig := os.Getenv("BULKER_TEST_SNOWFLAKE")
+		if snowflakeConfig != "" {
+			configRegistry[SnowflakeBulkerTypeId] = TestConfig{BulkerType: SnowflakeBulkerTypeId, Config: snowflakeConfig}
+		} else {
+			allBulkerConfigs = utils.ArrayExcluding(allBulkerConfigs, SnowflakeBulkerTypeId)
+		}
+	}
+	var err error
+	if utils.ArrayContains(allBulkerConfigs, PostgresBulkerTypeId) {
+		postgresContainer, err = testcontainers2.NewPostgresContainer(context.Background(), false)
+		if err != nil {
+			panic(err)
+		}
+		configRegistry[PostgresBulkerTypeId] = TestConfig{BulkerType: PostgresBulkerTypeId, Config: PostgresConfig{
+			DataSourceConfig: DataSourceConfig{
+				Host:       postgresContainer.Host,
+				Port:       postgresContainer.Port,
+				Username:   postgresContainer.Username,
+				Password:   postgresContainer.Password,
+				Db:         postgresContainer.Database,
+				Schema:     postgresContainer.Schema,
+				Parameters: map[string]string{"sslmode": "disable"},
+			},
+		}}
+	}
+
+	if utils.ArrayContains(allBulkerConfigs, MySQLBulkerTypeId) {
+		mysqlContainer, err = testcontainers2.NewMySQLContainer(context.Background())
+		if err != nil {
+			panic(err)
+		}
+		configRegistry[MySQLBulkerTypeId] = TestConfig{BulkerType: MySQLBulkerTypeId, Config: DataSourceConfig{
+			Host:       mysqlContainer.Host,
+			Port:       mysqlContainer.Port,
+			Username:   mysqlContainer.Username,
+			Password:   mysqlContainer.Password,
+			Db:         mysqlContainer.Database,
+			Parameters: map[string]string{"tls": "false", "parseTime": "true"},
+		}}
+	}
+
+	if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId) {
+		clickhouseContainer, err = testcontainers2.NewClickhouseContainer(context.Background())
+		if err != nil {
+			panic(err)
+		}
+		configRegistry[ClickHouseBulkerTypeId] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
+			Hosts:    clickhouseContainer.Hosts,
+			Username: "default",
+			Database: clickhouseContainer.Database,
+		}}
+	}
+
+	if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId+"_cluster") {
+		clickhouseClusterContainer, err = clickhouse.NewClickhouseClusterContainer(context.Background())
+		if err != nil {
+			panic(err)
+		}
+		configRegistry[ClickHouseBulkerTypeId+"_cluster"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
+			Hosts:    clickhouseClusterContainer.Hosts,
+			Username: "default",
+			Database: clickhouseClusterContainer.Database,
+			Cluster:  clickhouseClusterContainer.Cluster,
+		}}
+	}
+	if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId+"_cluster_noshards") {
+		clickhouseClusterContainerNoShards, err = clickhouse_noshards.NewClickHouseClusterContainerNoShards(context.Background())
+		if err != nil {
+			panic(err)
+		}
+		configRegistry[ClickHouseBulkerTypeId+"_cluster_noshards"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
+			//also test HTTP mode with this config
+			Hosts:    clickhouseClusterContainerNoShards.HostsHTTP,
+			Protocol: ClickHouseProtocolHTTP,
+			Username: "default",
+			Database: clickhouseClusterContainerNoShards.Database,
+			Cluster:  clickhouseClusterContainerNoShards.Cluster,
+		}}
+	}
+
+	exceptBigquery = utils.ArrayExcluding(allBulkerConfigs, BigqueryBulkerTypeId)
+
 	logging.Infof("Initialized bulker types: %v", allBulkerConfigs)
+
+	//signal.Notify(exitChannel, syscall.Signal(0), os.Interrupt, os.Kill, syscall.SIGTERM)
+	//
+	//go func() {
+	//	sig := <-exitChannel
+	//	logging.Infof("Received signal: %s. Shutting down...", sig)
+	//	if postgresContainer != nil {
+	//		_ = postgresContainer.Close()
+	//	}
+	//	if mysqlContainer != nil {
+	//		_ = mysqlContainer.Close()
+	//	}
+	//	if clickhouseContainer != nil {
+	//		_ = clickhouseContainer.Close()
+	//	}
+	//	if clickhouseClusterContainer != nil {
+	//		_ = clickhouseClusterContainer.Close()
+	//	}
+	//	if clickhouseClusterContainerNoShards != nil {
+	//		_ = clickhouseClusterContainerNoShards.Close()
+	//	}
+	//}()
 }
 
 type TypeCheckingMode int
@@ -215,6 +261,7 @@ func (c *bulkerTestConfig) getIdAndTableName(mode bulker.BulkMode) (id, tableNam
 
 func TestBasics(t *testing.T) {
 	t.Parallel()
+
 	tests := []bulkerTestConfig{
 		{
 			name:              "added_columns",

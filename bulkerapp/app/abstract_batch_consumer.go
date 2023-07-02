@@ -339,6 +339,7 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 	}
 	bc.Infof("Restarting consumer")
 	go func(c *kafka.Consumer) {
+		bc.Infof("Closing previous consumer")
 		err := c.Close()
 		bc.Infof("Previous consumer closed: %v", err)
 	}(bc.consumer.Load())

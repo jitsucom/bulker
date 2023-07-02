@@ -279,14 +279,15 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 		dt, _ := bq.GetDataType(string(field.Type))
 		table.Columns[field.Name] = types2.SQLColumn{Type: string(field.Type), DataType: dt}
 	}
-	pkFieldName := BuildConstraintName(table.Name)
-	pkFieldsString, ok := meta.Labels[pkFieldName]
-	if ok {
-		pkFields := strings.Split(pkFieldsString, "---")
-		for _, pkField := range pkFields {
-			table.PKFields.Put(pkField)
+	for k, v := range meta.Labels {
+		if strings.HasPrefix(k, BulkerManagedPkConstraintPrefix) {
+			pkFields := strings.Split(v, "---")
+			for _, pkField := range pkFields {
+				table.PKFields.Put(pkField)
+			}
+			table.PrimaryKeyName = k
+			break
 		}
-		table.PrimaryKeyName = pkFieldName
 	}
 
 	return table, nil
