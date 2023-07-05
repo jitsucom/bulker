@@ -12,13 +12,13 @@ const (
 
 // Row is a dto for airbyte output row representation
 type Row struct {
-	Type             string                 `json:"type"`
-	Log              *LogRow                `json:"log,omitempty"`
-	ConnectionStatus *StatusRow             `json:"connectionStatus,omitempty"`
-	State            *StateRow              `json:"state,omitempty"`
-	Record           *RecordRow             `json:"record,omitempty"`
-	Catalog          string                 `json:"catalog,omitempty"`
-	Spec             map[string]interface{} `json:"spec,omitempty"`
+	Type             string         `json:"type"`
+	Log              *LogRow        `json:"log,omitempty"`
+	ConnectionStatus *StatusRow     `json:"connectionStatus,omitempty"`
+	State            *StateRow      `json:"state,omitempty"`
+	Record           *RecordRow     `json:"record,omitempty"`
+	Catalog          map[string]any `json:"catalog,omitempty"`
+	Spec             map[string]any `json:"spec,omitempty"`
 }
 
 // LogRow is a dto for airbyte logs serialization

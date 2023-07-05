@@ -20,7 +20,7 @@ const retryTimeHeader = "retry_time"
 const retriesCountHeader = "retries"
 const originalTopicHeader = "original_topic"
 
-const pauseHeartBeatInterval = 1 * time.Second
+const pauseHeartBeatInterval = 10 * time.Second
 
 type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error)
 
@@ -287,6 +287,8 @@ func (bc *AbstractBatchConsumer) pause() {
 	safego.RunWithRestart(func() {
 		errorReported := false
 		//this loop keeps heatbeating consumer to prevent it from being kicked out from group
+		pauseTicker := time.NewTicker(pauseHeartBeatInterval)
+		defer pauseTicker.Stop()
 	loop:
 		for {
 			if bc.idle.Load() && bc.retired.Load() {
@@ -300,9 +302,9 @@ func (bc *AbstractBatchConsumer) pause() {
 				bc.paused.Store(false)
 				bc.Debugf("Consumer resumed.")
 				break loop
-			default:
+			case <-pauseTicker.C:
 			}
-			message, err := bc.consumer.Load().ReadMessage(pauseHeartBeatInterval)
+			message, err := bc.consumer.Load().ReadMessage(bc.waitForMessages)
 			if err != nil {
 				kafkaErr := err.(kafka.Error)
 				if kafkaErr.Code() == kafka.ErrTimedOut {
@@ -347,7 +349,7 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	// for faster reaction on retiring
-	pauseTicker := time.NewTicker(pauseHeartBeatInterval)
+	pauseTicker := time.NewTicker(1 * time.Second)
 	defer pauseTicker.Stop()
 
 	for {
@@ -428,7 +430,7 @@ func (bc *AbstractBatchConsumer) resume() {
 	select {
 	case bc.resumeChannel <- struct{}{}:
 		err = bc.consumer.Load().Resume(partitions)
-	case <-time.After(pauseHeartBeatInterval * 2):
+	case <-time.After(pauseHeartBeatInterval * 3):
 		err = bc.NewError("Resume timeout.")
 		//return bc.consumer.Resume(partitions)
 	}

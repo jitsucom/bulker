@@ -193,7 +193,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 	}()
 	for {
 		var message *kafka.Message
-		message, err = bc.consumer.Load().ReadMessage(pauseHeartBeatInterval)
+		message, err = bc.consumer.Load().ReadMessage(bc.waitForMessages)
 		if err != nil {
 			kafkaErr := err.(kafka.Error)
 			if kafkaErr.Code() == kafka.ErrTimedOut {

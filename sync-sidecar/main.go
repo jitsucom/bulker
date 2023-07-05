@@ -105,17 +105,18 @@ func (s *SideCar) Run() {
 		}
 	}()
 	s.log("Sidecar. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
-	//load file from /config/catalog.json and parse it
-	err = s.loadCatalog()
-	if err != nil {
-		s.panic("Error loading catalog: %v", err)
+	if s.command == "read" {
+		//load file from /config/catalog.json and parse it
+		err = s.loadCatalog()
+		if err != nil {
+			s.panic("Error loading catalog: %v", err)
+		}
+		s.log("Catalog loaded. %d streams selected", len(s.catalog))
+		state, ok := s.loadState()
+		if ok {
+			s.log("State loaded: %s", state)
+		}
 	}
-	s.log("Catalog loaded. %d streams selected", len(s.catalog))
-	state, ok := s.loadState()
-	if ok {
-		s.log("State loaded: %s", state)
-	}
-
 	var stdOutErrWaitGroup sync.WaitGroup
 
 	errPipe, _ := os.Open(s.stdErrPipeFile)
@@ -234,11 +235,12 @@ func (s *SideCar) processConnectionStatus(status *StatusRow) {
 	}
 }
 
-func (s *SideCar) processCatalog(catalog string) {
+func (s *SideCar) processCatalog(catalog map[string]any) {
 	// ignore previous error messages since we got result
 	s.firstErr = nil
-	s.log("CATALOG: %s", catalog)
-	err := db.UpsertCatalog(s.dbpool, s.packageName, s.packageVersion, s.storageKey, catalog, s.startedAt, "SUCCESS", "")
+	catalogJson, _ := json.Marshal(catalog)
+	s.log("CATALOG: %s", catalogJson)
+	err := db.UpsertCatalog(s.dbpool, s.packageName, s.packageVersion, s.storageKey, string(catalogJson), s.startedAt, "SUCCESS", "")
 	if err != nil {
 		s.panic("error updating catalog for: %s: %v", s.storageKey, err)
 	}

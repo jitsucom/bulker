@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/mitchellh/mapstructure"
 	"time"
 )
@@ -21,7 +20,6 @@ type TaskDescriptor struct {
 
 func (t *TaskDescriptor) StartedAtTime() time.Time {
 	tm, err := time.Parse(time.RFC3339, t.StartedAt)
-	fmt.Println("tm", tm, err)
 	if err != nil {
 		return time.Now()
 	}

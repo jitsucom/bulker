@@ -37,6 +37,7 @@ type JobRunner struct {
 	clientset    *kubernetes.Clientset
 	closeCh      chan struct{}
 	taskStatusCh chan *TaskStatus
+	runningPods  utils.Set[string]
 }
 
 func NewJobRunner(appContext *Context) (*JobRunner, error) {
@@ -47,7 +48,9 @@ func NewJobRunner(appContext *Context) (*JobRunner, error) {
 	}
 	j := &JobRunner{Service: base, config: appContext.config, clientset: clientset, namespace: appContext.config.KubernetesNamespace,
 		closeCh:      make(chan struct{}),
-		taskStatusCh: make(chan *TaskStatus, 100)}
+		taskStatusCh: make(chan *TaskStatus, 100),
+		runningPods:  utils.NewSet[string](),
+	}
 	safego.RunWithRestart(j.watchPodStatuses)
 	return j, nil
 }
@@ -89,9 +92,23 @@ func (j *JobRunner) watchPodStatuses() {
 					j.Infof("Pod %s failed. Cleaning up.", pod.Name)
 					j.cleanupPod(pod.Name)
 				case v1.PodRunning:
-					taskStatus.Status = StatusRunning
-					//TODO check running for errors
-					j.Debugf("Pod %s is running", pod.Name)
+					errors := j.accumulateErrorLogs(pod.Name, status)
+					if len(errors) > 0 {
+						taskStatus.Status = StatusFailed
+						taskStatus.Description = errors
+						j.Infof("Pod %s is running but had errors. Cleaning up.", pod.Name)
+						j.cleanupPod(pod.Name)
+					} else {
+						if !j.runningPods.Contains(pod.Name) {
+							taskStatus.Status = StatusRunning
+							j.Infof("Pod %s is running", pod.Name)
+							j.runningPods.Put(pod.Name)
+						} else {
+							//report running status only once
+							continue
+						}
+
+					}
 				case v1.PodPending:
 					if time.Now().Sub(taskStatus.StartedAtTime()) > time.Second*time.Duration(j.config.ContainerInitTimeoutSeconds) {
 						taskStatus.Status = StatusInitTimeout
@@ -128,6 +145,7 @@ func (j *JobRunner) cleanupPod(name string) {
 	gracePeriodSeconds := int64(math.Max(1.0, float64(j.config.ContainerStatusCheckSeconds)*0.8))
 	_ = j.clientset.CoreV1().Pods(j.namespace).Delete(context.Background(), name, metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
 	_ = j.clientset.CoreV1().ConfigMaps(j.namespace).Delete(context.Background(), name+"-config", metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
+	j.runningPods.Remove(name)
 }
 
 func accumulatePodStatus(status v1.PodStatus) string {
