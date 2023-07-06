@@ -11,7 +11,7 @@ Bulker is a tool for streaming and batching large amount of semi-structured data
 Send and JSON object to Bulker HTTP endpoint, and it will make sure it will be saved to data warehouse:
  
  * **JSON flattening**. Your object will be flattened - `{a: {b: 1}}` becomes `{a_b: 1}`
- * **Schema managenent**. For each fuekd, bulker will make sure that a corresponding column exist in destination table. If not, Bulker
+ * **Schema managenent** for **semi-structured** data. For each fuekd, bulker will make sure that a corresponding column exist in destination table. If not, Bulker
 will create. Type will be best-guessed by value, or it could be explicitely set via type hint as in `{"a": "test", "__sql_type_a": "varchar(4)"}`
  * **Reliability**. Bulker will put the object to Kafka Queue immidiatly, so if datawarehouse is down, data won't be lost
  * **Streaming** or **Batching**. Bulker will send data to datawarehouse either as soon it become available  in Kafka (streaming) or after some time (batching). Most
