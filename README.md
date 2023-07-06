@@ -1,15 +1,27 @@
 # 🚚 Bulker
 
-Bulker is an HTTP server that simplifies streaming large amounts of data into databases. It is designed to be 
-used as a part of ETL pipelines. 
+Bulker is a tool for streaming and batching large amount of semi-structured data into data warehouses. It uses Kafka internally
 
-Bulker is a 💜 of [Jitsu](https://github.com/jitsucom/jitsu), an open-source data integration platform.
-
-HTTP-server uses Kafka as a transport
+## How it works?
 
 <p align="center">
 <img src="./.docs/assets/bulker-summary.excalidraw.png" width="600" />
 </p>
+
+Send and JSON object to Bulker HTTP endpoint, and it will make sure it will be saved to data warehouse:
+ 
+ * **JSON flattening**. Your object will be flattened - `{a: {b: 1}}` becomes `{a_b: 1}`
+ * **Schema managenent**. For each fuekd, bulker will make sure that a corresponding column exist in destination table. If not, Bulker
+will create. Type will be best-guessed by value, or it could be explicitely set via type hint as in `{"a": "test", "__sql_type_a": "varchar(4)"}`
+ * **Reliability**. Bulker will put the object to Kafka Queue immidiatly, so if datawarehouse is down, data won't be lost
+ * **Streaming** or **Batching**. Bulker will send data to datawarehouse either as soon it become available  in Kafka (streaming) or after some time (batching). Most
+data warehouses won't tolerate large number of inserts, that's why we implemented batching
+
+
+Bulker is a 💜 of [Jitsu](https://github.com/jitsucom/jitsu), an open-source data integration platform.
+
+See full list of features below
+
 
 Bulker is also available as a go library if you want to embed it into your application as opposed to use a HTTP-server
 
