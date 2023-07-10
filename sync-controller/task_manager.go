@@ -149,6 +149,8 @@ func (t *TaskManager) listenTaskStatus() {
 					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "))
 				case StatusCreated:
 					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "RUNNING", strings.Join([]string{string(st.Status), st.Description}, ": "))
+				case StatusRunning:
+					err = db.UpdateRunningTaskDate(t.dbpool, st.TaskID)
 				default:
 					//do nothing. sidecar manages success status.
 				}

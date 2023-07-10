@@ -47,6 +47,7 @@ type SideCar struct {
 	currentStreamName string
 	processedStreams  map[string]int
 	catalog           map[string]*Stream
+	initialState      string
 	state             *StateRow
 	eventsCounter     int
 	streamsWaitGroup  sync.WaitGroup
@@ -275,7 +276,8 @@ func (s *SideCar) processRecord(rec *RecordRow) {
 			}
 			s.log("creating stream: %s mode: %s primary keys: %s", streamName, str.SyncMode, str.GetPrimaryKeys())
 			mode := "replace_table"
-			if str.SyncMode == "incremental" {
+			// if there is no initial sync state, we assume that this is first sync and we need to do full sync
+			if str.SyncMode == "incremental" && len(s.initialState) > 0 {
 				mode = "batch"
 			}
 			bulkerUrl := fmt.Sprintf("%s/bulk/%s?tableName=%s&mode=%s&taskId=%s", s.bulkerURL, s.syncId, url.QueryEscape(streamName), mode, s.taskId)
@@ -422,7 +424,12 @@ func (s *SideCar) loadState() (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return string(state), true
+	st := string(state)
+	if len(st) == 0 || st == "{}" {
+		return "", false
+	}
+	s.initialState = st
+	return st, true
 }
 
 func (s *SideCar) loadCatalog() error {

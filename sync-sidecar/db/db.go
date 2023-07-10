@@ -22,6 +22,8 @@ ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status =
 	upsertRunningTaskSQL = `INSERT INTO source_task as st (sync_id, task_id, package, version, started_at, updated_at, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8 )
 ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, description=$8 where st.status not in ('FAILED', 'SUCCESS', $7)`
 
+	updateRunningTaskDateSQL = `UPDATE source_task SET updated_at=$2 where task_id=$1 and status = 'RUNNING'`
+
 	upsertCheckSQL = `INSERT INTO source_check (package, version, key, status, description, timestamp) VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT ON CONSTRAINT source_check_pkey DO UPDATE SET status = $4, description=$5, timestamp=$6`
 )
@@ -48,6 +50,11 @@ func UpsertTask(dbpool *pgxpool.Pool, syncId, taskId, packageName, packageVersio
 
 func UpsertRunningTask(dbpool *pgxpool.Pool, syncId, taskId, packageName, packageVersion string, startedAt time.Time, status, description string) error {
 	_, err := dbpool.Exec(context.Background(), upsertRunningTaskSQL, syncId, taskId, packageName, packageVersion, startedAt, time.Now(), status, description)
+	return err
+}
+
+func UpdateRunningTaskDate(dbpool *pgxpool.Pool, taskId string) error {
+	_, err := dbpool.Exec(context.Background(), updateRunningTaskDateSQL, taskId, time.Now())
 	return err
 }
 

@@ -37,7 +37,7 @@ type JobRunner struct {
 	clientset    *kubernetes.Clientset
 	closeCh      chan struct{}
 	taskStatusCh chan *TaskStatus
-	runningPods  utils.Set[string]
+	runningPods  map[string]time.Time
 }
 
 func NewJobRunner(appContext *Context) (*JobRunner, error) {
@@ -49,7 +49,7 @@ func NewJobRunner(appContext *Context) (*JobRunner, error) {
 	j := &JobRunner{Service: base, config: appContext.config, clientset: clientset, namespace: appContext.config.KubernetesNamespace,
 		closeCh:      make(chan struct{}),
 		taskStatusCh: make(chan *TaskStatus, 100),
-		runningPods:  utils.NewSet[string](),
+		runningPods:  map[string]time.Time{},
 	}
 	safego.RunWithRestart(j.watchPodStatuses)
 	return j, nil
@@ -99,12 +99,12 @@ func (j *JobRunner) watchPodStatuses() {
 						j.Infof("Pod %s is running but had errors. Cleaning up.", pod.Name)
 						j.cleanupPod(pod.Name)
 					} else {
-						if !j.runningPods.Contains(pod.Name) {
+						if timeMark, ok := j.runningPods[pod.Name]; !ok || time.Now().Sub(timeMark) >= time.Minute {
 							taskStatus.Status = StatusRunning
 							j.Infof("Pod %s is running", pod.Name)
-							j.runningPods.Put(pod.Name)
+							j.runningPods[pod.Name] = time.Now()
 						} else {
-							//report running status only once
+							//report running status only once per minute
 							continue
 						}
 
@@ -145,7 +145,7 @@ func (j *JobRunner) cleanupPod(name string) {
 	gracePeriodSeconds := int64(math.Max(1.0, float64(j.config.ContainerStatusCheckSeconds)*0.8))
 	_ = j.clientset.CoreV1().Pods(j.namespace).Delete(context.Background(), name, metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
 	_ = j.clientset.CoreV1().ConfigMaps(j.namespace).Delete(context.Background(), name+"-config", metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
-	j.runningPods.Remove(name)
+	delete(j.runningPods, name)
 }
 
 func accumulatePodStatus(status v1.PodStatus) string {

@@ -118,8 +118,6 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		_ = consumer.Close()
 		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %v", err)
 	}
-	var atomicConsumer atomic.Pointer[kafka.Consumer]
-	atomicConsumer.Store(consumer)
 	bc := &AbstractBatchConsumer{
 		Service:         base,
 		config:          config,
@@ -130,12 +128,12 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		topicId:         topicId,
 		mode:            mode,
 		consumerConfig:  consumerConfig,
-		consumer:        atomicConsumer,
 		producer:        producer,
 		waitForMessages: time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
 		closed:          make(chan struct{}),
 		resumeChannel:   make(chan struct{}),
 	}
+	bc.consumer.Store(consumer)
 	bc.idle.Store(true)
 
 	err = consumer.Subscribe(topicId, bc.rebalanceCallback)
