@@ -213,6 +213,15 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	}
 }
 
+func maskWriteKey(wk string) string {
+	arr := strings.Split(wk, ":")
+	if len(arr) > 1 {
+		return arr[0] + ":***"
+	} else {
+		return "***"
+	}
+}
+
 func (r *Router) IngestHandler(c *gin.Context) {
 	domain := ""
 	// TODO: use workspaceId as default for all stream identification errors
@@ -223,6 +232,15 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	var tagsDestinations []string
 
 	defer func() {
+		bodyJsonObj := map[string]any{}
+		err := json.Unmarshal(body, &bodyJsonObj)
+		if err == nil {
+			wk, ok := bodyJsonObj["writeKey"]
+			if ok {
+				bodyJsonObj["writeKey"] = maskWriteKey(fmt.Sprint(wk))
+			}
+			body, _ = json.Marshal(bodyJsonObj)
+		}
 		eventsLogObj := map[string]any{"body": string(body)}
 		if rError.Error != nil {
 			eventsLogObj["error"] = rError.PublicError.Error()
