@@ -51,8 +51,8 @@ Bulker supports the following databases:
  * ✅ Clickhouse <br/>
  * ✅ BigQuery <br/>
  * ✅ MySQL <br/>
- * ⚠️ S3 *(coming soon)*<br/>
- * ⚠️ GCS *(coming soon)*<br/>
+ * ✅ S3 <br/>
+ * ✅ GCS <br/>
 
 Please see  [Compatibility Matrix](.docs/db-feature-matrix.md) to learn what Bulker features are supported by each database.
 
