@@ -74,7 +74,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		return
 	}
 	var latestMessage *kafka.Message
-	var processedObjectsSample []types.Object
+	var processedObjectSample types.Object
 	processed := 0
 	for i := 0; i < batchSize; i++ {
 		if bc.retired.Load() {
@@ -114,7 +114,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		err = dec.Decode(&obj)
 		if err == nil {
 			bc.Debugf("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
-			_, processedObjectsSample, err = bulkerStream.Consume(ctx, obj)
+			_, processedObjectSample, err = bulkerStream.Consume(ctx, obj)
 			if err != nil {
 				bc.errorMetric("bulker_stream_error")
 			}
@@ -124,7 +124,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition
 			state, _ := bulkerStream.Abort(ctx)
-			bc.postEventsLog(state, processedObjectsSample, err)
+			bc.postEventsLog(state, processedObjectSample, err)
 			return counters, false, bc.NewError("Failed to process event to bulker stream: %v", err)
 		} else {
 			processed++
@@ -142,7 +142,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		var state bulker.State
 		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(ctx)
-		bc.postEventsLog(state, processedObjectsSample, err)
+		bc.postEventsLog(state, processedObjectSample, err)
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition
 			return counters, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.config.BulkerType, err)
@@ -264,11 +264,11 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 	return
 }
 
-func (bc *BatchConsumerImpl) postEventsLog(state bulker.State, processedObjectsSample []types.Object, batchErr error) {
+func (bc *BatchConsumerImpl) postEventsLog(state bulker.State, processedObjectSample types.Object, batchErr error) {
 	if batchErr != nil && state.LastError == nil {
 		state.SetError(batchErr)
 	}
-	batchState := BatchState{State: state, LastMappedRow: processedObjectsSample}
+	batchState := BatchState{State: state, LastMappedRow: processedObjectSample}
 	_, err2 := bc.eventsLogService.PostEvent(EventTypeBatchAll, bc.destinationId, batchState)
 	if err2 != nil {
 		bc.Errorf("Failed to post event to events log service: %v", err2)
@@ -283,5 +283,5 @@ func (bc *BatchConsumerImpl) postEventsLog(state bulker.State, processedObjectsS
 
 type BatchState struct {
 	bulker.State  `json:",inline"`
-	LastMappedRow []types.Object `json:"lastMappedRow"`
+	LastMappedRow types.Object `json:"lastMappedRow"`
 }

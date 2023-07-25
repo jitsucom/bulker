@@ -316,7 +316,7 @@ func (ps *AbstractTransactionalSQLStream) adjustTables(ctx context.Context, targ
 	ps.dstTable.Columns = ps.tmpTable.Columns
 }
 
-func (ps *AbstractTransactionalSQLStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects []types.Object, err error) {
+func (ps *AbstractTransactionalSQLStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObject types.Object, err error) {
 	defer func() {
 		err = ps.postConsume(err)
 		state = ps.state

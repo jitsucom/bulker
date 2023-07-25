@@ -32,7 +32,7 @@ var (
 		Namespace: "bulkerapp",
 		Subsystem: "handler",
 		Name:      "events",
-		Help:      "Events handler errors by destination Id",
+		Help:      "Events handler statuses by destination Id",
 	}, []string{"destinationId", "mode", "tableName", "status", "errorType"})
 	EventsHandlerRequests = func(destinationId, mode, tableName, status, errorType string) prometheus.Counter {
 		return eventsHandlerRequests.WithLabelValues(destinationId, mode, tableName, status, errorType)
@@ -46,6 +46,16 @@ var (
 	}, []string{"destinationId", "mode", "tableName", "status", "errorType"})
 	BulkHandlerRequests = func(destinationId, mode, tableName, status, errorType string) prometheus.Counter {
 		return bulkHandlerRequests.WithLabelValues(destinationId, mode, tableName, status, errorType)
+	}
+
+	eventsHandlerBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "handler",
+		Name:      "bytes",
+		Help:      "Events handler bytes by destination Id",
+	}, []string{"destinationId", "mode", "tableName", "status", "errorType"})
+	EventsHandlerBytes = func(destinationId, mode, tableName, status, errorType string) prometheus.Counter {
+		return eventsHandlerBytes.WithLabelValues(destinationId, mode, tableName, status, errorType)
 	}
 
 	topicManagerCreate = promauto.NewCounterVec(prometheus.CounterOpts{

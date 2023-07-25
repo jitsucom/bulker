@@ -62,7 +62,7 @@ type Bulker interface {
 type BulkerStream interface {
 	//Consume - put object to the stream. If stream is in Stream mode it will be immediately committed to the database.
 	//Otherwise, it will be buffered and committed on Complete call.
-	Consume(ctx context.Context, object types.Object) (state State, processedObjects []types.Object, err error)
+	Consume(ctx context.Context, object types.Object) (state State, processedObject types.Object, err error)
 	//Abort - abort stream and rollback all uncommitted objects. For stream in Stream mode does nothing.
 	//Returns stream statistics. BulkerStream cannot be used after Abort call.
 	Abort(ctx context.Context) (State, error)

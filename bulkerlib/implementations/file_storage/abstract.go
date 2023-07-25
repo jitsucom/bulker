@@ -274,7 +274,7 @@ func (ps *AbstractFileStorageStream) writeToBatchFile(ctx context.Context, proce
 	return nil
 }
 
-func (ps *AbstractFileStorageStream) Consume(ctx context.Context, object types2.Object) (state bulker.State, processedObjects []types2.Object, err error) {
+func (ps *AbstractFileStorageStream) Consume(ctx context.Context, object types2.Object) (state bulker.State, processedObject types2.Object, err error) {
 	defer func() {
 		err = ps.postConsume(err)
 		state = ps.state
@@ -291,7 +291,7 @@ func (ps *AbstractFileStorageStream) Consume(ctx context.Context, object types2.
 	}
 
 	//type mapping, flattening => table schema
-	processedObject, err := ps.preprocess(object)
+	processedObject, err = ps.preprocess(object)
 	if err != nil {
 		return
 	}

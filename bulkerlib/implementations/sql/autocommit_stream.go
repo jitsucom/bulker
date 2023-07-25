@@ -22,7 +22,7 @@ func newAutoCommitStream(id string, p SQLAdapter, tableName string, streamOption
 	return &ps, nil
 }
 
-func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects []types.Object, err error) {
+func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObject types.Object, err error) {
 	defer func() {
 		err = ps.postConsume(err)
 		state = ps.state
@@ -68,9 +68,9 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 			}
 		}
 		ps.updateRepresentationTable(dstTable)
-		return ps.state, processedObjects, ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObject)
+		return ps.state, processedObject, ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObject)
 	}
-	return ps.state, processedObjects, nil
+	return ps.state, processedObject, nil
 }
 
 func (ps *AutoCommitStream) Complete(ctx context.Context) (state bulker.State, err error) {

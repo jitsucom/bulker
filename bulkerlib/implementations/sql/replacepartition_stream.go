@@ -55,7 +55,7 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 	return &ps, nil
 }
 
-func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects []types.Object, err error) {
+func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects types.Object, err error) {
 	objCopy := utils.MapCopy(object)
 	objCopy[PartitonIdKeyword] = ps.partitionId
 	return ps.AbstractTransactionalSQLStream.Consume(ctx, objCopy)

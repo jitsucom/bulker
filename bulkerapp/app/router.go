@@ -87,12 +87,14 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
 	mode := ""
+	bytesRead := 0
 	var rError appbase.RouterError
 	defer func() {
 		if rError.Error != nil {
 			metrics.EventsHandlerRequests(destinationId, mode, tableName, "error", rError.ErrorType).Inc()
 		} else {
 			metrics.EventsHandlerRequests(destinationId, mode, tableName, "success", "").Inc()
+			metrics.EventsHandlerBytes(destinationId, mode, tableName, "success", "").Add(float64(bytesRead))
 		}
 	}()
 
@@ -127,6 +129,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, "")
 		return
 	}
+	bytesRead = len(body)
 	err = r.producer.ProduceAsync(topicId, uuid.New(), body)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, "")
@@ -144,12 +147,14 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	pkeys := c.QueryArray("pk")
 
 	mode := ""
+	bytesRead := 0
 	var rError appbase.RouterError
 	defer func() {
 		if rError.Error != nil {
 			metrics.BulkHandlerRequests(destinationId, mode, tableName, "error", rError.ErrorType).Inc()
 		} else {
 			metrics.BulkHandlerRequests(destinationId, mode, tableName, "success", "").Inc()
+			metrics.EventsHandlerBytes(destinationId, mode, tableName, "success", "").Add(float64(bytesRead))
 		}
 	}()
 
@@ -182,6 +187,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 			rError = r.ResponseError(c, http.StatusBadRequest, "aborted", false, fmt.Errorf(string(bytes)), "")
 			return
 		}
+		bytesRead += len(bytes)
 		obj := types.Object{}
 		if err = jsoniter.Unmarshal(bytes, &obj); err != nil {
 			_, _ = bulkerStream.Abort(c)

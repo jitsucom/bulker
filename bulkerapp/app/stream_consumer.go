@@ -174,9 +174,9 @@ func (sc *StreamConsumer) start() {
 				} else {
 					sc.Debugf("Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), sc.destination.config.BulkerType)
 					var state bulker.State
-					var processedObjects []types.Object
-					state, processedObjects, err = (*sc.stream.Load()).Consume(context.Background(), obj)
-					sc.postEventsLog(message.Value, state.Representation, processedObjects, err)
+					var processedObject types.Object
+					state, processedObject, err = (*sc.stream.Load()).Consume(context.Background(), obj)
+					sc.postEventsLog(message.Value, state.Representation, processedObject, err)
 					if err != nil {
 						metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "bulker_stream_error").Inc()
 						sc.Errorf("Failed to inject event to bulker stream: %v", err)
@@ -249,7 +249,7 @@ func (sc *StreamConsumer) UpdateDestination(destination *Destination) error {
 	return nil
 }
 
-func (sc *StreamConsumer) postEventsLog(message []byte, representation any, processedObjects []types.Object, processedErr error) {
+func (sc *StreamConsumer) postEventsLog(message []byte, representation any, processedObject types.Object, processedErr error) {
 	object := map[string]any{
 		"original": string(message),
 		"status":   "SUCCESS",
@@ -257,8 +257,8 @@ func (sc *StreamConsumer) postEventsLog(message []byte, representation any, proc
 	if representation != nil {
 		object["representation"] = representation
 	}
-	if len(processedObjects) > 0 {
-		object["mappedData"] = processedObjects
+	if len(processedObject) > 0 {
+		object["mappedData"] = processedObject
 	}
 
 	if processedErr != nil {
