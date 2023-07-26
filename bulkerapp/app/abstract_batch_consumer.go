@@ -42,7 +42,8 @@ type AbstractBatchConsumer struct {
 	batchPeriodSec  int
 	consumerConfig  kafka.ConfigMap
 	consumer        atomic.Pointer[kafka.Consumer]
-	producer        *kafka.Producer
+	producerConfig  kafka.ConfigMap
+	producer        atomic.Pointer[kafka.Producer]
 	topicId         string
 	mode            string
 	tableName       string
@@ -84,40 +85,10 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		return nil, base.NewError("Error creating consumer: %v", err)
 	}
-	// check topic partitions count
-	metadata, err := consumer.GetMetadata(&topicId, false, 10000)
-	if err != nil {
-		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
-		return nil, base.NewError("Failed to get consumer metadata: %v", err)
-	}
-	for _, topic := range metadata.Topics {
-		if topic.Topic == topicId {
-			if len(topic.Partitions) > 1 {
-				metrics.ConsumerErrors(topicId, mode, destinationId, tableName, "invalid_partitions_count").Inc()
-				return nil, base.NewError("Topic has more than 1 partition. Batch Consumer supports only topics with a single partition")
-			}
-			break
-		}
-	}
-
 	producerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"transactional.id": fmt.Sprintf("%s_failed_%s", topicId, config.InstanceId),
 	}, *kafkaConfig))
-	producer, err := kafka.NewProducer(&producerConfig)
-	if err != nil {
-		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
-		_ = consumer.Close()
-		return nil, base.NewError("error creating kafka producer: %v", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-	//enable transactions support for producer
-	err = producer.InitTransactions(ctx)
-	if err != nil {
-		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
-		_ = consumer.Close()
-		return nil, base.NewError("error initializing kafka producer transactions for 'failed' producer: %v", err)
-	}
+
 	bc := &AbstractBatchConsumer{
 		Service:         base,
 		config:          config,
@@ -128,7 +99,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		topicId:         topicId,
 		mode:            mode,
 		consumerConfig:  consumerConfig,
-		producer:        producer,
+		producerConfig:  producerConfig,
 		waitForMessages: time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
 		closed:          make(chan struct{}),
 		resumeChannel:   make(chan struct{}),
@@ -146,12 +117,17 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	// Delivery reports channel for 'failed' producer messages
 	safego.RunWithRestart(func() {
 		for {
+			producer := bc.producer.Load()
+			if producer == nil {
+				time.Sleep(time.Second * 10)
+				continue
+			}
 			select {
 			case <-bc.closed:
 				bc.Infof("Closing producer.")
-				bc.producer.Close()
+				producer.Close()
 				return
-			case e := <-bc.producer.Events():
+			case e := <-producer.Events():
 				switch ev := e.(type) {
 				case *kafka.Message:
 					messageId := GetKafkaHeader(ev, MessageIdHeader)
@@ -167,6 +143,29 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		}
 	})
 	return bc, nil
+}
+
+func (bc *AbstractBatchConsumer) initProducer() *kafka.Producer {
+	producer := bc.producer.Load()
+	if producer != nil {
+		return producer
+	}
+	bc.Infof("Setting up transactional producer.")
+	producer, err := kafka.NewProducer(&bc.producerConfig)
+	if err != nil {
+		metrics.ConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, metrics.KafkaErrorCode(err)).Inc()
+		panic(bc.NewError("error creating kafka producer: %v", err))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	//enable transactions support for producer
+	err = producer.InitTransactions(ctx)
+	if err != nil {
+		metrics.ConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, metrics.KafkaErrorCode(err)).Inc()
+		panic(bc.NewError("error initializing kafka producer transactions for 'failed' producer: %v", err))
+	}
+	bc.producer.Store(producer)
+	return producer
 }
 
 func (bc *AbstractBatchConsumer) BatchPeriodSec() int {

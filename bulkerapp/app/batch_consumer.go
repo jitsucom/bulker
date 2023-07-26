@@ -164,10 +164,17 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 // processFailed consumes the latest failed batch of messages and sends them to the 'failed' topic
 func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, failedPosition *kafka.TopicPartition) (counters BatchCounters, err error) {
 	defer func() {
+		//recover
+		if r := recover(); r != nil {
+			err = bc.NewError("Recovered from panic: %v", r)
+			bc.SystemErrorf("Recovered from panic: %v", r)
+		}
 		if err != nil {
 			err = bc.NewError("Failed to put unsuccessful batch to 'failed' producer: %v", err)
 		}
 	}()
+	producer := bc.initProducer()
+
 	bc.resume()
 
 	bc.Infof("Rolling back to first offset %d (failed at %d)", firstPosition.Offset, failedPosition.Offset)
@@ -177,14 +184,14 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		bc.errorMetric("SEEK_ERROR")
 		return BatchCounters{}, fmt.Errorf("failed to rollback kafka consumer offset: %v", err)
 	}
-	err = bc.producer.BeginTransaction()
+	err = producer.BeginTransaction()
 	if err != nil {
 		return BatchCounters{}, fmt.Errorf("failed to begin kafka transaction: %v", err)
 	}
 	defer func() {
 		if err != nil {
 			//cleanup
-			_ = bc.producer.AbortTransaction(context.Background())
+			_ = producer.AbortTransaction(context.Background())
 			_, err = bc.consumer.Load().SeekPartitions([]kafka.TopicPartition{*firstPosition})
 			if err != nil {
 				bc.errorMetric("SEEK_ERROR")
@@ -221,7 +228,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 			deadLettered = true
 			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, false)
 		}
-		err = bc.producer.Produce(&kafka.Message{
+		err = producer.Produce(&kafka.Message{
 			Key:            message.Key,
 			TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
 			Headers: []kafka.Header{
@@ -251,12 +258,12 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 	offset := *failedPosition
 	offset.Offset++
 	//set consumer offset to the next message after failure. that happens atomically with whole producer transaction
-	err = bc.producer.SendOffsetsToTransaction(context.Background(), []kafka.TopicPartition{offset}, groupMetadata)
+	err = producer.SendOffsetsToTransaction(context.Background(), []kafka.TopicPartition{offset}, groupMetadata)
 	if err != nil {
 		err = fmt.Errorf("failed to send consumer offset to producer transaction: %v", err)
 		return
 	}
-	err = bc.producer.CommitTransaction(context.Background())
+	err = producer.CommitTransaction(context.Background())
 	if err != nil {
 		err = fmt.Errorf("failed to commit kafka transaction for producer: %v", err)
 		return

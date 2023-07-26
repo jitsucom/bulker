@@ -7,7 +7,9 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/safego"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"sync"
+	"sync/atomic"
 )
 
 type RepositoryChange struct {
@@ -18,30 +20,23 @@ type RepositoryChange struct {
 
 type Repository struct {
 	appbase.Service
-	sync.Mutex
 	configurationSource ConfigurationSource
-	repository          *repositoryInternal
+	repository          atomic.Pointer[repositoryInternal]
 
 	changesChan chan RepositoryChange
 }
 
 func (r *Repository) GetDestination(id string) *Destination {
-	r.Lock()
-	defer r.Unlock()
-	return r.repository.GetDestination(id)
+	return r.repository.Load().GetDestination(id)
 }
 
 // LeaseDestination destination. destination cannot be closed while at lease one service is using it (e.g. batch consumer)
 func (r *Repository) LeaseDestination(id string) *Destination {
-	r.Lock()
-	defer r.Unlock()
-	return r.repository.LeaseDestination(id)
+	return r.repository.Load().LeaseDestination(id)
 }
 
 func (r *Repository) GetDestinations() []*Destination {
-	r.Lock()
-	defer r.Unlock()
-	return r.repository.GetDestinations()
+	return r.repository.Load().GetDestinations()
 }
 
 func (r *Repository) init() error {
@@ -54,37 +49,43 @@ func (r *Repository) init() error {
 	if err != nil {
 		return err
 	}
-	//Cleanup
-	//TODO: detect changes and close only changed destinations
-	r.Lock()
-	oldInternal := r.repository
-	r.repository = internal
-	if oldInternal != nil {
-		for id, destination := range oldInternal.destinations {
-			r.Infof("retiring destination %s. Ver: %s", id, destination.config.UpdatedAt)
-			oldInternal.retireDestination(destination)
-		}
-	}
-	r.Unlock()
+
+	oldInternal := r.repository.Load()
+
+	toRetire := make([]*Destination, 0)
+
 	repositoryChange := RepositoryChange{}
 	var oldDestinations map[string]*Destination
 	if oldInternal != nil {
 		oldDestinations = oldInternal.destinations
 	}
-	for id := range oldDestinations {
+	for id, oldDestination := range oldDestinations {
 		newDst, ok := internal.destinations[id]
 		if !ok {
+			r.Infof("Destination %s (%s) was removed. Ver: %s", id, oldDestination.config.BulkerType, oldDestination.config.UpdatedAt)
+			toRetire = append(toRetire, oldDestination)
 			repositoryChange.RemovedDestinationIds = append(repositoryChange.RemovedDestinationIds, id)
-		} else {
-			//TODO: track changes for each destination individually
+		} else if !newDst.equals(oldDestination) {
+			r.Infof("Destination %s (%s) was updated. New Ver: %s", id, newDst.config.BulkerType, newDst.config.UpdatedAt)
+			toRetire = append(toRetire, oldDestination)
+			newDst.InitBulkerInstance()
 			repositoryChange.ChangedDestinations = append(repositoryChange.ChangedDestinations, newDst)
+		} else {
+			//copy unchanged initialized destinations from old repository
+			internal.destinations[id] = oldDestination
 		}
 	}
 	for id, dst := range internal.destinations {
 		_, ok := oldDestinations[id]
 		if !ok {
+			r.Infof("Destination %s (%s) was added. Ver: %s", id, dst.config.BulkerType, dst.config.UpdatedAt)
+			dst.InitBulkerInstance()
 			repositoryChange.AddedDestinations = append(repositoryChange.AddedDestinations, dst)
 		}
+	}
+	r.repository.Store(internal)
+	for _, dst := range toRetire {
+		oldInternal.retireDestination(dst)
 	}
 	metrics.RepositoryDestinations("added").Add(float64(len(repositoryChange.AddedDestinations)))
 	metrics.RepositoryDestinations("changed").Add(float64(len(repositoryChange.ChangedDestinations)))
@@ -139,44 +140,25 @@ func NewRepository(_ *Config, configurationSource ConfigurationSource) (*Reposit
 func (r *repositoryInternal) init(configurationSource ConfigurationSource) error {
 	r.Debugf("Initializing repository")
 	for _, cfg := range configurationSource.GetDestinationConfigs() {
-		r.initBulkerInstance(cfg)
+		r.addDestination(cfg)
 	}
 	return nil
 }
 
-func (r *repositoryInternal) initBulkerInstance(cfg *DestinationConfig) {
-	defer func() {
-		if e := recover(); e != nil {
-			metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
-			r.Errorf("Rejecting destination %s – panic : %v", cfg.Id(), e)
-		}
-	}()
-	bulkerInstance, err := bulker.CreateBulker(cfg.Config)
-	withError := ""
-	logFunc := r.Infof
-	if err != nil {
-		metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
-		if bulkerInstance == nil {
-			r.Errorf("destination %s – failed to create bulker instance: %v", cfg.Id(), err)
-			return
-		}
-		// we could not connect but problem may be resolved on the warehouse side later.
-		logFunc = r.Errorf
-		withError = fmt.Sprintf(" with error: %v", err)
-	}
+func (r *repositoryInternal) addDestination(cfg *DestinationConfig) {
 	options := bulker.StreamOptions{}
 	for name, serializedOption := range cfg.StreamConfig.Options {
 		opt, err := bulker.ParseOption(name, serializedOption)
 		if err != nil {
 			metrics.RepositoryDestinationInitError(cfg.Id()).Inc()
-			//TODO: don't create working instance on options parsing error
+			//TODO: don't create working instance on options parsing error ?
 			r.Errorf("destination %s – failed to parse option %s=%s : %v", cfg.Id(), name, serializedOption, err)
 			continue
 		}
 		options.Add(opt)
 	}
-	r.destinations[cfg.Id()] = &Destination{config: cfg, mode: bulker.ModeOption.Get(&options), bulker: bulkerInstance, streamOptions: &options, owner: r}
-	logFunc("destination %s initialized%s. Ver: %s", cfg.Id(), withError, cfg.UpdatedAt)
+	configHash, _ := utils.HashAny(cfg)
+	r.destinations[cfg.Id()] = &Destination{config: cfg, configHash: configHash, mode: bulker.ModeOption.Get(&options), streamOptions: &options, owner: r}
 }
 
 func (r *repositoryInternal) GetDestination(id string) *Destination {
@@ -222,6 +204,7 @@ func (r *repositoryInternal) GetDestinations() []*Destination {
 type Destination struct {
 	sync.Mutex
 	config        *DestinationConfig
+	configHash    uint64
 	mode          bulker.BulkMode
 	bulker        bulker.Bulker
 	streamOptions *bulker.StreamOptions
@@ -242,6 +225,32 @@ func (d *Destination) TopicId(tableName string) (string, error) {
 // Id returns destination id
 func (d *Destination) Id() string {
 	return d.config.Id()
+}
+
+func (d *Destination) InitBulkerInstance() {
+	if d.bulker != nil {
+		return
+	}
+	var err error
+	defer func() {
+		if e := recover(); e != nil {
+			metrics.RepositoryDestinationInitError(d.Id()).Inc()
+			err = fmt.Errorf("panic : %v", e)
+			logging.Errorf("Rejecting destination %s – %v", d.Id(), e)
+			d.bulker = &bulker.DummyBulker{Error: err}
+		}
+	}()
+
+	d.bulker, err = bulker.CreateBulker(d.config.Config)
+	if err != nil {
+		metrics.RepositoryDestinationInitError(d.Id()).Inc()
+		if d.bulker == nil {
+			err = fmt.Errorf("failed to create bulker instance: %v", err)
+			d.bulker = &bulker.DummyBulker{Error: err}
+		}
+		// we could not connect but problem may be resolved on the warehouse side later.
+	}
+	return
 }
 
 // Mode returns destination mode
@@ -278,6 +287,11 @@ func (d *Destination) Lease() {
 // Release destination. See Lease
 func (d *Destination) Release() {
 	d.owner.releaseDestination(d)
+}
+
+// equals compares destination with another destination
+func (d *Destination) equals(o *Destination) bool {
+	return d.configHash == o.configHash && d.config.UpdatedAt == o.config.UpdatedAt
 }
 
 //// AddBatchConsumer Add batch consumer to destination

@@ -58,6 +58,18 @@ type Bulker interface {
 	CreateStream(id, tableName string, mode BulkMode, streamOptions ...StreamOption) (BulkerStream, error)
 }
 
+type DummyBulker struct {
+	Error error
+}
+
+func (d *DummyBulker) Close() error {
+	return nil
+}
+
+func (d *DummyBulker) CreateStream(id, tableName string, mode BulkMode, streamOptions ...StreamOption) (BulkerStream, error) {
+	return nil, d.Error
+}
+
 // TODO: Commit() method that commits transaction and start new one ??
 type BulkerStream interface {
 	//Consume - put object to the stream. If stream is in Stream mode it will be immediately committed to the database.

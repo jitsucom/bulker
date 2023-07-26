@@ -28,8 +28,17 @@ func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodS
 func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error) {
 	var firstPosition *kafka.TopicPartition
 	var lastPosition *kafka.TopicPartition
+	defer func() {
+		//recover
+		if r := recover(); r != nil {
+			err = rc.NewError("Recovered from panic: %v", r)
+			rc.SystemErrorf("Recovered from panic: %v", r)
+		}
+	}()
 
 	txOpened := false
+	var producer *kafka.Producer
+
 	defer func() {
 		if err != nil {
 			//cleanup
@@ -37,7 +46,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 				_, _ = rc.consumer.Load().SeekPartitions([]kafka.TopicPartition{*firstPosition})
 			}
 			if txOpened {
-				_ = rc.producer.AbortTransaction(context.Background())
+				_ = producer.AbortTransaction(context.Background())
 			}
 			nextBatch = false
 		}
@@ -69,7 +78,8 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 		lastPosition = &message.TopicPartition
 		if counters.consumed == 1 {
 			firstPosition = &message.TopicPartition
-			err = rc.producer.BeginTransaction()
+			producer = rc.initProducer()
+			err = producer.BeginTransaction()
 			if err != nil {
 				return BatchCounters{}, false, fmt.Errorf("failed to begin kafka transaction: %v", err)
 			}
@@ -106,7 +116,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 		}
 		headers = append(headers, kafka.Header{Key: originalTopicHeader, Value: []byte(originalTopic)})
 		headers = append(headers, kafka.Header{Key: retriesCountHeader, Value: []byte(strconv.Itoa(retries))})
-		err = rc.producer.Produce(&kafka.Message{
+		err = producer.Produce(&kafka.Message{
 			Key:            message.Key,
 			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 			Headers:        headers,
@@ -128,11 +138,11 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 	offset := *lastPosition
 	offset.Offset++
 	//set consumer offset to the next message after failure. that happens atomically with whole producer transaction
-	err = rc.producer.SendOffsetsToTransaction(context.Background(), []kafka.TopicPartition{offset}, groupMetadata)
+	err = producer.SendOffsetsToTransaction(context.Background(), []kafka.TopicPartition{offset}, groupMetadata)
 	if err != nil {
 		return BatchCounters{}, false, fmt.Errorf("failed to send consumer offset to producer transaction: %v", err)
 	}
-	err = rc.producer.CommitTransaction(context.Background())
+	err = producer.CommitTransaction(context.Background())
 	if err != nil {
 		return BatchCounters{}, false, fmt.Errorf("failed to commit kafka transaction for producer: %v", err)
 	}

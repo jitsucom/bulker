@@ -146,7 +146,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 
 	allTopics := utils.NewSet[string]()
 
-	for topic := range metadata.Topics {
+	for topic, topicMetadata := range metadata.Topics {
 		allTopics.Put(topic)
 		if tm.abandonedTopics.Contains(topic) {
 			abandonedTopicsCount++
@@ -182,7 +182,16 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 				tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
 			case "batch":
 				batchPeriodSec := utils.Nvl(int(bulker.BatchFrequencyOption.Get(destination.streamOptions)*60), tm.config.BatchRunnerPeriodSec)
-				batchConsumer, err := NewBatchConsumer(tm.repository, destinationId, batchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
+				// check topic partitions count
+				var err error
+				if len(topicMetadata.Partitions) > 1 {
+					metrics.ConsumerErrors(topic, mode, destinationId, tableName, "invalid_partitions_count").Inc()
+					err = fmt.Errorf("Topic has more than 1 partition. Batch Consumer supports only topics with a single partition")
+				}
+				var batchConsumer *BatchConsumerImpl
+				if err == nil {
+					batchConsumer, err = NewBatchConsumer(tm.repository, destinationId, batchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
+				}
 				if err != nil {
 					topicsErrorsByMode[mode]++
 					tm.Errorf("Failed to create batch consumer for destination topic: %s: %v", topic, err)
@@ -200,7 +209,15 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 				}
 			case retryTopicMode:
 				retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(destination.streamOptions)*60), int(bulker.BatchFrequencyOption.Get(destination.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)
-				retryConsumer, err := NewRetryConsumer(tm.repository, destinationId, retryPeriodSec, topic, tm.config, tm.kafkaConfig)
+				var err error
+				if len(topicMetadata.Partitions) > 1 {
+					metrics.ConsumerErrors(topic, mode, destinationId, tableName, "invalid_partitions_count").Inc()
+					err = fmt.Errorf("Topic has more than 1 partition. Retry Consumer supports only topics with a single partition")
+				}
+				var retryConsumer *RetryConsumer
+				if err == nil {
+					retryConsumer, err = NewRetryConsumer(tm.repository, destinationId, retryPeriodSec, topic, tm.config, tm.kafkaConfig)
+				}
 				if err != nil {
 					topicsErrorsByMode[mode]++
 					tm.Errorf("Failed to create retry consumer for destination topic: %s: %v", topic, err)
@@ -231,7 +248,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		for mode, config := range tm.requiredDestinationTopics {
 			topicId, _ := MakeTopicId(destination.Id(), mode, allTablesToken, false)
 			if !ok || !dstTopics.Contains(topicId) {
-				tm.Infof("Creating topic %s for destination %s", topicId, destination.Id())
+				//tm.Debugf("Creating topic %s for destination %s", topicId, destination.Id())
 				err := tm.createDestinationTopic(topicId, config)
 				if err != nil {
 					tm.Errorf("Failed to create topic %s for destination %s: %v", topicId, destination.Id(), err)
