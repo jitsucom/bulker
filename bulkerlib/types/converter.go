@@ -62,10 +62,8 @@ var (
 
 		rule{from: STRING, to: TIMESTAMP}: stringToTimestamp,
 
-		// Future
-		/*rule{from: STRING, to: INT64}:     stringToInt,
-		  rule{from: STRING, to: FLOAT64}:   stringToFloat,
-		  rule{from: FLOAT64, to: INT64}: floatToInt,*/
+		rule{from: STRING, to: INT64}:   stringToInt,
+		rule{from: STRING, to: FLOAT64}: stringToFloat,
 	}
 
 	charsInNumberStringReplacer = strings.NewReplacer(",", "", " ", "")
@@ -90,6 +88,11 @@ func IsConvertible(from DataType, to DataType) bool {
 	if from == to {
 		return true
 	}
+	if to == UNKNOWN {
+		// we allow any type for columns of type UNKNOWN. Otherwise, column with custom sql types like maps or array won't work
+		// ToString conversion is applied before writing to db
+		to = STRING
+	}
 
 	if _, ok := convertRules[rule{from: from, to: to}]; ok {
 		return true
@@ -108,6 +111,11 @@ func Convert(toType DataType, v any) (any, error) {
 
 	if currentType == toType {
 		return v, nil
+	}
+	if toType == UNKNOWN {
+		// we allow any type for columns of type UNKNOWN. Otherwise, column with custom sql types like maps or array won't work
+		// ToString conversion is applied before writing to db
+		toType = STRING
 	}
 
 	f, ok := convertRules[rule{from: currentType, to: toType}]
@@ -304,9 +312,9 @@ func boolToFloat(v any) (any, error) {
 	}
 }
 
-// StringToInt returns int representation of input string
+// stringToInt returns int representation of input string
 // or error if unconvertable
-func StringToInt(v any) (any, error) {
+func stringToInt(v any) (any, error) {
 	intValue, err := strconv.Atoi(v.(string))
 	if err != nil {
 		return nil, fmt.Errorf("Error stringToInt() for value: %v: %v", v, err)
@@ -317,7 +325,7 @@ func StringToInt(v any) (any, error) {
 
 // StringToFloat return float64 value from string
 // or error if unconvertable
-func StringToFloat(v any) (any, error) {
+func stringToFloat(v any) (any, error) {
 	floatValue, err := strconv.ParseFloat(v.(string), 64)
 	if err != nil {
 		return nil, fmt.Errorf("Error stringToFloat() for value: %v: %v", v, err)
@@ -337,5 +345,5 @@ func stringToTimestamp(v any) (any, error) {
 
 // StringWithCommasToFloat return float64 value from string (1,200.50)
 func StringWithCommasToFloat(v any) (any, error) {
-	return StringToFloat(charsInNumberStringReplacer.Replace(v.(string)))
+	return stringToFloat(charsInNumberStringReplacer.Replace(v.(string)))
 }
