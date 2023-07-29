@@ -13,6 +13,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"github.com/jitsucom/bulker/jitsubase/uuid"
 	jsoniter "github.com/json-iterator/go"
 	"os"
 	"regexp"
@@ -293,8 +294,23 @@ func (ch *ClickHouse) Type() string {
 
 // OpenTx opens underline sql transaction and return wrapped instance
 func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
-	//return ch.openTx(ctx, ch)
-	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), ch.dataSource, ch.queryLogger, ch.checkErrFunc)}, nil
+	cfg := ch.config
+	if ch.httpMode {
+		configCopy := *ch.config
+		configCopy.Parameters = utils.MapCopy(ch.config.Parameters)
+		utils.MapPutIfAbsent(configCopy.Parameters, "session_id", uuid.New())
+		utils.MapPutIfAbsent(configCopy.Parameters, "session_timeout", "3600")
+		cfg = &configCopy
+	}
+	db, err := ch.dbConnectFunction(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open session: %v", err)
+	}
+	con, err := db.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open connection: %v", err)
+	}
+	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), con, ch.queryLogger, ch.checkErrFunc, true)}, nil
 }
 
 // InitDatabase create database instance if doesn't exist
@@ -345,7 +361,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 			columnsDDL[i] = ch.columnDDL(columnName, table)
 		}
 
-		query := fmt.Sprintf(createTableTemplate+" ENGINE = Memory", "", ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
+		query := fmt.Sprintf(createTableTemplate, "TEMPORARY", ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
 
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 			return errorj.CreateTableError.Wrap(err, "failed to create table").

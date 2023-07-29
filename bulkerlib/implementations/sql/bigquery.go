@@ -343,6 +343,9 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 		}
 		tableMetaData.TimePartitioning = &bigquery.TimePartitioning{Field: table.Partition.Field, Type: partitioningType}
 	}
+	if table.Temporary {
+		tableMetaData.ExpirationTime = time.Now().Add(time.Hour)
+	}
 	bq.logQuery("CREATE table for schema: ", tableMetaData, nil)
 	if err := bqTable.Create(ctx, &tableMetaData); err != nil {
 		schemaJson, _ := bqSchema.ToJSONFields()

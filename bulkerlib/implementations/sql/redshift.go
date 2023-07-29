@@ -87,7 +87,6 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: &config.S3OptionConfig}
 	r.batchFileFormat = types2.FileFormatCSV
 	r.batchFileCompression = types2.FileCompressionGZIP
-	r.temporaryTables = true
 	r._columnDDLFunc = redshiftColumnDDL
 	r.initTypes(redshiftTypes)
 	r.tableHelper = NewTableHelper(127, '"')

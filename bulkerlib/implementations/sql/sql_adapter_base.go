@@ -90,6 +90,7 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunc
 		_columnDDLFunc:       columnDDLFunc,
 		checkErrFunc:         checkErrFunc,
 	}
+	s.temporaryTables = true
 	s.batchFileFormat = types2.FileFormatNDJSON
 	s.batchFileCompression = types2.FileCompressionNONE
 	var err error
@@ -172,7 +173,11 @@ func (b *SQLAdapterBase[T]) openTx(ctx context.Context, sqlAdapter SQLAdapter) (
 func (b *SQLAdapterBase[T]) txOrDb(ctx context.Context) TxOrDB {
 	txOrDb, ok := ctx.Value(ContextTransactionKey).(TxOrDB)
 	if !ok {
-		return NewDbWrapper(b.typeId, b.dataSource, b.queryLogger, b.checkErrFunc)
+		if b.dataSource == nil {
+			return NewDbWrapper(b.typeId, nil, b.queryLogger, b.checkErrFunc, false)
+		} else {
+			return NewDbWrapper(b.typeId, b.dataSource, b.queryLogger, b.checkErrFunc, false)
+		}
 	}
 	return txOrDb
 }
