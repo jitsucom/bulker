@@ -90,6 +90,7 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	r._columnDDLFunc = redshiftColumnDDL
 	r.initTypes(redshiftTypes)
 	r.tableHelper = NewTableHelper(127, '"')
+	r.temporaryTables = true
 	//// Redshift is case insensitive by default
 	//r._columnNameFunc = strings.ToLower
 	//r._tableNameFunc = func(config *DataSourceConfig, tableName string) string { return tableName }

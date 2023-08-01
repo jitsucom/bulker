@@ -72,7 +72,7 @@ func (j *JobRunner) watchPodStatuses() {
 			list, err := j.clientset.CoreV1().Pods(j.namespace).List(context.Background(), metav1.ListOptions{LabelSelector: k8sCreatorLabel + "=" + k8sCreatorLabelValue})
 			if err != nil {
 				j.Errorf("failed to list pods: %v", err.Error())
-				return
+				continue
 			}
 			for _, pod := range list.Items {
 				taskStatus := TaskStatus{}
@@ -357,8 +357,10 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			RestartPolicy: v1.RestartPolicyNever,
 			Containers: []v1.Container{
 				{Name: "source",
-					Image:        fmt.Sprintf("%s:%s", task.Package, task.PackageVersion),
-					Command:      []string{"sh", "-c", fmt.Sprintf("eval \"$AIRBYTE_ENTRYPOINT %s\" 2> /pipes/stderr > /pipes/stdout", command)},
+					Image:   fmt.Sprintf("%s:%s", task.Package, task.PackageVersion),
+					Command: []string{"sh", "-c", fmt.Sprintf("eval \"$AIRBYTE_ENTRYPOINT %s\" 2> /pipes/stderr > /pipes/stdout", command)},
+					Env: []v1.EnvVar{{Name: "USE_STREAM_CAPABLE_STATE", Value: "true"},
+						{Name: "AUTO_DETECT_SCHEMA", Value: "true"}},
 					VolumeMounts: volumeMounts,
 				},
 				{

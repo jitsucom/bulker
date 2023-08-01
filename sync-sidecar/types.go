@@ -17,6 +17,7 @@ type Row struct {
 	ConnectionStatus *StatusRow     `json:"connectionStatus,omitempty"`
 	State            *StateRow      `json:"state,omitempty"`
 	Record           *RecordRow     `json:"record,omitempty"`
+	Trace            *TraceRow      `json:"trace,omitempty"`
 	Catalog          map[string]any `json:"catalog,omitempty"`
 	Spec             map[string]any `json:"spec,omitempty"`
 }
@@ -25,6 +26,22 @@ type Row struct {
 type LogRow struct {
 	Level   string `json:"level,omitempty"`
 	Message string `json:"message,omitempty"`
+}
+
+type StreamDescriptor struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+type StreamStatus struct {
+	StreamDescriptor StreamDescriptor `json:"stream_descriptor"`
+	Status           string           `json:"status"`
+}
+
+// TraceRow is a dto for airbyte trace serialization
+type TraceRow struct {
+	Type         string       `json:"type"`
+	StreamStatus StreamStatus `json:"stream_status,omitempty"`
 }
 
 // StatusRow is a dto for airbyte result status serialization
