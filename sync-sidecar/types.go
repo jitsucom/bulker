@@ -50,15 +50,29 @@ type StatusRow struct {
 	Message string `json:"message,omitempty"`
 }
 
+type StreamState struct {
+	StreamDescriptor StreamDescriptor `json:"stream_descriptor"`
+	StreamState      map[string]any   `json:"stream_state,omitempty"`
+}
+
+type GlobalState struct {
+	SharedState  map[string]any `json:"shared_state,omitempty"`
+	StreamStates []StreamState  `json:"stream_states,omitempty"`
+}
+
 // StateRow is a dto for airbyte state serialization
 type StateRow struct {
-	Data map[string]interface{} `json:"data,omitempty"`
+	Type        string         `json:"type,omitempty"`
+	StreamState *StreamState   `json:"stream,omitempty"`
+	GlobalState *GlobalState   `json:"global,omitempty"`
+	Data        map[string]any `json:"data,omitempty"`
 }
 
 // RecordRow is a dto for airbyte record serialization
 type RecordRow struct {
-	Stream string                 `json:"stream,omitempty"`
-	Data   map[string]interface{} `json:"data,omitempty"`
+	Stream    string                 `json:"stream,omitempty"`
+	Namespace string                 `json:"namespace,omitempty"`
+	Data      map[string]interface{} `json:"data,omitempty"`
 }
 
 type Catalog struct {

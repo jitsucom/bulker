@@ -107,7 +107,7 @@ func (s *SpecCatalogSideCar) processSpec(spec map[string]any) {
 func (s *SpecCatalogSideCar) processConnectionStatus(status *StatusRow) {
 	// ignore previous error messages since we got result
 	s.firstErr = nil
-	s.log("CONNECTION STATUS: %s", joinStrings(status.Status, status.Message))
+	s.log("CONNECTION STATUS: %s", joinStrings(status.Status, status.Message, ": "))
 	st := strings.ReplaceAll(status.Status, "SUCCEEDED", "SUCCESS")
 	err := db.UpsertCheck(s.dbpool, s.packageName, s.packageVersion, s.storageKey, st, status.Message, s.startedAt)
 	if err != nil {

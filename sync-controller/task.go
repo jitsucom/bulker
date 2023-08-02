@@ -61,7 +61,7 @@ const (
 type TaskConfiguration struct {
 	Config  map[string]any `json:"config"`
 	Catalog map[string]any `json:"catalog"`
-	State   map[string]any `json:"state"`
+	State   any            `json:"state"`
 }
 
 func (t *TaskConfiguration) IsEmpty() bool {

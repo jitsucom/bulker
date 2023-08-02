@@ -21,24 +21,21 @@ type StreamStat struct {
 	Error          string `json:"error,omitempty"`
 }
 
-func (s *StreamStat) Merge(other *StreamStat) {
-	switch other.Status {
-	case "ERROR":
-		if s.Status != "ERROR" {
+func (s *StreamStat) Merge(chunk *StreamStat) {
+	switch chunk.Status {
+	case "FAILED":
+		if s.Status != "FAILED" {
 			s.Status = "PARTIAL"
-			s.Error = other.Error
+			s.Error = chunk.Error
 		}
-	case "PARTIAL":
-		s.Status = "PARTIAL"
-		s.Error = other.Error
-		s.EventsCount += other.EventsCount
-		s.BytesProcessed += other.BytesProcessed
 	case "SUCCESS":
 		if s.Status != "SUCCESS" {
 			panic("unexpected status. cannot merge success status with non-success")
 		}
-		s.EventsCount += other.EventsCount
-		s.BytesProcessed += other.BytesProcessed
+		s.EventsCount += chunk.EventsCount
+		s.BytesProcessed += chunk.BytesProcessed
+	default:
+		panic("unexpected stream status: " + chunk.Status + ". ")
 	}
 }
 
@@ -60,9 +57,10 @@ func NewActiveStream(name string, writer *io.PipeWriter) *ActiveStream {
 func (s *ActiveStream) Close() {
 	if s.Error != "" {
 		// intentionally break ndjson stream with that error. Bulker will definitely abort this stream
-		_, _ = s.Write([]byte("ABORT with error: " + s.Error + "\n"))
+		_ = s.writer.CloseWithError(fmt.Errorf(s.Error))
+	} else {
+		_ = s.writer.Close()
 	}
-	_ = s.writer.Close()
 	s.waitGroup.Wait()
 }
 
@@ -79,7 +77,7 @@ func (s *ActiveStream) RegisterError(err error) {
 		s.Error = err.Error()
 		s.BytesProcessed = 0
 		s.EventsCount = 0
-		s.Status = "ERROR"
+		s.Status = "FAILED"
 	}
 }
 
@@ -87,10 +85,9 @@ type ReadSideCar struct {
 	*AbstractSideCar
 
 	currentStream    *ActiveStream
-	processedStreams map[string]StreamStat
+	processedStreams map[string]*StreamStat
 	catalog          map[string]*Stream
 	initialState     string
-	state            *StateRow
 	eventsCounter    int
 	bytesCounter     int
 }
@@ -110,7 +107,7 @@ func (s *ReadSideCar) Run() {
 		if len(s.processedStreams) > 0 {
 			for cStream, _ := range s.catalog {
 				if _, ok := s.processedStreams[cStream]; !ok {
-					s.processedStreams[cStream] = StreamStat{Status: "FAILED", Error: "Stream was not processed. Check logs for errors."}
+					s.processedStreams[cStream] = &StreamStat{Status: "FAILED", Error: "Stream was not processed. Check logs for errors."}
 				}
 			}
 			allSuccess := true
@@ -119,7 +116,7 @@ func (s *ReadSideCar) Run() {
 				if streamStat.Status != "SUCCESS" {
 					allSuccess = false
 				}
-				if streamStat.Status != "ERROR" {
+				if streamStat.Status != "FAILED" {
 					allFailed = false
 				}
 			}
@@ -132,7 +129,7 @@ func (s *ReadSideCar) Run() {
 			processedStreamsJson, _ := json.Marshal(s.processedStreams)
 			s.sendStatus(s.command, status, string(processedStreamsJson))
 		} else if s.isErr() {
-			s.sendStatus(s.command, "FAILED", s.firstErr.Error())
+			s.sendStatus(s.command, "FAILED", "ERROR: "+s.firstErr.Error())
 			os.Exit(1)
 		} else {
 			s.sendStatus(s.command, "SUCCESS", "")
@@ -168,7 +165,7 @@ func (s *ReadSideCar) Run() {
 		}
 	}()
 
-	s.processedStreams = map[string]StreamStat{}
+	s.processedStreams = map[string]*StreamStat{}
 	outPipe, _ := os.Open(s.stdOutPipeFile)
 	defer outPipe.Close()
 	stdOutErrWaitGroup.Add(1)
@@ -204,64 +201,82 @@ func (s *ReadSideCar) Run() {
 		s.closeCurrentStream()
 	}()
 	stdOutErrWaitGroup.Wait()
-	s.saveState()
-
 }
 
 func (s *ReadSideCar) processState(state *StateRow) {
-	s.log("STATE: %+v", state.Data)
-	s.state = state
+	s.closeCurrentStream()
+	switch state.Type {
+	case "GLOBAL":
+		s.saveState("_GLOBAL_STATE", state.GlobalState)
+	case "STREAM":
+		s.saveState(joinStrings(state.StreamState.StreamDescriptor.Namespace, state.StreamState.StreamDescriptor.Name, "."), state.StreamState.StreamState)
+	case "LEGACY", "":
+		s.saveState("_LEGACY_STATE", state.Data)
+	}
 }
 
-func (s *ReadSideCar) saveState() {
-	if s.state == nil {
-		return
+func (s *ReadSideCar) saveState(stream string, data any) {
+	if stream != "_LEGACY_STATE" && stream != "_GLOBAL_STATE" {
+		processed, ok := s.processedStreams[stream]
+		if !ok {
+			s.err("STATE: cannot save state for stream '%s' because it was not processed", stream)
+			return
+		}
+		if processed.Error != "" {
+			s.err("STATE: not saving state for stream '%s' because of previous errors", stream)
+			return
+		}
 	}
-	if s.isErr() {
-		s.err("STATE: not saving state because of previous errors")
-		return
-	}
-	stateJson, err := json.Marshal(s.state.Data)
+	stateJson, err := json.Marshal(data)
 	if err != nil {
-		s.panic("error marshalling state %+v: %v", s.state.Data, err)
+		s.panic("error marshalling state %+v: %v", data, err)
 	}
-	s.log("SAVING STATE: %s", stateJson)
-	if !s.isErr() {
-		s.sendState(string(stateJson))
+	s.log("SAVING STATE for '%s': %s", stream, stateJson)
+	s.storeState(stream, string(stateJson))
+}
+
+func (s *ReadSideCar) closeStream(streamName string) {
+	if s.currentStream != nil && s.currentStream.name == streamName {
+		s.currentStream.Close()
+		stat, exists := s.processedStreams[s.currentStream.name]
+		if exists {
+			stat.Merge(s.currentStream.StreamStat)
+		} else {
+			stat = s.currentStream.StreamStat
+			s.processedStreams[s.currentStream.name] = stat
+		}
+		s.log("Stream %s closed: status: %s rows: %d bytes: %d ", streamName, stat.Status, stat.EventsCount, stat.BytesProcessed)
+		s.currentStream = nil
 	}
 }
 
 func (s *ReadSideCar) closeCurrentStream() {
 	if s.currentStream != nil {
-		s.currentStream.Close()
-		//TODO merge error status
-		s.processedStreams[s.currentStream.name] = *s.currentStream.StreamStat
-		s.currentStream = nil
+		s.closeStream(s.currentStream.name)
 	}
 }
 
 func (s *ReadSideCar) changeStreamIfNeeded(streamName string) {
 	if s.currentStream == nil || s.currentStream.name != streamName {
 		s.closeCurrentStream()
-		if _, ok := s.processedStreams[streamName]; ok {
-			s.panic("stream '%s' was already processed. We assume that airbyte doesn't mix streams", streamName)
-		}
 		s.currentStream = s.openStream(streamName)
 	}
 }
 
 func (s *ReadSideCar) openStream(streamName string) *ActiveStream {
 	// we create pipe. everything that is written to 'streamWriter' will be sent to bulker via 'streamReader' as reader payload
+	str, ok := s.catalog[streamName]
+	if !ok {
+		s.err("stream '%s' is not in catalog", streamName)
+		return nil
+	}
 	streamReader, streamWriter := io.Pipe()
 	newStream := NewActiveStream(streamName, streamWriter)
 	go func() {
 		defer newStream.Done()
-		str, ok := s.catalog[streamName]
-		if !ok {
-			s.err("stream '%s' is not in catalog", streamName)
-			return
-		}
-		s.log("creating stream: %s mode: %s primary keys: %s", streamName, str.SyncMode, str.GetPrimaryKeys())
+		defer streamReader.Close()
+
+		s.log("Creating bulker stream: %s mode: %s primary keys: %s", streamName, str.SyncMode, str.GetPrimaryKeys())
 		mode := "replace_table"
 		// if there is no initial sync state, we assume that this is first sync and we need to do full sync
 		if str.SyncMode == "incremental" && len(s.initialState) > 0 {
@@ -276,7 +291,6 @@ func (s *ReadSideCar) openStream(streamName string) *ActiveStream {
 			s.err("error sending bulk: %v", err)
 			return
 		}
-		s.log("stream %s: bulker response: OK", streamName)
 	}()
 	return newStream
 }
@@ -284,32 +298,40 @@ func (s *ReadSideCar) openStream(streamName string) *ActiveStream {
 func (s *ReadSideCar) processTrace(rec *TraceRow) {
 	if rec.Type == "STREAM_STATUS" {
 		streamStatus := rec.StreamStatus
-		streamName := streamStatus.StreamDescriptor.Name
+		streamName := joinStrings(streamStatus.StreamDescriptor.Namespace, streamStatus.StreamDescriptor.Name, ".")
 		s.log("Stream %s status: %s", streamName, streamStatus.Status)
 		switch streamStatus.Status {
 		case "STARTED":
 			s.changeStreamIfNeeded(streamName)
 		case "COMPLETE", "INCOMPLETE":
-			s.closeCurrentStream()
+			s.closeStream(streamName)
 		}
 	}
 }
 
 func (s *ReadSideCar) processRecord(rec *RecordRow) {
-	streamName := rec.Stream
+	streamName := joinStrings(rec.Namespace, rec.Stream, ".")
 	s.changeStreamIfNeeded(streamName)
 	if s.currentStream.Error != "" {
 		// ignore all messages after stream received error
+		return
+	}
+	processed, ok := s.processedStreams[streamName]
+	if ok && processed.Error != "" {
+		//for incremental streams we ignore all messages if it was error on previously committed chunks.
+		//error may be on bulker side (source may not known about it) and we have no way to command source to switch to the next stream
 		return
 	}
 
 	data, err := json.Marshal(rec.Data)
 	if err != nil {
 		s.err("error marshalling record: %v", err)
+		return
 	}
 	_, err = s.currentStream.Write(data)
 	if err != nil {
 		s.err("error writing to bulk pipe: %v", err)
+		return
 	}
 	_, _ = s.currentStream.Write([]byte("\n"))
 	s.currentStream.EventsCount++
@@ -333,8 +355,8 @@ func (s *ReadSideCar) panic(message string, args ...any) {
 	s.AbstractSideCar.panic(message, args...)
 }
 
-func (s *ReadSideCar) sendState(state string) {
-	err := db.UpsertState(s.dbpool, s.syncId, state, time.Now())
+func (s *ReadSideCar) storeState(stream, state string) {
+	err := db.UpsertState(s.dbpool, s.syncId, stream, state, time.Now())
 	if err != nil {
 		s.panic("error updating state: %v", err)
 	}
@@ -375,7 +397,7 @@ func (s *ReadSideCar) loadCatalog() error {
 	}
 	mp := make(map[string]*Stream, len(catalog.Streams))
 	for _, stream := range catalog.Streams {
-		mp[stream.Name] = stream
+		mp[joinStrings(stream.Namespace, stream.Name, ".")] = stream
 	}
 	s.catalog = mp
 	return nil

@@ -136,7 +136,7 @@ func (s *AbstractSideCar) sendLog(logger, level string, message string) error {
 }
 
 func (s *AbstractSideCar) sendStatus(command string, status string, description string) {
-	s.log("%s %s", strings.ToUpper(command), joinStrings(status, description))
+	s.log("%s %s", strings.ToUpper(command), joinStrings(status, description, ": "))
 	if command == "read" && s.dbpool != nil {
 		err := db.UpsertTask(s.dbpool, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt, status, description)
 		if err != nil {
@@ -179,12 +179,12 @@ func (s *AbstractSideCar) bulkerRequest(url string, payload io.Reader) ([]byte, 
 	return bd, nil
 }
 
-func joinStrings(str1, str2 string) string {
+func joinStrings(str1, str2, sep string) string {
 	if str1 == "" {
 		return str2
 	} else if str2 == "" {
 		return str1
 	}
 
-	return str1 + ": " + str2
+	return str1 + sep + str2
 }
