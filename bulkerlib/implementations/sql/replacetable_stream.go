@@ -61,7 +61,7 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 		} else {
 			//when no objects were consumed. we need to replace table with empty one.
 			//truncation seems like a more straightforward approach.
-			//no transaction was opened yet and not needed that is why we us ps.sqlAdapter
+			//no transaction was opened yet and not needed that is why we use ps.sqlAdapter instead of tx
 			var table *Table
 			table, err = ps.sqlAdapter.GetTableSchema(ctx, ps.tableName)
 			if table.Exists() {

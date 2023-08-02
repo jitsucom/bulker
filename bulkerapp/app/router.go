@@ -2,6 +2,7 @@ package app
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha512"
 	"encoding/json"
 	"fmt"
@@ -181,15 +182,17 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
 	consumed := 0
 	for scanner.Scan() {
-		bytes := scanner.Bytes()
-		if len(bytes) >= 5 && string(bytes[:5]) == "ABORT" {
+		eventBytes := scanner.Bytes()
+		if len(eventBytes) >= 5 && string(eventBytes[:5]) == "ABORT" {
 			_, _ = bulkerStream.Abort(c)
-			rError = r.ResponseError(c, http.StatusBadRequest, "aborted", false, fmt.Errorf(string(bytes)), "")
+			rError = r.ResponseError(c, http.StatusBadRequest, "aborted", false, fmt.Errorf(string(eventBytes)), "")
 			return
 		}
-		bytesRead += len(bytes)
+		bytesRead += len(eventBytes)
 		obj := types.Object{}
-		if err = jsoniter.Unmarshal(bytes, &obj); err != nil {
+		dec := jsoniter.NewDecoder(bytes.NewReader(eventBytes))
+		dec.UseNumber()
+		if err = dec.Decode(&obj); err != nil {
 			_, _ = bulkerStream.Abort(c)
 			rError = r.ResponseError(c, http.StatusBadRequest, "unmarhsal error", false, err, "")
 			return

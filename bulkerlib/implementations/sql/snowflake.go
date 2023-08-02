@@ -50,10 +50,10 @@ var (
 	sfMergeQueryTemplate, _ = template.New("snowflakeMergeQuery").Parse(sfMergeStatement)
 
 	snowflakeTypes = map[types2.DataType][]string{
-		types2.STRING:    {"text", "VARCHAR(16777216)"},
-		types2.INT64:     {"bigint", "NUMBER(38,0)"},
+		types2.STRING:    {"text", "VARCHAR(16777216)", "VARCHAR"},
+		types2.INT64:     {"bigint", "NUMBER(38,0)", "NUMBER"},
 		types2.FLOAT64:   {"double precision", "FLOAT"},
-		types2.TIMESTAMP: {"TIMESTAMP_TZ(6)", "timestamp(6)", "TIMESTAMP_NTZ(6)"},
+		types2.TIMESTAMP: {"TIMESTAMP_TZ(6)", "timestamp(6)", "TIMESTAMP_NTZ(6)", "TIMESTAMP"},
 		types2.BOOL:      {"boolean", "BOOLEAN"},
 		types2.JSON:      {"text", "VARCHAR(16777216)"},
 		types2.UNKNOWN:   {"text", "VARCHAR(16777216)"},
