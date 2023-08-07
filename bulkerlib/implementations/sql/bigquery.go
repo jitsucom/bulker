@@ -50,6 +50,7 @@ var (
 	bigqueryReservedPrefixes = [...]string{"_table_", "_file_", "_partition", "_row_timestamp", "__root__", "_colidentifier"}
 
 	bigqueryColumnUnsupportedCharacters = regexp.MustCompile(`[^0-9A-Za-z_]`)
+	bigqueryColumnUndescores            = regexp.MustCompile(`_{2,}`)
 
 	//SchemaToBigQueryString is mapping between JSON types and BigQuery types
 	bigqueryTypes = map[types2.DataType][]string{
@@ -959,7 +960,8 @@ func tableNameFunc(identifier string) (adapted string, needQuote bool) {
 
 func columnNameFunc(identifier string) (adapted string, needQuote bool) {
 	cleanIdentifier := bigqueryColumnUnsupportedCharacters.ReplaceAllString(identifier, "")
-	if cleanIdentifier == "" {
+	cleanIdentifier = bigqueryColumnUndescores.ReplaceAllString(cleanIdentifier, "_")
+	if cleanIdentifier == "" || cleanIdentifier == "_" {
 		return fmt.Sprintf("column_%x", utils.HashString(identifier)), false
 	}
 	identifier = strings.ReplaceAll(identifier, " ", "_")

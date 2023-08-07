@@ -21,7 +21,7 @@ type IdentifierFunction func(identifier string) (adapted string, needQuotes bool
 
 var (
 	// Generally unsupported characters in SQL identifiers: all except letters(any languages), underscore, numbers, space, dollar sign, hyphen
-	sqlIdentifierUnsupportedCharacters = regexp.MustCompile(`[^\p{L}_\d $-]`)
+	sqlIdentifierUnsupportedCharacters = regexp.MustCompile(`[^\p{L}_\d $-]+`)
 	// SQL identifier that can be used without quotes: starts with latin letter or underscore, contains only lowercase latin letters, numbers and underscores
 	sqlUnquotedIdentifierPattern = regexp.MustCompile(`^[a-z_][0-9a-z_]*$`)
 )
@@ -357,8 +357,8 @@ func (th *TableHelper) adaptColumnName(columnName string) (quotedIfNeeded string
 // - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
 func (th *TableHelper) adaptSqlIdentifier(identifier string, kind string, idFunc IdentifierFunction) (quotedIfNeeded string, unquoted string) {
 	useQuoting := th.identifierQuoteChar != rune(0)
-	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "")
-	if cleanIdentifier == "" {
+	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "_")
+	if cleanIdentifier == "" || cleanIdentifier == "_" {
 		cleanIdentifier = fmt.Sprintf("%s_%x", kind, utils.HashString(identifier))
 	}
 	result := utils.ShortenString(cleanIdentifier, th.maxIdentifierLength)
