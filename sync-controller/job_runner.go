@@ -42,7 +42,7 @@ type JobRunner struct {
 
 func NewJobRunner(appContext *Context) (*JobRunner, error) {
 	base := appbase.NewServiceBase("job-runner")
-	clientset, err := GetK8SClientSet(appContext.config.KubernetesClientConfig)
+	clientset, err := GetK8SClientSet(appContext)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +219,7 @@ func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *Task
 	taskStatus := TaskStatus{TaskDescriptor: taskDescriptor}
 	taskId := utils.NvlString(taskDescriptor.TaskID, uuid.NewLettersNumbers())
 	podId := utils.JoinNonEmptyStrings(".", taskStatus.SyncID, taskId)
-	podName := strings.ToLower(nonAlphaNum.ReplaceAllLiteralString(taskDescriptor.Package, "-") + "." + podId)
+	podName := strings.ToLower(nonAlphaNum.ReplaceAllLiteralString(taskDescriptor.Package, "-") + "-" + podId)
 	if !configuration.IsEmpty() {
 		secret := j.createSecret(podName, taskDescriptor, configuration)
 		_, err := j.clientset.CoreV1().Secrets(j.namespace).Create(context.Background(), secret, metav1.CreateOptions{})

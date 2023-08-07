@@ -120,7 +120,7 @@ func (s *SpecCatalogSideCar) processCatalog(catalog map[string]any) {
 	s.firstErr = nil
 	catalogJson, _ := json.Marshal(catalog)
 	s.log("CATALOG: %s", catalogJson)
-	err := db.UpsertCatalog(s.dbpool, s.packageName, s.packageVersion, s.storageKey, string(catalogJson), s.startedAt, "SUCCESS", "")
+	err := db.UpsertCatalogSuccess(s.dbpool, s.packageName, s.packageVersion, s.storageKey, string(catalogJson), s.startedAt, "SUCCESS", "")
 	if err != nil {
 		s.panic("error updating catalog for: %s: %v", s.storageKey, err)
 	}

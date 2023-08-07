@@ -135,9 +135,9 @@ func (t *TaskManager) listenTaskStatus() {
 				}
 			case "discover":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err = db.UpsertCatalog(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, nil, st.StartedAtTime(), "FAILED", st.Description)
+					err = db.UpsertCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "FAILED", st.Description)
 				} else if st.Status == StatusCreated {
-					err = db.UpsertCatalog(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, nil, st.StartedAtTime(), "RUNNING", st.Description)
+					err = db.UpsertCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "RUNNING", st.Description)
 				}
 			case "check":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {

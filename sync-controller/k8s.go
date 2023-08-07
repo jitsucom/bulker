@@ -2,33 +2,57 @@ package main
 
 import (
 	"fmt"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"strings"
 )
 
-func GetK8SClientSet(config string) (*kubernetes.Clientset, error) {
+func GetK8SClientSet(appContext *Context) (*kubernetes.Clientset, error) {
+	config := appContext.config.KubernetesClientConfig
 	if config == "" || config == "local" {
+		// creates the in-cluster config
 		cc, err := rest.InClusterConfig()
 		if err != nil {
 			return nil, fmt.Errorf("error getting in cluster config: %v", err)
 		}
-		// creates the clientset
+		clientset, err := kubernetes.NewForConfig(cc)
+		if err != nil {
+			return nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
+		}
+		return clientset, nil
+	} else if strings.ContainsRune(config, '\n') {
+		// suppose yaml file
+		clientconfig, err := clientcmd.NewClientConfigFromBytes([]byte(config))
+		if err != nil {
+			return nil, fmt.Errorf("error parsing kubernetes client config: %v", err)
+		}
+		rawConfig, _ := clientconfig.RawConfig()
+		clientconfig = clientcmd.NewNonInteractiveClientConfig(rawConfig,
+			utils.NvlString(appContext.config.KubernetesContext, rawConfig.CurrentContext),
+			&clientcmd.ConfigOverrides{},
+			&clientcmd.ClientConfigLoadingRules{})
+		cc, err := clientconfig.ClientConfig()
+		if err != nil {
+			return nil, fmt.Errorf("error creating kubernetes client config: %v", err)
+		}
 		clientset, err := kubernetes.NewForConfig(cc)
 		if err != nil {
 			return nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
 		}
 		return clientset, nil
 	} else {
-		clientconfig, err := clientcmd.NewClientConfigFromBytes([]byte(config))
-		if err != nil {
-			return nil, fmt.Errorf("error parsing kubernetes client config: %v", err)
-		}
+		// suppose kubeconfig file path
+		clientconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+			&clientcmd.ClientConfigLoadingRules{ExplicitPath: config},
+			&clientcmd.ConfigOverrides{
+				CurrentContext: appContext.config.KubernetesContext,
+			})
 		cc, err := clientconfig.ClientConfig()
 		if err != nil {
 			return nil, fmt.Errorf("error creating kubernetes client config: %v", err)
 		}
-		// creates the clientset
 		clientset, err := kubernetes.NewForConfig(cc)
 		if err != nil {
 			return nil, fmt.Errorf("error creating kubernetes clientset: %v", err)

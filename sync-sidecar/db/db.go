@@ -10,7 +10,10 @@ const (
 	upsertSpecSQL = `INSERT INTO source_spec (package, version, specs, timestamp ,error ) VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT ON CONSTRAINT source_spec_pkey DO UPDATE SET specs = $3, timestamp = $4, error=$5`
 
-	upsertCatalogSQL = `INSERT INTO source_catalog (package, version, key, catalog, timestamp, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7)
+	upsertCatalogStatusSQL = `INSERT INTO source_catalog (package, version, key, timestamp, status, description) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT ON CONSTRAINT source_catalog_pkey DO UPDATE SET timestamp = $4, status=$5, description=$6`
+
+	upsertCatalogSuccessSQL = `INSERT INTO source_catalog (package, version, key, catalog, timestamp, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT ON CONSTRAINT source_catalog_pkey DO UPDATE SET catalog=$4, timestamp = $5, status=$6, description=$7`
 
 	upsertStateSQL = `INSERT INTO source_state (sync_id, stream, state, timestamp) VALUES ($1, $2, $3, $4)
@@ -33,8 +36,12 @@ func UpsertSpec(dbpool *pgxpool.Pool, packageName, packageVersion, specs any, ti
 	return err
 }
 
-func UpsertCatalog(dbpool *pgxpool.Pool, packageName, packageVersion, storageKey, catalog any, timestamp time.Time, status, description string) error {
-	_, err := dbpool.Exec(context.Background(), upsertCatalogSQL, packageName, packageVersion, storageKey, catalog, timestamp, status, description)
+func UpsertCatalogStatus(dbpool *pgxpool.Pool, packageName, packageVersion, storageKey string, timestamp time.Time, status, description string) error {
+	_, err := dbpool.Exec(context.Background(), upsertCatalogStatusSQL, packageName, packageVersion, storageKey, timestamp, status, description)
+	return err
+}
+func UpsertCatalogSuccess(dbpool *pgxpool.Pool, packageName, packageVersion, storageKey string, catalog any, timestamp time.Time, status, description string) error {
+	_, err := dbpool.Exec(context.Background(), upsertCatalogSuccessSQL, packageName, packageVersion, storageKey, catalog, timestamp, status, description)
 	return err
 }
 
