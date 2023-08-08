@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.1.1
 	github.com/gin-gonic/gin v1.9.1
+	github.com/vearne/gin-timeout v0.1.7
 	github.com/go-co-op/gocron v1.27.1
 	github.com/gomodule/redigo v1.8.9
 	github.com/hashicorp/go-multierror v1.1.1

@@ -18,6 +18,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	jsoniter "github.com/json-iterator/go"
+	timeout "github.com/vearne/gin-timeout"
 	"io"
 	"net/http"
 	"regexp"
@@ -55,12 +56,23 @@ func NewRouter(appContext *Context) *Router {
 		fastStore:        appContext.fastStore,
 	}
 	engine := router.Engine()
-	engine.POST("/post/:destinationId", router.EventsHandler)
+	fast := engine.Group("")
+	fast.Use(timeout.Timeout(timeout.WithTimeout(10 * time.Second)))
+	fast.POST("/post/:destinationId", router.EventsHandler)
+	fast.POST("/ingest", router.IngestHandler)
+	fast.POST("/test", router.TestConnectionHandler)
+	fast.GET("/log/:eventType/:actorId", router.EventsLogHandler)
+	fast.GET("/ready", func(c *gin.Context) {
+		if router.topicManager.IsReady() {
+			c.Status(http.StatusOK)
+		} else {
+			logging.Errorf("Health check: FAILED")
+			c.AbortWithStatus(http.StatusServiceUnavailable)
+		}
+	})
+
 	engine.POST("/bulk/:destinationId", router.BulkHandler)
-	engine.POST("/test", router.TestConnectionHandler)
-	engine.POST("/ingest", router.IngestHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
-	engine.GET("/log/:eventType/:actorId", router.EventsLogHandler)
 
 	//engine.GET("/debug/pprof/profile", gin.WrapF(pprof.Profile))
 	//engine.GET("/debug/pprof/heap", gin.WrapF(pprof.Handler("heap").ServeHTTP))
@@ -73,14 +85,6 @@ func NewRouter(appContext *Context) *Router {
 	//engine.GET("/debug/pprof/mutex", gin.WrapF(pprof.Handler("mutex").ServeHTTP))
 	//engine.GET("/debug/pprof", gin.WrapF(pprof.Index))
 
-	engine.GET("/ready", func(c *gin.Context) {
-		if router.topicManager.IsReady() {
-			c.Status(http.StatusOK)
-		} else {
-			logging.Errorf("Health check: FAILED")
-			c.AbortWithStatus(http.StatusServiceUnavailable)
-		}
-	})
 	return router
 }
 

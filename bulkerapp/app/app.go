@@ -84,11 +84,10 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 
 	router := NewRouter(a)
 	a.server = &http.Server{
-		Addr:              fmt.Sprintf("0.0.0.0:%d", a.config.HTTPPort),
-		Handler:           router.Engine(),
-		ReadTimeout:       time.Second * 1800,
-		ReadHeaderTimeout: time.Second * 60,
-		IdleTimeout:       time.Second * 65,
+		Addr:        fmt.Sprintf("0.0.0.0:%d", a.config.HTTPPort),
+		Handler:     router.Engine(),
+		ReadTimeout: time.Minute * 30,
+		IdleTimeout: time.Minute * 5,
 	}
 	metricsServer := NewMetricsServer(a.config)
 	a.metricsServer = metricsServer
