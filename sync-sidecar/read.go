@@ -41,30 +41,51 @@ func (s *StreamStat) Merge(chunk *StreamStat) {
 
 type ActiveStream struct {
 	name string
+	mode string
 	// write stream of io.Pipe. Bulker reads from this read stream of this pipe
 	writer *io.PipeWriter
 	// wait group to wait for stream to finish HTTP request to bulker fully completed after closing writer
-	waitGroup sync.WaitGroup
+	waitGroup        sync.WaitGroup
+	bulkerConnFunc   func()
+	bulkerConnOpened bool
 	*StreamStat
 }
 
-func NewActiveStream(name string, writer *io.PipeWriter) *ActiveStream {
-	as := ActiveStream{name: name, writer: writer, StreamStat: &StreamStat{Status: "SUCCESS"}}
-	as.waitGroup.Add(1)
-	return &as
+func NewActiveStream(name, mode string, bulkerConnFunc func(streamReader *io.PipeReader)) *ActiveStream {
+	streamReader, streamWriter := io.Pipe()
+	as := &ActiveStream{name: name, mode: mode, writer: streamWriter, StreamStat: &StreamStat{Status: "SUCCESS"}}
+	as.bulkerConnFunc = func() {
+		defer as.Done()
+		defer streamReader.Close()
+		bulkerConnFunc(streamReader)
+	}
+	return as
 }
 
 func (s *ActiveStream) Close() {
 	if s.Error != "" {
-		// intentionally break ndjson stream with that error. Bulker will definitely abort this stream
+		// intentionally break ndjson stream with that error. Bulker will abort this stream
 		_ = s.writer.CloseWithError(fmt.Errorf(s.Error))
 	} else {
+		if !s.bulkerConnOpened && s.mode != "batch" {
+			// if bulker connection was not opened yet, then we need to open it to send empty ndjson stream
+			// it is important for replace table stream to replace previous table with empty one.
+			s.bulkerConnOpened = true
+			s.waitGroup.Add(1)
+			go s.bulkerConnFunc()
+		}
 		_ = s.writer.Close()
 	}
 	s.waitGroup.Wait()
 }
 
 func (s *ActiveStream) Write(p []byte) (n int, err error) {
+	if !s.bulkerConnOpened {
+		// lazily open bulker connection on first event
+		s.bulkerConnOpened = true
+		s.waitGroup.Add(1)
+		go s.bulkerConnFunc()
+	}
 	return s.writer.Write(p)
 }
 
@@ -270,18 +291,14 @@ func (s *ReadSideCar) openStream(streamName string) *ActiveStream {
 		s.err("stream '%s' is not in catalog", streamName)
 		return nil
 	}
-	streamReader, streamWriter := io.Pipe()
-	newStream := NewActiveStream(streamName, streamWriter)
-	go func() {
-		defer newStream.Done()
-		defer streamReader.Close()
+	mode := "replace_table"
+	// if there is no initial sync state, we assume that this is first sync and we need to do full sync
+	if str.SyncMode == "incremental" && len(s.initialState) > 0 {
+		mode = "batch"
+	}
 
+	bulkerConnFunc := func(streamReader *io.PipeReader) {
 		s.log("Creating bulker stream: %s mode: %s primary keys: %s", streamName, str.SyncMode, str.GetPrimaryKeys())
-		mode := "replace_table"
-		// if there is no initial sync state, we assume that this is first sync and we need to do full sync
-		if str.SyncMode == "incremental" && len(s.initialState) > 0 {
-			mode = "batch"
-		}
 		bulkerUrl := fmt.Sprintf("%s/bulk/%s?tableName=%s&mode=%s&taskId=%s", s.bulkerURL, s.syncId, url.QueryEscape(streamName), mode, s.taskId)
 		for _, v := range str.GetPrimaryKeys() {
 			bulkerUrl += fmt.Sprintf("&pk=%s", url.QueryEscape(v))
@@ -290,8 +307,12 @@ func (s *ReadSideCar) openStream(streamName string) *ActiveStream {
 		if err != nil {
 			s.err("error sending bulk: %v", err)
 			return
+		} else {
+			s.log("Bulker stream %s finished", streamName)
 		}
-	}()
+	}
+	newStream := NewActiveStream(streamName, mode, bulkerConnFunc)
+
 	return newStream
 }
 
