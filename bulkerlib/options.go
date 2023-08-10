@@ -9,6 +9,9 @@ type StreamOption func(*StreamOptions)
 
 var optionsRegistry = make(map[string]ParseableOption)
 
+// Not used by bulker. Just added here to be treated as known options and don't print errors
+var ignoredOptions = []string{"functions", "streams", "dataLayout", "events", "hosts", "schedule", "timezone", "storageKey"}
+
 var (
 	BatchSizeOption = ImplementationOption[int]{
 		Key:          "batchSize",
@@ -85,13 +88,6 @@ var (
 		Key:       "timestampColumn",
 		ParseFunc: utils.ParseString,
 	}
-
-	// Not used by bulker. Just added here to be treated as known options
-	FunctionsOption  = ImplementationOption[any]{Key: "functions", ParseFunc: func(serialized any) (any, error) { return nil, nil }}
-	StreamsOption    = ImplementationOption[any]{Key: "streams", ParseFunc: func(serialized any) (any, error) { return nil, nil }}
-	DataLayoutOption = ImplementationOption[string]{Key: "dataLayout", ParseFunc: utils.ParseString}
-	EventsOption     = ImplementationOption[string]{Key: "events", ParseFunc: utils.ParseString}
-	HostsOption      = ImplementationOption[string]{Key: "hosts", ParseFunc: utils.ParseString}
 )
 
 func init() {
@@ -105,12 +101,10 @@ func init() {
 	RegisterOption(&PartitionIdOption)
 	RegisterOption(&TimestampOption)
 
-	// Not used by bulker. Just added here to be treated as known options
-	RegisterOption(&FunctionsOption)
-	RegisterOption(&StreamsOption)
-	RegisterOption(&DataLayoutOption)
-	RegisterOption(&EventsOption)
-	RegisterOption(&HostsOption)
+	dummyParse := func(_ any) (any, error) { return nil, nil }
+	for _, ignoredOption := range ignoredOptions {
+		RegisterOption(&ImplementationOption[any]{Key: ignoredOption, ParseFunc: dummyParse})
+	}
 
 }
 

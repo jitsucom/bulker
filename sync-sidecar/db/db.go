@@ -23,7 +23,7 @@ ON CONFLICT ON CONSTRAINT source_state_pkey DO UPDATE SET state=$3, timestamp = 
 ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, description=$8`
 
 	upsertRunningTaskSQL = `INSERT INTO source_task as st (sync_id, task_id, package, version, started_at, updated_at, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8 )
-ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, description=$8 where st.status not in ('FAILED', 'SUCCESS', $7)`
+ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, description=$8 where st.status not in ('FAILED', 'SUCCESS', 'PARTIAL', $7)`
 
 	updateRunningTaskDateSQL = `UPDATE source_task SET updated_at=$2 where task_id=$1 and status = 'RUNNING'`
 

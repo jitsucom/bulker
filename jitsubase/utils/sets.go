@@ -1,13 +1,13 @@
 package utils
 
 import (
-	"golang.org/x/exp/constraints"
+	"cmp"
 	"sort"
 )
 
-type Set[K constraints.Ordered] map[K]struct{}
+type Set[K cmp.Ordered] map[K]struct{}
 
-func NewSet[K constraints.Ordered](values ...K) Set[K] {
+func NewSet[K cmp.Ordered](values ...K) Set[K] {
 	s := make(Set[K])
 	s.PutAll(values)
 	return s

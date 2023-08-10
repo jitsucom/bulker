@@ -88,11 +88,11 @@ func (j *JobRunner) watchPodStatuses() {
 					j.cleanupPod(pod.Name)
 				case v1.PodFailed:
 					taskStatus.Status = StatusFailed
-					taskStatus.Description = j.accumulateErrorLogs(pod.Name, status)
+					taskStatus.Description = j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
 					j.Infof("Pod %s failed. Cleaning up.", pod.Name)
 					j.cleanupPod(pod.Name)
 				case v1.PodRunning:
-					errors := j.accumulateErrorLogs(pod.Name, status)
+					errors := j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
 					if len(errors) > 0 {
 						taskStatus.Status = StatusFailed
 						taskStatus.Description = errors
@@ -167,23 +167,44 @@ func accumulatePodStatus(status v1.PodStatus) string {
 	return stb.String()
 }
 
-func (j *JobRunner) accumulateErrorLogs(podName string, status v1.PodStatus) string {
+func (j *JobRunner) accumulateErrorLogs(podName string, taskType string, status v1.PodStatus) string {
 	stb := strings.Builder{}
 	//gather status from all containers
 	c := make([]v1.ContainerStatus, 0, len(status.ContainerStatuses)+len(status.InitContainerStatuses))
 	c = append(c, status.InitContainerStatuses...)
 	c = append(c, status.ContainerStatuses...)
+	var sourceFailed bool
 	for _, s := range c {
 		state := s.State
 		if state.Terminated != nil && state.Terminated.ExitCode != 0 {
-			stb.WriteString(j.getPodLogs(podName, s.Name))
+			if s.Name == "source" {
+				if taskType == "read" {
+					// if read command fails for source container we expect that the sidecar will
+					// handle all error status reporting because some streams could be already synced
+					continue
+				}
+				sourceFailed = true
+			}
+			logs := j.getPodErrorLogs(podName, s.Name)
+			if len(logs) > 0 {
+				stb.WriteString(logs)
+				stb.WriteRune('\n')
+			}
+		}
+	}
+	// all source logs get directed to pipe and translated to the sidecar
+	// so if 'source' container fails we need to look for errors in the sidecar
+	if stb.Len() == 0 && sourceFailed {
+		logs := j.getPodErrorLogs(podName, "sidecar")
+		if len(logs) > 0 {
+			stb.WriteString(logs)
 			stb.WriteRune('\n')
 		}
 	}
 	return stb.String()
 }
 
-func (j *JobRunner) getPodLogs(podName, container string) string {
+func (j *JobRunner) getPodErrorLogs(podName, container string) string {
 	tailLines := int64(50)
 	req := j.clientset.CoreV1().Pods(j.namespace).GetLogs(podName, &v1.PodLogOptions{Container: container, TailLines: &tailLines})
 	podLogs, err := req.Stream(context.Background())
@@ -198,7 +219,7 @@ func (j *JobRunner) getPodLogs(podName, container string) string {
 	for scanner.Scan() {
 		t := scanner.Text()
 		tL := strings.ToLower(t)
-		if !errFound && strings.Contains(tL, "error") || strings.Contains(tL, "panic") {
+		if !errFound && (strings.Contains(tL, "error") || strings.Contains(tL, "panic") || strings.Contains(tL, "fatal")) {
 			errFound = true
 		}
 		if errFound {
@@ -276,10 +297,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	case "spec":
 		command = "spec"
 	}
-	databaseURL := j.config.SidecarDatabaseURL
-	if databaseURL == "" {
-		databaseURL = j.config.DatabaseURL
-	}
+	databaseURL := utils.NvlString(j.config.SidecarDatabaseURL, j.config.DatabaseURL)
 	sideCarEnv := map[string]string{
 		"STDOUT_PIPE_FILE":   "/pipes/stdout",
 		"STDERR_PIPE_FILE":   "/pipes/stderr",

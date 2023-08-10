@@ -298,7 +298,7 @@ func (s *ReadSideCar) openStream(streamName string) *ActiveStream {
 	}
 
 	bulkerConnFunc := func(streamReader *io.PipeReader) {
-		s.log("Creating bulker stream: %s mode: %s primary keys: %s", streamName, str.SyncMode, str.GetPrimaryKeys())
+		s.log("Creating bulker stream: %s mode: %s primary keys: %s", streamName, mode, str.GetPrimaryKeys())
 		bulkerUrl := fmt.Sprintf("%s/bulk/%s?tableName=%s&mode=%s&taskId=%s", s.bulkerURL, s.syncId, url.QueryEscape(streamName), mode, s.taskId)
 		for _, v := range str.GetPrimaryKeys() {
 			bulkerUrl += fmt.Sprintf("&pk=%s", url.QueryEscape(v))
