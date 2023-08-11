@@ -36,7 +36,7 @@ func (s *SpecCatalogSideCar) Run() {
 			s.sendStatus(s.command, "SUCCESS", "")
 		}
 	}()
-	s.log("Sidecar. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
+	s.log("Sidecar. command: %s, taskId: %s, package: %s:%s startedAt: %s", s.command, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
 	var stdOutErrWaitGroup sync.WaitGroup
 
 	errPipe, _ := os.Open(s.stdErrPipeFile)
@@ -123,5 +123,32 @@ func (s *SpecCatalogSideCar) processCatalog(catalog map[string]any) {
 	err := db.UpsertCatalogSuccess(s.dbpool, s.packageName, s.packageVersion, s.storageKey, string(catalogJson), s.startedAt, "SUCCESS", "")
 	if err != nil {
 		s.panic("error updating catalog for: %s: %v", s.storageKey, err)
+	}
+}
+
+func (s *SpecCatalogSideCar) sendStatus(command string, status string, description string) {
+	logFunc := s.log
+	if status == "FAILED" {
+		logFunc = s.err
+	}
+	logFunc("%s %s", strings.ToUpper(command), joinStrings(status, description, ": "))
+	if status == "FAILED" {
+		switch command {
+		case "spec":
+			err := db.InsertSpecError(s.dbpool, s.packageName, s.packageVersion, s.startedAt, description)
+			if err != nil {
+				s.panic("error updating specs: %v", err)
+			}
+		case "discover":
+			err := db.UpsertCatalogStatus(s.dbpool, s.packageName, s.packageVersion, s.storageKey, s.startedAt, "FAILED", description)
+			if err != nil {
+				s.panic("error updating catalog status: %v", err)
+			}
+		case "check":
+			err := db.InsertCheckError(s.dbpool, s.packageName, s.packageVersion, s.storageKey, "FAILED", "FAILED: "+description, s.startedAt)
+			if err != nil {
+				s.panic("error updating connection status: %v", err)
+			}
+		}
 	}
 }

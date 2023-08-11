@@ -52,16 +52,16 @@ func (tr *TypeResolverImpl) Resolve(object map[string]any, sqlTypeHints types2.S
 			return nil, fmt.Errorf("Error getting type of field [%s]: %v", k, err)
 		}
 
-		//default typecast
-		if defaultType, ok := types2.DefaultTypes[k]; ok {
-			converted, err := types2.Convert(defaultType, v)
-			if err != nil {
-				return nil, fmt.Errorf("Error default converting field [%s]: %v", k, err)
-			}
-
-			resultColumnType = defaultType
-			object[k] = converted
-		}
+		////default typecast
+		//if defaultType, ok := types2.DefaultTypes[k]; ok {
+		//	converted, err := types2.Convert(defaultType, v)
+		//	if err != nil {
+		//		return nil, fmt.Errorf("Error default converting field [%s]: %v", k, err)
+		//	}
+		//
+		//	resultColumnType = defaultType
+		//	object[k] = converted
+		//}
 		if sqlType, ok := sqlTypeHints[k]; ok {
 			Fields[k] = NewFieldWithSQLType(resultColumnType, &sqlType)
 		} else {

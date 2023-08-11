@@ -219,7 +219,7 @@ func (j *JobRunner) getPodErrorLogs(podName, container string) string {
 	for scanner.Scan() {
 		t := scanner.Text()
 		tL := strings.ToLower(t)
-		if !errFound && (strings.Contains(tL, "error") || strings.Contains(tL, "panic") || strings.Contains(tL, "fatal")) {
+		if !errFound && (strings.Contains(tL, "error") || strings.Contains(tL, "panic") || strings.Contains(tL, "errstd") || strings.Contains(tL, "fatal")) {
 			errFound = true
 		}
 		if errFound {

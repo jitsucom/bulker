@@ -131,17 +131,17 @@ func (t *TaskManager) listenTaskStatus() {
 			switch st.TaskType {
 			case "spec":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err = db.UpsertSpec(t.dbpool, st.Package, st.PackageVersion, nil, st.StartedAtTime(), st.Description)
+					err = db.InsertSpecError(t.dbpool, st.Package, st.PackageVersion, st.StartedAtTime(), st.Description)
 				}
 			case "discover":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err = db.UpsertCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "FAILED", st.Description)
+					err = db.UpsertRunningCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "FAILED", st.Description)
 				} else if st.Status == StatusCreated {
 					err = db.UpsertCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "RUNNING", st.Description)
 				}
 			case "check":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err = db.UpsertCheck(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "), st.StartedAtTime())
+					err = db.InsertCheckError(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "), st.StartedAtTime())
 				}
 			case "read":
 				switch st.Status {

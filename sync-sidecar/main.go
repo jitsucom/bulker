@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"io"
 	"net/http"
 	"net/url"
@@ -133,16 +132,6 @@ func (s *AbstractSideCar) sendLog(logger, level string, message string) error {
 		"message":   message,
 	}
 	return s.bulkerEvent(s.logsConnection, "task_log", logMessage)
-}
-
-func (s *AbstractSideCar) sendStatus(command string, status string, description string) {
-	s.log("%s %s", strings.ToUpper(command), joinStrings(status, description, ": "))
-	if command == "read" && s.dbpool != nil {
-		err := db.UpsertTask(s.dbpool, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt, status, description)
-		if err != nil {
-			s.panic("error updating task: %v", err)
-		}
-	}
 }
 
 func (s *AbstractSideCar) bulkerEvent(connection, tableName string, payload any) error {

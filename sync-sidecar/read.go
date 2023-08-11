@@ -148,15 +148,15 @@ func (s *ReadSideCar) Run() {
 				status = "FAILED"
 			}
 			processedStreamsJson, _ := json.Marshal(s.processedStreams)
-			s.sendStatus(s.command, status, string(processedStreamsJson))
+			s.sendStatus(status, string(processedStreamsJson))
 		} else if s.isErr() {
-			s.sendStatus(s.command, "FAILED", "ERROR: "+s.firstErr.Error())
+			s.sendStatus("FAILED", "ERROR: "+s.firstErr.Error())
 			os.Exit(1)
 		} else {
-			s.sendStatus(s.command, "SUCCESS", "")
+			s.sendStatus("SUCCESS", "")
 		}
 	}()
-	s.log("Sidecar. command: %s. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.command, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
+	s.log("Sidecar. command: read. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
 	//load file from /config/catalog.json and parse it
 	err = s.loadCatalog()
 	if err != nil {
@@ -380,6 +380,18 @@ func (s *ReadSideCar) storeState(stream, state string) {
 	err := db.UpsertState(s.dbpool, s.syncId, stream, state, time.Now())
 	if err != nil {
 		s.panic("error updating state: %v", err)
+	}
+}
+
+func (s *ReadSideCar) sendStatus(status string, description string) {
+	logFunc := s.log
+	if status == "FAILED" {
+		logFunc = s.err
+	}
+	logFunc("READ %s", joinStrings(status, description, ": "))
+	err := db.UpsertTask(s.dbpool, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt, status, description)
+	if err != nil {
+		s.panic("error updating task: %v", err)
 	}
 }
 
