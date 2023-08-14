@@ -113,10 +113,11 @@ func ReformatNumberValue(v any) any {
 		return v
 	}
 
-	if strings.Contains(jsonNumber.String(), ".") {
+	str := jsonNumber.String()
+	if strings.ContainsAny(str, ".eE") {
 		floatValue, err := jsonNumber.Float64()
 		if err != nil {
-			logging.Errorf("Error parsing %s into float64: %v", jsonNumber.String(), err)
+			logging.Errorf("Error parsing %s into float64: %v", str, err)
 			return v
 		}
 		return any(floatValue)
@@ -124,7 +125,7 @@ func ReformatNumberValue(v any) any {
 
 	intValue, err := jsonNumber.Int64()
 	if err != nil {
-		logging.Errorf("Error parsing %s into int64: %v", jsonNumber.String(), err)
+		logging.Errorf("Error parsing %s into int64: %v", str, err)
 		return v
 	}
 	return any(intValue)
