@@ -257,7 +257,10 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		}
 	}
 	tm.allTopics = allTopics
-	err := tm.ensureTopic(tm.config.KafkaDestinationsTopicName, tm.config.KafkaDestinationsTopicPartitions, nil)
+	err := tm.ensureTopic(tm.config.KafkaDestinationsTopicName, tm.config.KafkaDestinationsTopicPartitions,
+		map[string]string{
+			"retention.ms": fmt.Sprint(tm.config.KafkaDestinationsTopicRetentionHours * 60 * 60 * 1000),
+		})
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
 		tm.SystemErrorf("Failed to create destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)

@@ -72,7 +72,7 @@ func (ch *ClickHouseClusterContainer) Close() error {
 		execError := ch.Compose.Down(context.Background())
 		err := execError.Error
 		if err != nil {
-			return fmt.Errorf("could down docker compose: %s", ch.Compose, ch.Identifier)
+			return fmt.Errorf("could down docker compose: %s", ch.Identifier)
 		}
 	}
 
