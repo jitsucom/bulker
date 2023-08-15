@@ -4,49 +4,50 @@ import (
 	"context"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/testcontainers/testcontainers-go"
-	tcWait "github.com/testcontainers/testcontainers-go/wait"
+	tc "github.com/testcontainers/testcontainers-go/modules/compose"
 )
 
 type KafkaContainer struct {
-	Compose *testcontainers.LocalDockerCompose
-	Context context.Context
+	Identifier string
+	Compose    tc.ComposeStack
+	Context    context.Context
 }
 
 func NewKafkaContainer(ctx context.Context) (*KafkaContainer, error) {
-	composeFilePaths := []string{"testcontainers/kafka/docker-compose.yml"}
+	composeFilePaths := "testcontainers/kafka/docker-compose.yml"
 	identifier := "bulker_kafka_compose"
 
-	compose := testcontainers.NewLocalDockerCompose(composeFilePaths, identifier)
-	execError := compose.Down()
-	err := execError.Error
+	compose, err := tc.NewDockerComposeWith(tc.WithStackFiles(composeFilePaths), tc.StackIdentifier(identifier))
 	if err != nil {
-		logging.Errorf("couldnt down docker compose: %s : %v", compose.Identifier, err)
+		logging.Errorf("couldnt down docker compose: %s : %v", identifier, err)
+	}
+	err = compose.Down(ctx)
+	if err != nil {
+		logging.Errorf("couldnt down docker compose: %s : %v", identifier, err)
 	}
 
-	compose = testcontainers.NewLocalDockerCompose(composeFilePaths, identifier)
-	execError = compose.
-		WithCommand([]string{"up", "-d"}).
-		WaitForService("kafka", tcWait.ForListeningPort("19092/tcp")).
-		Invoke()
-	err = execError.Error
+	compose, err = tc.NewDockerComposeWith(tc.WithStackFiles(composeFilePaths), tc.StackIdentifier(identifier))
+	if err != nil {
+		return nil, fmt.Errorf("could not run compose file: %v - %v", composeFilePaths, err)
+	}
+	err = compose.Up(ctx, tc.Wait(true))
 	if err != nil {
 		return nil, fmt.Errorf("could not run compose file: %v - %v", composeFilePaths, err)
 	}
 
 	return &KafkaContainer{
-		Compose: compose,
-		Context: ctx,
+		Identifier: identifier,
+		Compose:    compose,
+		Context:    ctx,
 	}, nil
 }
 
 // Close terminates underlying docker container
 func (ch *KafkaContainer) Close() error {
 	if ch.Compose != nil {
-		execError := ch.Compose.Down()
-		err := execError.Error
+		err := ch.Compose.Down(context.Background())
 		if err != nil {
-			return fmt.Errorf("could down docker compose: %s", ch.Compose.Identifier)
+			return fmt.Errorf("could down docker compose: %s", ch.Identifier)
 		}
 	}
 

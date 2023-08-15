@@ -18,7 +18,12 @@ services:
       - "8123:8123"
       - "9000:9000"
     volumes:
-      - ${PWD}/testcontainers/clickhouse/clickhouse01:/etc/clickhouse-server
+      - ./clickhouse01:/etc/clickhouse-server
+    healthcheck:
+      test: [ "CMD-SHELL", "clickhouse-client --host clickhouse01 --query 'SELECT 1'" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     depends_on:
       - zookeeper
   clickhouse02:
@@ -32,7 +37,12 @@ services:
       - "8124:8123"
       - "9001:9000"
     volumes:
-      - ${PWD}/testcontainers/clickhouse/clickhouse02:/etc/clickhouse-server
+      - ./clickhouse02:/etc/clickhouse-server
+    healthcheck:
+      test: [ "CMD-SHELL", "clickhouse-client --host clickhouse02 --query 'SELECT 1'" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     depends_on:
       - zookeeper
   clickhouse03:
@@ -46,7 +56,12 @@ services:
       - "8125:8123"
       - "9002:9000"
     volumes:
-      - ${PWD}/testcontainers/clickhouse/clickhouse03:/etc/clickhouse-server
+      - ./clickhouse03:/etc/clickhouse-server
+    healthcheck:
+      test: [ "CMD-SHELL", "clickhouse-client --host clickhouse03 --query 'SELECT 1'" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     depends_on:
       - zookeeper
   clickhouse04:
@@ -60,7 +75,12 @@ services:
       - "8126:8123"
       - "9003:9000"
     volumes:
-      - ${PWD}/testcontainers/clickhouse/clickhouse04:/etc/clickhouse-server
+      - ./clickhouse04:/etc/clickhouse-server
+    healthcheck:
+      test: [ "CMD-SHELL", "clickhouse-client --host clickhouse04 --query 'SELECT 1'" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     depends_on:
       - zookeeper
 

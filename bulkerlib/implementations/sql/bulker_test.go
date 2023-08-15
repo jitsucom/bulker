@@ -95,7 +95,7 @@ func init() {
 	}
 	var err error
 	if utils.ArrayContains(allBulkerConfigs, PostgresBulkerTypeId) {
-		postgresContainer, err = testcontainers2.NewPostgresContainer(context.Background(), false)
+		postgresContainer, err = testcontainers2.NewPostgresContainer(context.Background())
 		if err != nil {
 			panic(err)
 		}

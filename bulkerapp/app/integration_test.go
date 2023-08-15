@@ -48,7 +48,7 @@ var testBulkerEnv string
 
 func initApp(t *testing.T, envVars map[string]string) (app *appbase.App[Config], kafkaContainer *kafka.KafkaContainer, postgresContainer *testcontainers.PostgresContainer) {
 	var err error
-	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background(), true)
+	postgresContainer, err = testcontainers.NewPostgresContainer(context.Background())
 	if err != nil {
 		t.Fatalf("could not start postgres container: %v", err)
 		return

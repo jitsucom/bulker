@@ -15,7 +15,6 @@ require (
 	github.com/prometheus/client_model v0.3.0
 	github.com/spf13/viper v1.13.0
 	github.com/stretchr/testify v1.8.3
-	github.com/testcontainers/testcontainers-go v0.14.0
 	github.com/vearne/gin-timeout v0.1.7
 	gopkg.in/yaml.v3 v3.0.1
 )

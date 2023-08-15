@@ -18,7 +18,12 @@ services:
       - "8133:8123"
       - "9010:9000"
     volumes:
-      - ${PWD}/testcontainers/clickhouse_noshards/clickhouse01:/etc/clickhouse-server
+      - ./clickhouse01:/etc/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --host clickhouse01 --query 'SELECT 1'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     depends_on:
       - zookeeper2
   clickhouse2_02:
@@ -32,7 +37,12 @@ services:
       - "8134:8123"
       - "9011:9000"
     volumes:
-      - ${PWD}/testcontainers/clickhouse_noshards/clickhouse02:/etc/clickhouse-server
+      - ./clickhouse02:/etc/clickhouse-server
+    healthcheck:
+      test: [ "CMD-SHELL", "clickhouse-client --host clickhouse02 --query 'SELECT 1'" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     depends_on:
       - zookeeper2
 

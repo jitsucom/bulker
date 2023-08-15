@@ -12,6 +12,8 @@ services:
       - zookeeper
     ports:
       - "19092:19092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server kafka:19092 --describe"]
     environment:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:19092
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:19092

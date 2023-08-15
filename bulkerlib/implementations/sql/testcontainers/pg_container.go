@@ -40,7 +40,7 @@ type PostgresContainer struct {
 
 // NewPostgresContainer creates new Postgres test container if PG_TEST_PORT is not defined. Otherwise uses db at defined port. This logic is required
 // for running test at CI environment
-func NewPostgresContainer(ctx context.Context, skipReaper bool) (*PostgresContainer, error) {
+func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 	if os.Getenv(envPostgresPortVariable) != "" {
 		port, err := strconv.Atoi(os.Getenv(envPostgresPortVariable))
 		if err != nil {
@@ -72,8 +72,8 @@ func NewPostgresContainer(ctx context.Context, skipReaper bool) (*PostgresContai
 	dbSettings["POSTGRES_USER"] = pgUser
 	dbSettings["POSTGRES_PASSWORD"] = pgPassword
 	dbSettings["POSTGRES_DB"] = pgDatabase
-	dbURL := func(port nat.Port) string {
-		return fmt.Sprintf("postgres://%s:%s@localhost:%s/%s?sslmode=disable", pgUser, pgPassword, port.Port(), pgDatabase)
+	dbURL := func(host string, port nat.Port) string {
+		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", pgUser, pgPassword, host, port.Port(), pgDatabase)
 	}
 
 	exposedPort := fmt.Sprintf("%d:%d", utils.GetPort(), 5432)
@@ -82,9 +82,8 @@ func NewPostgresContainer(ctx context.Context, skipReaper bool) (*PostgresContai
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "postgres:12-alpine",
 			ExposedPorts: []string{exposedPort},
-			SkipReaper:   skipReaper,
 			Env:          dbSettings,
-			WaitingFor:   tcWait.ForSQL("5432", "postgres", dbURL).Timeout(time.Second * 60),
+			WaitingFor:   tcWait.ForSQL("5432", "postgres", dbURL).WithStartupTimeout(time.Second * 60),
 		},
 		Started: true,
 	})

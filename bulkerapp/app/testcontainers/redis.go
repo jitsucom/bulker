@@ -18,14 +18,13 @@ type RedisContainer struct {
 	Port      int
 }
 
-func NewRedisContainer(ctx context.Context, skipReaper bool) (*RedisContainer, error) {
+func NewRedisContainer(ctx context.Context) (*RedisContainer, error) {
 	exposedPort := redisDefaultPort
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "redis:7-alpine",
 			ExposedPorts: []string{exposedPort},
-			SkipReaper:   skipReaper,
 			WaitingFor:   tcWait.ForListeningPort(redisDefaultPort).WithStartupTimeout(60 * time.Second),
 		},
 		Started: true,

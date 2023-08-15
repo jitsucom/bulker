@@ -13,7 +13,7 @@ func TestEventsLog(t *testing.T) {
 	t.Parallel()
 	reqr := require.New(t)
 
-	redis, err := testcontainers.NewRedisContainer(context.Background(), true)
+	redis, err := testcontainers.NewRedisContainer(context.Background())
 	reqr.NoError(err)
 	defer redis.Close()
 
