@@ -148,7 +148,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			return counters, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.config.BulkerType, err)
 		}
 		counters.processed = processed
-		_, err = bc.consumer.Load().Commit()
+		_, err = bc.consumer.Load().CommitMessage(latestMessage)
 		if err != nil {
 			bc.errorMetric("KAFKA_COMMIT_ERR:" + metrics.KafkaErrorCode(err))
 			bc.SystemErrorf("Failed to commit kafka consumer after batch was successfully committed to the destination: %v", err)
