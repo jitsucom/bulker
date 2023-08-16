@@ -135,8 +135,12 @@ func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte) e
 		return p.NewError("producer is closed")
 	}
 	errors := multierror.Error{}
+	var key []byte
+	if messageKey != "" {
+		key = []byte(messageKey)
+	}
 	err := p.producer.Produce(&kafka.Message{
-		Key:            []byte(messageKey),
+		Key:            key,
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Value:          event,
 	}, nil)

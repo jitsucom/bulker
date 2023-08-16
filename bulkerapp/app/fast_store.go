@@ -54,9 +54,10 @@ type StreamConfig struct {
 
 type ShortDestinationConfig struct {
 	TagDestinationConfig
-	Id              string `json:"id"`
-	ConnectionId    string `json:"connectionId"`
-	DestinationType string `json:"destinationType"`
+	Id              string         `json:"id"`
+	ConnectionId    string         `json:"connectionId"`
+	DestinationType string         `json:"destinationType"`
+	Options         map[string]any `json:"options"`
 }
 
 type TagDestinationConfig struct {

@@ -57,12 +57,15 @@ type Config struct {
 	//TODO: max.poll.interval.ms
 
 	// KafkaDestinationsTopicName destination topic for /ingest endpoint
-	KafkaDestinationsTopicName           string `mapstructure:"KAFKA_DESTINATIONS_TOPIC_NAME" default:"destination-messages"`
-	KafkaDestinationsTopicRetentionHours int    `mapstructure:"KAFKA_DESTINATIONS_TOPIC_RETENTION_HOURS" default:"48"`
+	KafkaDestinationsTopicName              string `mapstructure:"KAFKA_DESTINATIONS_TOPIC_NAME" default:"destination-messages"`
+	KafkaDestinationsTopicMultiThreadedName string `mapstructure:"KAFKA_DESTINATIONS_MT_TOPIC_NAME" default:"destination-messages-mt"`
+	KafkaDestinationsTopicRetentionHours    int    `mapstructure:"KAFKA_DESTINATIONS_TOPIC_RETENTION_HOURS" default:"48"`
 
-	KafkaDestinationsTopicPartitions int `mapstructure:"KAFKA_DESTINATIONS_TOPIC_PARTITIONS" default:"4"`
+	KafkaDestinationsTopicPartitions              int `mapstructure:"KAFKA_DESTINATIONS_TOPIC_PARTITIONS" default:"4"`
+	KafkaDestinationsTopicMultiThreadedPartitions int `mapstructure:"KAFKA_DESTINATIONS_MT_TOPIC_PARTITIONS" default:"64"`
 
-	KafkaDestinationsDeadLetterTopicName string `mapstructure:"KAFKA_DESTINATIONS_DEAD_LETTER_TOPIC_NAME" default:"destination-messages-dead-letter"`
+	KafkaDestinationsDeadLetterTopicName      string `mapstructure:"KAFKA_DESTINATIONS_DEAD_LETTER_TOPIC_NAME" default:"destination-messages-dead-letter"`
+	KafkaDestinationsDeadLetterRetentionHours int    `mapstructure:"KAFKA_DESTINATIONS_DEAD_LETTER_RETENTION_HOURS" default:"168"`
 
 	// TopicManagerRefreshPeriodSec how often topic manager will check for new topics
 	TopicManagerRefreshPeriodSec int `mapstructure:"TOPIC_MANAGER_REFRESH_PERIOD_SEC" default:"5"`

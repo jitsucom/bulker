@@ -351,14 +351,21 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	for _, destination := range stream.AsynchronousDestinations {
 		messageCopy := ingestMessage
 		messageCopy.ConnectionId = destination.ConnectionId
+		multithreading, ok := destination.Options["multithreading"].(bool)
+		topic := r.config.KafkaDestinationsTopicName
+		messageKey := messageCopy.ConnectionId
+		if ok && multithreading {
+			topic = r.config.KafkaDestinationsTopicMultiThreadedName
+			messageKey = ""
+		}
 		payload, err := json.Marshal(messageCopy)
-		r.Debugf("[ingest] Message ID: %s Producing to: %s", messageId, destination.ConnectionId)
+		r.Debugf("[ingest] Message ID: %s Producing for: %s topic: %s key: %s", messageId, destination.ConnectionId, topic, messageKey)
 		if err != nil {
 			metrics.IngestedMessages(destination.ConnectionId, "error", "message marshal error").Inc()
 			rError = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err, logFormat, messageId, domain)
 			continue
 		}
-		err = r.producer.ProduceAsync(r.config.KafkaDestinationsTopicName, messageCopy.ConnectionId, payload)
+		err = r.producer.ProduceAsync(topic, messageKey, payload)
 		if err != nil {
 			metrics.IngestedMessages(destination.ConnectionId, "error", "producer error").Inc()
 			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, logFormat, messageId, domain)
