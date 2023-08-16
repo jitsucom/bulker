@@ -276,12 +276,12 @@ func (bc *BatchConsumerImpl) postEventsLog(state bulker.State, processedObjectSa
 		state.SetError(batchErr)
 	}
 	batchState := BatchState{State: state, LastMappedRow: processedObjectSample}
-	_, err2 := bc.eventsLogService.PostEvent(EventTypeBatchAll, bc.destinationId, batchState)
+	_, err2 := bc.eventsLogService.PostEvent(&ActorEvent{EventTypeBatchAll, bc.destinationId, batchState})
 	if err2 != nil {
 		bc.Errorf("Failed to post event to events log service: %v", err2)
 	}
 	if batchErr != nil {
-		_, err2 = bc.eventsLogService.PostEvent(EventTypeBatchError, bc.destinationId, batchState)
+		_, err2 = bc.eventsLogService.PostEvent(&ActorEvent{EventTypeBatchError, bc.destinationId, batchState})
 		if err2 != nil {
 			bc.Errorf("Failed to post event to events log service: %v", err2)
 		}

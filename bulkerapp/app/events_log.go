@@ -5,6 +5,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
 	"io"
 	"regexp"
@@ -47,11 +48,17 @@ type EventsLogRecord struct {
 	Content any               `json:"content"`
 }
 
+type ActorEvent struct {
+	EventType EventType
+	ActorId   string
+	Event     any
+}
+
 type EventsLogService interface {
 	io.Closer
 	// PostEvent posts event to the events log
 	// actorId – id of entity of event origin. E.g. for 'incoming' event - id of site, for 'processed' event - id of destination
-	PostEvent(eventType EventType, actorId string, event any) (id EventsLogRecordId, err error)
+	PostEvent(event ...*ActorEvent) (id []EventsLogRecordId, err error)
 
 	GetEvents(eventType EventType, actorId string, filter *EventsLogFilter, limit int) ([]EventsLogRecord, error)
 }
@@ -74,30 +81,53 @@ func NewRedisEventsLog(config *Config, redisUrl string) (*RedisEventsLog, error)
 	return &r, nil
 }
 
-func (r *RedisEventsLog) PostEvent(eventType EventType, actorId string, event any) (id EventsLogRecordId, err error) {
-	if actorId == "" {
-		return "", nil
+func (r *RedisEventsLog) PostEvent(events ...*ActorEvent) (id []EventsLogRecordId, err error) {
+	if len(events) == 0 {
+		return nil, nil
 	}
-	serialized, ok := event.([]byte)
-	if !ok {
-		serialized, err = jsoniter.Marshal(event)
-		if err != nil {
-			metrics.EventsLogError("marshal_error").Inc()
-			return "", r.NewError("failed to serialize event entity [%v]: %v", event, err)
-		}
-	}
-
 	connection := r.redisPool.Get()
 	defer connection.Close()
 
-	streamKey := fmt.Sprintf(redisEventsLogStreamKey, eventType, actorId)
-
-	idString, err := redis.String(connection.Do("XADD", streamKey, "MAXLEN", "~", r.maxSize, "*", "event", serialized))
-	if err != nil {
-		metrics.EventsLogError(RedisError(err)).Inc()
-		return "", r.NewError("failed to post event to stream [%s]: %v", streamKey, err)
+	if len(events) == 1 {
+		event := events[0]
+		streamKey := fmt.Sprintf(redisEventsLogStreamKey, event.EventType, event.ActorId)
+		serialized, ok := event.Event.([]byte)
+		if !ok {
+			serialized, err = jsoniter.Marshal(event.Event)
+			if err != nil {
+				metrics.EventsLogError("marshal_error").Inc()
+				return nil, r.NewError("failed to serialize event entity [%v]: %v", event.Event, err)
+			}
+		}
+		idString, err := redis.String(connection.Do("XADD", streamKey, "MAXLEN", "~", r.maxSize, "*", "event", serialized))
+		if err != nil {
+			metrics.EventsLogError(RedisError(err)).Inc()
+			return nil, r.NewError("failed to post event to stream [%s]: %v", streamKey, err)
+		}
+		return []EventsLogRecordId{EventsLogRecordId(idString)}, nil
+	} else {
+		_ = connection.Send("MULTI")
+		for _, event := range events {
+			streamKey := fmt.Sprintf(redisEventsLogStreamKey, event.EventType, event.ActorId)
+			serialized, ok := event.Event.([]byte)
+			if !ok {
+				serialized, err = jsoniter.Marshal(event.Event)
+				if err != nil {
+					metrics.EventsLogError("marshal_error").Inc()
+					return nil, r.NewError("failed to serialize event entity [%v]: %v", event.Event, err)
+				}
+			}
+			_ = connection.Send("XADD", streamKey, "MAXLEN", "~", r.maxSize, "*", "event", serialized)
+		}
+		ids, err := redis.Strings(connection.Do("EXEC"))
+		if err != nil {
+			metrics.EventsLogError(RedisError(err)).Inc()
+			return nil, r.NewError("failed to post events: %v", err)
+		}
+		return utils.ArrayMap(ids, func(s string) EventsLogRecordId {
+			return EventsLogRecordId(s)
+		}), nil
 	}
-	return EventsLogRecordId(idString), nil
 }
 
 func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *EventsLogFilter, limit int) ([]EventsLogRecord, error) {
@@ -195,8 +225,8 @@ func parseTimestamp(id string) (time.Time, error) {
 
 type DummyEventsLogService struct{}
 
-func (d *DummyEventsLogService) PostEvent(eventType EventType, actorId string, event any) (id EventsLogRecordId, err error) {
-	return "", nil
+func (d *DummyEventsLogService) PostEvent(event ...*ActorEvent) (id []EventsLogRecordId, err error) {
+	return nil, nil
 }
 
 func (d *DummyEventsLogService) GetEvents(eventType EventType, actorId string, filter *EventsLogFilter, limit int) ([]EventsLogRecord, error) {

@@ -254,33 +254,35 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			}
 			body, _ = json.Marshal(bodyJsonObj)
 		}
-		eventsLogObj := map[string]any{"body": string(body)}
 		if rError.Error != nil {
-			eventsLogObj["error"] = rError.PublicError.Error()
-			eventsLogObj["status"] = "FAILED"
+			obj := map[string]any{"body": string(body), "error": rError.PublicError.Error(), "status": "FAILED"}
+			objs := make([]*ActorEvent, 0, len(eventsLogIds)*2)
 			for _, streamId := range eventsLogIds {
-				_, e := r.eventsLogService.PostEvent(EventTypeIncomingError, streamId, eventsLogObj)
-				if e != nil {
-					r.Errorf("Failed to post event to events log service: %v", e)
-				}
+				objs = append(objs, &ActorEvent{EventTypeIncomingError, streamId, obj})
+				objs = append(objs, &ActorEvent{EventTypeIncomingAll, streamId, obj})
 			}
-			metrics.IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
-		} else {
-			eventsLogObj["asyncDestinations"] = asyncDestinations
-			eventsLogObj["tags"] = tagsDestinations
-			if len(asyncDestinations) > 0 || len(tagsDestinations) > 0 {
-				eventsLogObj["status"] = "SUCCESS"
-			} else {
-				eventsLogObj["status"] = "SKIPPED"
-				eventsLogObj["error"] = "no destinations found for stream"
-			}
-			metrics.IngestHandlerRequests(domain, "success", "").Inc()
-		}
-		for _, streamId := range eventsLogIds {
-			_, e := r.eventsLogService.PostEvent(EventTypeIncomingAll, streamId, eventsLogObj)
+			_, e := r.eventsLogService.PostEvent(objs...)
 			if e != nil {
 				r.Errorf("Failed to post event to events log service: %v", e)
 			}
+			metrics.IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
+		} else {
+			obj := map[string]any{"body": string(body), "asyncDestinations": asyncDestinations, "tags": tagsDestinations}
+			if len(asyncDestinations) > 0 || len(tagsDestinations) > 0 {
+				obj["status"] = "SUCCESS"
+			} else {
+				obj["status"] = "SKIPPED"
+				obj["error"] = "no destinations found for stream"
+			}
+			objs := make([]*ActorEvent, 0, len(eventsLogIds))
+			for _, streamId := range eventsLogIds {
+				objs = append(objs, &ActorEvent{EventTypeIncomingAll, streamId, obj})
+			}
+			_, e := r.eventsLogService.PostEvent(objs...)
+			if e != nil {
+				r.Errorf("Failed to post event to events log service: %v", e)
+			}
+			metrics.IngestHandlerRequests(domain, "success", "").Inc()
 		}
 	}()
 	body, err := io.ReadAll(c.Request.Body)

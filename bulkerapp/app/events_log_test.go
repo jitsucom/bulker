@@ -34,18 +34,18 @@ func TestEventsLog(t *testing.T) {
 			"_timestamp": ts,
 			"id":         i,
 		}
-		id, err := redisEl.PostEvent(EventTypeIncomingAll, "test", event)
+		id, err := redisEl.PostEvent(&ActorEvent{EventTypeIncomingAll, "test", event})
 		reqr.NoError(err)
 		logging.Infof("Posted event %s", id)
 		// for latter testing of interval filters
 		if i == 35 {
-			tsStart, _ = parseTimestamp(string(id))
+			tsStart, _ = parseTimestamp(string(id[0]))
 		}
 		if i == 55 {
-			idBefore = id
+			idBefore = id[0]
 		}
 		if i == 65 {
-			tsEnd, _ = parseTimestamp(string(id))
+			tsEnd, _ = parseTimestamp(string(id[0]))
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

@@ -3,6 +3,7 @@ package app
 import (
 	"github.com/gomodule/redigo/redis"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
 	"strings"
 )
@@ -15,7 +16,10 @@ const fastStoreStreamDomainsKey = "streamDomains"
 
 type FastStore struct {
 	appbase.Service
-	redisPool *redis.Pool
+	redisPool           *redis.Pool
+	streamByIdCache     *utils.Cache[*StreamWithDestinations]
+	streamByDomainCache *utils.Cache[[]StreamWithDestinations]
+	streamByKeyIdCache  *utils.Cache[*ApiKeyBinding]
 }
 
 type DataLayout string
@@ -76,13 +80,20 @@ func NewFastStore(config *Config) (*FastStore, error) {
 	base.Debugf("Creating FastStore with redisURL: %s", config.RedisURL)
 	redisPool := newPool(config.RedisURL, config.RedisTLSCA)
 	fs := FastStore{
-		Service:   base,
-		redisPool: redisPool,
+		Service:             base,
+		redisPool:           redisPool,
+		streamByIdCache:     utils.NewCache[*StreamWithDestinations](60),
+		streamByDomainCache: utils.NewCache[[]StreamWithDestinations](60),
+		streamByKeyIdCache:  utils.NewCache[*ApiKeyBinding](60),
 	}
 	return &fs, nil
 }
 
 func (fs *FastStore) getStreamByKeyId(keyId string) (*ApiKeyBinding, error) {
+	cachedBinding, found := fs.streamByKeyIdCache.Get(keyId)
+	if found {
+		return cachedBinding, nil
+	}
 	connection := fs.redisPool.Get()
 	defer connection.Close()
 
@@ -98,10 +109,15 @@ func (fs *FastStore) getStreamByKeyId(keyId string) (*ApiKeyBinding, error) {
 	if err != nil {
 		return nil, fs.NewError("failed to unmarshal binding bytes for keyId [%s]: %v: %s", keyId, err, string(keyBytes))
 	}
+	fs.streamByKeyIdCache.Set(keyId, &binding)
 	return &binding, nil
 }
 
 func (fs *FastStore) GetStreamById(slug string) (*StreamWithDestinations, error) {
+	cachedStream, found := fs.streamByIdCache.Get(slug)
+	if found {
+		return cachedStream, nil
+	}
 	connection := fs.redisPool.Get()
 	defer connection.Close()
 
@@ -117,10 +133,15 @@ func (fs *FastStore) GetStreamById(slug string) (*StreamWithDestinations, error)
 	if err != nil {
 		return nil, fs.NewError("failed to unmarshal stream bytes for slug [%s]: %v: %s", slug, err, string(streamBytes))
 	}
+	fs.streamByIdCache.Set(slug, &stream)
 	return &stream, nil
 }
 
 func (fs *FastStore) GetStreamsByDomain(domain string) ([]StreamWithDestinations, error) {
+	cachedStream, found := fs.streamByDomainCache.Get(domain)
+	if found {
+		return cachedStream, nil
+	}
 	connection := fs.redisPool.Get()
 	defer connection.Close()
 
@@ -138,6 +159,7 @@ func (fs *FastStore) GetStreamsByDomain(domain string) ([]StreamWithDestinations
 	if err != nil {
 		return nil, fs.NewError("failed to unmarshal stream bytes for domain [%s]: %v: %s", domain, err, string(streamBytes))
 	}
+	fs.streamByDomainCache.Set(domain, stream)
 	return stream, nil
 }
 
