@@ -84,7 +84,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 
 	router := NewRouter(a)
 	a.server = &http.Server{
-		Addr:        fmt.Sprintf("0.0.0.0:%d", a.config.HTTPPort),
+		Addr:        fmt.Sprintf(":%d", a.config.HTTPPort),
 		Handler:     router.Engine(),
 		ReadTimeout: time.Minute * 30,
 		IdleTimeout: time.Minute * 5,
