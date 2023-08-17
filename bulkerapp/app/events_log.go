@@ -149,7 +149,7 @@ func (r *RedisEventsLog) PostAsync(event *ActorEvent) {
 		return
 	}
 	r.Lock()
-	r.Unlock()
+	defer r.Unlock()
 	key := fmt.Sprintf(redisEventsLogStreamKey, event.EventType, event.ActorId)
 	buf, ok := r.eventsBuffer[key]
 	if !ok {
