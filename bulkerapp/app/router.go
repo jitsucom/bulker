@@ -577,4 +577,5 @@ type IngestMessage struct {
 	Origin         IngestMessageOrigin `json:"origin"`
 	HttpHeaders    map[string]string   `json:"httpHeaders"`
 	HttpPayload    map[string]any      `json:"httpPayload"`
+	Geo            map[string]any      `json:"geo"`
 }
