@@ -264,13 +264,7 @@ func (sc *StreamConsumer) postEventsLog(message []byte, representation any, proc
 	if processedErr != nil {
 		object["error"] = processedErr.Error()
 		object["status"] = "FAILED"
-		_, err := sc.eventsLogService.PostEvent(&ActorEvent{EventTypeProcessedError, sc.destination.Id(), object})
-		if err != nil {
-			sc.Errorf("Failed to post event to events log service: %v", err)
-		}
+		sc.eventsLogService.PostAsync(&ActorEvent{EventTypeProcessedError, sc.destination.Id(), object})
 	}
-	_, err := sc.eventsLogService.PostEvent(&ActorEvent{EventTypeProcessedAll, sc.destination.Id(), object})
-	if err != nil {
-		sc.Errorf("Failed to post event to events log service: %v", err)
-	}
+	sc.eventsLogService.PostAsync(&ActorEvent{EventTypeProcessedAll, sc.destination.Id(), object})
 }

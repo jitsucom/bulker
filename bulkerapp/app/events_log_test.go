@@ -39,13 +39,13 @@ func TestEventsLog(t *testing.T) {
 		logging.Infof("Posted event %s", id)
 		// for latter testing of interval filters
 		if i == 35 {
-			tsStart, _ = parseTimestamp(string(id[0]))
+			tsStart, _ = parseTimestamp(string(id))
 		}
 		if i == 55 {
-			idBefore = id[0]
+			idBefore = id
 		}
 		if i == 65 {
-			tsEnd, _ = parseTimestamp(string(id[0]))
+			tsEnd, _ = parseTimestamp(string(id))
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

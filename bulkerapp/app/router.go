@@ -238,7 +238,7 @@ func maskWriteKey(wk string) string {
 func (r *Router) IngestHandler(c *gin.Context) {
 	domain := ""
 	// TODO: use workspaceId as default for all stream identification errors
-	var eventsLogIds []string
+	var eventsLogId string
 	var rError appbase.RouterError
 	var body []byte
 	var asyncDestinations []string
@@ -256,15 +256,8 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		}
 		if rError.Error != nil {
 			obj := map[string]any{"body": string(body), "error": rError.PublicError.Error(), "status": "FAILED"}
-			objs := make([]*ActorEvent, 0, len(eventsLogIds)*2)
-			for _, streamId := range eventsLogIds {
-				objs = append(objs, &ActorEvent{EventTypeIncomingError, streamId, obj})
-				objs = append(objs, &ActorEvent{EventTypeIncomingAll, streamId, obj})
-			}
-			_, e := r.eventsLogService.PostEvent(objs...)
-			if e != nil {
-				r.Errorf("Failed to post event to events log service: %v", e)
-			}
+			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingError, eventsLogId, obj})
+			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingAll, eventsLogId, obj})
 			metrics.IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
 		} else {
 			obj := map[string]any{"body": string(body), "asyncDestinations": asyncDestinations, "tags": tagsDestinations}
@@ -274,14 +267,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 				obj["status"] = "SKIPPED"
 				obj["error"] = "no destinations found for stream"
 			}
-			objs := make([]*ActorEvent, 0, len(eventsLogIds))
-			for _, streamId := range eventsLogIds {
-				objs = append(objs, &ActorEvent{EventTypeIncomingAll, streamId, obj})
-			}
-			_, e := r.eventsLogService.PostEvent(objs...)
-			if e != nil {
-				r.Errorf("Failed to post event to events log service: %v", e)
-			}
+			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingAll, eventsLogId, obj})
 			metrics.IngestHandlerRequests(domain, "success", "").Inc()
 		}
 	}()
@@ -320,7 +306,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			}
 		}
 	} else if ingestMessage.Origin.Slug != "" {
-		eventsLogIds = []string{ingestMessage.Origin.Slug}
+		eventsLogId = ingestMessage.Origin.Slug
 		stream, err = r.fastStore.GetStreamById(ingestMessage.Origin.Slug)
 	} else if ingestMessage.Origin.Domain != "" {
 		var streams []StreamWithDestinations
@@ -340,7 +326,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusNotFound, "stream not found", false, nil, logFormat, messageId, domain)
 		return
 	}
-	eventsLogIds = []string{stream.Stream.Id}
+	eventsLogId = stream.Stream.Id
 	if len(stream.AsynchronousDestinations) == 0 && len(stream.SynchronousDestinations) == 0 {
 		c.JSON(http.StatusOK, gin.H{"message": "no destinations found for stream"})
 		return
