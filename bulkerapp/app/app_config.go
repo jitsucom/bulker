@@ -71,6 +71,7 @@ type Config struct {
 	TopicManagerRefreshPeriodSec int `mapstructure:"TOPIC_MANAGER_REFRESH_PERIOD_SEC" default:"5"`
 
 	// ProducerWaitForDeliveryMs For ProduceSync only is a timeout for producer to wait for delivery report.
+	ProducerQueueSize         int `mapstructure:"PRODUCER_QUEUE_SIZE" default:"100000"`
 	ProducerBatchSize         int `mapstructure:"PRODUCER_BATCH_SIZE" default:"65535"`
 	ProducerLingerMs          int `mapstructure:"PRODUCER_LINGER_MS" default:"1000"`
 	ProducerWaitForDeliveryMs int `mapstructure:"PRODUCER_WAIT_FOR_DELIVERY_MS" default:"1000"`

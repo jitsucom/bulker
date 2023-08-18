@@ -27,8 +27,9 @@ func NewProducer(config *Config, kafkaConfig *kafka.ConfigMap) (*Producer, error
 	base := appbase.NewServiceBase("producer")
 
 	producerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
-		"batch.size": config.ProducerBatchSize,
-		"linger.ms":  config.ProducerLingerMs,
+		"queue.buffering.max.messages": config.ProducerQueueSize,
+		"batch.size":                   config.ProducerBatchSize,
+		"linger.ms":                    config.ProducerLingerMs,
 	}, *kafkaConfig))
 	producer, err := kafka.NewProducer(&producerConfig)
 	if err != nil {
