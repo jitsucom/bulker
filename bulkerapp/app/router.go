@@ -135,7 +135,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		return
 	}
 	bytesRead = len(body)
-	err = r.producer.ProduceAsync(topicId, uuid.New(), body)
+	err = r.producer.ProduceAsync(topicId, uuid.New(), body, nil)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, "")
 		return
@@ -259,6 +259,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingError, eventsLogId, obj})
 			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingAll, eventsLogId, obj})
 			metrics.IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
+			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), body, map[string]string{"error": rError.Error.Error()})
 		} else {
 			obj := map[string]any{"body": string(body), "asyncDestinations": asyncDestinations, "tags": tagsDestinations}
 			if len(asyncDestinations) > 0 || len(tagsDestinations) > 0 {
@@ -353,7 +354,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			rError = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err, logFormat, messageId, domain)
 			continue
 		}
-		err = r.producer.ProduceAsync(topic, messageKey, payload)
+		err = r.producer.ProduceAsync(topic, messageKey, payload, nil)
 		if err != nil {
 			metrics.IngestedMessages(destination.ConnectionId, "error", "producer error").Inc()
 			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, logFormat, messageId, domain)

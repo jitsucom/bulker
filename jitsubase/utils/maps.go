@@ -71,6 +71,9 @@ func MapNVLKeys[K comparable, V any](mp map[K]V, keys ...K) V {
 }
 
 func MapToSlice[K comparable, V any, R any](mp map[K]V, mappingFunc func(K, V) R) []R {
+	if mp == nil {
+		return nil
+	}
 	result := make([]R, 0, len(mp))
 	for k, v := range mp {
 		result = append(result, mappingFunc(k, v))

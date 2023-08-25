@@ -92,7 +92,7 @@ func (r *Router) authMiddleware(c *gin.Context) {
 }
 
 func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, logFormat string, logArgs ...any) *RouterError {
-	routerError := RouterError{Error: err, ErrorType: errorType}
+	routerError := RouterError{ErrorType: errorType}
 	if err != nil {
 		if maskError {
 			errorID := uuid.NewLettersNumbers()
@@ -106,6 +106,7 @@ func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskE
 		err = fmt.Errorf(errorType)
 		routerError.PublicError = err
 	}
+	routerError.Error = err
 	if logFormat == "" {
 		logFormat = "%v"
 	} else {

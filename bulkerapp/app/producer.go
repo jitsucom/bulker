@@ -131,7 +131,7 @@ func (p *Producer) ProduceSync(topic string, events ...kafka.Message) error {
 
 // ProduceAsync TODO: transactional delivery?
 // produces messages to kafka
-func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte) error {
+func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte, headers map[string]string) error {
 	if p.isClosed() {
 		return p.NewError("producer is closed")
 	}
@@ -141,7 +141,10 @@ func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte) e
 		key = []byte(messageKey)
 	}
 	err := p.producer.Produce(&kafka.Message{
-		Key:            key,
+		Key: key,
+		Headers: utils.MapToSlice(headers, func(k string, v string) kafka.Header {
+			return kafka.Header{Key: k, Value: []byte(v)}
+		}),
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Value:          event,
 	}, nil)
