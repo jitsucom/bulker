@@ -91,7 +91,7 @@ func (r *Router) authMiddleware(c *gin.Context) {
 	return
 }
 
-func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, logFormat string, logArgs ...any) RouterError {
+func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, logFormat string, logArgs ...any) *RouterError {
 	routerError := RouterError{Error: err, ErrorType: errorType}
 	if err != nil {
 		if maskError {
@@ -114,7 +114,7 @@ func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskE
 	logArgs = append(logArgs, err)
 	r.Errorf(logFormat, logArgs...)
 	c.JSON(code, gin.H{"error": routerError.PublicError.Error()})
-	return routerError
+	return &routerError
 }
 
 func HashToken(token string, salt string, secret string) string {

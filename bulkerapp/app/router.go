@@ -93,9 +93,9 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	tableName := c.Query("tableName")
 	mode := ""
 	bytesRead := 0
-	var rError appbase.RouterError
+	var rError *appbase.RouterError
 	defer func() {
-		if rError.Error != nil {
+		if rError != nil {
 			metrics.EventsHandlerRequests(destinationId, mode, tableName, "error", rError.ErrorType).Inc()
 		} else {
 			metrics.EventsHandlerRequests(destinationId, mode, tableName, "success", "").Inc()
@@ -153,9 +153,9 @@ func (r *Router) BulkHandler(c *gin.Context) {
 
 	mode := ""
 	bytesRead := 0
-	var rError appbase.RouterError
+	var rError *appbase.RouterError
 	defer func() {
-		if rError.Error != nil {
+		if rError != nil {
 			metrics.BulkHandlerRequests(destinationId, mode, tableName, "error", rError.ErrorType).Inc()
 		} else {
 			metrics.BulkHandlerRequests(destinationId, mode, tableName, "success", "").Inc()
@@ -239,7 +239,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	domain := ""
 	// TODO: use workspaceId as default for all stream identification errors
 	var eventsLogId string
-	var rError appbase.RouterError
+	var rError *appbase.RouterError
 	var body []byte
 	var asyncDestinations []string
 	var tagsDestinations []string
@@ -254,7 +254,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			}
 			body, _ = json.Marshal(bodyJsonObj)
 		}
-		if rError.ErrorType != "" {
+		if rError != nil {
 			obj := map[string]any{"body": string(body), "error": rError.PublicError.Error(), "status": "FAILED"}
 			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingError, eventsLogId, obj})
 			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingAll, eventsLogId, obj})
