@@ -254,7 +254,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			}
 			body, _ = json.Marshal(bodyJsonObj)
 		}
-		if rError.Error != nil {
+		if rError.ErrorType != "" {
 			obj := map[string]any{"body": string(body), "error": rError.PublicError.Error(), "status": "FAILED"}
 			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingError, eventsLogId, obj})
 			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingAll, eventsLogId, obj})
