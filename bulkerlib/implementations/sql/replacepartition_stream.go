@@ -12,7 +12,7 @@ import (
 )
 
 type ReplacePartitionStream struct {
-	AbstractTransactionalSQLStream
+	*AbstractTransactionalSQLStream
 	partitionId string
 }
 
@@ -31,13 +31,10 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 		return nil, err
 	}
 	ps.partitionId = partitionId
+	ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.tableName)
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		dstTable := tableForObject
-		existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
-		if existingTable.Exists() {
-			dstTable = existingTable
-			ps.adjustTableColumnTypes(dstTable, tableForObject, object)
-		}
+		ps.adjustTableColumnTypes(dstTable, ps.existingTable, tableForObject, object)
 		tmpTableName := fmt.Sprintf("jitsu_tmp_%s", uuid.NewLettersNumbers()[:8])
 		pkName := ""
 		if len(dstTable.PKFields) > 0 {
