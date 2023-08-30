@@ -112,7 +112,11 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 	current := currentTable.Columns.Clone()
 	unmappedObj := map[string]any{}
 	for name, newCol := range desiredTable.Columns {
-		existingCol, ok := existingTable.Columns[name]
+		var existingCol types.SQLColumn
+		ok := false
+		if existingTable != nil {
+			existingCol, ok = existingTable.Columns[name]
+		}
 		if !ok {
 			existingCol, ok = current[name]
 			if !ok {
