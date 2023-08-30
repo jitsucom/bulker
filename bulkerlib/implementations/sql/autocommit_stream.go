@@ -34,41 +34,43 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	if err != nil {
 		return
 	}
-	dstTable, err := ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
+	existingTable, err := ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
 	if err == nil {
 		// for autocommit mode this method only tries to convert values to existing column types
-		columnsAdded := ps.adjustTableColumnTypes(dstTable, dstTable, table, processedObject)
+		columnsAdded := ps.adjustTableColumnTypes(table, existingTable, table, processedObject)
 		if columnsAdded {
-			ps.updateRepresentationTable(dstTable)
+			ps.updateRepresentationTable(existingTable)
 			// if new columns were added - update table. (for _unmapped_data column)
-			dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, dstTable)
+			existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
 		}
 		if err == nil {
-			ps.updateRepresentationTable(dstTable)
-			err = ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObject)
+			existingTable.Columns = table.Columns
+			ps.updateRepresentationTable(existingTable)
+			err = ps.sqlAdapter.Insert(ctx, existingTable, ps.merge, processedObject)
 		}
 	}
 	if err != nil {
 		// give another try without using table cache
-		dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.sqlAdapter, ps.id, table)
+		existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.sqlAdapter, ps.id, table)
 		if err != nil {
 			ps.updateRepresentationTable(table)
 			err = errorj.Decorate(err, "failed to ensure table")
 			return
 		}
 		// for autocommit mode this method only tries to convert values to existing column types
-		columnsAdded := ps.adjustTableColumnTypes(dstTable, dstTable, table, processedObject)
+		columnsAdded := ps.adjustTableColumnTypes(table, existingTable, table, processedObject)
 		if columnsAdded {
-			ps.updateRepresentationTable(dstTable)
+			ps.updateRepresentationTable(existingTable)
 			// if new columns were added - update table. (for _unmapped_data column)
-			dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, dstTable)
+			existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
 			if err != nil {
 				err = errorj.Decorate(err, "failed to ensure table")
 				return
 			}
 		}
-		ps.updateRepresentationTable(dstTable)
-		return ps.state, processedObject, ps.sqlAdapter.Insert(ctx, dstTable, ps.merge, processedObject)
+		existingTable.Columns = table.Columns
+		ps.updateRepresentationTable(existingTable)
+		return ps.state, processedObject, ps.sqlAdapter.Insert(ctx, existingTable, ps.merge, processedObject)
 	}
 	return ps.state, processedObject, nil
 }
