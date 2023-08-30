@@ -20,9 +20,10 @@ import (
 )
 
 type AbstractTransactionalSQLStream struct {
-	AbstractSQLStream
-	tx       *TxSQLAdapter
-	tmpTable *Table
+	*AbstractSQLStream
+	tx            *TxSQLAdapter
+	tmpTable      *Table
+	existingTable *Table
 	//function that generate tmp table schema based on target table schema
 	tmpTableFunc       func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table)
 	dstTable           *Table
@@ -35,18 +36,19 @@ type AbstractTransactionalSQLStream struct {
 	batchFileSkipLines utils.Set[int]
 }
 
-func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractTransactionalSQLStream, error) {
-	ps := AbstractTransactionalSQLStream{}
+func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (*AbstractTransactionalSQLStream, error) {
 	abs, err := newAbstractStream(id, p, tableName, mode, streamOptions...)
 	if err != nil {
-		return ps, err
+		return nil, err
 	}
+	ps := AbstractTransactionalSQLStream{}
+	ps.existingTable = &Table{}
 	ps.AbstractSQLStream = abs
 	if ps.merge {
 		ps.batchFileLinesByPK = make(map[string]int)
 		ps.batchFileSkipLines = utils.NewSet[int]()
 	}
-	return ps, nil
+	return &ps, nil
 }
 
 func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) {
@@ -117,11 +119,6 @@ func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err 
 }
 
 func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (err error) {
-	existingTable, _ := ps.tx.GetTableSchema(ctx, ps.tableName)
-	if existingTable.Exists() {
-		//we need to respect types of existing columns when we create tmp table
-		ps.tmpTable.Columns = utils.MapPutAll(ps.tmpTable.Columns, existingTable.Columns)
-	}
 	table := ps.tmpTable
 	err = ps.tx.CreateTable(ctx, table)
 	if err != nil {
@@ -311,7 +308,7 @@ func (ps *AbstractTransactionalSQLStream) adjustTables(ctx context.Context, targ
 		ps.dstTable = targetTable
 		ps.tmpTable = ps.tmpTableFunc(ctx, targetTable, processedObject)
 	} else {
-		ps.adjustTableColumnTypes(ps.tmpTable, targetTable, processedObject)
+		ps.adjustTableColumnTypes(ps.tmpTable, ps.existingTable, targetTable, processedObject)
 	}
 	ps.dstTable.Columns = ps.tmpTable.Columns
 }

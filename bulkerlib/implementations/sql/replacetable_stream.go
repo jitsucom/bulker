@@ -12,7 +12,7 @@ import (
 )
 
 type ReplaceTableStream struct {
-	AbstractTransactionalSQLStream
+	*AbstractTransactionalSQLStream
 }
 
 func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {

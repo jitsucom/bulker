@@ -176,28 +176,17 @@ func (th *TableHelper) patchTableIfNeeded(ctx context.Context, sqlAdapter SQLAda
 
 	//** Diff exists **
 	//patch table schema
-	return th.patchTableWithLock(ctx, sqlAdapter, destinationID, desiredSchema)
+	return th.patchTableWithLock(ctx, sqlAdapter, destinationID, currentSchema, diff)
 }
 
 // patchTable locks table, get from DWH and patch
-func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAdapter, destinationID string, dataSchema *Table) (*Table, error) {
-	tableIdentifier := th.getTableIdentifier(destinationID, dataSchema.Name)
-	tableLock, err := th.lockTable(destinationID, dataSchema.Name, tableIdentifier)
+func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAdapter, destinationID string, currentSchema, diff *Table) (*Table, error) {
+	tableIdentifier := th.getTableIdentifier(destinationID, diff.Name)
+	tableLock, err := th.lockTable(destinationID, diff.Name, tableIdentifier)
 	if err != nil {
 		return nil, err
 	}
 	defer tableLock.Unlock()
-
-	dbSchema, err := th.getOrCreate(ctx, sqlAdapter, dataSchema)
-	if err != nil {
-		return nil, err
-	}
-
-	//handle table schema local changes (patching was in another goroutine)
-	diff := dbSchema.Diff(dataSchema)
-	if !diff.Exists() {
-		return dbSchema, nil
-	}
 
 	if err := sqlAdapter.PatchTableSchema(ctx, diff); err != nil {
 		return nil, err
@@ -206,20 +195,20 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAda
 	//** Save **
 	//columns
 	for k, v := range diff.Columns {
-		dbSchema.Columns[k] = v
+		currentSchema.Columns[k] = v
 	}
 	//pk fields
 	if len(diff.PKFields) > 0 {
-		dbSchema.PKFields = diff.PKFields
+		currentSchema.PKFields = diff.PKFields
 	}
 	//remove pk fields if a deletion was
 	if diff.DeletePkFields {
-		dbSchema.PKFields = utils.Set[string]{}
+		currentSchema.PKFields = utils.Set[string]{}
 	}
 
-	th.updateCached(dbSchema.Name, dbSchema)
+	th.updateCached(diff.Name, currentSchema)
 
-	return dbSchema, nil
+	return currentSchema, nil
 }
 
 func (th *TableHelper) getCachedOrCreateTableSchema(ctx context.Context, sqlAdapter SQLAdapter, destinationName string, dataSchema *Table) (*Table, error) {

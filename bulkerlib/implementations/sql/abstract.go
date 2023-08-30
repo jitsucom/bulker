@@ -31,7 +31,7 @@ type AbstractSQLStream struct {
 	timestampColumn string
 }
 
-func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractSQLStream, error) {
+func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (*AbstractSQLStream, error) {
 	ps := AbstractSQLStream{id: id, sqlAdapter: p, tableName: tableName, mode: mode}
 	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {
@@ -40,7 +40,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	ps.merge = bulker.MergeRowsOption.Get(&ps.options)
 	pkColumns := bulker.PrimaryKeyOption.Get(&ps.options)
 	if ps.merge && len(pkColumns) == 0 {
-		return AbstractSQLStream{}, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
+		return nil, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	var customFields = ColumnTypesOption.Get(&ps.options)
 	ps.pkColumns = pkColumns.ToSlice()
@@ -49,7 +49,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	//TODO: max column?
 	ps.state = bulker.State{Status: bulker.Active}
 	ps.customTypes = customFields
-	return ps, nil
+	return &ps, nil
 }
 
 func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Object, error) {
@@ -102,30 +102,35 @@ func (ps *AbstractSQLStream) init(ctx context.Context) error {
 	return nil
 }
 
-// adjustTableColumnTypes modify existingTable with extra new columns from desiredTable if such exists
+// adjustTableColumnTypes modify currentTable with extra new columns from desiredTable if such exists
 // if some column already exists in the database, no problems if its DataType is castable to DataType of existing column
 // if some new column is being added but with different DataTypes - type of this column will be changed to a common ancestor type
 // object values that can't be casted will be added to '_unmaped_data' column of JSON type as an json object
-// returns true if new column was added to the existingTable as a result of this function call
-func (ps *AbstractSQLStream) adjustTableColumnTypes(existingTable, desiredTable *Table, values types.Object) bool {
+// returns true if new column was added to the currentTable as a result of this function call
+func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable, desiredTable *Table, values types.Object) bool {
 	columnsAdded := false
-	cloned := existingTable.Columns.Clone()
+	current := currentTable.Columns.Clone()
 	unmappedObj := map[string]any{}
 	for name, newCol := range desiredTable.Columns {
-		existingCol, ok := cloned[name]
+		existingCol, ok := existingTable.Columns[name]
 		if !ok {
-			//column not exist in database - adding as New
-			newCol.New = true
-			cloned[name] = newCol
-			columnsAdded = true
-			continue
+			existingCol, ok = current[name]
+			if !ok {
+				//column not exist in database - adding as New
+				newCol.New = true
+				current[name] = newCol
+				columnsAdded = true
+				continue
+			}
+		} else {
+			current[name] = existingCol
 		}
 		if existingCol.DataType == newCol.DataType {
 			continue
 		}
 		if newCol.Override {
 			//if column sql type is overridden by user - leave it this way
-			cloned[name] = newCol
+			current[name] = newCol
 			continue
 		}
 		if !existingCol.New {
@@ -155,7 +160,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(existingTable, desiredTable 
 				if ok {
 					existingCol.DataType = common
 					existingCol.Type = sqlType
-					cloned[name] = existingCol
+					current[name] = existingCol
 				} else {
 					logging.SystemErrorf("Unknown column type %s mapping for %s", common, ps.sqlAdapter.Type())
 				}
@@ -164,12 +169,12 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(existingTable, desiredTable 
 	}
 	if len(unmappedObj) > 0 {
 		jsonSQLType, _ := ps.sqlAdapter.GetSQLType(types.JSON)
-		added := utils.MapPutIfAbsent(cloned, ps.sqlAdapter.ColumnName(unmappedDataColumn), types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
+		added := utils.MapPutIfAbsent(current, ps.sqlAdapter.ColumnName(unmappedDataColumn), types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
 		columnsAdded = columnsAdded || added
 		b, _ := jsoniter.Marshal(unmappedObj)
 		values[ps.sqlAdapter.ColumnName(unmappedDataColumn)] = string(b)
 	}
-	existingTable.Columns = cloned
+	currentTable.Columns = current
 	return columnsAdded
 }
 

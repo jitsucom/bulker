@@ -8,7 +8,7 @@ import (
 )
 
 type AutoCommitStream struct {
-	AbstractSQLStream
+	*AbstractSQLStream
 }
 
 func newAutoCommitStream(id string, p SQLAdapter, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
@@ -37,7 +37,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	dstTable, err := ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
 	if err == nil {
 		// for autocommit mode this method only tries to convert values to existing column types
-		columnsAdded := ps.adjustTableColumnTypes(dstTable, table, processedObject)
+		columnsAdded := ps.adjustTableColumnTypes(dstTable, dstTable, table, processedObject)
 		if columnsAdded {
 			ps.updateRepresentationTable(dstTable)
 			// if new columns were added - update table. (for _unmapped_data column)
@@ -57,7 +57,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 			return
 		}
 		// for autocommit mode this method only tries to convert values to existing column types
-		columnsAdded := ps.adjustTableColumnTypes(dstTable, table, processedObject)
+		columnsAdded := ps.adjustTableColumnTypes(dstTable, dstTable, table, processedObject)
 		if columnsAdded {
 			ps.updateRepresentationTable(dstTable)
 			// if new columns were added - update table. (for _unmapped_data column)
