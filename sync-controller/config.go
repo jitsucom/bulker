@@ -32,6 +32,8 @@ type Config struct {
 	ContainerStatusCheckSeconds int `mapstructure:"CONTAINER_STATUS_CHECK_SECONDS" default:"10"`
 	ContainerInitTimeoutSeconds int `mapstructure:"CONTAINER_INIT_TIMEOUT_SECONDS" default:"180"`
 
+	TaskTimeoutHours int `mapstructure:"TASK_TIMEOUT_HOURS" default:"48"`
+
 	SidecarImage string `mapstructure:"SIDECAR_IMAGE" default:"jitsucom/sidecar:latest"`
 }
 
