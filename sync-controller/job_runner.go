@@ -101,9 +101,10 @@ func (j *JobRunner) watchPodStatuses() {
 					} else {
 						if timeMark, ok := j.runningPods[pod.Name]; !ok || time.Now().Sub(timeMark) >= time.Minute {
 							if time.Now().Sub(taskStatus.StartedAtTime()) > time.Hour*time.Duration(j.config.TaskTimeoutHours) {
+								taskStatus.Status = StatusFailed
+								taskStatus.Description = fmt.Sprintf("Task timeout: task %s is running for more than %d hours.", taskStatus.TaskID, j.config.TaskTimeoutHours)
 								j.Errorf("Pod %s is running for more than %d hours. Deleting", pod.Name, j.config.TaskTimeoutHours)
 								j.cleanupPod(pod.Name)
-								continue
 							} else {
 								taskStatus.Status = StatusRunning
 								j.Infof("Pod %s is running", pod.Name)
