@@ -105,12 +105,14 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 		taskConfig.State = map[string]any{}
 	}
 	taskDescriptor := TaskDescriptor{
-		TaskType:       "read",
-		Package:        c.Query("package"),
-		PackageVersion: c.Query("version"),
-		SyncID:         c.Query("syncId"),
-		TaskID:         c.Query("taskId"),
-		StartedAt:      time.Now().Format(time.RFC3339),
+		TaskType:        "read",
+		Package:         c.Query("package"),
+		PackageVersion:  c.Query("version"),
+		SyncID:          c.Query("syncId"),
+		TaskID:          c.Query("taskId"),
+		TableNamePrefix: c.Query("tableNamePrefix"),
+		StartedBy:       c.Query("startedBy"),
+		StartedAt:       time.Now().Format(time.RFC3339),
 	}
 
 	taskStatus := t.jobRunner.CreatePod(taskDescriptor, &taskConfig)

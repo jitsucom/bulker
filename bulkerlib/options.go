@@ -10,7 +10,7 @@ type StreamOption func(*StreamOptions)
 var optionsRegistry = make(map[string]ParseableOption)
 
 // Not used by bulker. Just added here to be treated as known options and don't print errors
-var ignoredOptions = []string{"functions", "streams", "dataLayout", "events", "hosts", "schedule", "timezone", "storageKey", "multithreading"}
+var ignoredOptions = []string{"functions", "streams", "dataLayout", "events", "hosts", "schedule", "timezone", "storageKey", "tableNamePrefix", "multithreading"}
 
 var (
 	BatchSizeOption = ImplementationOption[int]{

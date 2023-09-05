@@ -7,15 +7,17 @@ import (
 )
 
 type TaskDescriptor struct {
-	TaskID         string `json:"taskId"`
-	TaskType       string `json:"taskType"` //spec, discover, read, check
-	SyncID         string `json:"syncId"`
-	SourceType     string `json:"sourceType"`
-	StorageKey     string `json:"storageKey"`
-	Protocol       string `json:"protocol"`
-	Package        string `json:"package"`
-	PackageVersion string `json:"packageVersion"`
-	StartedAt      string `json:"startedAt"`
+	TaskID          string `json:"taskId"`
+	TaskType        string `json:"taskType"` //spec, discover, read, check
+	SyncID          string `json:"syncId"`
+	SourceType      string `json:"sourceType"`
+	StorageKey      string `json:"storageKey"`
+	Protocol        string `json:"protocol"`
+	Package         string `json:"package"`
+	PackageVersion  string `json:"packageVersion"`
+	TableNamePrefix string `json:"tableNamePrefix"`
+	StartedBy       string `json:"startedBy"`
+	StartedAt       string `json:"startedAt"`
 }
 
 func (t *TaskDescriptor) StartedAtTime() time.Time {

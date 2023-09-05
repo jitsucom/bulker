@@ -307,8 +307,10 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 		"PACKAGE":            task.Package,
 		"PACKAGE_VERSION":    task.PackageVersion,
 		"COMMAND":            task.TaskType,
-		"STARTED_AT":         task.StartedAt,
+		"TABLE_NAME_PREFIX":  task.TableNamePrefix,
 		"DATABASE_URL":       databaseURL,
+		"STARTED_BY":         task.StartedBy,
+		"STARTED_AT":         task.StartedAt,
 	}
 	if task.SyncID != "" {
 		sideCarEnv["SYNC_ID"] = task.SyncID

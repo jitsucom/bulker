@@ -34,6 +34,7 @@ type AbstractSideCar struct {
 	databaseURL string
 	dbpool      *pgxpool.Pool
 
+	startedBy string
 	startedAt time.Time
 
 	//first error occurred during command
@@ -63,7 +64,7 @@ func main() {
 		startedAt:       startedAt,
 	}
 	if command == "read" {
-		sidecar := &ReadSideCar{AbstractSideCar: abstract}
+		sidecar := &ReadSideCar{AbstractSideCar: abstract, tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX")}
 		sidecar.Run()
 	} else {
 		sidecar := SpecCatalogSideCar{AbstractSideCar: abstract}
