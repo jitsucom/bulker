@@ -333,15 +333,15 @@ func (s *ReadSideCar) processTrace(rec *TraceRow) {
 
 func (s *ReadSideCar) processRecord(rec *RecordRow) {
 	streamName := joinStrings(rec.Namespace, rec.Stream, ".")
-	s.changeStreamIfNeeded(streamName)
-	if s.currentStream.Error != "" {
-		// ignore all messages after stream received error
-		return
-	}
 	processed, ok := s.processedStreams[streamName]
 	if ok && processed.Error != "" {
 		//for incremental streams we ignore all messages if it was error on previously committed chunks.
 		//error may be on bulker side (source may not known about it) and we have no way to command source to switch to the next stream
+		return
+	}
+	s.changeStreamIfNeeded(streamName)
+	if s.currentStream.Error != "" {
+		// ignore all messages after stream received error
 		return
 	}
 
