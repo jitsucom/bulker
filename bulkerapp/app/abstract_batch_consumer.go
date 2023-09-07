@@ -16,6 +16,7 @@ import (
 	"time"
 )
 
+// retryTimeHeader - time of scheduled retry
 const retryTimeHeader = "retry_time"
 const retriesCountHeader = "retries"
 const originalTopicHeader = "original_topic"
@@ -64,10 +65,14 @@ type AbstractBatchConsumer struct {
 
 func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *Config, kafkaConfig *kafka.ConfigMap) (*AbstractBatchConsumer, error) {
 	base := appbase.NewServiceBase(topicId)
-	_, _, tableName, err := ParseTopicId(topicId)
-	if err != nil {
-		metrics.ConsumerErrors(topicId, mode, "INVALID_TOPIC", "INVALID_TOPIC", "failed to parse topic").Inc()
-		return nil, base.NewError("Failed to parse topic: %v", err)
+	var tableName string
+	var err error
+	if destinationId != "" {
+		_, _, tableName, err = ParseTopicId(topicId)
+		if err != nil {
+			metrics.ConsumerErrors(topicId, mode, "INVALID_TOPIC", "INVALID_TOPIC", "failed to parse topic").Inc()
+			return nil, base.NewError("Failed to parse topic: %v", err)
+		}
 	}
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"group.id":                      topicId,
@@ -215,21 +220,26 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 			}
 		}
 	}()
-	destination := bc.repository.LeaseDestination(bc.destinationId)
-	if destination == nil {
-		bc.Retire()
-		return BatchCounters{}, bc.NewError("destination not found: %s. Retiring consumer", bc.destinationId)
+	streamOptions := &bulker.StreamOptions{}
+	var destination *Destination
+	if bc.destinationId != "" {
+		destination = bc.repository.LeaseDestination(bc.destinationId)
+		if destination == nil {
+			bc.Retire()
+			return BatchCounters{}, bc.NewError("destination not found: %s. Retiring consumer", bc.destinationId)
+		}
+		streamOptions = destination.streamOptions
+		defer func() {
+			destination.Release()
+		}()
 	}
-	defer func() {
-		destination.Release()
-	}()
 
-	maxBatchSize := bulker.BatchSizeOption.Get(destination.streamOptions)
+	maxBatchSize := bulker.BatchSizeOption.Get(streamOptions)
 	if maxBatchSize <= 0 {
 		maxBatchSize = bc.config.BatchRunnerDefaultBatchSize
 	}
 
-	retryBatchSize := bulker.RetryBatchSizeOption.Get(destination.streamOptions)
+	retryBatchSize := bulker.RetryBatchSizeOption.Get(streamOptions)
 	if retryBatchSize <= 0 {
 		retryBatchSize = int(float64(maxBatchSize) * bc.config.BatchRunnerDefaultRetryBatchFraction)
 	}

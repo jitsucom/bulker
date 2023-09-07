@@ -38,5 +38,5 @@ func ToISOFormat(t time.Time) string {
 
 // ParseISOFormat returns time.Time from ISO time string representation
 func ParseISOFormat(t string) (time.Time, error) {
-	return time.Parse(Layout, t)
+	return time.Parse(time.RFC3339Nano, t)
 }

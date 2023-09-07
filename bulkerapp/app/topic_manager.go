@@ -50,9 +50,9 @@ type TopicManager struct {
 	allTopics       utils.Set[string]
 
 	//batch consumers by destinationId
-	batchConsumers  map[string][]BatchConsumer
-	retryConsumers  map[string][]BatchConsumer
-	streamConsumers map[string][]*StreamConsumer
+	batchConsumers  map[string]BatchConsumer
+	retryConsumers  map[string]BatchConsumer
+	streamConsumers map[string]*StreamConsumer
 
 	bulkerProducer   *Producer
 	eventsLogService EventsLogService
@@ -78,9 +78,9 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		consumedTopics:       make(map[string]utils.Set[string]),
 		bulkerProducer:       appContext.producer,
 		eventsLogService:     appContext.eventsLogService,
-		batchConsumers:       make(map[string][]BatchConsumer),
-		retryConsumers:       make(map[string][]BatchConsumer),
-		streamConsumers:      make(map[string][]*StreamConsumer),
+		batchConsumers:       make(map[string]BatchConsumer),
+		retryConsumers:       make(map[string]BatchConsumer),
+		streamConsumers:      make(map[string]*StreamConsumer),
 		abandonedTopics:      utils.NewSet[string](),
 		allTopics:            utils.NewSet[string](),
 		closed:               make(chan struct{}),
@@ -179,7 +179,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 					tm.SystemErrorf("Failed to create consumer for destination topic: %s: %v", topic, err)
 					continue
 				}
-				tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
+				tm.streamConsumers[destinationId] = streamConsumer
 			case "batch":
 				batchPeriodSec := utils.Nvl(int(bulker.BatchFrequencyOption.Get(destination.streamOptions)*60), tm.config.BatchRunnerPeriodSec)
 				// check topic partitions count
@@ -197,7 +197,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 					tm.Errorf("Failed to create batch consumer for destination topic: %s: %v", topic, err)
 					continue
 				}
-				tm.batchConsumers[destinationId] = append(tm.batchConsumers[destinationId], batchConsumer)
+				tm.batchConsumers[destinationId] = batchConsumer
 				_, err = tm.cron.AddBatchConsumer(batchConsumer)
 				if err != nil {
 					topicsErrorsByMode[mode]++
@@ -223,7 +223,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 					tm.Errorf("Failed to create retry consumer for destination topic: %s: %v", topic, err)
 					continue
 				}
-				tm.retryConsumers[destinationId] = append(tm.retryConsumers[destinationId], retryConsumer)
+				tm.retryConsumers[destinationId] = retryConsumer
 				_, err = tm.cron.AddBatchConsumer(retryConsumer)
 				if err != nil {
 					topicsErrorsByMode[mode]++
@@ -280,6 +280,29 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		metrics.TopicManagerError("destination-topic_error").Inc()
 		tm.SystemErrorf("Failed to create destination dead letter topic [%s]: %v", tm.config.KafkaDestinationsDeadLetterTopicName, err)
 	}
+	destinationsRetryTopicName := tm.config.KafkaDestinationsRetryTopicName
+	err = tm.ensureTopic(destinationsRetryTopicName, 1, map[string]string{
+		"retention.ms": fmt.Sprint(tm.config.KafkaDestinationsRetryRetentionHours * 60 * 60 * 1000),
+	})
+	if err != nil {
+		metrics.TopicManagerError("destination-topic_error").Inc()
+		tm.SystemErrorf("Failed to create destination retry topic [%s]: %v", destinationsRetryTopicName, err)
+	}
+	if _, dstRetryCnsmrStarted := tm.retryConsumers[destinationsRetryTopicName]; !dstRetryCnsmrStarted {
+		retryConsumer, err := NewRetryConsumer(nil, "", 60, destinationsRetryTopicName, tm.config, tm.kafkaConfig)
+		if err != nil {
+			tm.SystemErrorf("Failed to create retry consumer for destination topic: %s: %v", destinationsRetryTopicName, err)
+		} else {
+			tm.retryConsumers[destinationsRetryTopicName] = retryConsumer
+			_, err = tm.cron.AddBatchConsumer(retryConsumer)
+			if err != nil {
+				retryConsumer.Retire()
+				tm.SystemErrorf("Failed to schedule retry consumer for destination topic: %s: %v", destinationsRetryTopicName, err)
+			} else {
+				tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %ds", destinationsRetryTopicName, tm.config.BatchRunnerRetryPeriodSec)
+			}
+		}
+	}
 
 	for mode, count := range topicsCountByMode {
 		metrics.TopicManagerDestinations(mode, "success").Set(count)
@@ -296,7 +319,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 func (tm *TopicManager) changeListener(changes RepositoryChange) {
 	for _, changedDst := range changes.ChangedDestinations {
 		tm.Lock()
-		for _, consumer := range tm.batchConsumers[changedDst.Id()] {
+		if consumer, ok := tm.batchConsumers[changedDst.Id()]; ok {
 			batchPeriodSec := utils.Nvl(int(bulker.BatchFrequencyOption.Get(changedDst.streamOptions)*60), tm.config.BatchRunnerPeriodSec)
 			if consumer.BatchPeriodSec() != batchPeriodSec {
 				consumer.UpdateBatchPeriod(batchPeriodSec)
@@ -310,7 +333,7 @@ func (tm *TopicManager) changeListener(changes RepositoryChange) {
 				tm.Infof("Consumer for destination topic %s was re-scheduled with new batch period %d", consumer.TopicId(), consumer.BatchPeriodSec())
 			}
 		}
-		for _, consumer := range tm.retryConsumers[changedDst.Id()] {
+		if consumer, ok := tm.retryConsumers[changedDst.Id()]; ok {
 			retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(changedDst.streamOptions)*60), int(bulker.BatchFrequencyOption.Get(changedDst.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)
 			if consumer.BatchPeriodSec() != retryPeriodSec {
 				consumer.UpdateBatchPeriod(retryPeriodSec)
@@ -324,7 +347,7 @@ func (tm *TopicManager) changeListener(changes RepositoryChange) {
 				tm.Infof("Consumer for destination topic %s was re-scheduled with new batch period %d", consumer.TopicId(), consumer.BatchPeriodSec())
 			}
 		}
-		for _, consumer := range tm.streamConsumers[changedDst.Id()] {
+		if consumer, ok := tm.streamConsumers[changedDst.Id()]; ok {
 			err := consumer.UpdateDestination(changedDst)
 			if err != nil {
 				metrics.TopicManagerError("update_stream_consumer_error").Inc()
@@ -335,21 +358,21 @@ func (tm *TopicManager) changeListener(changes RepositoryChange) {
 		tm.Unlock()
 	}
 	for _, deletedDstId := range changes.RemovedDestinationIds {
-		for _, consumer := range tm.batchConsumers[deletedDstId] {
+		if consumer, ok := tm.batchConsumers[deletedDstId]; ok {
 			tm.Lock()
 			_ = tm.cron.RemoveBatchConsumer(consumer)
 			consumer.Retire()
 			delete(tm.batchConsumers, deletedDstId)
 			tm.Unlock()
 		}
-		for _, consumer := range tm.retryConsumers[deletedDstId] {
+		if consumer, ok := tm.retryConsumers[deletedDstId]; ok {
 			tm.Lock()
 			_ = tm.cron.RemoveBatchConsumer(consumer)
 			consumer.Retire()
 			delete(tm.retryConsumers, deletedDstId)
 			tm.Unlock()
 		}
-		for _, consumer := range tm.streamConsumers[deletedDstId] {
+		if consumer, ok := tm.streamConsumers[deletedDstId]; ok {
 			tm.Lock()
 			_ = consumer.Close()
 			delete(tm.streamConsumers, deletedDstId)
@@ -535,20 +558,14 @@ func (tm *TopicManager) Close() error {
 	//close all batch consumers
 	tm.Lock()
 	defer tm.Unlock()
-	for _, consumers := range tm.batchConsumers {
-		for _, consumer := range consumers {
-			consumer.Retire()
-		}
+	for _, consumer := range tm.batchConsumers {
+		consumer.Retire()
 	}
-	for _, consumers := range tm.retryConsumers {
-		for _, consumer := range consumers {
-			consumer.Retire()
-		}
+	for _, consumer := range tm.retryConsumers {
+		consumer.Retire()
 	}
-	for _, consumers := range tm.streamConsumers {
-		for _, consumer := range consumers {
-			consumer.Close()
-		}
+	for _, consumer := range tm.streamConsumers {
+		consumer.Close()
 	}
 	return nil
 }

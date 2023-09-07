@@ -64,6 +64,8 @@ type Config struct {
 	KafkaDestinationsTopicPartitions              int `mapstructure:"KAFKA_DESTINATIONS_TOPIC_PARTITIONS" default:"4"`
 	KafkaDestinationsTopicMultiThreadedPartitions int `mapstructure:"KAFKA_DESTINATIONS_MT_TOPIC_PARTITIONS" default:"64"`
 
+	KafkaDestinationsRetryTopicName           string `mapstructure:"KAFKA_DESTINATIONS_RETRY_TOPIC_NAME" default:"destination-messages-retry"`
+	KafkaDestinationsRetryRetentionHours      int    `mapstructure:"KAFKA_DESTINATIONS_RETRY_RETENTION_HOURS" default:"24"`
 	KafkaDestinationsDeadLetterTopicName      string `mapstructure:"KAFKA_DESTINATIONS_DEAD_LETTER_TOPIC_NAME" default:"destination-messages-dead-letter"`
 	KafkaDestinationsDeadLetterRetentionHours int    `mapstructure:"KAFKA_DESTINATIONS_DEAD_LETTER_RETENTION_HOURS" default:"168"`
 
@@ -92,8 +94,8 @@ type Config struct {
 	// For example, if retry count is 3 and base is 5, then retry delays will be 5, 25, 125 minutes.
 	// Default: 5
 	MessagesRetryBackoffBase float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_BASE" default:"5"`
-	// MessagesRetryBackoffMaxDelay defines maximum possible retry delay in minutes. Default: 3180 minutes = 53 hours (5^5 minutes)
-	MessagesRetryBackoffMaxDelay float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_MAX_DELAY" default:"3180"`
+	// MessagesRetryBackoffMaxDelay defines maximum possible retry delay in minutes. Default: 1440 minutes = 24 hours
+	MessagesRetryBackoffMaxDelay float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_MAX_DELAY" default:"1440"`
 
 	// # EVENTS LOGGING
 

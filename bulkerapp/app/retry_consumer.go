@@ -101,11 +101,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			continue
 		}
 		headers := make([]kafka.Header, 0, len(message.Headers))
-		if retries >= rc.config.MessagesRetryCount {
-			singleCount.deadLettered++
-			//no attempts left - send to dead-letter topic
-			topic, _ = MakeTopicId(rc.destinationId, deadTopicMode, allTablesToken, false)
-		} else if !rc.isTimeToRetry(message) {
+		if !rc.isTimeToRetry(message) {
 			singleCount.notReadyReadded++
 			// retry time is not yet come. requeueing message
 			topic = rc.topicId

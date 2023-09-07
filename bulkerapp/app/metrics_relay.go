@@ -16,6 +16,7 @@ import (
 	"time"
 )
 
+// MetricsRelay pushes prometheus metrics to configured bulker destination
 type MetricsRelay struct {
 	appbase.Service
 	instanceId  string
