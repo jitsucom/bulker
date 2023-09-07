@@ -20,7 +20,8 @@ type Context struct {
 	configurationSource ConfigurationSource
 	repository          *Repository
 	cron                *Cron
-	producer            *Producer
+	batchProducer       *Producer
+	streamProducer      *Producer
 	eventsLogService    EventsLogService
 	topicManager        *TopicManager
 	fastStore           *FastStore
@@ -56,11 +57,23 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		return err
 	}
 	a.cron = NewCron(a.config)
-	a.producer, err = NewProducer(a.config, a.kafkaConfig)
+	//batch producer uses higher linger.ms and doesn't suit for sync delivery used by stream consumer when retrying messages
+	batchProducerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
+		"queue.buffering.max.messages": a.config.ProducerQueueSize,
+		"batch.size":                   a.config.ProducerBatchSize,
+		"linger.ms":                    a.config.ProducerLingerMs,
+	}, *a.kafkaConfig))
+	a.batchProducer, err = NewProducer(a.config, &batchProducerConfig)
 	if err != nil {
 		return err
 	}
-	a.producer.Start()
+	a.batchProducer.Start()
+
+	a.streamProducer, err = NewProducer(a.config, a.kafkaConfig)
+	if err != nil {
+		return err
+	}
+	a.streamProducer.Start()
 
 	a.eventsLogService = &DummyEventsLogService{}
 	eventsLogRedisUrl := utils.NvlString(a.config.EventsLogRedisURL, a.config.RedisURL)
@@ -102,7 +115,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 
 // TODO: graceful shutdown and cleanups. Flush producer
 func (a *Context) Shutdown() error {
-	_ = a.producer.Close()
+	_ = a.batchProducer.Close()
 	_ = a.topicManager.Close()
 	a.cron.Close()
 	_ = a.repository.Close()

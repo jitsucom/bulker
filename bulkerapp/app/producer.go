@@ -25,13 +25,7 @@ type Producer struct {
 // NewProducer creates new Producer
 func NewProducer(config *Config, kafkaConfig *kafka.ConfigMap) (*Producer, error) {
 	base := appbase.NewServiceBase("producer")
-
-	producerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
-		"queue.buffering.max.messages": config.ProducerQueueSize,
-		"batch.size":                   config.ProducerBatchSize,
-		"linger.ms":                    config.ProducerLingerMs,
-	}, *kafkaConfig))
-	producer, err := kafka.NewProducer(&producerConfig)
+	producer, err := kafka.NewProducer(kafkaConfig)
 	if err != nil {
 		return nil, base.NewError("error creating kafka producer: %v", err)
 
@@ -81,52 +75,40 @@ func (p *Producer) Start() {
 
 // ProduceSync TODO: transactional delivery?
 // produces messages to kafka
-func (p *Producer) ProduceSync(topic string, events ...kafka.Message) error {
+func (p *Producer) ProduceSync(topic string, event kafka.Message) error {
 	if p.isClosed() {
 		return p.NewError("producer is closed")
 	}
 	started := time.Now()
-	deliveryChan := make(chan kafka.Event, len(events))
-	errors := multierror.Error{}
-	sent := 0
-	for _, event := range events {
-		err := p.producer.Produce(&event, deliveryChan)
-		if err != nil {
-			metrics.ProducerMessages(ProducerMessageLabels(topic, "error", metrics.KafkaErrorCode(err))).Inc()
-			errors.Errors = append(errors.Errors, err)
+	deliveryChan := make(chan kafka.Event, 1)
+	err := p.producer.Produce(&event, deliveryChan)
+	if err != nil {
+		metrics.ProducerMessages(ProducerMessageLabels(topic, "error", metrics.KafkaErrorCode(err))).Inc()
+		return err
+	} else {
+		metrics.ProducerMessages(ProducerMessageLabels(topic, "produced", "")).Inc()
+	}
+	p.Debugf("Sent message to kafka topic %s in %s", topic, time.Since(started))
+	until := time.After(p.waitForDelivery)
+	select {
+	case e := <-deliveryChan:
+		m := e.(*kafka.Message)
+		messageId := GetKafkaHeader(m, MessageIdHeader)
+		if m.TopicPartition.Error != nil {
+			metrics.ProducerMessages(ProducerMessageLabels(topic, "error", metrics.KafkaErrorCode(m.TopicPartition.Error))).Inc()
+			p.Errorf("Error sending message (ID: %s) to kafka topic %s: %v", messageId, *m.TopicPartition.Topic, m.TopicPartition.Error)
+			return m.TopicPartition.Error
 		} else {
-			metrics.ProducerMessages(ProducerMessageLabels(topic, "produced", "")).Inc()
-			sent++
+			metrics.ProducerMessages(ProducerMessageLabels(topic, "delivered", "")).Inc()
+			p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
 		}
+	case <-until:
+		metrics.ProducerMessages(ProducerMessageLabels(topic, "error", "sync_delivery_timeout")).Inc()
+		p.Errorf("Timeout waiting for delivery")
+		return fmt.Errorf("timeout waiting for delivery")
 	}
-	if sent > 0 {
-		p.producer.Flush(2)
-		p.Debugf("Sent %d messages to kafka topic %s in %s", sent, topic, time.Since(started))
-		until := time.After(p.waitForDelivery)
-	loop:
-		for i := 0; i < sent; i++ {
-			select {
-			case e := <-deliveryChan:
-				m := e.(*kafka.Message)
-				messageId := GetKafkaHeader(m, MessageIdHeader)
-				if m.TopicPartition.Error != nil {
-					metrics.ProducerMessages(ProducerMessageLabels(topic, "error", metrics.KafkaErrorCode(m.TopicPartition.Error))).Inc()
-					p.Errorf("Error sending message (ID: %s) to kafka topic %s: %v", messageId, *m.TopicPartition.Topic, m.TopicPartition.Error)
-					errors.Errors = append(errors.Errors, m.TopicPartition.Error)
-				} else {
-					metrics.ProducerMessages(ProducerMessageLabels(topic, "delivered", "")).Inc()
-					p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
-				}
-			case <-until:
-				metrics.ProducerMessages(ProducerMessageLabels(topic, "error", "sync_delivery_timeout")).Inc()
-				p.Errorf("Timeout waiting for delivery")
-				errors.Errors = append(errors.Errors, fmt.Errorf("timeout waiting for delivery"))
-				break loop
-			}
-		}
-		p.Infof("Delivered %d messages to kafka topic %s in %s", sent, topic, time.Since(started))
-	}
-	return errors.ErrorOrNil()
+	p.Infof("Delivered message to kafka topic %s in %s", topic, time.Since(started))
+	return nil
 }
 
 // ProduceAsync TODO: transactional delivery?

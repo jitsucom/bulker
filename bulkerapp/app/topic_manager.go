@@ -54,7 +54,8 @@ type TopicManager struct {
 	retryConsumers  map[string]BatchConsumer
 	streamConsumers map[string]*StreamConsumer
 
-	bulkerProducer   *Producer
+	batchProducer    *Producer
+	streamProducer   *Producer
 	eventsLogService EventsLogService
 	refreshChan      chan bool
 	closed           chan struct{}
@@ -76,7 +77,8 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		kaftaAdminClient:     admin,
 		kafkaBootstrapServer: appContext.config.KafkaBootstrapServers,
 		consumedTopics:       make(map[string]utils.Set[string]),
-		bulkerProducer:       appContext.producer,
+		batchProducer:        appContext.batchProducer,
+		streamProducer:       appContext.streamProducer,
 		eventsLogService:     appContext.eventsLogService,
 		batchConsumers:       make(map[string]BatchConsumer),
 		retryConsumers:       make(map[string]BatchConsumer),
@@ -173,7 +175,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 			}
 			switch mode {
 			case "stream":
-				streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.bulkerProducer, tm.eventsLogService)
+				streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.streamProducer, tm.eventsLogService)
 				if err != nil {
 					topicsErrorsByMode[mode]++
 					tm.SystemErrorf("Failed to create consumer for destination topic: %s: %v", topic, err)

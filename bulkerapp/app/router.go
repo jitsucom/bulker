@@ -51,7 +51,7 @@ func NewRouter(appContext *Context) *Router {
 		kafkaConfig:      appContext.kafkaConfig,
 		repository:       appContext.repository,
 		topicManager:     appContext.topicManager,
-		producer:         appContext.producer,
+		producer:         appContext.batchProducer,
 		eventsLogService: appContext.eventsLogService,
 		fastStore:        appContext.fastStore,
 	}
