@@ -17,13 +17,14 @@ type Producer struct {
 	appbase.Service
 	producer *kafka.Producer
 
+	reportQueueLength    bool
 	asyncDeliveryChannel chan kafka.Event
 	waitForDelivery      time.Duration
 	closed               chan struct{}
 }
 
 // NewProducer creates new Producer
-func NewProducer(config *Config, kafkaConfig *kafka.ConfigMap) (*Producer, error) {
+func NewProducer(config *Config, kafkaConfig *kafka.ConfigMap, reportQueueLength bool) (*Producer, error) {
 	base := appbase.NewServiceBase("producer")
 	producer, err := kafka.NewProducer(kafkaConfig)
 	if err != nil {
@@ -33,6 +34,7 @@ func NewProducer(config *Config, kafkaConfig *kafka.ConfigMap) (*Producer, error
 	return &Producer{
 		Service:              base,
 		producer:             producer,
+		reportQueueLength:    reportQueueLength,
 		asyncDeliveryChannel: make(chan kafka.Event, 1000),
 		closed:               make(chan struct{}),
 		waitForDelivery:      time.Millisecond * time.Duration(config.ProducerWaitForDeliveryMs),
@@ -59,18 +61,20 @@ func (p *Producer) Start() {
 		}
 		p.Infof("Producer closed")
 	})
-	// report size metrics
-	safego.RunWithRestart(func() {
-		ticker := time.NewTicker(time.Second * 15)
-		for {
-			select {
-			case <-p.closed:
-				return
-			case <-ticker.C:
-				metrics.ProducerQueueLength.Set(float64(p.producer.Len()))
+	if p.reportQueueLength {
+		// report size metrics
+		safego.RunWithRestart(func() {
+			ticker := time.NewTicker(time.Second * 15)
+			for {
+				select {
+				case <-p.closed:
+					return
+				case <-ticker.C:
+					metrics.ProducerQueueLength.Set(float64(p.producer.Len()))
+				}
 			}
-		}
-	})
+		})
+	}
 }
 
 // ProduceSync TODO: transactional delivery?

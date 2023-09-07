@@ -63,13 +63,13 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		"batch.size":                   a.config.ProducerBatchSize,
 		"linger.ms":                    a.config.ProducerLingerMs,
 	}, *a.kafkaConfig))
-	a.batchProducer, err = NewProducer(a.config, &batchProducerConfig)
+	a.batchProducer, err = NewProducer(a.config, &batchProducerConfig, true)
 	if err != nil {
 		return err
 	}
 	a.batchProducer.Start()
 
-	a.streamProducer, err = NewProducer(a.config, a.kafkaConfig)
+	a.streamProducer, err = NewProducer(a.config, a.kafkaConfig, false)
 	if err != nil {
 		return err
 	}
