@@ -36,15 +36,9 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 		dstTable := tableForObject
 		ps.adjustTableColumnTypes(dstTable, ps.existingTable, tableForObject, object)
 		tmpTableName := fmt.Sprintf("%s_tmp%s", utils.ShortenString(tableName, 47), timestamp.Now().Format("060102150405"))
-		pkName := ""
-		if len(dstTable.PKFields) > 0 {
-			pkName = BuildConstraintName(tmpTableName)
-		}
 		return &Table{
 			Name:            tmpTableName,
 			Columns:         dstTable.Columns,
-			PKFields:        dstTable.PKFields,
-			PrimaryKeyName:  pkName,
 			Temporary:       true,
 			TimestampColumn: tableForObject.TimestampColumn,
 		}

@@ -226,6 +226,7 @@ func (s *ReadSideCar) Run() {
 }
 
 func (s *ReadSideCar) processState(state *StateRow) {
+	//checkpointing. commit to bulker all processed events on saving state
 	s.closeCurrentStream()
 	switch state.Type {
 	case "GLOBAL":
@@ -278,14 +279,14 @@ func (s *ReadSideCar) closeCurrentStream() {
 	}
 }
 
-func (s *ReadSideCar) changeStreamIfNeeded(streamName string) {
+func (s *ReadSideCar) changeStreamIfNeeded(streamName string, previousStats *StreamStat) {
 	if s.currentStream == nil || s.currentStream.name != streamName {
 		s.closeCurrentStream()
-		s.currentStream = s.openStream(streamName)
+		s.currentStream = s.openStream(streamName, previousStats)
 	}
 }
 
-func (s *ReadSideCar) openStream(streamName string) *ActiveStream {
+func (s *ReadSideCar) openStream(streamName string, previousStats *StreamStat) *ActiveStream {
 	// we create pipe. everything that is written to 'streamWriter' will be sent to bulker via 'streamReader' as reader payload
 	str, ok := s.catalog[streamName]
 	if !ok {
@@ -295,6 +296,10 @@ func (s *ReadSideCar) openStream(streamName string) *ActiveStream {
 	mode := "replace_table"
 	// if there is no initial sync state, we assume that this is first sync and we need to do full sync
 	if str.SyncMode == "incremental" && len(s.initialState) > 0 {
+		mode = "batch"
+	} else if previousStats != nil && previousStats.EventsCount > 0 {
+		// checkpointing: if there is previous stats that means that we have committed data because and saved state
+		// switch from replace_table to batch mode, to continue adding data to the table
 		mode = "batch"
 	}
 
@@ -324,7 +329,7 @@ func (s *ReadSideCar) processTrace(rec *TraceRow) {
 		s.log("Stream %s status: %s", streamName, streamStatus.Status)
 		switch streamStatus.Status {
 		case "STARTED":
-			s.changeStreamIfNeeded(streamName)
+			s.changeStreamIfNeeded(streamName, nil)
 		case "COMPLETE", "INCOMPLETE":
 			s.closeStream(streamName)
 		}
@@ -336,10 +341,10 @@ func (s *ReadSideCar) processRecord(rec *RecordRow) {
 	processed, ok := s.processedStreams[streamName]
 	if ok && processed.Error != "" {
 		//for incremental streams we ignore all messages if it was error on previously committed chunks.
-		//error may be on bulker side (source may not known about it) and we have no way to command source to switch to the next stream
+		//error may be on bulker side (source may not know about it) and we have no way to command source to switch to the next stream
 		return
 	}
-	s.changeStreamIfNeeded(streamName)
+	s.changeStreamIfNeeded(streamName, processed)
 	if s.currentStream.Error != "" {
 		// ignore all messages after stream received error
 		return
