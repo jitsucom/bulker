@@ -6,7 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/google/martian v2.1.0+incompatible
 	github.com/google/uuid v1.3.1
-	github.com/joomcode/errorx v1.1.0
+	github.com/joomcode/errorx v1.1.1
 	github.com/json-iterator/go v1.1.12
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/mitchellh/mapstructure v1.5.0
