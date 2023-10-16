@@ -3,9 +3,9 @@ module github.com/jitsucom/bulker/bulkerapp
 go 1.21
 
 require (
-	github.com/confluentinc/confluent-kafka-go/v2 v2.1.1
+	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
 	github.com/gin-gonic/gin v1.9.1
-	github.com/go-co-op/gocron v1.27.1
+	github.com/go-co-op/gocron v1.35.2
 	github.com/gomodule/redigo v1.8.9
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hjson/hjson-go/v4 v4.3.0
