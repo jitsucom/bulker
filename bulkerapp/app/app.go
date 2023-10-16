@@ -43,11 +43,10 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		logging.Error(string(debug.Stack()))
 		metrics.Panics().Inc()
 	}
-	a.kafkaConfig = a.config.GetKafkaConfig()
-
 	if err != nil {
 		return err
 	}
+
 	a.configurationSource, err = InitConfigurationSource(a.config)
 	if err != nil {
 		return err
@@ -57,23 +56,6 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		return err
 	}
 	a.cron = NewCron(a.config)
-	//batch producer uses higher linger.ms and doesn't suit for sync delivery used by stream consumer when retrying messages
-	batchProducerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
-		"queue.buffering.max.messages": a.config.ProducerQueueSize,
-		"batch.size":                   a.config.ProducerBatchSize,
-		"linger.ms":                    a.config.ProducerLingerMs,
-	}, *a.kafkaConfig))
-	a.batchProducer, err = NewProducer(a.config, &batchProducerConfig, true)
-	if err != nil {
-		return err
-	}
-	a.batchProducer.Start()
-
-	a.streamProducer, err = NewProducer(a.config, a.kafkaConfig, false)
-	if err != nil {
-		return err
-	}
-	a.streamProducer.Start()
 
 	a.eventsLogService = &DummyEventsLogService{}
 	eventsLogRedisUrl := utils.NvlString(a.config.EventsLogRedisURL, a.config.RedisURL)
@@ -84,15 +66,36 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		}
 	}
 
-	a.topicManager, err = NewTopicManager(a)
-	if err != nil {
-		return err
-	}
-	a.topicManager.Start()
-
 	a.fastStore, err = NewFastStore(a.config)
 	if err != nil {
 		return err
+	}
+
+	a.kafkaConfig = a.config.GetKafkaConfig()
+	if a.kafkaConfig != nil {
+		//batch producer uses higher linger.ms and doesn't suit for sync delivery used by stream consumer when retrying messages
+		batchProducerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
+			"queue.buffering.max.messages": a.config.ProducerQueueSize,
+			"batch.size":                   a.config.ProducerBatchSize,
+			"linger.ms":                    a.config.ProducerLingerMs,
+		}, *a.kafkaConfig))
+		a.batchProducer, err = NewProducer(a.config, &batchProducerConfig, true)
+		if err != nil {
+			return err
+		}
+		a.batchProducer.Start()
+
+		a.streamProducer, err = NewProducer(a.config, a.kafkaConfig, false)
+		if err != nil {
+			return err
+		}
+		a.streamProducer.Start()
+
+		a.topicManager, err = NewTopicManager(a)
+		if err != nil {
+			return err
+		}
+		a.topicManager.Start()
 	}
 
 	router := NewRouter(a)
@@ -116,6 +119,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 // TODO: graceful shutdown and cleanups. Flush producer
 func (a *Context) Shutdown() error {
 	_ = a.batchProducer.Close()
+	_ = a.streamProducer.Close()
 	_ = a.topicManager.Close()
 	a.cron.Close()
 	_ = a.repository.Close()

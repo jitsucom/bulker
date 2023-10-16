@@ -21,7 +21,7 @@ const retryTimeHeader = "retry_time"
 const retriesCountHeader = "retries"
 const originalTopicHeader = "original_topic"
 
-const pauseHeartBeatInterval = 10 * time.Second
+const pauseHeartBeatInterval = 120 * time.Second
 
 type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error)
 
@@ -324,7 +324,7 @@ func (bc *AbstractBatchConsumer) pause() {
 					errorReported = true
 				}
 				if kafkaErr.IsRetriable() {
-					time.Sleep(pauseHeartBeatInterval)
+					time.Sleep(10 * time.Second)
 				} else {
 					bc.restartConsumer()
 				}

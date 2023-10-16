@@ -208,7 +208,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 				return
 			}
 			if kafkaErr.IsRetriable() {
-				time.Sleep(pauseHeartBeatInterval)
+				time.Sleep(10 * time.Second)
 				continue
 			} else {
 				bc.restartConsumer()

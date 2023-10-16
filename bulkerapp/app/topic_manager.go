@@ -554,6 +554,9 @@ func (tm *TopicManager) Refresh() {
 }
 
 func (tm *TopicManager) Close() error {
+	if tm == nil {
+		return nil
+	}
 	close(tm.closed)
 	close(tm.refreshChan)
 	tm.kaftaAdminClient.Close()

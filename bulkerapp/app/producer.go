@@ -145,7 +145,7 @@ func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte, h
 
 // Close closes producer
 func (p *Producer) Close() error {
-	if p.isClosed() {
+	if p == nil || p.isClosed() {
 		return nil
 	}
 	notProduced := p.producer.Flush(3000)

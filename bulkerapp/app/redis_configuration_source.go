@@ -3,11 +3,14 @@ package app
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"github.com/gomodule/redigo/redis"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +18,8 @@ import (
 
 const redisDestinationsKey = "enrichedConnections"
 const redisConfigurationSourceServiceName = "redis_configuration"
+
+var redisDatabaseNumberRegexp = regexp.MustCompile(`/(\d{1,2})$`)
 
 type RedisConfigurationSource struct {
 	appbase.Service
@@ -24,6 +29,7 @@ type RedisConfigurationSource struct {
 	changesChan chan bool
 
 	redisPool    *redis.Pool
+	database     int
 	config       map[string]any
 	destinations map[string]*DestinationConfig
 }
@@ -31,10 +37,16 @@ type RedisConfigurationSource struct {
 func NewRedisConfigurationSource(appconfig *Config) (*RedisConfigurationSource, error) {
 	base := appbase.NewServiceBase(redisConfigurationSourceServiceName)
 	base.Debugf("Creating RedisConfigurationSource with redisURL: %s", appconfig.ConfigSource)
+	redisDbStr := redisDatabaseNumberRegexp.FindStringSubmatch(appconfig.ConfigSource)
+	redisDbNumber := 0
+	if len(redisDbStr) == 2 {
+		redisDbNumber, _ = strconv.Atoi(redisDbStr[1])
+	}
 	redisPool := newPool(appconfig.ConfigSource, appconfig.RedisTLSCA)
 	r := RedisConfigurationSource{
 		Service:      base,
 		redisPool:    redisPool,
+		database:     redisDbNumber,
 		refreshChan:  make(chan bool, 1),
 		changesChan:  make(chan bool, 1),
 		config:       make(map[string]any),
@@ -65,7 +77,7 @@ func (rcs *RedisConfigurationSource) init() error {
 }
 
 func (rcs *RedisConfigurationSource) pubsub() {
-	redisPubSubChannel := "__keyspace@0__:" + redisDestinationsKey
+	redisPubSubChannel := fmt.Sprintf("__keyspace@%d__:%s", rcs.database, redisDestinationsKey)
 	for {
 		select {
 		case refresh := <-rcs.refreshChan:

@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const streamConsumerMessageWaitTimeout = 1 * time.Second
+const streamConsumerMessageWaitTimeout = 120 * time.Second
 
 type StreamConsumer struct {
 	appbase.Service
@@ -153,9 +153,9 @@ func (sc *StreamConsumer) start() {
 					kafkaErr := err.(kafka.Error)
 					if kafkaErr.Code() != kafka.ErrTimedOut {
 						metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, metrics.KafkaErrorCode(kafkaErr)).Inc()
-						sc.Errorf("Error reading message from topic: %v retriable: %t", kafkaErr, kafkaErr.IsRetriable())
+						sc.Errorf("Error reading message from topic: %v retryable: %t", kafkaErr, kafkaErr.IsRetriable())
 						if kafkaErr.IsRetriable() {
-							time.Sleep(streamConsumerMessageWaitTimeout * 10)
+							time.Sleep(10 * time.Second)
 						} else {
 							sc.restartConsumer()
 						}

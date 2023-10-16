@@ -63,6 +63,10 @@ func NewRouter(appContext *Context) *Router {
 	fast.POST("/test", router.TestConnectionHandler)
 	fast.GET("/log/:eventType/:actorId", router.EventsLogHandler)
 	fast.GET("/ready", func(c *gin.Context) {
+		if router.kafkaConfig == nil {
+			c.Status(http.StatusOK)
+			return
+		}
 		if router.topicManager.IsReady() {
 			c.Status(http.StatusOK)
 		} else {
@@ -368,7 +372,7 @@ func (r *Router) FailedHandler(c *gin.Context) {
 	start := time.Now()
 	c.Header("Content-Type", "application/x-ndjson")
 	for {
-		msg, err := consumer.ReadMessage(time.Second * 2)
+		msg, err := consumer.ReadMessage(time.Second * 5)
 		jsn := make(map[string]any)
 		if err != nil {
 			kafkaErr := err.(kafka.Error)
