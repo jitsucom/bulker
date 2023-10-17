@@ -73,7 +73,9 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 	processed := 0
 	for i := 0; i < batchSize; i++ {
 		if bc.retired.Load() {
-			_, _ = bulkerStream.Abort(ctx)
+			if bulkerStream != nil {
+				_, _ = bulkerStream.Abort(ctx)
+			}
 			return
 		}
 		if latestMessage != nil && int64(latestMessage.TopicPartition.Offset) == highOffset-1 {
@@ -90,7 +92,9 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 				break
 			}
 			bc.errorMetric("consumer_error:" + metrics.KafkaErrorCode(kafkaErr))
-			_, _ = bulkerStream.Abort(ctx)
+			if bulkerStream != nil {
+				_, _ = bulkerStream.Abort(ctx)
+			}
 			return counters, false, bc.NewError("Failed to consume event from topic. Retryable: %t: %v", kafkaErr.IsRetriable(), kafkaErr)
 		}
 		counters.consumed++
