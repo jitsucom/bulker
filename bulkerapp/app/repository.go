@@ -260,7 +260,9 @@ func (d *Destination) retire() {
 	d.retired = true
 	if d.leasesCount == 0 {
 		logging.Infof("[%s] closing retired destination. Ver: %s", d.Id(), d.config.UpdatedAt)
-		_ = d.bulker.Close()
+		if d.bulker != nil {
+			_ = d.bulker.Close()
+		}
 	}
 	return
 }
@@ -273,7 +275,9 @@ func (d *Destination) decLeases() {
 	d.leasesCount--
 	if d.retired && d.leasesCount == 0 {
 		logging.Infof("[%s] closing retired destination. Ver: %s", d.Id(), d.config.UpdatedAt)
-		_ = d.bulker.Close()
+		if d.bulker != nil {
+			_ = d.bulker.Close()
+		}
 	}
 }
 
