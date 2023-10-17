@@ -182,6 +182,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	if len(pkeys) > 0 {
 		streamOptions = append(streamOptions, bulker.WithPrimaryKey(pkeys...), bulker.WithMergeRows())
 	}
+	destination.InitBulkerInstance()
 	bulkerStream, err := destination.bulker.CreateStream(jobId, tableName, bulkMode, streamOptions...)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "create stream error", true, err, "")

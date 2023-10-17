@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
@@ -84,15 +85,48 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 		eventsLogService: eventsLogService,
 		closed:           make(chan struct{}),
 	}
-	bulkerStream, err := sc.destination.bulker.CreateStream(sc.topicId, sc.tableName, bulker.Stream, sc.destination.streamOptions.Options...)
-	if err != nil {
-		metrics.ConsumerErrors(sc.topicId, "stream", destination.Id(), tableName, "failed to create bulker stream").Inc()
-		return nil, base.NewError("Failed to create bulker stream: %v", err)
-	}
-	sc.stream.Store(&bulkerStream)
+	var bs bulker.BulkerStream
+	bs = &StreamWrapper{destination: destination, topicId: topicId, tableName: tableName}
+	sc.stream.Store(&bs)
 	sc.start()
-	sc.destination.Lease()
 	return sc, nil
+}
+
+type StreamWrapper struct {
+	destination *Destination
+	stream      bulker.BulkerStream
+	topicId     string
+	tableName   string
+}
+
+func (sw *StreamWrapper) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObject types.Object, err error) {
+	if sw.stream == nil {
+		sw.destination.Lease()
+		sw.destination.InitBulkerInstance()
+		bulkerStream, err := sw.destination.bulker.CreateStream(sw.topicId, sw.tableName, bulker.Stream, sw.destination.streamOptions.Options...)
+		if err != nil {
+			metrics.ConsumerErrors(sw.topicId, "stream", sw.destination.Id(), sw.tableName, "failed to create bulker stream").Inc()
+			return bulker.State{}, nil, fmt.Errorf("Failed to create bulker stream: %v", err)
+		}
+		sw.stream = bulkerStream
+	}
+	return sw.stream.Consume(ctx, object)
+}
+
+func (sw *StreamWrapper) Abort(ctx context.Context) (bulker.State, error) {
+	if sw.stream == nil {
+		return bulker.State{}, nil
+	}
+	sw.destination.Release()
+	return sw.stream.Abort(ctx)
+}
+
+func (sw *StreamWrapper) Complete(ctx context.Context) (bulker.State, error) {
+	if sw.stream == nil {
+		return bulker.State{}, nil
+	}
+	sw.destination.Release()
+	return sw.stream.Complete(ctx)
 }
 
 func (sc *StreamConsumer) restartConsumer() {
@@ -232,19 +266,13 @@ func (sc *StreamConsumer) Close() error {
 // UpdateDestination
 func (sc *StreamConsumer) UpdateDestination(destination *Destination) error {
 	sc.Infof("[Updating stream consumer for topic. Ver: %s", sc.destination.config.UpdatedAt)
-	destination.Lease()
 
 	//create new stream
-	bulkerStream, err := destination.bulker.CreateStream(sc.topicId, sc.tableName, bulker.Stream, destination.streamOptions.Options...)
-	if err != nil {
-		return sc.NewError("Failed to create bulker stream: %v", err)
-	}
-	oldBulkerStream := sc.stream.Swap(&bulkerStream)
-	state, err := (*oldBulkerStream).Complete(context.Background())
+	var bs bulker.BulkerStream
+	bs = &StreamWrapper{destination: destination, topicId: sc.topicId, tableName: sc.tableName}
+	oldBulkerStream := sc.stream.Swap(&bs)
+	state, _ := (*oldBulkerStream).Complete(context.Background())
 	sc.Infof("Previous stream state: %+v", state)
-	oldDestination := sc.destination
-	oldDestination.Release()
-
 	sc.destination = destination
 	return nil
 }

@@ -36,12 +36,7 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 }
 
 func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error) {
-	bulkerStream, err := destination.bulker.CreateStream(bc.topicId, bc.tableName, bulker.Batch, destination.streamOptions.Options...)
-	if err != nil {
-		bc.errorMetric("failed to create bulker stream")
-		err = bc.NewError("Failed to create bulker stream: %v", err)
-		return
-	}
+	var bulkerStream bulker.BulkerStream
 	ctx := context.WithValue(context.Background(), bulker.BatchNumberCtxKey, batchNum)
 
 	//position of last message in batch in case of failed. Needed for processFailed
@@ -113,17 +108,30 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		dec.UseNumber()
 		err = dec.Decode(&obj)
 		if err == nil {
-			bc.Debugf("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
-			_, processedObjectSample, err = bulkerStream.Consume(ctx, obj)
-			if err != nil {
-				bc.errorMetric("bulker_stream_error")
+			if bulkerStream == nil {
+				destination.InitBulkerInstance()
+				bulkerStream, err = destination.bulker.CreateStream(bc.topicId, bc.tableName, bulker.Batch, destination.streamOptions.Options...)
+				if err != nil {
+					bc.errorMetric("failed to create bulker stream")
+					err = bc.NewError("Failed to create bulker stream: %v", err)
+				}
+			}
+			if err == nil {
+				bc.Debugf("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
+				_, processedObjectSample, err = bulkerStream.Consume(ctx, obj)
+				if err != nil {
+					bc.errorMetric("bulker_stream_error")
+				}
 			}
 		} else {
 			bc.errorMetric("parse_event_error")
 		}
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition
-			state, _ := bulkerStream.Abort(ctx)
+			state := bulker.State{}
+			if bulkerStream != nil {
+				state, _ = bulkerStream.Abort(ctx)
+			}
 			bc.postEventsLog(state, processedObjectSample, err)
 			return counters, false, bc.NewError("Failed to process event to bulker stream: %v", err)
 		} else {
@@ -155,7 +163,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			err = bc.NewError("Failed to commit kafka consumer: %v", err)
 			return
 		}
-	} else {
+	} else if bulkerStream != nil {
 		_, _ = bulkerStream.Abort(ctx)
 	}
 	return

@@ -27,7 +27,6 @@ type Context struct {
 	fastStore           *FastStore
 	server              *http.Server
 	metricsServer       *MetricsServer
-	metricsRelay        *MetricsRelay
 }
 
 func (a *Context) InitContext(settings *appbase.AppSettings) error {
@@ -107,12 +106,6 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	}
 	metricsServer := NewMetricsServer(a.config)
 	a.metricsServer = metricsServer
-
-	metricsRelay, err := NewMetricsRelay(a.config)
-	if err != nil {
-		logging.Errorf("Error initializing metrics relay: %v", err)
-	}
-	a.metricsRelay = metricsRelay
 	return nil
 }
 
@@ -130,7 +123,6 @@ func (a *Context) Shutdown() error {
 	}
 	logging.Infof("Shutting down http server...")
 	_ = a.metricsServer.Stop()
-	_ = a.metricsRelay.Stop()
 	_ = a.server.Shutdown(context.Background())
 	_ = a.eventsLogService.Close()
 	_ = a.fastStore.Close()

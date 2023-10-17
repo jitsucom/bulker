@@ -68,7 +68,6 @@ func (r *Repository) init() error {
 		} else if !newDst.equals(oldDestination) {
 			r.Infof("Destination %s (%s) was updated. New Ver: %s", id, newDst.config.BulkerType, newDst.config.UpdatedAt)
 			toRetire = append(toRetire, oldDestination)
-			newDst.InitBulkerInstance()
 			repositoryChange.ChangedDestinations = append(repositoryChange.ChangedDestinations, newDst)
 		} else {
 			//copy unchanged initialized destinations from old repository
@@ -79,7 +78,6 @@ func (r *Repository) init() error {
 		_, ok := oldDestinations[id]
 		if !ok {
 			r.Infof("Destination %s (%s) was added. Ver: %s", id, dst.config.BulkerType, dst.config.UpdatedAt)
-			dst.InitBulkerInstance()
 			repositoryChange.AddedDestinations = append(repositoryChange.AddedDestinations, dst)
 		}
 	}
