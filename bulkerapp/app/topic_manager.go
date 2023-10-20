@@ -89,15 +89,13 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		refreshChan:          make(chan bool, 1),
 		requiredDestinationTopics: map[string]map[string]string{
 			retryTopicMode: {
-				"cleanup.policy":   "delete,compact",
-				"compression.type": appContext.config.KafkaTopicCompression,
-				"segment.bytes":    fmt.Sprint(appContext.config.KafkaRetryTopicSegmentBytes),
-				"retention.ms":     fmt.Sprint(appContext.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
+				"cleanup.policy": "delete,compact",
+				"segment.bytes":  fmt.Sprint(appContext.config.KafkaRetryTopicSegmentBytes),
+				"retention.ms":   fmt.Sprint(appContext.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
 			},
 			deadTopicMode: {
-				"cleanup.policy":   "delete,compact",
-				"compression.type": appContext.config.KafkaTopicCompression,
-				"retention.ms":     fmt.Sprint(appContext.config.KafkaDeadTopicRetentionHours * 60 * 60 * 1000),
+				"cleanup.policy": "delete,compact",
+				"retention.ms":   fmt.Sprint(appContext.config.KafkaDeadTopicRetentionHours * 60 * 60 * 1000),
 			},
 		},
 	}, nil
@@ -276,7 +274,8 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		tm.SystemErrorf("Failed to create multi-threaded destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
 	}
 	err = tm.ensureTopic(tm.config.KafkaDestinationsDeadLetterTopicName, 1, map[string]string{
-		"retention.ms": fmt.Sprint(tm.config.KafkaDestinationsDeadLetterRetentionHours * 60 * 60 * 1000),
+		"cleanup.policy": "delete,compact",
+		"retention.ms":   fmt.Sprint(tm.config.KafkaDestinationsDeadLetterRetentionHours * 60 * 60 * 1000),
 	})
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
@@ -284,7 +283,9 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 	}
 	destinationsRetryTopicName := tm.config.KafkaDestinationsRetryTopicName
 	err = tm.ensureTopic(destinationsRetryTopicName, 1, map[string]string{
-		"retention.ms": fmt.Sprint(tm.config.KafkaDestinationsRetryRetentionHours * 60 * 60 * 1000),
+		"cleanup.policy": "delete,compact",
+		"segment.bytes":  fmt.Sprint(tm.config.KafkaRetryTopicSegmentBytes),
+		"retention.ms":   fmt.Sprint(tm.config.KafkaDestinationsRetryRetentionHours * 60 * 60 * 1000),
 	})
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()

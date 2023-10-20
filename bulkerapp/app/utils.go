@@ -17,6 +17,19 @@ func GetKafkaHeader(message *kafka.Message, key string) string {
 	return ""
 }
 
+func PutKafkaHeader(headers *[]kafka.Header, key string, value string) {
+	for i, h := range *headers {
+		if h.Key == key {
+			(*headers)[i] = kafka.Header{Key: key, Value: []byte(value)}
+			return
+		}
+	}
+	*headers = append(*headers, kafka.Header{
+		Key:   key,
+		Value: []byte(value),
+	})
+}
+
 func GetKafkaIntHeader(message *kafka.Message, name string) (int, error) {
 	v := GetKafkaHeader(message, name)
 	if len(v) > 0 {

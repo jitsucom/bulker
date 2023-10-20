@@ -100,18 +100,16 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			rc.Errorf("Failed to get retries count from message headers. Skipping message")
 			continue
 		}
-		headers := make([]kafka.Header, 0, len(message.Headers))
+		headers := message.Headers
 		if !rc.isTimeToRetry(message) {
 			singleCount.notReadyReadded++
 			// retry time is not yet come. requeueing message
 			topic = rc.topicId
-			headers = append(headers, kafka.Header{Key: retryTimeHeader, Value: []byte(GetKafkaHeader(message, retryTimeHeader))})
 		} else {
 			retries++
 			singleCount.retryScheduled++
 		}
-		headers = append(headers, kafka.Header{Key: originalTopicHeader, Value: []byte(originalTopic)})
-		headers = append(headers, kafka.Header{Key: retriesCountHeader, Value: []byte(strconv.Itoa(retries))})
+		PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
 		err = producer.Produce(&kafka.Message{
 			Key:            message.Key,
 			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},

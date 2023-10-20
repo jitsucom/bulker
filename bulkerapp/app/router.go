@@ -317,7 +317,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		messageKey := messageCopy.ConnectionId
 		if ok && multithreading {
 			topic = r.config.KafkaDestinationsTopicMultiThreadedName
-			messageKey = ""
+			messageKey = uuid.New()
 		}
 		payload, err := json.Marshal(messageCopy)
 		r.Debugf("[ingest] Message ID: %s Producing for: %s topic: %s key: %s", messageId, destination.ConnectionId, topic, messageKey)
