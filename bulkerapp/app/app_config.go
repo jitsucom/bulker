@@ -83,7 +83,7 @@ type Config struct {
 	BatchRunnerPeriodSec        int `mapstructure:"BATCH_RUNNER_DEFAULT_PERIOD_SEC" default:"300"`
 	BatchRunnerDefaultBatchSize int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"10000"`
 	// BatchRunnerWaitForMessagesSec when there are no more messages in the topic BatchRunner will wait for BatchRunnerWaitForMessagesSec seconds before sending a batch
-	BatchRunnerWaitForMessagesSec int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"1"`
+	BatchRunnerWaitForMessagesSec int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"5"`
 
 	// # ERROR RETRYING
 

@@ -47,8 +47,8 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			counters.failed = counters.consumed - counters.processed
 			if failedPosition != nil {
 				cnts, err2 := bc.processFailed(firstPosition, failedPosition)
-				cnts.failed = counters.failed
-				counters = cnts
+				counters.deadLettered = cnts.deadLettered
+				counters.retryScheduled = cnts.retryScheduled
 				if err2 != nil {
 					bc.errorMetric("PROCESS_FAILED_ERROR")
 					bc.SystemErrorf(err2.Error())
