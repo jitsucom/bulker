@@ -204,7 +204,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.countersMetric(counters)
 		if err != nil {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "fail").Inc()
-			bc.Errorf("Consume finished with error: %v stats: %s", err, counters)
+			bc.Errorf("Consume finished with error: %v stats: %s", err, counters.String())
 		} else {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "success").Inc()
 			if counters.processed > 0 {

@@ -52,7 +52,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 				if err2 != nil {
 					bc.errorMetric("PROCESS_FAILED_ERROR")
 					bc.SystemErrorf(err2.Error())
-				} else if cnts.failed > 1 {
+				} else if counters.failed > 1 {
 					// if we fail right on the first message - that probably means connection problems. No need to move further.
 					// otherwise we can try to consume next batch
 					nextBatch = true
