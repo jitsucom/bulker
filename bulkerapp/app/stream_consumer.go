@@ -48,6 +48,7 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"group.id":                      topicId,
 		"auto.offset.reset":             "earliest",
+		"allow.auto.create.topics":      false,
 		"group.instance.id":             config.InstanceId,
 		"partition.assignment.strategy": config.KafkaConsumerPartitionsAssigmentStrategy,
 		"enable.auto.commit":            true,
