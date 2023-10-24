@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/google/uuid v1.3.1
-	github.com/jackc/pgx/v5 v5.4.1
+	github.com/jackc/pgx/v5 v5.4.3
 )
 
 require (

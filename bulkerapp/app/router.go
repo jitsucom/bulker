@@ -565,7 +565,7 @@ type StreamLocator func(message IngestMessage) *StreamWithDestinations
 func (r *Router) getStream(ingestMessage IngestMessage) *StreamWithDestinations {
 	var locators []StreamLocator
 	if ingestMessage.IngestType == "s2s" {
-		locators = []StreamLocator{r.WriteKeyStreamLocator, r.SlugStreamLocator, r.DomainStreamLocator}
+		locators = []StreamLocator{r.WriteKeyStreamLocator, r.SlugStreamLocator, r.AmbiguousDomainStreamLocator}
 	} else {
 		locators = []StreamLocator{r.SlugStreamLocator, r.DomainStreamLocator, r.WriteKeyStreamLocator}
 	}
@@ -628,6 +628,20 @@ func (r *Router) DomainStreamLocator(ingestMessage IngestMessage) *StreamWithDes
 		if err != nil {
 			r.Errorf("error getting stream: %v", err)
 		} else if len(streams) == 1 {
+			return &streams[0]
+		} else if ingestMessage.WriteKey == "" && len(streams) > 1 {
+			return &streams[0]
+		}
+	}
+	return nil
+}
+
+func (r *Router) AmbiguousDomainStreamLocator(ingestMessage IngestMessage) *StreamWithDestinations {
+	if ingestMessage.Origin.Domain != "" {
+		streams, err := r.fastStore.GetStreamsByDomain(ingestMessage.Origin.Domain)
+		if err != nil {
+			r.Errorf("error getting stream: %v", err)
+		} else if len(streams) > 0 {
 			return &streams[0]
 		}
 	}
