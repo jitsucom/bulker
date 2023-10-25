@@ -19,9 +19,9 @@ type BatchConsumerImpl struct {
 	eventsLogService EventsLogService
 }
 
-func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, eventsLogService EventsLogService) (*BatchConsumerImpl, error) {
+func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService EventsLogService) (*BatchConsumerImpl, error) {
 
-	base, err := NewAbstractBatchConsumer(repository, destinationId, batchPeriodSec, topicId, "batch", config, kafkaConfig)
+	base, err := NewAbstractBatchConsumer(repository, destinationId, batchPeriodSec, topicId, "batch", config, kafkaConfig, bulkerProducer)
 	if err != nil {
 		return nil, err
 	}
@@ -41,12 +41,18 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 	//position of last message in batch in case of failed. Needed for processFailed
 	var failedPosition *kafka.TopicPartition
 	var firstPosition *kafka.TopicPartition
+	var latestMessage *kafka.Message
 	defer func() {
 		if err != nil {
 			nextBatch = false
 			counters.failed = counters.consumed - counters.processed
+			if counters.failed > 0 {
+				// we separate original errors from retry errors
+				bc.SendMetrics(GetKafkaHeader(latestMessage, MetricsMetaHeader), "error", counters.failed-counters.retried)
+				bc.SendMetrics(GetKafkaHeader(latestMessage, MetricsMetaHeader), "retry_error", counters.retried)
+			}
 			if failedPosition != nil {
-				cnts, err2 := bc.processFailed(firstPosition, failedPosition)
+				cnts, err2 := bc.processFailed(firstPosition, failedPosition, err)
 				counters.deadLettered = cnts.deadLettered
 				counters.retryScheduled = cnts.retryScheduled
 				if err2 != nil {
@@ -58,6 +64,8 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 					nextBatch = true
 				}
 			}
+		} else if counters.processed > 0 {
+			bc.SendMetrics(GetKafkaHeader(latestMessage, MetricsMetaHeader), "success", counters.processed)
 		}
 	}()
 	// we collect batchSize of messages but no longer than for 1/10 of batchPeriodSec
@@ -67,7 +75,6 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		err = bc.NewError("Failed to query watermark offsets: %v", err)
 		return
 	}
-	var latestMessage *kafka.Message
 	var processedObjectSample types.Object
 	processed := 0
 	for i := 0; i < batchSize; i++ {
@@ -101,6 +108,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		if retriesHeader != "" {
 			// we perform retries in smaller batches
 			batchSize = retryBatchSize
+			counters.retried++
 		}
 		latestMessage = message
 		if firstPosition == nil {
@@ -173,7 +181,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 }
 
 // processFailed consumes the latest failed batch of messages and sends them to the 'failed' topic
-func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, failedPosition *kafka.TopicPartition) (counters BatchCounters, err error) {
+func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, failedPosition *kafka.TopicPartition, originalErr error) (counters BatchCounters, err error) {
 	defer func() {
 		//recover
 		if r := recover(); r != nil {
@@ -239,14 +247,16 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 			deadLettered = true
 			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, false)
 		}
+		headers := message.Headers
+		PutKafkaHeader(&headers, errorHeader, originalErr.Error())
+		PutKafkaHeader(&headers, originalTopicHeader, bc.topicId)
+		PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
+		PutKafkaHeader(&headers, retryTimeHeader, timestamp.ToISOFormat(RetryBackOffTime(bc.config, retries+1).UTC()))
 		err = producer.Produce(&kafka.Message{
 			Key:            message.Key,
 			TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
-			Headers: []kafka.Header{
-				{Key: retriesCountHeader, Value: []byte(strconv.Itoa(retries))},
-				{Key: originalTopicHeader, Value: []byte(bc.topicId)},
-				{Key: retryTimeHeader, Value: []byte(timestamp.ToISOFormat(RetryBackOffTime(bc.config, retries+1).UTC()))}},
-			Value: message.Value,
+			Headers:        headers,
+			Value:          message.Value,
 		}, nil)
 		if err != nil {
 			return counters, fmt.Errorf("failed to put message to producer: %v", err)

@@ -190,7 +190,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 				}
 				var batchConsumer *BatchConsumerImpl
 				if err == nil {
-					batchConsumer, err = NewBatchConsumer(tm.repository, destinationId, batchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.eventsLogService)
+					batchConsumer, err = NewBatchConsumer(tm.repository, destinationId, batchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.batchProducer, tm.eventsLogService)
 				}
 				if err != nil {
 					topicsErrorsByMode[mode]++
@@ -216,7 +216,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 				}
 				var retryConsumer *RetryConsumer
 				if err == nil {
-					retryConsumer, err = NewRetryConsumer(tm.repository, destinationId, retryPeriodSec, topic, tm.config, tm.kafkaConfig)
+					retryConsumer, err = NewRetryConsumer(tm.repository, destinationId, retryPeriodSec, topic, tm.config, tm.kafkaConfig, tm.batchProducer)
 				}
 				if err != nil {
 					topicsErrorsByMode[mode]++
@@ -292,7 +292,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		tm.SystemErrorf("Failed to create destination retry topic [%s]: %v", destinationsRetryTopicName, err)
 	}
 	if _, dstRetryCnsmrStarted := tm.retryConsumers[destinationsRetryTopicName]; !dstRetryCnsmrStarted {
-		retryConsumer, err := NewRetryConsumer(nil, "", 60, destinationsRetryTopicName, tm.config, tm.kafkaConfig)
+		retryConsumer, err := NewRetryConsumer(nil, "", 60, destinationsRetryTopicName, tm.config, tm.kafkaConfig, tm.batchProducer)
 		if err != nil {
 			tm.SystemErrorf("Failed to create retry consumer for destination topic: %s: %v", destinationsRetryTopicName, err)
 		} else {

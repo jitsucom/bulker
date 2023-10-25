@@ -96,6 +96,7 @@ func NewRouter(appContext *Context) *Router {
 func (r *Router) EventsHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
+	metricsMeta := c.Query("metricsMeta")
 	mode := ""
 	bytesRead := 0
 	var rError *appbase.RouterError
@@ -140,7 +141,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		return
 	}
 	bytesRead = len(body)
-	err = r.producer.ProduceAsync(topicId, uuid.New(), body, nil)
+	err = r.producer.ProduceAsync(topicId, uuid.New(), body, map[string]string{MetricsMetaHeader: metricsMeta})
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, "")
 		return

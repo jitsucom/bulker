@@ -12,6 +12,7 @@ import (
 )
 
 const MessageIdHeader = "message_id"
+const MetricsMetaHeader = "metrics_meta"
 
 type Producer struct {
 	appbase.Service

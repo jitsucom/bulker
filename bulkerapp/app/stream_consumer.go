@@ -8,7 +8,6 @@ import (
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
@@ -21,7 +20,7 @@ import (
 const streamConsumerMessageWaitTimeout = 120 * time.Second
 
 type StreamConsumer struct {
-	appbase.Service
+	*AbstractConsumer
 	config         *Config
 	repository     *Repository
 	destination    *Destination
@@ -39,17 +38,17 @@ type StreamConsumer struct {
 }
 
 func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService EventsLogService) (*StreamConsumer, error) {
-	base := appbase.NewServiceBase(topicId)
+	abstract := NewAbstractConsumer(repository, topicId, bulkerProducer)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, "stream", "INVALID_TOPIC", "INVALID_TOPIC:"+topicId, "failed to parse topic").Inc()
-		return nil, base.NewError("Failed to parse topic: %v", err)
+		return nil, abstract.NewError("Failed to parse topic: %v", err)
 	}
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
-		"group.id":                      topicId,
-		"auto.offset.reset":             "earliest",
-		"allow.auto.create.topics":      false,
-		"group.instance.id":             config.InstanceId,
+		"group.id":                 topicId,
+		"auto.offset.reset":        "earliest",
+		"allow.auto.create.topics": false,
+		//"group.instance.id":             config.InstanceId,
 		"partition.assignment.strategy": config.KafkaConsumerPartitionsAssigmentStrategy,
 		"enable.auto.commit":            true,
 		"isolation.level":               "read_committed",
@@ -58,14 +57,14 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 	consumer, err := kafka.NewConsumer(&consumerConfig)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, "stream", destination.Id(), tableName, metrics.KafkaErrorCode(err)).Inc()
-		return nil, base.NewError("Error creating kafka consumer: %v", err)
+		return nil, abstract.NewError("Error creating kafka consumer: %v", err)
 	}
 
 	err = consumer.SubscribeTopics([]string{topicId}, nil)
 	if err != nil {
 		_ = consumer.Close()
 		metrics.ConsumerErrors(topicId, "stream", destination.Id(), tableName, metrics.KafkaErrorCode(err)).Inc()
-		return nil, base.NewError("Failed to subscribe to topic: %v", err)
+		return nil, abstract.NewError("Failed to subscribe to topic: %v", err)
 	}
 
 	//destination := repository.LeaseDestination(destinationId)
@@ -74,7 +73,7 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 	//}
 
 	sc := &StreamConsumer{
-		Service:          base,
+		AbstractConsumer: abstract,
 		config:           config,
 		repository:       repository,
 		destination:      destination,
@@ -197,6 +196,7 @@ func (sc *StreamConsumer) start() {
 					}
 					continue
 				}
+				metricsMeta := GetKafkaHeader(message, MetricsMetaHeader)
 				metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "consumed").Inc()
 				obj := types.Object{}
 				dec := jsoniter.NewDecoder(bytes.NewReader(message.Value))
@@ -216,29 +216,38 @@ func (sc *StreamConsumer) start() {
 						metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "bulker_stream_error").Inc()
 						sc.Errorf("Failed to inject event to bulker stream: %v", err)
 					} else {
+						sc.SendMetrics(metricsMeta, "success", 1)
 						metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "processed").Inc()
 					}
 				}
 				if err != nil {
+					originalError := err
 					failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, allTablesToken, false)
 					retries, err := GetKafkaIntHeader(message, retriesCountHeader)
 					if err != nil {
 						sc.Errorf("failed to read retry header: %v", err)
 					}
+					metricStatus := "error"
+					if retries > 0 {
+						metricStatus = "retry_error"
+					}
+					sc.SendMetrics(metricsMeta, metricStatus, 1)
 					status := "retryScheduled"
 					if retries >= sc.config.MessagesRetryCount {
 						//no attempts left - send to dead-letter topic
 						status = "deadLettered"
 						failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, allTablesToken, false)
 					}
+					headers := message.Headers
+					PutKafkaHeader(&headers, errorHeader, originalError.Error())
+					PutKafkaHeader(&headers, originalTopicHeader, sc.topicId)
+					PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
+					PutKafkaHeader(&headers, retryTimeHeader, timestamp.ToISOFormat(RetryBackOffTime(sc.config, retries+1).UTC()))
 					retryMessage := kafka.Message{
 						Key:            message.Key,
 						TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
-						Headers: []kafka.Header{
-							{Key: retriesCountHeader, Value: []byte(strconv.Itoa(retries))},
-							{Key: originalTopicHeader, Value: []byte(sc.topicId)},
-							{Key: retryTimeHeader, Value: []byte(timestamp.ToISOFormat(RetryBackOffTime(sc.config, retries+1).UTC()))}},
-						Value: message.Value,
+						Headers:        headers,
+						Value:          message.Value,
 					}
 					err = sc.bulkerProducer.ProduceSync(failedTopic, retryMessage)
 					if err != nil {

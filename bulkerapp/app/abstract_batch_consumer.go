@@ -6,7 +6,6 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
-	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"reflect"
@@ -20,6 +19,7 @@ import (
 const retryTimeHeader = "retry_time"
 const retriesCountHeader = "retries"
 const originalTopicHeader = "original_topic"
+const errorHeader = "error"
 
 const pauseHeartBeatInterval = 120 * time.Second
 
@@ -36,7 +36,7 @@ type BatchConsumer interface {
 
 type AbstractBatchConsumer struct {
 	sync.Mutex
-	appbase.Service
+	*AbstractConsumer
 	config          *Config
 	repository      *Repository
 	destinationId   string
@@ -63,22 +63,22 @@ type AbstractBatchConsumer struct {
 	batchFunc BatchFunction
 }
 
-func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *Config, kafkaConfig *kafka.ConfigMap) (*AbstractBatchConsumer, error) {
-	base := appbase.NewServiceBase(topicId)
+func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer) (*AbstractBatchConsumer, error) {
+	abstract := NewAbstractConsumer(repository, topicId, bulkerProducer)
 	var tableName string
 	var err error
 	if destinationId != "" {
 		_, _, tableName, err = ParseTopicId(topicId)
 		if err != nil {
 			metrics.ConsumerErrors(topicId, mode, "INVALID_TOPIC", "INVALID_TOPIC", "failed to parse topic").Inc()
-			return nil, base.NewError("Failed to parse topic: %v", err)
+			return nil, abstract.NewError("Failed to parse topic: %v", err)
 		}
 	}
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
-		"group.id":                      topicId,
-		"auto.offset.reset":             "earliest",
-		"allow.auto.create.topics":      false,
-		"group.instance.id":             config.InstanceId,
+		"group.id":                 topicId,
+		"auto.offset.reset":        "earliest",
+		"allow.auto.create.topics": false,
+		//"group.instance.id":             config.InstanceId,
 		"enable.auto.commit":            false,
 		"partition.assignment.strategy": config.KafkaConsumerPartitionsAssigmentStrategy,
 		"isolation.level":               "read_committed",
@@ -89,26 +89,26 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	consumer, err := kafka.NewConsumer(&consumerConfig)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
-		return nil, base.NewError("Error creating consumer: %v", err)
+		return nil, abstract.NewError("Error creating consumer: %v", err)
 	}
 	producerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"transactional.id": fmt.Sprintf("%s_failed_%s", topicId, config.InstanceId),
 	}, *kafkaConfig))
 
 	bc := &AbstractBatchConsumer{
-		Service:         base,
-		config:          config,
-		repository:      repository,
-		destinationId:   destinationId,
-		tableName:       tableName,
-		batchPeriodSec:  batchPeriodSec,
-		topicId:         topicId,
-		mode:            mode,
-		consumerConfig:  consumerConfig,
-		producerConfig:  producerConfig,
-		waitForMessages: time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
-		closed:          make(chan struct{}),
-		resumeChannel:   make(chan struct{}),
+		AbstractConsumer: abstract,
+		config:           config,
+		repository:       repository,
+		destinationId:    destinationId,
+		tableName:        tableName,
+		batchPeriodSec:   batchPeriodSec,
+		topicId:          topicId,
+		mode:             mode,
+		consumerConfig:   consumerConfig,
+		producerConfig:   producerConfig,
+		waitForMessages:  time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
+		closed:           make(chan struct{}),
+		resumeChannel:    make(chan struct{}),
 	}
 	bc.consumer.Store(consumer)
 	bc.idle.Store(true)
@@ -117,7 +117,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
 		_ = consumer.Close()
-		return nil, base.NewError("Failed to subscribe to topic: %v", err)
+		return nil, abstract.NewError("Failed to subscribe to topic: %v", err)
 	}
 
 	// Delivery reports channel for 'failed' producer messages
@@ -471,6 +471,7 @@ type BatchCounters struct {
 	processed       int
 	notReadyReadded int
 	retryScheduled  int
+	retried         int
 	deadLettered    int
 	failed          int
 }
@@ -483,6 +484,7 @@ func (bs *BatchCounters) accumulate(batchStats BatchCounters) {
 	bs.notReadyReadded += batchStats.notReadyReadded
 	bs.retryScheduled += batchStats.retryScheduled
 	bs.deadLettered += batchStats.deadLettered
+	bs.retried += batchStats.retried
 }
 
 // to string
