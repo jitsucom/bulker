@@ -198,7 +198,7 @@ func TestEventsRetry(t *testing.T) {
 			destinationId:              "batch_postgres",
 			eventsFile:                 "test_data/goodbatch.ndjson",
 			token:                      "21a2ae36-32994870a9fbf2f61ea6f6c8",
-			waitAfterAllMessageSentSec: 10,
+			waitAfterAllMessageSentSec: 15,
 			postStepFunctions: map[string]StepFunction{
 				"send_object_9": func() error {
 					time.Sleep(5 * time.Second)
@@ -217,7 +217,7 @@ func TestEventsRetry(t *testing.T) {
 			destinationId:              "stream_postgres",
 			eventsFile:                 "test_data/goodbatch.ndjson",
 			token:                      "21a2ae36-32994870a9fbf2f61ea6f6c8",
-			waitAfterAllMessageSentSec: 10,
+			waitAfterAllMessageSentSec: 15,
 			postStepFunctions: map[string]StepFunction{
 				"send_object_9": func() error {
 					time.Sleep(5 * time.Second)
