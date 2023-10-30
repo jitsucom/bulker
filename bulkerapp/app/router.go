@@ -150,6 +150,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 }
 
 func (r *Router) BulkHandler(c *gin.Context) {
+	start := time.Now()
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
 	taskId := c.DefaultQuery("taskId", uuid.New())
@@ -226,6 +227,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 			rError = r.ResponseError(c, http.StatusBadRequest, "stream complete error", false, err, "")
 			return
 		}
+		r.Infof("Bulk stream for %s mode: %s Completed. Processed: %d in %dms.", jobId, mode, state.SuccessfulRows, time.Since(start).Milliseconds())
 		c.JSON(http.StatusOK, gin.H{"message": "ok", "state": state})
 	} else {
 		_, _ = bulkerStream.Abort(c)

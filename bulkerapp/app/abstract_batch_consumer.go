@@ -52,6 +52,8 @@ type AbstractBatchConsumer struct {
 
 	closed chan struct{}
 
+	running atomic.Bool
+
 	//AbstractBatchConsumer marked as no longer needed. We cannot close it immediately because it can be in the middle of processing batch
 	retired atomic.Bool
 	//idle AbstractBatchConsumer that is not running any batch jobs. retired idle consumer automatically closes itself
@@ -187,7 +189,14 @@ func (bc *AbstractBatchConsumer) TopicId() string {
 }
 
 func (bc *AbstractBatchConsumer) RunJob() {
-	_, _ = bc.ConsumeAll()
+	if bc.running.CompareAndSwap(false, true) {
+		defer func() {
+			bc.running.Store(false)
+		}()
+		_, _ = bc.ConsumeAll()
+	} else {
+		bc.Warnf("Previous job is still running")
+	}
 }
 
 func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error) {

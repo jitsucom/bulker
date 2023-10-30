@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"io"
+	"reflect"
+	"strings"
 )
 
 type InitFunction func(Config) (Bulker, error)
@@ -144,6 +146,21 @@ type State struct {
 func (s *State) SetError(err error) {
 	s.LastError = err
 	s.LastErrorText = err.Error()
+}
+
+// to string
+func (s *State) String() string {
+	// print non-zero values
+	var sb strings.Builder
+	countersValue := reflect.ValueOf(*s)
+	countersType := countersValue.Type()
+	for i := 0; i < countersValue.NumField(); i++ {
+		value := countersValue.Field(i).String()
+		if value != "" && value != "0" {
+			sb.WriteString(fmt.Sprintf("%s: %s ", countersType.Field(i).Name, value))
+		}
+	}
+	return sb.String()
 }
 
 type LogLevel int

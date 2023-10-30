@@ -56,6 +56,7 @@ func NewJobRunner(appContext *Context) (*JobRunner, error) {
 }
 
 func (j *JobRunner) watchPodStatuses() {
+	ticker := utils.NewTicker(time.Second*time.Duration(j.config.ContainerStatusCheckSeconds), time.Second*time.Duration(j.config.ContainerStatusCheckSeconds))
 	for {
 		//recover from panic
 		defer func() {
@@ -64,7 +65,6 @@ func (j *JobRunner) watchPodStatuses() {
 				j.Errorf("watchPodStatuses Recovered from panic: %+v", r)
 			}
 		}()
-		ticker := utils.NewTicker(time.Second*time.Duration(j.config.ContainerStatusCheckSeconds), time.Second*time.Duration(j.config.ContainerStatusCheckSeconds))
 		select {
 		case <-j.closeCh:
 			return

@@ -18,7 +18,6 @@ func NewCron(config *Config) *Cron {
 	s := gocron.NewScheduler(time.UTC)
 	s.TagsUnique()
 	s.StartAsync()
-	s.SingletonModeAll()
 	return &Cron{Service: base, scheduler: s, config: config}
 }
 
