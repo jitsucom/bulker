@@ -57,6 +57,7 @@ func NewJobRunner(appContext *Context) (*JobRunner, error) {
 
 func (j *JobRunner) watchPodStatuses() {
 	ticker := utils.NewTicker(time.Second*time.Duration(j.config.ContainerStatusCheckSeconds), time.Second*time.Duration(j.config.ContainerStatusCheckSeconds))
+	defer ticker.Stop()
 	for {
 		//recover from panic
 		defer func() {

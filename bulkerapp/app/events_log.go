@@ -95,6 +95,7 @@ func NewRedisEventsLog(config *Config, redisUrl string) (*RedisEventsLog, error)
 func (r *RedisEventsLog) Start() {
 	safego.RunWithRestart(func() {
 		ticker := time.NewTicker(r.periodicFlushInterval)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:

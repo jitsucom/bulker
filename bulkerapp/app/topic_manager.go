@@ -92,10 +92,12 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 				"cleanup.policy": "delete,compact",
 				"segment.bytes":  fmt.Sprint(appContext.config.KafkaRetryTopicSegmentBytes),
 				"retention.ms":   fmt.Sprint(appContext.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
+				"segment.ms":     fmt.Sprint(appContext.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 			},
 			deadTopicMode: {
 				"cleanup.policy": "delete,compact",
 				"retention.ms":   fmt.Sprint(appContext.config.KafkaDeadTopicRetentionHours * 60 * 60 * 1000),
+				"segment.ms":     fmt.Sprint(appContext.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 			},
 		},
 	}, nil
@@ -260,6 +262,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 	err := tm.ensureTopic(tm.config.KafkaDestinationsTopicName, tm.config.KafkaDestinationsTopicPartitions,
 		map[string]string{
 			"retention.ms": fmt.Sprint(tm.config.KafkaDestinationsTopicRetentionHours * 60 * 60 * 1000),
+			"segment.ms":   fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 		})
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
@@ -268,6 +271,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 	err = tm.ensureTopic(tm.config.KafkaDestinationsTopicMultiThreadedName, tm.config.KafkaDestinationsTopicMultiThreadedPartitions,
 		map[string]string{
 			"retention.ms": fmt.Sprint(tm.config.KafkaDestinationsTopicRetentionHours * 60 * 60 * 1000),
+			"segment.ms":   fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 		})
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
@@ -276,6 +280,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 	err = tm.ensureTopic(tm.config.KafkaDestinationsDeadLetterTopicName, 1, map[string]string{
 		"cleanup.policy": "delete,compact",
 		"retention.ms":   fmt.Sprint(tm.config.KafkaDestinationsDeadLetterRetentionHours * 60 * 60 * 1000),
+		"segment.ms":     fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 	})
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
@@ -286,6 +291,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		"cleanup.policy": "delete,compact",
 		"segment.bytes":  fmt.Sprint(tm.config.KafkaRetryTopicSegmentBytes),
 		"retention.ms":   fmt.Sprint(tm.config.KafkaDestinationsRetryRetentionHours * 60 * 60 * 1000),
+		"segment.ms":     fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 	})
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
@@ -475,6 +481,7 @@ func (tm *TopicManager) createDestinationTopic(topic string, config map[string]s
 	}
 	topicConfig := map[string]string{
 		"retention.ms":     fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
+		"segment.ms":       fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 		"compression.type": tm.config.KafkaTopicCompression,
 	}
 	utils.MapPutAll(topicConfig, config)
@@ -518,6 +525,7 @@ func (tm *TopicManager) createTopic(topic string, partitions int, config map[str
 	topicConfig := map[string]string{
 		"compression.type": tm.config.KafkaTopicCompression,
 		"retention.ms":     fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
+		"segment.ms":       fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 	}
 	utils.MapPutAll(topicConfig, config)
 	topicRes, err := tm.kaftaAdminClient.CreateTopics(context.Background(), []kafka.TopicSpecification{

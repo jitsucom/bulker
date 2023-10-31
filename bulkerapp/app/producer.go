@@ -66,6 +66,7 @@ func (p *Producer) Start() {
 		// report size metrics
 		safego.RunWithRestart(func() {
 			ticker := time.NewTicker(time.Second * 15)
+			defer ticker.Stop()
 			for {
 				select {
 				case <-p.closed:
