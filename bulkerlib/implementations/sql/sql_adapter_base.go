@@ -705,12 +705,25 @@ func (b *SQLAdapterBase[T]) GetDataType(sqlType string) (types2.DataType, bool) 
 	v, ok := b.reverseTypesMapping[sqlType]
 	if !ok {
 		for k, v := range b.reverseTypesMapping {
-			if strings.HasPrefix(sqlType, k) {
+			if match(sqlType, k) {
 				return v, true
 			}
 		}
 	}
 	return v, ok
+}
+
+func match(target, pattern string) bool {
+	suff := pattern[0] == '%'
+	pref := pattern[len(pattern)-1] == '%'
+	pattern = strings.Trim(pattern, "%")
+	if pref && suff {
+		return strings.Contains(target, pattern)
+	} else if suff {
+		return strings.HasSuffix(target, pattern)
+	} else {
+		return strings.HasPrefix(target, pattern)
+	}
 }
 
 func checkNotExistErr(err error) error {

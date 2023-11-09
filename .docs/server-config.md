@@ -232,7 +232,7 @@ Example: `redis://default:secret@localhost:6379`
 
 ### `BULKER_EVENTS_LOG_MAX_SIZE`
 
-*Optional, default value: `100000`*
+*Optional, default value: `1000`*
 
 Maximum number of events in each `events_log:*` stream
 

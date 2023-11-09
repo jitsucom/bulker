@@ -15,7 +15,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"math"
 	"regexp"
-	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -59,13 +58,6 @@ func (j *JobRunner) watchPodStatuses() {
 	ticker := utils.NewTicker(time.Second*time.Duration(j.config.ContainerStatusCheckSeconds), time.Second*time.Duration(j.config.ContainerStatusCheckSeconds))
 	defer ticker.Stop()
 	for {
-		//recover from panic
-		defer func() {
-			if r := recover(); r != nil {
-				fmt.Printf("watchPodStatuses Recovered from panic: %v %s\n", r, debug.Stack())
-				j.Errorf("watchPodStatuses Recovered from panic: %+v", r)
-			}
-		}()
 		select {
 		case <-j.closeCh:
 			return
