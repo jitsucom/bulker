@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -29,7 +30,6 @@ func init() {
 	bulkerlib.RegisterBulker(ClickHouseBulkerTypeId, NewClickHouse)
 }
 
-// TODO tmp table
 const (
 	ClickHouseBulkerTypeId = "clickhouse"
 
@@ -155,7 +155,7 @@ type FieldConfig struct {
 type ClickHouse struct {
 	*SQLAdapterBase[ClickHouseConfig]
 	httpMode              bool
-	distributed           bool
+	distributed           atomic.Bool
 	tableStatementFactory *TableStatementFactory
 }
 
@@ -202,11 +202,6 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 		return dataSource, nil
 	}
 
-	tableStatementFactory, err := NewTableStatementFactory(config)
-	if err != nil {
-		return nil, err
-	}
-
 	var nullableFields []string
 	if config.Engine != nil {
 		nullableFields = config.Engine.NullableFields
@@ -222,10 +217,12 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	sqlAdapterBase.batchFileFormat = types.FileFormatNDJSON
 
 	c := &ClickHouse{
-		SQLAdapterBase:        sqlAdapterBase,
-		tableStatementFactory: tableStatementFactory,
-		httpMode:              httpMode,
+		SQLAdapterBase: sqlAdapterBase,
+		httpMode:       httpMode,
+		distributed:    atomic.Bool{},
 	}
+	tableStatementFactory := NewTableStatementFactory(c)
+	c.tableStatementFactory = tableStatementFactory
 	c.tableHelper = NewTableHelper(63, '`')
 	return c, err
 }
@@ -333,14 +330,16 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 		}
 	}
 	if ch.config.Cluster != "" {
-		err := ch.txOrDb(ctx).QueryRowContext(ctx, chClusterQuery, ch.config.Cluster).Scan(&ch.distributed)
+		var distributed bool
+		err := ch.txOrDb(ctx).QueryRowContext(ctx, chClusterQuery, ch.config.Cluster).Scan(&distributed)
 		if err != nil {
 			ch.Errorf("failed to get cluster info - assuming distributed mode. error: %v", err)
 			//assuming that cluster exists and has multiple shards
-			ch.distributed = true
+			ch.distributed.Store(true)
 			return nil
 		}
-		if ch.distributed {
+		ch.distributed.Store(distributed)
+		if distributed {
 			ch.Infof("cluster `%s` is distributed", ch.config.Cluster)
 		} else {
 			ch.Infof("cluster `%s` is not distributed", ch.config.Cluster)
@@ -392,7 +391,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 	}
 
 	//create distributed table
-	if ch.distributed {
+	if ch.distributed.Load() {
 		return ch.createDistributedTableInTransaction(ctx, table)
 	}
 
@@ -481,7 +480,7 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 			})
 	}
 
-	if ch.distributed {
+	if ch.distributed.Load() {
 		query := fmt.Sprintf(chAlterTableTemplate, ch.quotedTableName(patchSchema.Name), ch.getOnClusterClause(), strings.Join(addedColumnsDDL, ", "))
 
 		_, err := ch.txOrDb(ctx).ExecContext(ctx, query)
@@ -652,7 +651,7 @@ func (ch *ClickHouse) DropTable(ctx context.Context, tableName string, ifExists 
 	if err != nil {
 		return err
 	}
-	if ch.distributed {
+	if ch.distributed.Load() {
 		return ch.dropTable(ctx, ch.quotedLocalTableName(tableName), ch.getOnClusterClause(), true)
 	}
 	return nil
@@ -706,7 +705,7 @@ func (ch *ClickHouse) ReplaceTable(ctx context.Context, targetTableName string, 
 			return fmt.Errorf("error renaming [%s] table: %v", replacementTable.Name, err)
 		}
 		//on cluster we also need to create distributed table for newly create target table
-		if ch.distributed {
+		if ch.distributed.Load() {
 			targetTable := replacementTable.Clone()
 			targetTable.Name = targetTableName
 			return ch.createDistributedTableInTransaction(ctx, targetTable)
@@ -752,7 +751,7 @@ func (ch *ClickHouse) quotedLocalTableName(tableName string) string {
 }
 
 func (ch *ClickHouse) localTableName(tableName string) string {
-	if ch.config.Cluster != "" && ch.distributed {
+	if ch.config.Cluster != "" && ch.distributed.Load() {
 		return chLocalPrefix + tableName
 	} else {
 		return tableName
@@ -925,30 +924,28 @@ func (chc *ClickHouseConfig) Validate() error {
 
 // TableStatementFactory is used for creating CREATE TABLE statements depends on config
 type TableStatementFactory struct {
-	config *ClickHouseConfig
+	ch *ClickHouse
 
 	onClusterClause string
 }
 
-func NewTableStatementFactory(config *ClickHouseConfig) (*TableStatementFactory, error) {
-	if config == nil {
-		return nil, errors.New("Clickhouse config can't be nil")
-	}
+func NewTableStatementFactory(ch *ClickHouse) *TableStatementFactory {
 	var onClusterClause string
-	if config.Cluster != "" {
-		onClusterClause = fmt.Sprintf(chOnClusterClauseTemplate, config.Cluster)
+	if ch.config.Cluster != "" {
+		onClusterClause = fmt.Sprintf(chOnClusterClauseTemplate, ch.config.Cluster)
 	}
 
 	return &TableStatementFactory{
-		config:          config,
+		ch:              ch,
 		onClusterClause: onClusterClause,
-	}, nil
+	}
 }
 
 // CreateTableStatement return clickhouse DDL for creating table statement
 func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName, columnsClause string, table *Table) string {
-	if tsf.config.Engine != nil && len(tsf.config.Engine.RawStatement) > 0 {
-		return fmt.Sprintf(chCreateTableTemplate, quotedTableName, tsf.onClusterClause, columnsClause, tsf.config.Engine.RawStatement,
+	config := tsf.ch.config
+	if config.Engine != nil && len(config.Engine.RawStatement) > 0 {
+		return fmt.Sprintf(chCreateTableTemplate, quotedTableName, tsf.onClusterClause, columnsClause, config.Engine.RawStatement,
 			"", "", "")
 	}
 	var engineStatement string
@@ -960,8 +957,8 @@ func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName
 
 	baseEngine := "ReplacingMergeTree"
 	pkFields := table.PKFields
-	if tsf.config.Engine != nil && len(tsf.config.Engine.OrderFields) > 0 {
-		orderByClause = "ORDER BY (" + extractStatement(tsf.config.Engine.OrderFields) + ")"
+	if config.Engine != nil && len(config.Engine.OrderFields) > 0 {
+		orderByClause = "ORDER BY (" + extractStatement(config.Engine.OrderFields) + ")"
 	} else if len(pkFields) > 0 {
 		orderByClause = "ORDER BY (" + strings.Join(pkFields.ToSlice(), ", ") + ")"
 	} else {
@@ -971,15 +968,19 @@ func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName
 	if len(pkFields) > 0 {
 		primaryKeyClause = "PRIMARY KEY (" + strings.Join(pkFields.ToSlice(), ", ") + ")"
 	}
-	if tsf.config.Engine != nil && len(tsf.config.Engine.PartitionFields) > 0 {
-		partitionClause = "PARTITION BY (" + extractStatement(tsf.config.Engine.PartitionFields) + ")"
+	if config.Engine != nil && len(config.Engine.PartitionFields) > 0 {
+		partitionClause = "PARTITION BY (" + extractStatement(config.Engine.PartitionFields) + ")"
 	} else if table.TimestampColumn != "" {
 		partitionClause = "PARTITION BY toYYYYMM(`" + table.TimestampColumn + "`)"
 	}
 
-	if tsf.config.Cluster != "" {
+	if config.Cluster != "" {
+		shardsMacros := "{shard}/"
+		if !tsf.ch.distributed.Load() {
+			shardsMacros = "1/"
+		}
 		//create engine statement with ReplicatedReplacingMergeTree() engine. We need to replace %s with tableName on creating statement
-		engineStatement = `ENGINE = Replicated` + baseEngine + `('/clickhouse/tables/{shard}/` + tsf.config.Database + `/%s', '{replica}')`
+		engineStatement = `ENGINE = Replicated` + baseEngine + `('/clickhouse/tables/` + shardsMacros + config.Database + `/%s', '{replica}')`
 		engineStatementFormat = true
 	} else {
 		//create table template with ReplacingMergeTree() engine
