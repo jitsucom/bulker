@@ -56,6 +56,7 @@ jobs:
         SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         SLACK_COLOR: ${{ job.status }}
         SLACK_ICON_EMOJI: ":github-mark:"
+        SLACK_MESSAGE: "${{ job.status }}: Bulker Test: ${{ env.COMMIT_MESSAGE }}"
 
   docker:
     needs: bulker-test
