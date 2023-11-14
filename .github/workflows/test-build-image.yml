@@ -49,6 +49,14 @@ jobs:
           test_report.html
           test_report.json
 
+    - name: Notify Slack
+      uses: rtCamp/action-slack-notify@v2
+      if: always()
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_DEV_CHANNEL }}
+        SLACK_COLOR: ${{ job.status }}
+        SLACK_ICON_EMOJI: ":github-mark:"
+
   docker:
     needs: bulker-test
     runs-on: ubuntu-latest
