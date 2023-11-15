@@ -315,10 +315,11 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	for _, destination := range stream.AsynchronousDestinations {
 		messageCopy := ingestMessage
 		messageCopy.ConnectionId = destination.ConnectionId
-		multithreading, ok := destination.Options["multithreading"].(bool)
+		//multithreading, ok := destination.Options["multithreading"].(bool)
+		multithreading := true
 		topic := r.config.KafkaDestinationsTopicName
 		messageKey := messageCopy.ConnectionId
-		if ok && multithreading {
+		if multithreading {
 			topic = r.config.KafkaDestinationsTopicMultiThreadedName
 			messageKey = uuid.New()
 		}
