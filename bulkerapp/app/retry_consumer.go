@@ -58,7 +58,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 		if rc.retired.Load() {
 			return
 		}
-		if lastPosition != nil && int64(lastPosition.Offset) == highOffset-1 {
+		if lastPosition != nil && int64(lastPosition.Offset) >= highOffset-1 {
 			nextBatch = false
 			rc.Debugf("Reached watermark offset %d. Stopping batch", highOffset-1)
 			// we reached the end of the topic

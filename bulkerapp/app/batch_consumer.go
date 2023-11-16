@@ -84,7 +84,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			}
 			return
 		}
-		if latestMessage != nil && int64(latestMessage.TopicPartition.Offset) == highOffset-1 {
+		if latestMessage != nil && int64(latestMessage.TopicPartition.Offset) >= highOffset-1 {
 			nextBatch = false
 			bc.Debugf("Reached watermark offset %d. Stopping batch", highOffset-1)
 			// we reached the end of the topic
