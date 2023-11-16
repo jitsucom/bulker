@@ -45,6 +45,8 @@ type Config struct {
 	//Kafka authorization as JSON object {"mechanism": "SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}
 	KafkaSASL string `mapstructure:"KAFKA_SASL"`
 
+	KafkaSessionTimeoutMs    int    `mapstructure:"KAFKA_SESSION_TIMEOUT_MS" default:"45000"`
+	KafkaMaxPollIntervalMs   int    `mapstructure:"KAFKA_MAX_POLL_INTERVAL_MS" default:"300000"`
 	KafkaTopicCompression    string `mapstructure:"KAFKA_TOPIC_COMPRESSION" default:"snappy"`
 	KafkaTopicRetentionHours int    `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
 	KafkaTopicSegmentHours   int    `mapstructure:"KAFKA_TOPIC_SEGMENT_HOURS" default:"24"`
@@ -55,7 +57,6 @@ type Config struct {
 	KafkaTopicReplicationFactor              int    `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR"`
 	KafkaAdminMetadataTimeoutMs              int    `mapstructure:"KAFKA_ADMIN_METADATA_TIMEOUT_MS" default:"1000"`
 	KafkaConsumerPartitionsAssigmentStrategy string `mapstructure:"KAFKA_CONSUMER_PARTITIONS_ASSIGMENT_STRATEGY" default:"roundrobin"`
-	//TODO: max.poll.interval.ms
 
 	// KafkaDestinationsTopicName destination topic for /ingest endpoint
 	KafkaDestinationsTopicName              string `mapstructure:"KAFKA_DESTINATIONS_TOPIC_NAME" default:"destination-messages"`
@@ -81,9 +82,8 @@ type Config struct {
 
 	// # BATCHING
 
-	BatchRunnerPeriodSec        int `mapstructure:"BATCH_RUNNER_DEFAULT_PERIOD_SEC" default:"300"`
-	BatchRunnerDefaultBatchSize int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"10000"`
-	// BatchRunnerWaitForMessagesSec when there are no more messages in the topic BatchRunner will wait for BatchRunnerWaitForMessagesSec seconds before sending a batch
+	BatchRunnerPeriodSec          int `mapstructure:"BATCH_RUNNER_DEFAULT_PERIOD_SEC" default:"300"`
+	BatchRunnerDefaultBatchSize   int `mapstructure:"BATCH_RUNNER_DEFAULT_BATCH_SIZE" default:"10000"`
 	BatchRunnerWaitForMessagesSec int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"5"`
 
 	// # ERROR RETRYING

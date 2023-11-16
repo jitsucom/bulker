@@ -34,7 +34,7 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 	return &bc, nil
 }
 
-func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error) {
+func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error) {
 	var bulkerStream bulker.BulkerStream
 	ctx := context.WithValue(context.Background(), bulker.BatchNumberCtxKey, batchNum)
 
@@ -68,13 +68,6 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			bc.SendMetrics(GetKafkaHeader(latestMessage, MetricsMetaHeader), "success", counters.processed)
 		}
 	}()
-	// we collect batchSize of messages but no longer than for 1/10 of batchPeriodSec
-	_, highOffset, err := bc.consumer.Load().QueryWatermarkOffsets(bc.topicId, 0, 10_000)
-	if err != nil {
-		bc.errorMetric("query_watermark_failed")
-		err = bc.NewError("Failed to query watermark offsets: %v", err)
-		return
-	}
 	var processedObjectSample types.Object
 	processed := 0
 	for i := 0; i < batchSize; i++ {

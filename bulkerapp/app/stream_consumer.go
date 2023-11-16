@@ -21,7 +21,6 @@ const streamConsumerMessageWaitTimeout = 120 * time.Second
 
 type StreamConsumer struct {
 	*AbstractConsumer
-	config         *Config
 	repository     *Repository
 	destination    *Destination
 	stream         atomic.Pointer[bulker.BulkerStream]
@@ -31,27 +30,28 @@ type StreamConsumer struct {
 	bulkerProducer   *Producer
 	eventsLogService EventsLogService
 
-	topicId   string
 	tableName string
 
 	closed chan struct{}
 }
 
 func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService EventsLogService) (*StreamConsumer, error) {
-	abstract := NewAbstractConsumer(repository, topicId, bulkerProducer)
+	abstract := NewAbstractConsumer(config, repository, topicId, bulkerProducer)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, "stream", "INVALID_TOPIC", "INVALID_TOPIC:"+topicId, "failed to parse topic").Inc()
 		return nil, abstract.NewError("Failed to parse topic: %v", err)
 	}
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
-		"group.id":                 topicId,
-		"auto.offset.reset":        "earliest",
-		"allow.auto.create.topics": false,
-		//"group.instance.id":             config.InstanceId,
+		"group.id":                      topicId,
+		"auto.offset.reset":             "earliest",
+		"allow.auto.create.topics":      false,
+		"group.instance.id":             abstract.GetInstanceId(),
 		"partition.assignment.strategy": config.KafkaConsumerPartitionsAssigmentStrategy,
 		"enable.auto.commit":            true,
 		"isolation.level":               "read_committed",
+		"session.timeout.ms":            config.KafkaSessionTimeoutMs,
+		"max.poll.interval.ms":          config.KafkaMaxPollIntervalMs,
 	}, *kafkaConfig))
 
 	consumer, err := kafka.NewConsumer(&consumerConfig)
@@ -74,10 +74,8 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 
 	sc := &StreamConsumer{
 		AbstractConsumer: abstract,
-		config:           config,
 		repository:       repository,
 		destination:      destination,
-		topicId:          topicId,
 		tableName:        tableName,
 		consumerConfig:   consumerConfig,
 		consumer:         consumer,

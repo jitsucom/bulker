@@ -25,7 +25,7 @@ func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodS
 	return &rc, nil
 }
 
-func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error) {
+func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error) {
 	var firstPosition *kafka.TopicPartition
 	var lastPosition *kafka.TopicPartition
 	defer func() {
@@ -51,7 +51,6 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			nextBatch = false
 		}
 	}()
-	_, highOffset, err := rc.consumer.Load().QueryWatermarkOffsets(rc.topicId, 0, 10_000)
 
 	nextBatch = true
 	for i := 0; i < retryBatchSize; i++ {

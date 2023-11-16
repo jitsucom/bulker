@@ -210,7 +210,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 					tm.Infof("Consumer for destination topic %s was scheduled with batch period %ds.", topic, batchPeriodSec)
 				}
 			case retryTopicMode:
-				retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(destination.streamOptions)*60), int(bulker.BatchFrequencyOption.Get(destination.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)
+				retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(destination.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)
 				var err error
 				if len(topicMetadata.Partitions) > 1 {
 					metrics.ConsumerErrors(topic, mode, destinationId, tableName, "invalid_partitions_count").Inc()
@@ -298,7 +298,8 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		tm.SystemErrorf("Failed to create destination retry topic [%s]: %v", destinationsRetryTopicName, err)
 	}
 	if _, dstRetryCnsmrStarted := tm.retryConsumers[destinationsRetryTopicName]; !dstRetryCnsmrStarted {
-		retryConsumer, err := NewRetryConsumer(nil, "", 60, destinationsRetryTopicName, tm.config, tm.kafkaConfig, tm.batchProducer)
+		retryPeriodSec := tm.config.BatchRunnerRetryPeriodSec
+		retryConsumer, err := NewRetryConsumer(nil, "", retryPeriodSec, destinationsRetryTopicName, tm.config, tm.kafkaConfig, tm.batchProducer)
 		if err != nil {
 			tm.SystemErrorf("Failed to create retry consumer for destination topic: %s: %v", destinationsRetryTopicName, err)
 		} else {

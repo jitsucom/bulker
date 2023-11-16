@@ -1,7 +1,9 @@
 package app
 
 import (
+	"crypto/md5"
 	"encoding/json"
+	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"time"
@@ -9,16 +11,30 @@ import (
 
 type AbstractConsumer struct {
 	appbase.Service
+	config         *Config
+	topicId        string
 	bulkerProducer *Producer
 	repository     *Repository
 }
 
-func NewAbstractConsumer(repository *Repository, topicId string, bulkerProducer *Producer) *AbstractConsumer {
+func NewAbstractConsumer(config *Config, repository *Repository, topicId string, bulkerProducer *Producer) *AbstractConsumer {
 	return &AbstractConsumer{
 		Service:        appbase.NewServiceBase(topicId),
+		config:         config,
+		topicId:        topicId,
 		bulkerProducer: bulkerProducer,
 		repository:     repository,
 	}
+}
+
+func (ac *AbstractConsumer) GetInstanceId() string {
+	// range partitioner assigner distributes partitions between consumers in alphabetical order
+	// since bulker topics mostly have only 1 partition – instance with the lowest instanceId will be assigned for all topic.
+	// we use first letters of hash of 'topicId + instanceId' as a beginning of 'group.instance.id'
+	// so for each topic the first instance will be different
+	// while keeping consistency between restarts (if instanceId is the same)
+	firstByte := md5.Sum([]byte(ac.topicId + ac.config.InstanceId))[0]
+	return fmt.Sprintf("%x-%s", firstByte, ac.config.InstanceId)
 }
 
 func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, events int) {

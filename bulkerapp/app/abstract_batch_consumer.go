@@ -23,7 +23,7 @@ const errorHeader = "error"
 
 const pauseHeartBeatInterval = 120 * time.Second
 
-type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBatch bool, err error)
+type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error)
 
 type BatchConsumer interface {
 	RunJob()
@@ -37,7 +37,6 @@ type BatchConsumer interface {
 type AbstractBatchConsumer struct {
 	sync.Mutex
 	*AbstractConsumer
-	config          *Config
 	repository      *Repository
 	destinationId   string
 	batchPeriodSec  int
@@ -45,7 +44,6 @@ type AbstractBatchConsumer struct {
 	consumer        atomic.Pointer[kafka.Consumer]
 	producerConfig  kafka.ConfigMap
 	producer        atomic.Pointer[kafka.Producer]
-	topicId         string
 	mode            string
 	tableName       string
 	waitForMessages time.Duration
@@ -66,7 +64,7 @@ type AbstractBatchConsumer struct {
 }
 
 func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer) (*AbstractBatchConsumer, error) {
-	abstract := NewAbstractConsumer(repository, topicId, bulkerProducer)
+	abstract := NewAbstractConsumer(config, repository, topicId, bulkerProducer)
 	var tableName string
 	var err error
 	if destinationId != "" {
@@ -76,18 +74,18 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 			return nil, abstract.NewError("Failed to parse topic: %v", err)
 		}
 	}
+
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
-		"group.id":                 topicId,
-		"auto.offset.reset":        "earliest",
-		"allow.auto.create.topics": false,
-		//"group.instance.id":             config.InstanceId,
+		"group.id":                      topicId,
+		"auto.offset.reset":             "earliest",
+		"allow.auto.create.topics":      false,
+		"group.instance.id":             abstract.GetInstanceId(),
 		"enable.auto.commit":            false,
 		"partition.assignment.strategy": config.KafkaConsumerPartitionsAssigmentStrategy,
 		"isolation.level":               "read_committed",
+		"session.timeout.ms":            config.KafkaSessionTimeoutMs,
+		"max.poll.interval.ms":          config.KafkaMaxPollIntervalMs,
 	}, *kafkaConfig))
-	if config.BatchRunnerWaitForMessagesSec > 30 {
-		_ = consumerConfig.SetKey("session.timeout.ms", config.BatchRunnerWaitForMessagesSec*1000*2)
-	}
 	consumer, err := kafka.NewConsumer(&consumerConfig)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
@@ -99,12 +97,10 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 
 	bc := &AbstractBatchConsumer{
 		AbstractConsumer: abstract,
-		config:           config,
 		repository:       repository,
 		destinationId:    destinationId,
 		tableName:        tableName,
 		batchPeriodSec:   batchPeriodSec,
-		topicId:          topicId,
 		mode:             mode,
 		consumerConfig:   consumerConfig,
 		producerConfig:   producerConfig,
@@ -253,13 +249,17 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 	if retryBatchSize <= 0 {
 		retryBatchSize = int(float64(maxBatchSize) * bc.config.BatchRunnerDefaultRetryBatchFraction)
 	}
-
+	_, highOffset, err := bc.consumer.Load().QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+	if err != nil {
+		bc.errorMetric("query_watermark_failed")
+		return BatchCounters{}, bc.NewError("Failed to query watermark offsets: %v", err)
+	}
 	batchNumber := 1
 	for {
 		if bc.retired.Load() {
 			return
 		}
-		batchStats, nextBatch, err2 := bc.processBatch(destination, batchNumber, maxBatchSize, retryBatchSize)
+		batchStats, nextBatch, err2 := bc.processBatch(destination, batchNumber, maxBatchSize, retryBatchSize, highOffset)
 		if err2 != nil {
 			if nextBatch {
 				bc.Errorf("Batch finished with error: %v stats: %s nextBatch: %t", err2, batchStats, nextBatch)
@@ -283,9 +283,9 @@ func (bc *AbstractBatchConsumer) close() error {
 	return bc.consumer.Load().Close()
 }
 
-func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, retryBatchSize int) (counters BatchCounters, nextBath bool, err error) {
+func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBath bool, err error) {
 	bc.resume()
-	return bc.batchFunc(destination, batchNum, batchSize, retryBatchSize)
+	return bc.batchFunc(destination, batchNum, batchSize, retryBatchSize, highOffset)
 }
 
 // pause consumer.
@@ -304,7 +304,7 @@ func (bc *AbstractBatchConsumer) pause() {
 	safego.RunWithRestart(func() {
 		errorReported := false
 		//this loop keeps heatbeating consumer to prevent it from being kicked out from group
-		pauseTicker := time.NewTicker(pauseHeartBeatInterval)
+		pauseTicker := time.NewTicker(time.Duration(bc.config.KafkaMaxPollIntervalMs) * time.Millisecond / 2)
 		defer pauseTicker.Stop()
 	loop:
 		for {
@@ -447,7 +447,7 @@ func (bc *AbstractBatchConsumer) resume() {
 	select {
 	case bc.resumeChannel <- struct{}{}:
 		err = bc.consumer.Load().Resume(partitions)
-	case <-time.After(pauseHeartBeatInterval * 3):
+	case <-time.After(time.Duration(bc.config.KafkaMaxPollIntervalMs) * time.Millisecond):
 		err = bc.NewError("Resume timeout.")
 		//return bc.consumer.Resume(partitions)
 	}
