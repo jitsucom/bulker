@@ -98,7 +98,7 @@ type Config struct {
 	// MessagesRetryBackoffMaxDelay defines maximum possible retry delay in minutes. Default: 1440 minutes = 24 hours
 	MessagesRetryBackoffMaxDelay float64 `mapstructure:"MESSAGES_RETRY_BACKOFF_MAX_DELAY" default:"1440"`
 
-	// # EVENTS LOGGING
+	// # EVENTS REDIS LOGGING
 
 	EventsLogRedisURL string `mapstructure:"EVENTS_LOG_REDIS_URL"`
 	EventsLogMaxSize  int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
@@ -110,11 +110,15 @@ type Config struct {
 	MetricsRelayPeriodSec   int    `mapstructure:"METRICS_RELAY_PERIOD_SEC" default:"60"`
 
 	// # GRACEFUL SHUTDOWN
+	BackupLogDir         string `mapstructure:"BACKUP_LOG_DIR"`
+	BackupLogTTL         int    `mapstructure:"BACKUP_LOG_TTL_DAYS" default:"7"`
+	BackupLogRotateHours int    `mapstructure:"BACKUP_LOG_ROTATE_HOURS" default:"24"`
+	BackupLogMaxSizeMb   int    `mapstructure:"BACKUP_LOG_MAX_SIZE_MB" default:"100"`
 
 	//Timeout that give running batch tasks time to finish during shutdown.
 	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`
 	//Extra delay may be needed. E.g. for metric scrapper to scrape final metrics. So http server will stay active for an extra period.
-	ShutdownExtraDelay int `mapstructure:"SHUTDOWN_EXTRA_DELAY_SEC"`
+	ShutdownExtraDelay int `mapstructure:"SHUTDOWN_EXTRA_DELAY_SEC" default:"5"`
 }
 
 func init() {

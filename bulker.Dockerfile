@@ -7,6 +7,11 @@ ENV TZ=UTC
 
 FROM golang:1.21.3-bullseye as build
 
+ARG VERSION
+ENV VERSION $VERSION
+ARG BUILD_TIMESTAMP
+ENV BUILD_TIMESTAMP $BUILD_TIMESTAMP
+
 RUN apt-get install gcc libc6-dev
 
 #RUN wget -qO - https://packages.confluent.io/deb/7.2/archive.key | apt-key add -
@@ -35,7 +40,7 @@ WORKDIR /app
 COPY . .
 
 # Build bulker
-RUN go build -o bulker ./bulkerapp
+RUN go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o bulker ./bulkerapp
 
 #######################################
 # FINAL STAGE

@@ -18,7 +18,8 @@ import (
 
 type Context[C any] interface {
 	InitContext(settings *AppSettings) error
-	Shutdown() error
+	ShutdownSignal() error
+	Cleanup() error
 	Config() *C
 	Server() *http.Server
 }
@@ -60,8 +61,7 @@ func (c *Config) PostInit(settings *AppSettings) error {
 		if c.InstanceId != "" {
 			logging.Infof("Loaded instance id from env %s: %s", env, c.InstanceId)
 		}
-	}
-	if c.InstanceId == "" {
+	} else if c.InstanceId == "" {
 		instanceIdFilePath := fmt.Sprintf("~/.%s/instance_id", settings.ConfigName)
 		instId, _ := os.ReadFile(instanceIdFilePath)
 		if len(instId) > 0 {
@@ -76,6 +76,8 @@ func (c *Config) PostInit(settings *AppSettings) error {
 				logging.Errorf("error persisting instance id file: %s", err)
 			}
 		}
+	} else {
+		logging.Infof("Instance id from env: %s", c.InstanceId)
 	}
 
 	return nil
@@ -168,27 +170,29 @@ func NewApp[C any](appContext Context[C], appSettings *AppSettings) *App[C] {
 }
 
 func (a *App[C]) Run() {
-
 	signal.Notify(a.exitChannel, os.Interrupt, os.Kill, syscall.SIGTERM)
 
 	go func() {
 		sig := <-a.exitChannel
 		logging.Infof("Received signal: %s. Shutting down...", sig)
-		err := a.appContext.Shutdown()
+		err := a.appContext.ShutdownSignal()
 		if err != nil {
 			logging.Errorf("error during shutdown: %s", err)
 		}
-		if sig != SIG_SHUTDOWN_FOR_TESTS {
-			// we don't want to exit when running tests
-			os.Exit(0)
-		}
+		//if sig != SIG_SHUTDOWN_FOR_TESTS {
+		//	// we don't want to exit when running tests
+		//	os.Exit(0)
+		//}
 	}()
 	server := a.appContext.Server()
 	if server != nil {
 		logging.Infof("Starting http server on %s", server.Addr)
 		logging.Info(server.ListenAndServe())
 	}
-
+	err := a.appContext.Cleanup()
+	if err != nil {
+		logging.Errorf("error during cleanup: %s", err)
+	}
 }
 
 func (a *App[C]) Exit(signal os.Signal) {

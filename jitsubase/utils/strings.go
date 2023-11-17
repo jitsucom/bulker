@@ -20,6 +20,13 @@ func NvlString(args ...string) string {
 	return ""
 }
 
+func DefaultString(str, defaultValue string) string {
+	if str == "" {
+		return defaultValue
+	}
+	return str
+}
+
 // ShortenString returns the first N slice of a string.
 func ShortenString(str string, n int) string {
 	if len([]rune(str)) <= n {

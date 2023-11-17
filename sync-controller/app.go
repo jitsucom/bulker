@@ -49,10 +49,14 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	return nil
 }
 
-func (a *Context) Shutdown() error {
+func (a *Context) Cleanup() error {
 	a.taskManager.Close()
 	a.jobRunner.Close()
 	a.dbpool.Close()
+	return nil
+}
+
+func (a *Context) ShutdownSignal() error {
 	_ = a.server.Shutdown(context.Background())
 	return nil
 }

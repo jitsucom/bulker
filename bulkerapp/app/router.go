@@ -39,6 +39,7 @@ type Router struct {
 	producer         *Producer
 	eventsLogService EventsLogService
 	fastStore        *FastStore
+	backupsLogger    *BackupLogger
 }
 
 func NewRouter(appContext *Context) *Router {
@@ -55,6 +56,7 @@ func NewRouter(appContext *Context) *Router {
 		producer:         appContext.batchProducer,
 		eventsLogService: appContext.eventsLogService,
 		fastStore:        appContext.fastStore,
+		backupsLogger:    appContext.backupsLogger,
 	}
 	engine := router.Engine()
 	fast := engine.Group("")
@@ -257,11 +259,14 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		bodyJsonObj := map[string]any{}
 		err := json.Unmarshal(body, &bodyJsonObj)
 		if err == nil {
+			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), bodyJsonObj)
 			wk, ok := bodyJsonObj["writeKey"]
 			if ok {
 				bodyJsonObj["writeKey"] = maskWriteKey(fmt.Sprint(wk))
 			}
 			body, _ = json.Marshal(bodyJsonObj)
+		} else if len(body) > 0 {
+			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), body)
 		}
 		if rError != nil {
 			obj := map[string]any{"body": string(body), "error": rError.PublicError.Error(), "status": "FAILED"}
@@ -293,13 +298,13 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	messageId := ingestMessage.MessageId
-	domain = utils.NvlString(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain)
+	domain = utils.DefaultString(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain)
 	r.Debugf("[ingest] Message ID: %s Domain: %s", messageId, domain)
 	logFormat := "[ingest] Message ID: %s Domain: %s"
 
 	stream := r.getStream(ingestMessage)
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusNotFound, "stream not found", false, nil, logFormat, messageId, domain)
+		rError = r.ResponseError(c, http.StatusBadRequest, "stream not found", false, nil, logFormat, messageId, domain)
 		return
 	}
 	eventsLogId = stream.Stream.Id
@@ -327,7 +332,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		r.Debugf("[ingest] Message ID: %s Producing for: %s topic: %s key: %s", messageId, destination.ConnectionId, topic, messageKey)
 		if err != nil {
 			metrics.IngestedMessages(destination.ConnectionId, "error", "message marshal error").Inc()
-			rError = r.ResponseError(c, http.StatusInternalServerError, "message marshal error", false, err, logFormat, messageId, domain)
+			rError = r.ResponseError(c, http.StatusBadRequest, "message marshal error", false, err, logFormat, messageId, domain)
 			continue
 		}
 		err = r.producer.ProduceAsync(topic, messageKey, payload, nil)
@@ -353,7 +358,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 
 func (r *Router) FailedHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
-	status := utils.NvlString(c.Query("status"), "dead")
+	status := utils.DefaultString(c.Query("status"), "dead")
 	if status != retryTopicMode && status != deadTopicMode {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown status: " + status + " (should be '" + retryTopicMode + "' or '" + deadTopicMode + "')"})
 		return
