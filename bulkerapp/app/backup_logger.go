@@ -98,6 +98,7 @@ func NewRollingWriter(config *Config, filename string) io.WriteCloser {
 			for {
 				select {
 				case <-rwp.closed:
+					ticker.Stop()
 					return
 				case <-ticker.C:
 					rwp.rotate()
@@ -117,7 +118,7 @@ func (rwp *RollingWriterProxy) rotate() {
 }
 
 func (rwp *RollingWriterProxy) Write(p []byte) (int, error) {
-	rwp.wasWritten.Store(false)
+	rwp.wasWritten.Store(true)
 	return rwp.lWriter.Write(p)
 }
 

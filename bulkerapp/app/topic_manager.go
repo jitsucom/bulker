@@ -91,7 +91,7 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 			retryTopicMode: {
 				"cleanup.policy": "delete,compact",
 				"segment.bytes":  fmt.Sprint(appContext.config.KafkaRetryTopicSegmentBytes),
-				"retention.ms":   fmt.Sprint(appContext.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
+				"retention.ms":   fmt.Sprint(appContext.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
 				"segment.ms":     fmt.Sprint(appContext.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 			},
 			deadTopicMode: {
@@ -207,7 +207,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 					tm.Errorf("Failed to schedule consumer for destination topic: %s: %v", topic, err)
 					continue
 				} else {
-					tm.Infof("Consumer for destination topic %s was scheduled with batch period %ds.", topic, batchPeriodSec)
+					tm.Infof("Consumer for destination topic %s was scheduled with batch period %ds.", topic, batchConsumer.BatchPeriodSec())
 				}
 			case retryTopicMode:
 				retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(destination.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)
@@ -233,7 +233,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 					tm.Errorf("Failed to schedule retry consumer for destination topic: %s: %v", topic, err)
 					continue
 				} else {
-					tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %ds", topic, retryPeriodSec)
+					tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %ds", topic, retryConsumer.BatchPeriodSec())
 				}
 			case deadTopicMode:
 				tm.Infof("Found topic %s for 'dead' events", topic)
@@ -261,25 +261,20 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 	tm.allTopics = allTopics
 	err := tm.ensureTopic(tm.config.KafkaDestinationsTopicName, tm.config.KafkaDestinationsTopicPartitions,
 		map[string]string{
-			"retention.ms": fmt.Sprint(tm.config.KafkaDestinationsTopicRetentionHours * 60 * 60 * 1000),
+			"retention.ms": fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
 			"segment.ms":   fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 		})
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
 		tm.SystemErrorf("Failed to create destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
 	}
-	err = tm.ensureTopic(tm.config.KafkaDestinationsTopicMultiThreadedName, tm.config.KafkaDestinationsTopicMultiThreadedPartitions,
-		map[string]string{
-			"retention.ms": fmt.Sprint(tm.config.KafkaDestinationsTopicRetentionHours * 60 * 60 * 1000),
-			"segment.ms":   fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
-		})
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
 		tm.SystemErrorf("Failed to create multi-threaded destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
 	}
 	err = tm.ensureTopic(tm.config.KafkaDestinationsDeadLetterTopicName, 1, map[string]string{
 		"cleanup.policy": "delete,compact",
-		"retention.ms":   fmt.Sprint(tm.config.KafkaDestinationsDeadLetterRetentionHours * 60 * 60 * 1000),
+		"retention.ms":   fmt.Sprint(tm.config.KafkaDeadTopicRetentionHours * 60 * 60 * 1000),
 		"segment.ms":     fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 	})
 	if err != nil {
@@ -290,7 +285,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 	err = tm.ensureTopic(destinationsRetryTopicName, 1, map[string]string{
 		"cleanup.policy": "delete,compact",
 		"segment.bytes":  fmt.Sprint(tm.config.KafkaRetryTopicSegmentBytes),
-		"retention.ms":   fmt.Sprint(tm.config.KafkaDestinationsRetryRetentionHours * 60 * 60 * 1000),
+		"retention.ms":   fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
 		"segment.ms":     fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 	})
 	if err != nil {
@@ -309,7 +304,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 				retryConsumer.Retire()
 				tm.SystemErrorf("Failed to schedule retry consumer for destination topic: %s: %v", destinationsRetryTopicName, err)
 			} else {
-				tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %ds", destinationsRetryTopicName, tm.config.BatchRunnerRetryPeriodSec)
+				tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %ds", destinationsRetryTopicName, retryConsumer.BatchPeriodSec())
 			}
 		}
 	}
@@ -344,7 +339,7 @@ func (tm *TopicManager) changeListener(changes RepositoryChange) {
 			}
 		}
 		for _, consumer := range tm.retryConsumers[changedDst.Id()] {
-			retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(changedDst.streamOptions)*60), int(bulker.BatchFrequencyOption.Get(changedDst.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)
+			retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(changedDst.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)
 			if consumer.BatchPeriodSec() != retryPeriodSec {
 				consumer.UpdateBatchPeriod(retryPeriodSec)
 				_, err := tm.cron.ReplaceBatchConsumer(consumer)

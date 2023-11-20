@@ -48,10 +48,9 @@ type Config struct {
 	KafkaSessionTimeoutMs    int    `mapstructure:"KAFKA_SESSION_TIMEOUT_MS" default:"45000"`
 	KafkaMaxPollIntervalMs   int    `mapstructure:"KAFKA_MAX_POLL_INTERVAL_MS" default:"300000"`
 	KafkaTopicCompression    string `mapstructure:"KAFKA_TOPIC_COMPRESSION" default:"snappy"`
-	KafkaTopicRetentionHours int    `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"168"`
+	KafkaTopicRetentionHours int    `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"48"`
 	KafkaTopicSegmentHours   int    `mapstructure:"KAFKA_TOPIC_SEGMENT_HOURS" default:"24"`
 
-	KafkaRetryTopicRetentionHours            int    `mapstructure:"KAFKA_RETRY_TOPIC_RETENTION_HOURS" default:"48"`
 	KafkaRetryTopicSegmentBytes              int    `mapstructure:"KAFKA_RETRY_TOPIC_SEGMENT_BYTES" default:"104857600"`
 	KafkaDeadTopicRetentionHours             int    `mapstructure:"KAFKA_DEAD_TOPIC_RETENTION_HOURS" default:"168"`
 	KafkaTopicReplicationFactor              int    `mapstructure:"KAFKA_TOPIC_REPLICATION_FACTOR"`
@@ -59,17 +58,11 @@ type Config struct {
 	KafkaConsumerPartitionsAssigmentStrategy string `mapstructure:"KAFKA_CONSUMER_PARTITIONS_ASSIGMENT_STRATEGY" default:"roundrobin"`
 
 	// KafkaDestinationsTopicName destination topic for /ingest endpoint
-	KafkaDestinationsTopicName              string `mapstructure:"KAFKA_DESTINATIONS_TOPIC_NAME" default:"destination-messages"`
-	KafkaDestinationsTopicMultiThreadedName string `mapstructure:"KAFKA_DESTINATIONS_MT_TOPIC_NAME" default:"destination-messages-mt"`
-	KafkaDestinationsTopicRetentionHours    int    `mapstructure:"KAFKA_DESTINATIONS_TOPIC_RETENTION_HOURS" default:"48"`
+	KafkaDestinationsTopicName       string `mapstructure:"KAFKA_DESTINATIONS_TOPIC_NAME" default:"destination-messages"`
+	KafkaDestinationsTopicPartitions int    `mapstructure:"KAFKA_DESTINATIONS_TOPIC_PARTITIONS" default:"16"`
 
-	KafkaDestinationsTopicPartitions              int `mapstructure:"KAFKA_DESTINATIONS_TOPIC_PARTITIONS" default:"4"`
-	KafkaDestinationsTopicMultiThreadedPartitions int `mapstructure:"KAFKA_DESTINATIONS_MT_TOPIC_PARTITIONS" default:"64"`
-
-	KafkaDestinationsRetryTopicName           string `mapstructure:"KAFKA_DESTINATIONS_RETRY_TOPIC_NAME" default:"destination-messages-retry"`
-	KafkaDestinationsRetryRetentionHours      int    `mapstructure:"KAFKA_DESTINATIONS_RETRY_RETENTION_HOURS" default:"24"`
-	KafkaDestinationsDeadLetterTopicName      string `mapstructure:"KAFKA_DESTINATIONS_DEAD_LETTER_TOPIC_NAME" default:"destination-messages-dead-letter"`
-	KafkaDestinationsDeadLetterRetentionHours int    `mapstructure:"KAFKA_DESTINATIONS_DEAD_LETTER_RETENTION_HOURS" default:"168"`
+	KafkaDestinationsRetryTopicName      string `mapstructure:"KAFKA_DESTINATIONS_RETRY_TOPIC_NAME" default:"destination-messages-retry"`
+	KafkaDestinationsDeadLetterTopicName string `mapstructure:"KAFKA_DESTINATIONS_DEAD_LETTER_TOPIC_NAME" default:"destination-messages-dead-letter"`
 
 	// TopicManagerRefreshPeriodSec how often topic manager will check for new topics
 	TopicManagerRefreshPeriodSec int `mapstructure:"TOPIC_MANAGER_REFRESH_PERIOD_SEC" default:"5"`
