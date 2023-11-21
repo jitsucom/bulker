@@ -98,7 +98,7 @@ func NewRouter(appContext *Context) *Router {
 func (r *Router) EventsHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
-	metricsMeta := c.Query("metricsMeta")
+	metricsMeta := utils.NvlString(c.GetHeader("metricsMeta"), c.Query("metricsMeta"))
 	mode := ""
 	bytesRead := 0
 	var rError *appbase.RouterError
