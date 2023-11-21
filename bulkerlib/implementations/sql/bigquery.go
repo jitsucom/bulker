@@ -587,7 +587,15 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 		return err
 	}
 	if err := status.Err(); err != nil {
-		return err
+		builder := strings.Builder{}
+		builder.WriteString(fmt.Sprintf("Failed to load table %s. Job ID: %s Completed with error: %s", tableName, job.ID(), err.Error()))
+		if len(status.Errors) > 0 {
+			builder.WriteString("\nDetailed errors:")
+			for _, statusError := range status.Errors {
+				builder.WriteString(fmt.Sprintf("\n%s", statusError.Error()))
+			}
+		}
+		return errors.New(builder.String())
 	}
 	return nil
 }
