@@ -462,8 +462,17 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 	end := c.Query("end")
 	limit := c.Query("limit")
 	ndjson := c.Query("ndjson")
-
+	maxBytesStr := c.Query("maxBytes")
+	maxBytes := 0
 	var err error
+	if maxBytesStr != "" {
+		maxBytes, err = strconv.Atoi(maxBytesStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "'maxBytes' parameter must be an integer number"})
+			return
+		}
+	}
+
 	eventsLogFilter := &EventsLogFilter{}
 	eventsLogFilter.Start, err = parseDateQueryParam(start)
 	if err != nil {
@@ -492,6 +501,7 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get events log: " + err.Error()})
 		return
 	}
+	written := 0
 	if ok, _ := strconv.ParseBool(ndjson); ok {
 		c.Header("Content-Type", "application/x-ndjson")
 		for _, record := range records {
@@ -499,11 +509,31 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 			if err != nil {
 				bytes = []byte(fmt.Sprintf(`{"EVENTS_LOG_ERROR": "Failed to marshal event log record: %s", "OBJECT": "%+v"}`, err.Error(), record))
 			}
+			if maxBytes > 0 && written+len(bytes) > maxBytes {
+				break
+			}
 			_, _ = c.Writer.Write(bytes)
 			_, _ = c.Writer.Write([]byte("\n"))
+			written += len(bytes) + 1
 		}
 	} else {
-		c.JSON(http.StatusOK, records)
+		c.Header("Content-Type", "application/json")
+		_, _ = c.Writer.Write([]byte("["))
+		for _, record := range records {
+			bytes, err := jsoniter.Marshal(record)
+			if err != nil {
+				bytes = []byte(fmt.Sprintf(`{"EVENTS_LOG_ERROR": "Failed to marshal event log record: %s", "OBJECT": "%+v"}`, err.Error(), record))
+			}
+			if maxBytes > 0 && written+len(bytes) > maxBytes {
+				break
+			}
+			if written > 0 {
+				_, _ = c.Writer.Write([]byte(","))
+			}
+			_, _ = c.Writer.Write(bytes)
+			written += len(bytes) + 1
+		}
+		_, _ = c.Writer.Write([]byte("]"))
 	}
 }
 

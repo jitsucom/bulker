@@ -513,6 +513,9 @@ func (bs *BatchCounters) accumulate(batchStats BatchCounters) {
 	bs.retryScheduled += batchStats.retryScheduled
 	bs.deadLettered += batchStats.deadLettered
 	bs.retried += batchStats.retried
+	if batchStats.firstOffset > 0 {
+		bs.firstOffset = utils.MinInt64(batchStats.firstOffset, bs.firstOffset)
+	}
 }
 
 // to string
