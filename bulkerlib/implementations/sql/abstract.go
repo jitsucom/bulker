@@ -188,7 +188,7 @@ func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 		len(ps.state.Representation.(RepresentationTable).Schema) != len(table.Columns) {
 		ps.state.Representation = RepresentationTable{
 			Name:             table.Name,
-			Schema:           table.Columns,
+			Schema:           table.Columns.ToSimpleMap(),
 			PrimaryKeyFields: table.GetPKFields(),
 			PrimaryKeyName:   table.PrimaryKeyName,
 			Temporary:        table.Temporary,
@@ -197,9 +197,9 @@ func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 }
 
 type RepresentationTable struct {
-	Name             string   `json:"name"`
-	Schema           Columns  `json:"schema"`
-	PrimaryKeyFields []string `json:"primaryKeyFields,omitempty"`
-	PrimaryKeyName   string   `json:"primaryKeyName,omitempty"`
-	Temporary        bool     `json:"temporary,omitempty"`
+	Name             string            `json:"name"`
+	Schema           map[string]string `json:"schema"`
+	PrimaryKeyFields []string          `json:"primaryKeyFields,omitempty"`
+	PrimaryKeyName   string            `json:"primaryKeyName,omitempty"`
+	Temporary        bool              `json:"temporary,omitempty"`
 }

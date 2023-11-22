@@ -955,8 +955,10 @@ type JobRunner interface {
 
 func RunJob(ctx context.Context, runner JobRunner, jobDescription string) (job *bigquery.Job, err error) {
 	var status *bigquery.JobStatus
+	var jobID string
 	job, err = runner.Run(ctx)
 	if err == nil {
+		jobID = " Job ID: " + job.ID()
 		status, err = job.Wait(ctx)
 		if err == nil {
 			err = status.Err()
@@ -967,15 +969,14 @@ func RunJob(ctx context.Context, runner JobRunner, jobDescription string) (job *
 	}
 
 	if err != nil {
-		builder := strings.Builder{}
-		builder.WriteString(fmt.Sprintf("Failed to %s. Job ID: %s Completed with error: %s", jobDescription, job.ID(), err.Error()))
 		if status != nil && len(status.Errors) > 0 {
-			builder.WriteString("\nDetailed errors:")
+			builder := strings.Builder{}
 			for _, statusError := range status.Errors {
-				builder.WriteString(fmt.Sprintf("\n%s", statusError.Error()))
+				builder.WriteString(fmt.Sprintf("%s\n", statusError.Error()))
 			}
+			err = errors.New(builder.String())
 		}
-		return job, errors.New(builder.String())
+		return job, fmt.Errorf("Failed to %s.%s Completed with error: %v", jobDescription, jobID, err)
 	} else {
 		return job, nil
 	}

@@ -37,16 +37,16 @@ type BatchConsumer interface {
 type AbstractBatchConsumer struct {
 	sync.Mutex
 	*AbstractConsumer
-	repository      *Repository
-	destinationId   string
-	batchPeriodSec  int
-	consumerConfig  kafka.ConfigMap
-	consumer        atomic.Pointer[kafka.Consumer]
-	producerConfig  kafka.ConfigMap
-	producer        atomic.Pointer[kafka.Producer]
-	mode            string
-	tableName       string
-	waitForMessages time.Duration
+	repository            *Repository
+	destinationId         string
+	batchPeriodSec        int
+	consumerConfig        kafka.ConfigMap
+	consumer              atomic.Pointer[kafka.Consumer]
+	producerConfig        kafka.ConfigMap
+	transactionalProducer atomic.Pointer[kafka.Producer]
+	mode                  string
+	tableName             string
+	waitForMessages       time.Duration
 
 	closed chan struct{}
 
@@ -124,7 +124,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	// Delivery reports channel for 'failed' producer messages
 	safego.RunWithRestart(func() {
 		for {
-			producer := bc.producer.Load()
+			producer := bc.transactionalProducer.Load()
 			if producer == nil {
 				time.Sleep(time.Second * 10)
 				continue
@@ -154,8 +154,8 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	return bc, nil
 }
 
-func (bc *AbstractBatchConsumer) initProducer() *kafka.Producer {
-	producer := bc.producer.Load()
+func (bc *AbstractBatchConsumer) initTransactionalProducer() *kafka.Producer {
+	producer := bc.transactionalProducer.Load()
 	if producer != nil {
 		return producer
 	}
@@ -173,8 +173,13 @@ func (bc *AbstractBatchConsumer) initProducer() *kafka.Producer {
 		metrics.ConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, metrics.KafkaErrorCode(err)).Inc()
 		panic(bc.NewError("error initializing kafka producer transactions for 'failed' producer: %v", err))
 	}
-	bc.producer.Store(producer)
+	bc.transactionalProducer.Store(producer)
 	return producer
+}
+
+func (bc *AbstractBatchConsumer) closeTransactionalProducer() {
+	producer := bc.transactionalProducer.Swap(nil)
+	producer.Close()
 }
 
 func (bc *AbstractBatchConsumer) BatchPeriodSec() int {
@@ -496,6 +501,7 @@ type BatchCounters struct {
 	retried         int
 	deadLettered    int
 	failed          int
+	firstOffset     int64
 }
 
 // accumulate stats from batch

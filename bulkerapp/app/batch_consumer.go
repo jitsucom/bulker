@@ -9,6 +9,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
 	"strconv"
 	"time"
@@ -106,6 +107,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		latestMessage = message
 		if firstPosition == nil {
 			firstPosition = &message.TopicPartition
+			counters.firstOffset = int64(message.TopicPartition.Offset)
 		}
 		obj := types.Object{}
 		dec := jsoniter.NewDecoder(bytes.NewReader(message.Value))
@@ -183,9 +185,10 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		}
 		if err != nil {
 			err = bc.NewError("Failed to put unsuccessful batch to 'failed' producer: %v", err)
+			bc.closeTransactionalProducer()
 		}
 	}()
-	producer := bc.initProducer()
+	producer := bc.initTransactionalProducer()
 
 	bc.resume()
 
@@ -241,7 +244,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, false)
 		}
 		headers := message.Headers
-		PutKafkaHeader(&headers, errorHeader, originalErr.Error())
+		PutKafkaHeader(&headers, errorHeader, utils.ShortenStringWithEllipsis(originalErr.Error(), 256))
 		PutKafkaHeader(&headers, originalTopicHeader, bc.topicId)
 		PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
 		PutKafkaHeader(&headers, retryTimeHeader, timestamp.ToISOFormat(RetryBackOffTime(bc.config, retries+1).UTC()))

@@ -52,6 +52,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			if txOpened {
 				_ = producer.AbortTransaction(context.Background())
 			}
+			rc.closeTransactionalProducer()
 			nextBatch = false
 		}
 	}()
@@ -80,8 +81,9 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 		counters.consumed++
 		lastPosition = &message.TopicPartition
 		if counters.consumed == 1 {
+			counters.firstOffset = int64(message.TopicPartition.Offset)
 			firstPosition = &message.TopicPartition
-			producer = rc.initProducer()
+			producer = rc.initTransactionalProducer()
 			err = producer.BeginTransaction()
 			if err != nil {
 				return counters, false, fmt.Errorf("failed to begin kafka transaction: %v", err)

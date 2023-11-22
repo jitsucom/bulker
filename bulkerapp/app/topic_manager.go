@@ -166,7 +166,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 			tm.consumedTopics[destinationId] = dstTopics
 		}
 		if !dstTopics.Contains(topic) {
-			tm.Infof("Found topic %s for destination %s and table %s", topic, destinationId, tableName)
+			tm.Debugf("Found topic %s for destination %s and table %s", topic, destinationId, tableName)
 			destination := tm.repository.GetDestination(destinationId)
 			if destination == nil {
 				tm.Warnf("No destination found for topic: %s", topic)
@@ -180,6 +180,8 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 					topicsErrorsByMode[mode]++
 					tm.SystemErrorf("Failed to create consumer for destination topic: %s: %v", topic, err)
 					continue
+				} else {
+					tm.Infof("Stream consumer for destination topic %s was started.", topic)
 				}
 				tm.streamConsumers[destinationId] = append(tm.streamConsumers[destinationId], streamConsumer)
 			case "batch":
@@ -236,7 +238,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 					tm.Infof("Retry consumer for destination topic %s was scheduled with batch period %ds", topic, retryConsumer.BatchPeriodSec())
 				}
 			case deadTopicMode:
-				tm.Infof("Found topic %s for 'dead' events", topic)
+				tm.Debugf("Found topic %s for 'dead' events", topic)
 			default:
 				topicsErrorsByMode[mode]++
 				tm.Errorf("Unknown stream mode: %s for topic: %s", mode, topic)
@@ -317,7 +319,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 	}
 	metrics.TopicManagerAbandonedTopics.Set(abandonedTopicsCount)
 	metrics.TopicManagerOtherTopics.Set(otherTopicsCount)
-	tm.Infof("[topic-manager] Refreshed metadata in %v", time.Since(start))
+	tm.Debugf("[topic-manager] Refreshed metadata in %v", time.Since(start))
 	tm.ready = true
 }
 
