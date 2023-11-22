@@ -317,7 +317,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 	}
 	metrics.TopicManagerAbandonedTopics.Set(abandonedTopicsCount)
 	metrics.TopicManagerOtherTopics.Set(otherTopicsCount)
-	tm.Debugf("[topic-manager] Refreshed metadata in %v", time.Since(start))
+	tm.Infof("[topic-manager] Refreshed metadata in %v", time.Since(start))
 	tm.ready = true
 }
 

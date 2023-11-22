@@ -28,22 +28,26 @@ func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodS
 func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error) {
 	var firstPosition *kafka.TopicPartition
 	var lastPosition *kafka.TopicPartition
+
+	txOpened := false
+	var producer *kafka.Producer
+
 	defer func() {
 		//recover
 		if r := recover(); r != nil {
 			err = rc.NewError("Recovered from panic: %v", r)
 			rc.SystemErrorf("Recovered from panic: %v", r)
 		}
-	}()
-
-	txOpened := false
-	var producer *kafka.Producer
-
-	defer func() {
 		if err != nil {
+			counters.notReadyReadded = 0
+			counters.retryScheduled = 0
 			//cleanup
 			if firstPosition != nil {
-				_, _ = rc.consumer.Load().SeekPartitions([]kafka.TopicPartition{*firstPosition})
+				_, err2 := rc.consumer.Load().SeekPartitions([]kafka.TopicPartition{*firstPosition})
+				if err2 != nil {
+					rc.SystemErrorf("Failed to seek to first position: %v", err2)
+					//rc.restartConsumer()
+				}
 			}
 			if txOpened {
 				_ = producer.AbortTransaction(context.Background())
@@ -71,7 +75,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 				// waitForMessages period is over. it's ok. considering batch as full
 				break
 			}
-			return BatchCounters{}, false, rc.NewError("Failed to consume event from topic. Retryable: %t: %v", kafkaErr.IsRetriable(), kafkaErr)
+			return counters, false, rc.NewError("Failed to consume event from topic. Retryable: %t: %v", kafkaErr.IsRetriable(), kafkaErr)
 		}
 		counters.consumed++
 		lastPosition = &message.TopicPartition
@@ -80,7 +84,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			producer = rc.initProducer()
 			err = producer.BeginTransaction()
 			if err != nil {
-				return BatchCounters{}, false, fmt.Errorf("failed to begin kafka transaction: %v", err)
+				return counters, false, fmt.Errorf("failed to begin kafka transaction: %v", err)
 			}
 			txOpened = true
 		}
@@ -126,18 +130,18 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 	}
 	groupMetadata, err := rc.consumer.Load().GetConsumerGroupMetadata()
 	if err != nil {
-		return BatchCounters{}, false, fmt.Errorf("failed to get consumer group metadata: %v", err)
+		return counters, false, fmt.Errorf("failed to get consumer group metadata: %v", err)
 	}
 	offset := *lastPosition
 	offset.Offset++
 	//set consumer offset to the next message after failure. that happens atomically with whole producer transaction
 	err = producer.SendOffsetsToTransaction(context.Background(), []kafka.TopicPartition{offset}, groupMetadata)
 	if err != nil {
-		return BatchCounters{}, false, fmt.Errorf("failed to send consumer offset to producer transaction: %v", err)
+		return counters, false, fmt.Errorf("failed to send consumer offset to producer transaction: %v", err)
 	}
 	err = producer.CommitTransaction(context.Background())
 	if err != nil {
-		return BatchCounters{}, false, fmt.Errorf("failed to commit kafka transaction for producer: %v", err)
+		return counters, false, fmt.Errorf("failed to commit kafka transaction for producer: %v", err)
 	}
 	return
 }

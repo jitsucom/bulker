@@ -93,6 +93,9 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 	}
 	producerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"transactional.id": fmt.Sprintf("%s_failed_%s", topicId, config.InstanceId),
+		"batch.size":       config.ProducerBatchSize,
+		"linger.ms":        config.ProducerLingerMs,
+		"compression.type": config.KafkaTopicCompression,
 	}, *kafkaConfig))
 
 	bc := &AbstractBatchConsumer{
@@ -206,24 +209,28 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 	}
 	bc.Debugf("Starting consuming messages from topic")
 	bc.idle.Store(false)
+	var lowOffset, highOffset int64
 	defer func() {
 		bc.idle.Store(true)
 		bc.pause()
 		bc.countersMetric(counters)
 		if err != nil {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "fail").Inc()
-			bc.Errorf("Consume finished with error: %v stats: %s", err, counters.String())
+			bc.Errorf("Consume finished with error: %v stats: %s offsets: %d-%d", err, counters.String(), lowOffset, highOffset)
 		} else {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "success").Inc()
 			if counters.processed > 0 {
-				bc.Infof("Successfully %s", counters.String())
+				bc.Infof("Successfully %s offsets: %d-%d", counters.String(), lowOffset, highOffset)
 			} else {
 				countersString := counters.String()
 				if countersString != "" {
-					countersString = ": " + countersString
-					bc.Infof("No messages were processed%s", countersString)
+					if bc.mode == "retry" {
+						bc.Infof("Retry consumer finished: %s offsets: %d-%d", countersString, lowOffset, highOffset)
+					} else {
+						bc.Infof("No messages were processed: %s offsets: %d-%d", countersString, lowOffset, highOffset)
+					}
 				} else {
-					bc.Debugf("No messages were processed")
+					bc.Debugf("No messages were processed. offsets: %d-%d", lowOffset, highOffset)
 				}
 			}
 		}
@@ -251,7 +258,11 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 	if retryBatchSize <= 0 {
 		retryBatchSize = int(float64(maxBatchSize) * bc.config.BatchRunnerDefaultRetryBatchFraction)
 	}
-	_, highOffset, err := bc.consumer.Load().QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+	_, highOffset, err = bc.consumer.Load().QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+	offsets, _ := bc.consumer.Load().Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: 0}}, 1000)
+	if len(offsets) > 0 {
+		lowOffset = int64(offsets[0].Offset)
+	}
 	if err != nil {
 		bc.errorMetric("query_watermark_failed")
 		return BatchCounters{}, bc.NewError("Failed to query watermark offsets: %v", err)

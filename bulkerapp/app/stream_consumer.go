@@ -27,7 +27,6 @@ type StreamConsumer struct {
 	consumerConfig kafka.ConfigMap
 	consumer       *kafka.Consumer
 
-	bulkerProducer   *Producer
 	eventsLogService EventsLogService
 
 	tableName string
@@ -79,7 +78,6 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 		tableName:        tableName,
 		consumerConfig:   consumerConfig,
 		consumer:         consumer,
-		bulkerProducer:   bulkerProducer,
 		eventsLogService: eventsLogService,
 		closed:           make(chan struct{}),
 	}

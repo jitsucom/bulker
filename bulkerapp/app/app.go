@@ -78,6 +78,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 			"queue.buffering.max.messages": a.config.ProducerQueueSize,
 			"batch.size":                   a.config.ProducerBatchSize,
 			"linger.ms":                    a.config.ProducerLingerMs,
+			"compression.type":             a.config.KafkaTopicCompression,
 		}, *a.kafkaConfig))
 		a.batchProducer, err = NewProducer(a.config, &batchProducerConfig, true)
 		if err != nil {
@@ -85,7 +86,10 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		}
 		a.batchProducer.Start()
 
-		a.streamProducer, err = NewProducer(a.config, a.kafkaConfig, false)
+		streamProducerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
+			"compression.type": a.config.KafkaTopicCompression,
+		}, *a.kafkaConfig))
+		a.streamProducer, err = NewProducer(a.config, &streamProducerConfig, false)
 		if err != nil {
 			return err
 		}
