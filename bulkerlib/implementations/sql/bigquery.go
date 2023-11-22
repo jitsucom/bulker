@@ -176,19 +176,8 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 		copier.WriteDisposition = bigquery.WriteAppend
 		copier.CreateDisposition = bigquery.CreateIfNeeded
 		bq.logQuery(fmt.Sprintf("Copy tables values to table %s from: %s ", targetTable.Name, sourceTable.Name), nil, err)
-		job, err := copier.Run(ctx)
-		if err != nil {
-			return err
-		}
-		jobStatus, err := job.Wait(ctx)
-		if err != nil {
-			return err
-		}
-		if jobStatus.Err() != nil {
-			return jobStatus.Err()
-		}
-
-		return nil
+		_, err = RunJob(ctx, copier, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
+		return err
 	} else {
 		defer func() {
 			if err != nil {
@@ -220,16 +209,8 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 			strings.Join(joinConditions, " AND "), strings.Join(updateSet, ", "), columnsString, columnsString)
 
 		query := bq.client.Query(insertFromSelectStatement)
-		job, err := query.Run(ctx)
-		bq.logQuery(insertFromSelectStatement, nil, err)
-		if err != nil {
-			return err
-		}
-		status, err := job.Wait(ctx)
-		if err != nil {
-			return err
-		}
-		return status.Err()
+		_, err = RunJob(ctx, query, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
+		return err
 	}
 }
 
@@ -578,26 +559,8 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	loader := bq.client.Dataset(bq.config.Dataset).Table(tableName).LoaderFrom(source)
 	loader.CreateDisposition = bigquery.CreateIfNeeded
 	loader.WriteDisposition = bigquery.WriteAppend
-	job, err := loader.Run(ctx)
-	if err != nil {
-		return err
-	}
-	status, err := job.Wait(ctx)
-	if err != nil {
-		return err
-	}
-	if err := status.Err(); err != nil {
-		builder := strings.Builder{}
-		builder.WriteString(fmt.Sprintf("Failed to load table %s. Job ID: %s Completed with error: %s", tableName, job.ID(), err.Error()))
-		if len(status.Errors) > 0 {
-			builder.WriteString("\nDetailed errors:")
-			for _, statusError := range status.Errors {
-				builder.WriteString(fmt.Sprintf("\n%s", statusError.Error()))
-			}
-		}
-		return errors.New(builder.String())
-	}
-	return nil
+	_, err = RunJob(ctx, loader, fmt.Sprintf("load into table '%s'", tableName))
+	return err
 }
 
 // DropTable drops table from BigQuery
@@ -648,16 +611,8 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, re
 	copier.CreateDisposition = bigquery.CreateIfNeeded
 	bq.logQuery(fmt.Sprintf("COPY table '%s' to '%s'", replacementTableName, targetTableName), copier, nil)
 
-	job, err := copier.Run(ctx)
+	_, err = RunJob(ctx, copier, fmt.Sprintf("replace table '%s' with '%s'", targetTableName, replacementTableName))
 	if err != nil {
-		return err
-	}
-	status, err := job.Wait(ctx)
-	if err != nil {
-		return err
-
-	}
-	if err = status.Err(); err != nil {
 		return err
 	}
 	if dropOldTable {
@@ -796,15 +751,8 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types2.
 
 	query := bq.client.Query(updateQuery)
 	query.Parameters = values
-	job, err := query.Run(ctx)
-	if err != nil {
-		return err
-	}
-	status, err := job.Wait(ctx)
-	if err != nil {
-		return err
-	}
-	return status.Err()
+	_, err = RunJob(ctx, query, fmt.Sprintf("update table '%s'", tableName))
+	return err
 }
 
 func (bq *BigQuery) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
@@ -845,15 +793,8 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 
 	query := bq.client.Query(selectQuery)
 	query.Parameters = values
-	job, err := query.Run(ctx)
+	job, err := RunJob(ctx, query, fmt.Sprintf("select from table '%s'", tableName))
 	if err != nil {
-		return nil, err
-	}
-	status, err := job.Wait(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := status.Err(); err != nil {
 		return nil, err
 	}
 	it, err := job.Read(ctx)
@@ -940,15 +881,8 @@ func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditio
 	}()
 	query := bq.client.Query(deleteQuery)
 	query.Parameters = values
-	job, err := query.Run(ctx)
-	if err != nil {
-		return err
-	}
-	status, err := job.Wait(ctx)
-	if err != nil {
-		return err
-	}
-	return status.Err()
+	_, err = RunJob(ctx, query, fmt.Sprintf("delete from table '%s'", tableName))
+	return err
 }
 func (bq *BigQuery) Type() string {
 	return BigqueryBulkerTypeId
@@ -1013,4 +947,36 @@ func (bq *BigQuery) GetDataType(sqlType string) (types2.DataType, bool) {
 
 func (bq *BigQuery) TableHelper() *TableHelper {
 	return &bq.tableHelper
+}
+
+type JobRunner interface {
+	Run(ctx context.Context) (*bigquery.Job, error)
+}
+
+func RunJob(ctx context.Context, runner JobRunner, jobDescription string) (job *bigquery.Job, err error) {
+	var status *bigquery.JobStatus
+	job, err = runner.Run(ctx)
+	if err == nil {
+		status, err = job.Wait(ctx)
+		if err == nil {
+			err = status.Err()
+			if err == nil {
+				return job, nil
+			}
+		}
+	}
+
+	if err != nil {
+		builder := strings.Builder{}
+		builder.WriteString(fmt.Sprintf("Failed to %s. Job ID: %s Completed with error: %s", jobDescription, job.ID(), err.Error()))
+		if status != nil && len(status.Errors) > 0 {
+			builder.WriteString("\nDetailed errors:")
+			for _, statusError := range status.Errors {
+				builder.WriteString(fmt.Sprintf("\n%s", statusError.Error()))
+			}
+		}
+		return job, errors.New(builder.String())
+	} else {
+		return job, nil
+	}
 }
