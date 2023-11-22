@@ -179,7 +179,9 @@ func (bc *AbstractBatchConsumer) initTransactionalProducer() *kafka.Producer {
 
 func (bc *AbstractBatchConsumer) closeTransactionalProducer() {
 	producer := bc.transactionalProducer.Swap(nil)
-	producer.Close()
+	if producer != nil {
+		producer.Close()
+	}
 }
 
 func (bc *AbstractBatchConsumer) BatchPeriodSec() int {
