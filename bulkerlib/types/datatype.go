@@ -118,7 +118,7 @@ func ReformatNumberValue(v any) any {
 		floatValue, err := jsonNumber.Float64()
 		if err != nil {
 			logging.Errorf("Error parsing %s into float64: %v", str, err)
-			return v
+			return str
 		}
 		return any(floatValue)
 	}
@@ -126,7 +126,7 @@ func ReformatNumberValue(v any) any {
 	intValue, err := jsonNumber.Int64()
 	if err != nil {
 		logging.Errorf("Error parsing %s into int64: %v", str, err)
-		return v
+		return str
 	}
 	return any(intValue)
 }
