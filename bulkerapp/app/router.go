@@ -29,6 +29,7 @@ import (
 )
 
 var TimestampPattern = regexp.MustCompile(`^\d{13}$`)
+var WriteKeyPattern = regexp.MustCompile(`"writeKey":\s*"([^:"]+)?(:)?([^"]+)?"`)
 
 type Router struct {
 	*appbase.Router
@@ -256,16 +257,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	var tagsDestinations []string
 
 	defer func() {
-		bodyJsonObj := map[string]any{}
-		err := json.Unmarshal(body, &bodyJsonObj)
-		if err == nil {
-			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), bodyJsonObj)
-			wk, ok := bodyJsonObj["writeKey"]
-			if ok {
-				bodyJsonObj["writeKey"] = maskWriteKey(fmt.Sprint(wk))
-			}
-			body, _ = json.Marshal(bodyJsonObj)
-		} else if len(body) > 0 {
+		if len(body) > 0 {
 			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), body)
 		}
 		if rError != nil {
@@ -505,6 +497,7 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 	if ok, _ := strconv.ParseBool(ndjson); ok {
 		c.Header("Content-Type", "application/x-ndjson")
 		for _, record := range records {
+			maskWriteKeyInObj(eventType, record)
 			bytes, err := jsoniter.Marshal(record)
 			if err != nil {
 				bytes = []byte(fmt.Sprintf(`{"EVENTS_LOG_ERROR": "Failed to marshal event log record: %s", "OBJECT": "%+v"}`, err.Error(), record))
@@ -520,6 +513,7 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 		c.Header("Content-Type", "application/json")
 		_, _ = c.Writer.Write([]byte("["))
 		for _, record := range records {
+			maskWriteKeyInObj(eventType, record)
 			bytes, err := jsoniter.Marshal(record)
 			if err != nil {
 				bytes = []byte(fmt.Sprintf(`{"EVENTS_LOG_ERROR": "Failed to marshal event log record: %s", "OBJECT": "%+v"}`, err.Error(), record))
@@ -534,6 +528,18 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 			written += len(bytes) + 1
 		}
 		_, _ = c.Writer.Write([]byte("]"))
+	}
+}
+
+func maskWriteKeyInObj(eventType string, record EventsLogRecord) {
+	if strings.HasPrefix(eventType, "incoming.") {
+		o, ok := record.Content.(map[string]any)
+		if ok {
+			b, ok := o["body"].(string)
+			if ok {
+				o["body"] = WriteKeyPattern.ReplaceAllString(b, `"writeKey": "$1$2***"`)
+			}
+		}
 	}
 }
 

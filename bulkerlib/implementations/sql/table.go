@@ -162,12 +162,19 @@ func (c Columns) Clone() Columns {
 
 	return cloned
 }
-
 func (c Columns) ToSimpleMap() map[string]string {
 	simple := make(map[string]string, len(c))
 	for name, column := range c {
 		simple[name] = column.Type
 	}
+	return simple
+}
 
+func (t *Table) ColumnsWithSQLTypes() [][]string {
+	sortedColumnNames := t.SortedColumnNames()
+	simple := make([][]string, 0, len(sortedColumnNames))
+	for _, name := range sortedColumnNames {
+		simple = append(simple, []string{name, t.Columns[name].Type})
+	}
 	return simple
 }

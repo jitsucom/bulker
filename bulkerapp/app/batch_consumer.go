@@ -12,6 +12,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -36,6 +37,8 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 }
 
 func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error) {
+	counters.firstOffset = int64(kafka.OffsetBeginning)
+
 	var bulkerStream bulker.BulkerStream
 	ctx := context.WithValue(context.Background(), bulker.BatchNumberCtxKey, batchNum)
 
@@ -114,6 +117,15 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		dec.UseNumber()
 		err = dec.Decode(&obj)
 		if err == nil {
+			//TODO tmp workaround for avalanche of context_client_ids_ga4_session_ids_ and context_client_ids_ga4_sessions_ fields
+			for name, _ := range obj {
+				if strings.HasPrefix(name, "context_client_ids_ga4_session_ids_") {
+					delete(obj, name)
+				}
+				if strings.HasPrefix(name, "context_client_ids_ga4_sessions_") {
+					delete(obj, name)
+				}
+			}
 			if bulkerStream == nil {
 				destination.InitBulkerInstance()
 				bulkerStream, err = destination.bulker.CreateStream(bc.topicId, bc.tableName, bulker.Batch, destination.streamOptions.Options...)

@@ -214,6 +214,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.Errorf("No messages were consumed. Consumer is retired.")
 		return BatchCounters{}, bc.NewError("Consumer is retired")
 	}
+	counters.firstOffset = int64(kafka.OffsetBeginning)
 	bc.Debugf("Starting consuming messages from topic")
 	bc.idle.Store(false)
 	var lowOffset, highOffset int64
@@ -515,8 +516,8 @@ func (bs *BatchCounters) accumulate(batchStats BatchCounters) {
 	bs.retryScheduled += batchStats.retryScheduled
 	bs.deadLettered += batchStats.deadLettered
 	bs.retried += batchStats.retried
-	if batchStats.firstOffset > 0 {
-		bs.firstOffset = utils.MinInt64(batchStats.firstOffset, bs.firstOffset)
+	if bs.firstOffset < 0 && batchStats.firstOffset >= 0 {
+		bs.firstOffset = batchStats.firstOffset
 	}
 }
 
