@@ -3,7 +3,7 @@ module github.com/jitsucom/bulker/sync-sidecar
 go 1.21
 
 require (
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.4.0
 	github.com/jackc/pgx/v5 v5.4.3
 )
 
@@ -15,6 +15,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
 	golang.org/x/crypto v0.14.0 // indirect
-	golang.org/x/sync v0.4.0 // indirect
+	golang.org/x/sync v0.5.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 )

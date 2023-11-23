@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/google/martian v2.1.0+incompatible
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.4.0
 	github.com/joomcode/errorx v1.1.1
 	github.com/json-iterator/go v1.1.12
 	github.com/mitchellh/hashstructure/v2 v2.0.2
@@ -15,12 +15,11 @@ require (
 	github.com/spf13/viper v1.17.0
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/atomic v1.11.0
-	gopkg.in/natefinch/lumberjack.v2 v2.0.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	github.com/BurntSushi/toml v1.2.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.2.0 // indirect
 	github.com/bytedance/sonic v1.9.1 // indirect
@@ -35,6 +34,7 @@ require (
 	github.com/go-playground/validator/v10 v10.14.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.4 // indirect
 	github.com/leodido/go-urn v1.2.4 // indirect
