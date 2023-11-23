@@ -364,6 +364,24 @@ func TestBasics(t *testing.T) {
 			configIds:      allBulkerConfigs,
 			streamOptions:  []bulker.StreamOption{bulker.WithTimestamp("_timestamp")},
 		},
+		{
+			name:              "multiline string",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/multiline.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("_timestamp", "id", "name"),
+			},
+			expectedRowsCount: 6,
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "\n\ntest"},
+				{"_timestamp": constantTime, "id": 2, "name": "test\n\n"},
+				{"_timestamp": constantTime, "id": 3, "name": "\ntest2\ntest3\n"},
+			},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+			streamOptions:  []bulker.StreamOption{bulker.WithTimestamp("_timestamp")},
+		},
 	}
 	for _, tt := range tests {
 		tt := tt

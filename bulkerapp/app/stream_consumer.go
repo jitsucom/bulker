@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const streamConsumerMessageWaitTimeout = 120 * time.Second
+const streamConsumerMessageWaitTimeout = 5 * time.Second
 
 type StreamConsumer struct {
 	*AbstractConsumer
@@ -189,6 +189,8 @@ func (sc *StreamConsumer) start() {
 						} else {
 							sc.restartConsumer()
 						}
+					} else {
+						time.Sleep(streamConsumerMessageWaitTimeout)
 					}
 					continue
 				}
