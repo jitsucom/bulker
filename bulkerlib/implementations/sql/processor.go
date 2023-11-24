@@ -25,6 +25,15 @@ func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTy
 	if err != nil {
 		return nil, nil, err
 	}
+	//TODO tmp workaround for avalanche of context_client_ids_ga4_session_ids_ and context_client_ids_ga4_sessions_ fields
+	for name, _ := range flatObject {
+		if strings.HasPrefix(name, "context_client_ids_ga4_session_ids_") {
+			delete(flatObject, name)
+		}
+		if strings.HasPrefix(name, "context_client_ids_ga4_sessions_") {
+			delete(flatObject, name)
+		}
+	}
 	fields, err := DefaultTypeResolver.Resolve(flatObject, sqlTypesHints)
 	if err != nil {
 		return nil, nil, err

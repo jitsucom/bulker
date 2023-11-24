@@ -894,7 +894,7 @@ func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 }
 
 func (bq *BigQuery) fullTableName(tableName string) string {
-	return bq.config.Project + "." + bq.config.Dataset + "." + bq.tableHelper.quotedTableName(tableName)
+	return fmt.Sprintf("`%s`.`%s`", bq.config.Project, bq.config.Dataset) + "." + bq.tableHelper.quotedTableName(tableName)
 }
 
 func tableNameFunc(identifier string) (adapted string, needQuote bool) {
