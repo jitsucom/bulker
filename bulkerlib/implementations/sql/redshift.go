@@ -205,7 +205,7 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 	quotedTargetTableName := p.quotedTableName(targetTable.Name)
 	quotedSourceTableName := p.quotedTableName(sourceTable.Name)
 
-	if mergeWindow <= 0 && len(targetTable.PKFields) > 0 {
+	if mergeWindow > 0 && len(targetTable.PKFields) > 0 {
 		//delete duplicates from table
 		var pkMatchConditions string
 		for i, pkColumn := range targetTable.GetPKFields() {
