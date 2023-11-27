@@ -36,12 +36,19 @@ var (
 		},
 	}
 
+	MergeWindow = bulker.ImplementationOption[int]{
+		Key:          "mergeWindow",
+		DefaultValue: 31,
+		ParseFunc:    utils.ParseInt,
+	}
+
 	localBatchFileOption = bulker.ImplementationOption[string]{Key: "BULKER_OPTION_LOCAL_BATCH_FILE"}
 
 	s3BatchFileOption = bulker.ImplementationOption[*S3OptionConfig]{Key: "BULKER_OPTION_S3_BATCH_FILE"}
 )
 
 func init() {
+	bulker.RegisterOption(&MergeWindow)
 	bulker.RegisterOption(&ColumnTypesOption)
 }
 
@@ -53,17 +60,9 @@ type S3OptionConfig struct {
 	Folder      string `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
 }
 
-//func withBatchSize(o *bulker.ImplementationOption[int], batchSize int) bulker.StreamOption {
-//	return func(options *bulker.StreamOptions) {
-//		o.Set(options, batchSize)
-//	}
-//}
-//
-//// WithBatchSize setting just for Kafka consumer for batch mode stream
-//// consumer will read messages from kafka topic and send them to destinations in batches of batchSize
-//func WithBatchSize(batchSize int) bulker.StreamOption {
-//	return withBatchSize(&BatchSizeOption, batchSize)
-//}
+func WithMergeWindow(mergeWindow int) bulker.StreamOption {
+	return bulker.WithOption(&MergeWindow, mergeWindow)
+}
 
 func withColumnTypes(o *bulker.ImplementationOption[types.SQLTypes], fields types.SQLTypes) bulker.StreamOption {
 	return func(options *bulker.StreamOptions) {

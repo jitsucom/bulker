@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-var constantTimeStr = "2022-08-18T14:17:22Z"
+var constantTimeStr = "2022-08-18T14:17:22.375Z"
 var constantTime = timestamp.MustParseTime(time.RFC3339Nano, constantTimeStr)
 
 var allBulkerConfigs []string

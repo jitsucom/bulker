@@ -59,6 +59,8 @@ const (
 
 	chSelectFinalStatement = `SELECT %s FROM %s FINAL %s%s`
 	chLoadStatement        = `INSERT INTO %s (%s) VALUES %s`
+
+	chDateFormat = `2006-01-02 15:04:05.000000`
 )
 
 var (
@@ -610,7 +612,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	return nil
 }
 
-func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, _ bool) (err error) {
+func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (err error) {
 	return ch.copy(ctx, targetTable, sourceTable)
 }
 
@@ -760,9 +762,8 @@ func (ch *ClickHouse) localTableName(tableName string) string {
 
 func convertType(value any, column types.SQLColumn) (any, error) {
 	v := types.ReformatValue(value)
-	//ch.Infof("%v (%T) was %v (%T)", v, v, value, value)
-
-	switch strings.ToLower(column.Type) {
+	lt := strings.ToLower(column.Type)
+	switch lt {
 	case "float64":
 		switch n := v.(type) {
 		case int64:
@@ -821,7 +822,17 @@ func convertType(value any, column types.SQLColumn) (any, error) {
 		case bool:
 			return strconv.FormatBool(n), nil
 		}
+	default:
+		if strings.HasPrefix(lt, "datetime64") {
+			switch n := v.(type) {
+			case time.Time:
+				return n.Format(chDateFormat), nil
+			}
+
+		}
+
 	}
+
 	return v, nil
 }
 
@@ -866,19 +877,23 @@ func chGetDefaultValue(sqlType string) any {
 }
 
 // if value is boolean - reformat it [true = 1; false = 0] ClickHouse supports UInt8 instead of boolean
-// otherwise return value as is
+// Pass time.Time in full precision for datetime64 columns
 func chReformatValue(value any, valuePresent bool, sqlColumn types.SQLColumn) any {
 	if !valuePresent {
 		return chGetDefaultValue(sqlColumn.Type)
 	}
-	//reformat boolean
-	booleanValue, ok := value.(bool)
-	if ok {
-		if booleanValue {
+	lt := strings.ToLower(sqlColumn.Type)
+	switch v := value.(type) {
+	case time.Time:
+		if strings.Contains(lt, "datetime64") {
+			return v.Format(chDateFormat)
+		}
+	case bool:
+		if v {
 			return 1
 		}
-
 		return 0
+
 	}
 	return value
 }

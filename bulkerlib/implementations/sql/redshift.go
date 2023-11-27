@@ -201,11 +201,11 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	return nil
 }
 
-func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) (err error) {
+func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (err error) {
 	quotedTargetTableName := p.quotedTableName(targetTable.Name)
 	quotedSourceTableName := p.quotedTableName(sourceTable.Name)
 
-	if merge && len(targetTable.PKFields) > 0 {
+	if mergeWindow <= 0 && len(targetTable.PKFields) > 0 {
 		//delete duplicates from table
 		var pkMatchConditions string
 		for i, pkColumn := range targetTable.GetPKFields() {

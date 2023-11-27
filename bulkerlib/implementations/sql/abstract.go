@@ -16,12 +16,13 @@ import (
 const unmappedDataColumn = "_unmapped_data"
 
 type AbstractSQLStream struct {
-	id         string
-	sqlAdapter SQLAdapter
-	mode       bulker.BulkMode
-	options    bulker.StreamOptions
-	tableName  string
-	merge      bool
+	id          string
+	sqlAdapter  SQLAdapter
+	mode        bulker.BulkMode
+	options     bulker.StreamOptions
+	tableName   string
+	merge       bool
+	mergeWindow int
 
 	state  bulker.State
 	inited bool
@@ -42,6 +43,10 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	if ps.merge && len(pkColumns) == 0 {
 		return nil, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
+	if ps.merge {
+		ps.mergeWindow = MergeWindow.Get(&ps.options)
+	}
+
 	var customFields = ColumnTypesOption.Get(&ps.options)
 	ps.pkColumns = pkColumns.ToSlice()
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)

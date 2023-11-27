@@ -175,6 +175,12 @@ func (io *ImplementationOption[V]) Set(so *StreamOptions, value V) {
 	}
 }
 
+func WithOption[T any](o *ImplementationOption[T], value T) StreamOption {
+	return func(options *StreamOptions) {
+		o.Set(options, value)
+	}
+}
+
 func withPrimaryKey(o *ImplementationOption[utils.Set[string]], pkFields ...string) StreamOption {
 	return func(options *StreamOptions) {
 		set := o.Get(options)
@@ -191,41 +197,22 @@ func WithPrimaryKey(pkFields ...string) StreamOption {
 }
 
 // WithMergeRows - when true merge rows on primary keys collision.
-func withMergeRows(o *ImplementationOption[bool], b bool) StreamOption {
-	return func(options *StreamOptions) {
-		o.Set(options, b)
-	}
-}
-
-// WithMergeRows - when true merge rows on primary keys collision.
 func WithMergeRows() StreamOption {
-	return withMergeRows(&MergeRowsOption, true)
+	return WithOption(&MergeRowsOption, true)
 }
 
 func WithoutMergeRows() StreamOption {
-	return withMergeRows(&MergeRowsOption, false)
+	return WithOption(&MergeRowsOption, false)
 
-}
-
-func withPartition(o *ImplementationOption[string], partitionId string) StreamOption {
-	return func(options *StreamOptions) {
-		o.Set(options, partitionId)
-	}
 }
 
 // WithPartition settings for bulker.ReplacePartition mode only
 // partitionId - value of `__partition_id`  for current BulkerStream e.g. id of current partition
 // TODO: For bigquery require string in special format
 func WithPartition(partitionId string) StreamOption {
-	return withPartition(&PartitionIdOption, partitionId)
-}
-
-func withTimestamp(o *ImplementationOption[string], timestampField string) StreamOption {
-	return func(options *StreamOptions) {
-		o.Set(options, timestampField)
-	}
+	return WithOption(&PartitionIdOption, partitionId)
 }
 
 func WithTimestamp(timestampField string) StreamOption {
-	return withTimestamp(&TimestampOption, timestampField)
+	return WithOption(&TimestampOption, timestampField)
 }

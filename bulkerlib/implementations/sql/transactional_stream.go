@@ -68,7 +68,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 		ps.dstTable = dstTable
 		ps.updateRepresentationTable(ps.dstTable)
 		//copy data from tmp table to destination table
-		err = ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.merge)
+		err = ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.mergeWindow)
 		if err != nil {
 			return ps.state, err
 		}

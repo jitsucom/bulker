@@ -171,9 +171,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 			return nil
 		}
 		l := strings.ToLower(column.Type)
-		fmt.Println(l)
-		if strings.Contains(l, "timestamp") {
-			fmt.Println("formatting timestamp")
+		if _, ok := value.(time.Time); ok && strings.Contains(l, "timestamp") {
 			return value.(time.Time).Format(time.RFC3339Nano)
 		}
 		return value
@@ -435,8 +433,8 @@ func (s *Snowflake) Insert(ctx context.Context, table *Table, merge bool, object
 	return nil
 }
 
-func (s *Snowflake) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) error {
-	if !merge {
+func (s *Snowflake) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) error {
+	if mergeWindow <= 0 {
 		return s.copy(ctx, targetTable, sourceTable)
 	} else {
 		return s.copyOrMerge(ctx, targetTable, sourceTable, sfMergeQueryTemplate, "S")

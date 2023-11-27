@@ -195,8 +195,8 @@ func (m *MySQL) Insert(ctx context.Context, table *Table, merge bool, objects ..
 	}
 }
 
-func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) error {
-	if !merge {
+func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) error {
+	if mergeWindow <= 0 {
 		return m.copy(ctx, targetTable, sourceTable)
 	} else {
 		return m.copyOrMerge(ctx, targetTable, sourceTable, mySQLBulkMergeQueryTemplate, "S")

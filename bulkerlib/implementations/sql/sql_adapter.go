@@ -35,7 +35,7 @@ type SQLAdapter interface {
 	TableHelper() *TableHelper
 	GetTableSchema(ctx context.Context, tableName string) (*Table, error)
 	CreateTable(ctx context.Context, schemaToCreate *Table) error
-	CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) error
+	CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) error
 	LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) error
 	PatchTableSchema(ctx context.Context, patchTable *Table) error
 	TruncateTable(ctx context.Context, tableName string) error
@@ -123,9 +123,9 @@ func (tx *TxSQLAdapter) CreateTable(ctx context.Context, schemaToCreate *Table) 
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.CreateTable(ctx, schemaToCreate)
 }
-func (tx *TxSQLAdapter) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, merge bool) error {
+func (tx *TxSQLAdapter) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.CopyTables(ctx, targetTable, sourceTable, merge)
+	return tx.sqlAdapter.CopyTables(ctx, targetTable, sourceTable, mergeWindow)
 }
 func (tx *TxSQLAdapter) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)

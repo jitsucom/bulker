@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22Z")
+var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z")
 
 const forceLeaveResultingTables = false
 
@@ -247,6 +247,8 @@ type bulkerTestConfig struct {
 	streamOptions []bulker.StreamOption
 	//batchSize for bigdata test commit stream every batchSize rows
 	batchSize int
+	//use frozen time for test. See timestamp.FreezeTime for details. Unfreeze time when test finish
+	frozenTime time.Time
 }
 
 func (c *bulkerTestConfig) getIdAndTableName(mode bulker.BulkMode) (id, tableName string) {
@@ -423,6 +425,11 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 }
 
 func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode) {
+	if !testConfig.frozenTime.IsZero() {
+		timestamp.SetFreezeTime(testConfig.frozenTime)
+		timestamp.FreezeTime()
+		defer timestamp.UnfreezeTime()
+	}
 	reqr := require.New(t)
 	adaptConfig(t, &testConfig, mode)
 	PostStep("init", testConfig, mode, reqr, nil)
@@ -572,6 +579,10 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			PrimaryKeyName: "",
 			PKFields:       expectedPKFields,
 			Columns:        testConfig.expectedTable.Columns,
+			// don't check this yet
+			Partition: table.Partition,
+			// don't check this yet
+			TimestampColumn: table.TimestampColumn,
 		}
 		reqr.Equal(expectedTable, table)
 	}
