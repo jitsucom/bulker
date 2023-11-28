@@ -73,7 +73,9 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 		err = ps.clearPartition(ctx, ps.tx)
 		if err == nil && ps.state.SuccessfulRows > 0 {
 			if ps.batchFile != nil {
-				if err = ps.flushBatchFile(ctx); err != nil {
+				ws, err := ps.flushBatchFile(ctx)
+				ps.state.WarehouseState.Merge(ws)
+				if err != nil {
 					return ps.state, err
 				}
 			}
@@ -86,7 +88,8 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 			ps.dstTable = dstTable
 			ps.updateRepresentationTable(ps.dstTable)
 			//copy data from tmp table to destination table
-			err = ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.mergeWindow)
+			ws, err := ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.mergeWindow)
+			ps.state.WarehouseState.Merge(ws)
 			if err != nil {
 				return ps.state, err
 			}

@@ -169,13 +169,13 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 }
 
 // LoadTable copy transfer data from s3 to redshift by passing COPY request to redshift
-func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := p.quotedTableName(targetTable.Name)
 	if loadSource.Type != AmazonS3 {
-		return fmt.Errorf("LoadTable: only Amazon S3 file is supported")
+		return state, fmt.Errorf("LoadTable: only Amazon S3 file is supported")
 	}
 	if loadSource.Format != p.batchFileFormat {
-		return fmt.Errorf("LoadTable: only %s format is supported", p.batchFileFormat)
+		return state, fmt.Errorf("LoadTable: only %s format is supported", p.batchFileFormat)
 	}
 	columns := targetTable.SortedColumnNames()
 	columnNames := make([]string, len(columns))
@@ -190,7 +190,7 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	}
 	statement := fmt.Sprintf(redshiftCopyTemplate, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
-		return errorj.CopyError.Wrap(err, "failed to copy data from s3").
+		return state, errorj.CopyError.Wrap(err, "failed to copy data from s3").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     quotedTableName,
@@ -198,10 +198,10 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 			})
 	}
 
-	return nil
+	return state, nil
 }
 
-func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (err error) {
+func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
 	quotedTargetTableName := p.quotedTableName(targetTable.Name)
 	quotedSourceTableName := p.quotedTableName(sourceTable.Name)
 
@@ -218,7 +218,7 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 
 		if _, err = p.txOrDb(ctx).ExecContext(ctx, deleteStatement); err != nil {
 
-			return errorj.BulkMergeError.Wrap(err, "failed to delete duplicated rows").
+			return state, errorj.BulkMergeError.Wrap(err, "failed to delete duplicated rows").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Schema:      p.config.Schema,
 					Table:       quotedTargetTableName,
@@ -227,7 +227,7 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 				})
 		}
 	}
-	return p.copy(ctx, targetTable, sourceTable)
+	return state, p.copy(ctx, targetTable, sourceTable)
 }
 
 func (p *Redshift) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {

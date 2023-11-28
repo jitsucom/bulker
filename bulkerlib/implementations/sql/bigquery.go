@@ -35,7 +35,7 @@ const (
 	BigQueryAutocommitUnsupported = "BigQuery bulker doesn't support auto commit mode as not efficient"
 	BigqueryBulkerTypeId          = "bigquery"
 
-	bigqueryInsertFromSelectTemplate = "INSERT %s SELECT * FROM %s"
+	bigqueryInsertFromSelectTemplate = "INSERT INTO %s(%s) SELECT %s FROM %s"
 	bigqueryMergeTemplate            = "MERGE INTO %s T USING %s S ON %s WHEN MATCHED THEN UPDATE SET %s WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)"
 	bigqueryDeleteTemplate           = "DELETE FROM %s WHERE %s"
 	bigqueryUpdateTemplate           = "UPDATE %s SET %s WHERE %s"
@@ -160,11 +160,11 @@ func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
 	return nil
 }
 
-func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (err error) {
+func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
 	if mergeWindow <= 0 {
 		defer func() {
 			if err != nil {
-				err = errorj.CopyError.Wrap(err, "failed to run BQ copier").
+				err = errorj.CopyError.Wrap(err, "failed to run CopyTables").
 					WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 						Dataset: bq.config.Dataset,
 						Bucket:  bq.config.Bucket,
@@ -177,15 +177,22 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 		copier := dataset.Table(targetTable.Name).CopierFrom(dataset.Table(sourceTable.Name))
 		copier.WriteDisposition = bigquery.WriteAppend
 		copier.CreateDisposition = bigquery.CreateIfNeeded
-		_, err = bq.RunJob(ctx, copier, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
+		_, state, err = bq.RunJob(ctx, copier, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
 		if err != nil {
 			// try to insert from select as a fallback
-			insertFromSelectStatement := fmt.Sprintf(bigqueryInsertFromSelectTemplate, bq.fullTableName(targetTable.Name), bq.fullTableName(sourceTable.Name))
+			columns := sourceTable.SortedColumnNames()
+			quotedColumns := make([]string, len(columns))
+			for i, name := range columns {
+				quotedColumns[i] = bq.quotedColumnName(name)
+			}
+			columnsString := strings.Join(quotedColumns, ",")
+			insertFromSelectStatement := fmt.Sprintf(bigqueryInsertFromSelectTemplate, bq.fullTableName(targetTable.Name), columnsString, columnsString, bq.fullTableName(sourceTable.Name))
 			query := bq.client.Query(insertFromSelectStatement)
-			_, err = bq.RunJob(ctx, query, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
-			return err
+			_, state2, err := bq.RunJob(ctx, query, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
+			state.Merge(state2)
+			return state, err
 		} else {
-			return nil
+			return state, nil
 		}
 	} else {
 		defer func() {
@@ -199,8 +206,12 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 					})
 			}
 		}()
-
 		columns := sourceTable.SortedColumnNames()
+		quotedColumns := make([]string, len(columns))
+		for i, name := range columns {
+			quotedColumns[i] = bq.quotedColumnName(name)
+		}
+		columnsString := strings.Join(quotedColumns, ",")
 		updateSet := make([]string, len(columns))
 		for i, name := range columns {
 			updateSet[i] = fmt.Sprintf("T.%s = S.%s", bq.quotedColumnName(name), bq.quotedColumnName(name))
@@ -214,17 +225,12 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 			monthBefore := timestamp.Now().Add(time.Duration(mergeWindow) * -24 * time.Hour).Format("2006-01-02")
 			joinConditions = append(joinConditions, fmt.Sprintf("T.%s >= '%s'", bq.quotedColumnName(targetTable.TimestampColumn), monthBefore))
 		}
-		quotedColumns := make([]string, len(columns))
-		for i, name := range columns {
-			quotedColumns[i] = bq.quotedColumnName(name)
-		}
-		columnsString := strings.Join(quotedColumns, ",")
 		insertFromSelectStatement := fmt.Sprintf(bigqueryMergeTemplate, bq.fullTableName(targetTable.Name), bq.fullTableName(sourceTable.Name),
 			strings.Join(joinConditions, " AND "), strings.Join(updateSet, ", "), columnsString, columnsString)
 
 		query := bq.client.Query(insertFromSelectStatement)
-		_, err = bq.RunJob(ctx, query, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
-		return err
+		_, state, err = bq.RunJob(ctx, query, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
+		return state, err
 	}
 }
 
@@ -538,7 +544,7 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 	return nil
 }
 
-func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	tableName := bq.TableName(targetTable.Name)
 	defer func() {
 		if err != nil {
@@ -556,7 +562,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 
 	file, err := os.Open(loadSource.Path)
 	if err != nil {
-		return err
+		return state, err
 	}
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
 	meta, err := bqTable.Metadata(ctx)
@@ -568,7 +574,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	}
 	for i, field := range targetTable.SortedColumnNames() {
 		if _, ok := mp[field]; !ok {
-			return fmt.Errorf("field %s is not in table schema", field)
+			return state, fmt.Errorf("field %s is not in table schema", field)
 		}
 		meta.Schema[i] = mp[field]
 	}
@@ -587,8 +593,8 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	loader := bq.client.Dataset(bq.config.Dataset).Table(tableName).LoaderFrom(source)
 	loader.CreateDisposition = bigquery.CreateIfNeeded
 	loader.WriteDisposition = bigquery.WriteAppend
-	_, err = bq.RunJob(ctx, loader, fmt.Sprintf("load into table '%s'", tableName))
-	return err
+	_, state, err = bq.RunJob(ctx, loader, fmt.Sprintf("load into table '%s'", tableName))
+	return state, err
 }
 
 // DropTable drops table from BigQuery
@@ -637,7 +643,7 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, re
 	copier := dataset.Table(targetTableName).CopierFrom(dataset.Table(replacementTableName))
 	copier.WriteDisposition = bigquery.WriteTruncate
 	copier.CreateDisposition = bigquery.CreateIfNeeded
-	_, err = bq.RunJob(ctx, copier, fmt.Sprintf("replace table '%s' with '%s'", targetTableName, replacementTableName))
+	_, _, err = bq.RunJob(ctx, copier, fmt.Sprintf("replace table '%s' with '%s'", targetTableName, replacementTableName))
 	if err != nil {
 		return err
 	}
@@ -777,7 +783,7 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types2.
 
 	query := bq.client.Query(updateQuery)
 	query.Parameters = values
-	_, err = bq.RunJob(ctx, query, fmt.Sprintf("update table '%s'", tableName))
+	_, _, err = bq.RunJob(ctx, query, fmt.Sprintf("update table '%s'", tableName))
 	return err
 }
 
@@ -818,7 +824,7 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 
 	query := bq.client.Query(selectQuery)
 	query.Parameters = values
-	job, err := bq.RunJob(ctx, query, fmt.Sprintf("select from table '%s'", tableName))
+	job, _, err := bq.RunJob(ctx, query, fmt.Sprintf("select from table '%s'", tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -906,7 +912,7 @@ func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditio
 	}()
 	query := bq.client.Query(deleteQuery)
 	query.Parameters = values
-	_, err = bq.RunJob(ctx, query, fmt.Sprintf("delete from table '%s'", tableName))
+	_, _, err = bq.RunJob(ctx, query, fmt.Sprintf("delete from table '%s'", tableName))
 	return err
 }
 func (bq *BigQuery) Type() string {
@@ -978,7 +984,7 @@ type JobRunner interface {
 	Run(ctx context.Context) (*bigquery.Job, error)
 }
 
-func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription string) (job *bigquery.Job, err error) {
+func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription string) (job *bigquery.Job, state bulker.WarehouseState, err error) {
 	defer func() {
 		bq.logQuery(jobDescription, runner, err)
 	}()
@@ -994,6 +1000,8 @@ func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription
 	}
 	bytesProcessed := ""
 	if status != nil && status.Statistics != nil {
+		state.BytesProcessed = int(status.Statistics.TotalBytesProcessed)
+		state.EstimatedCost = float64(status.Statistics.TotalBytesProcessed) * 6.25 / 1_000_000_000_000
 		bytesProcessed = fmt.Sprintf(" Bytes processed: %d", status.Statistics.TotalBytesProcessed)
 	}
 	if err != nil {
@@ -1004,9 +1012,9 @@ func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription
 			}
 			err = errors.New(builder.String())
 		}
-		return job, fmt.Errorf("Failed to %s.%s Completed with error: %v%s", jobDescription, jobID, err, bytesProcessed)
+		return job, state, fmt.Errorf("Failed to %s.%s Completed with error: %v%s", jobDescription, jobID, err, bytesProcessed)
 	} else {
 		bq.Infof("Successfully %s.%s%s", jobDescription, jobID, bytesProcessed)
-		return job, nil
+		return job, state, nil
 	}
 }

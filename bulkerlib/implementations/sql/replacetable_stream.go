@@ -48,7 +48,9 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 		//if at least one object was inserted
 		if ps.state.SuccessfulRows > 0 {
 			if ps.batchFile != nil {
-				if err = ps.flushBatchFile(ctx); err != nil {
+				ws, err := ps.flushBatchFile(ctx)
+				ps.state.WarehouseState.Merge(ws)
+				if err != nil {
 					return ps.state, err
 				}
 			}

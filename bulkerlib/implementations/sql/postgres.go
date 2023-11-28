@@ -293,21 +293,21 @@ func (p *Postgres) Insert(ctx context.Context, table *Table, merge bool, objects
 	}
 }
 
-func (p *Postgres) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) error {
+func (p *Postgres) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (bulker.WarehouseState, error) {
 	if mergeWindow <= 0 {
-		return p.copy(ctx, targetTable, sourceTable)
+		return bulker.WarehouseState{}, p.copy(ctx, targetTable, sourceTable)
 	} else {
-		return p.copyOrMerge(ctx, targetTable, sourceTable, pgBulkMergeQueryTemplate, pgBulkMergeSourceAlias)
+		return bulker.WarehouseState{}, p.copyOrMerge(ctx, targetTable, sourceTable, pgBulkMergeQueryTemplate, pgBulkMergeSourceAlias)
 	}
 }
 
-func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := p.quotedTableName(targetTable.Name)
 	if loadSource.Type != LocalFile {
-		return fmt.Errorf("LoadTable: only local file is supported")
+		return state, fmt.Errorf("LoadTable: only local file is supported")
 	}
 	if loadSource.Format != p.batchFileFormat {
-		return fmt.Errorf("LoadTable: only %s format is supported", p.batchFileFormat)
+		return state, fmt.Errorf("LoadTable: only %s format is supported", p.batchFileFormat)
 	}
 	columns := targetTable.SortedColumnNames()
 	columnNames := make([]string, len(columns))
@@ -329,7 +329,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 
 	stmt, err := p.txOrDb(ctx).PrepareContext(ctx, copyStatement)
 	if err != nil {
-		return err
+		return state, err
 	}
 	defer func() {
 		_ = stmt.Close()
@@ -339,7 +339,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 
 	file, err := os.Open(loadSource.Path)
 	if err != nil {
-		return err
+		return state, err
 	}
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
@@ -349,7 +349,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		decoder.UseNumber()
 		err = decoder.Decode(&object)
 		if err != nil {
-			return err
+			return state, err
 		}
 		args := make([]any, len(columns))
 		for i, v := range columns {
@@ -357,18 +357,18 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 			args[i] = l
 		}
 		if _, err := stmt.ExecContext(ctx, args...); err != nil {
-			return checkErr(err)
+			return state, checkErr(err)
 		}
 	}
 	if err = scanner.Err(); err != nil {
-		return fmt.Errorf("LoadTable: failed to read file: %v", err)
+		return state, fmt.Errorf("LoadTable: failed to read file: %v", err)
 	}
 	_, err = stmt.ExecContext(ctx)
 	if err != nil {
-		return checkErr(err)
+		return state, checkErr(err)
 	}
 
-	return nil
+	return state, nil
 }
 
 // pgColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)

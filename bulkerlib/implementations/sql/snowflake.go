@@ -350,18 +350,18 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 }
 
 // LoadTable transfer data from local file to Snowflake by passing COPY request to Snowflake
-func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := s.quotedTableName(targetTable.Name)
 
 	if loadSource.Type != LocalFile {
-		return fmt.Errorf("LoadTable: only local file is supported")
+		return state, fmt.Errorf("LoadTable: only local file is supported")
 	}
 	if loadSource.Format != s.batchFileFormat {
-		return fmt.Errorf("LoadTable: only %s format is supported", s.batchFileFormat)
+		return state, fmt.Errorf("LoadTable: only %s format is supported", s.batchFileFormat)
 	}
 	putStatement := fmt.Sprintf("PUT file://%s @~", loadSource.Path)
 	if _, err = s.txOrDb(ctx).ExecContext(ctx, putStatement); err != nil {
-		return errorj.LoadError.Wrap(err, "failed to put file to stage").
+		return state, errorj.LoadError.Wrap(err, "failed to put file to stage").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    s.config.Schema,
 				Table:     quotedTableName,
@@ -389,7 +389,7 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	statement := fmt.Sprintf(sfCopyStatement, quotedTableName, strings.Join(columnNames, ","), path.Base(loadSource.Path))
 
 	if _, err := s.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
-		return errorj.CopyError.Wrap(err, "failed to copy data from stage").
+		return state, errorj.CopyError.Wrap(err, "failed to copy data from stage").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    s.config.Schema,
 				Table:     quotedTableName,
@@ -397,7 +397,7 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 			})
 	}
 
-	return nil
+	return state, nil
 }
 
 // Insert inserts data with InsertContext as a single object or a batch into Snowflake
@@ -433,11 +433,11 @@ func (s *Snowflake) Insert(ctx context.Context, table *Table, merge bool, object
 	return nil
 }
 
-func (s *Snowflake) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) error {
+func (s *Snowflake) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (bulker.WarehouseState, error) {
 	if mergeWindow <= 0 {
-		return s.copy(ctx, targetTable, sourceTable)
+		return bulker.WarehouseState{}, s.copy(ctx, targetTable, sourceTable)
 	} else {
-		return s.copyOrMerge(ctx, targetTable, sourceTable, sfMergeQueryTemplate, "S")
+		return bulker.WarehouseState{}, s.copyOrMerge(ctx, targetTable, sourceTable, sfMergeQueryTemplate, "S")
 	}
 }
 

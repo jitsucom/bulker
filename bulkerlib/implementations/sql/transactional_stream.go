@@ -55,7 +55,9 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 	//if at least one object was inserted
 	if ps.state.SuccessfulRows > 0 {
 		if ps.batchFile != nil {
-			if err = ps.flushBatchFile(ctx); err != nil {
+			ws, err := ps.flushBatchFile(ctx)
+			ps.state.WarehouseState.Merge(ws)
+			if err != nil {
 				return ps.state, err
 			}
 		}
@@ -68,11 +70,12 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 		ps.dstTable = dstTable
 		ps.updateRepresentationTable(ps.dstTable)
 		//copy data from tmp table to destination table
-		err = ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.mergeWindow)
+		ws, err := ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.mergeWindow)
+		ps.state.WarehouseState.Merge(ws)
 		if err != nil {
 			return ps.state, err
 		}
-		return
+		return ps.state, nil
 	} else {
 		//if was any error - it will trigger transaction rollback in defer func
 		err = ps.state.LastError

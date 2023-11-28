@@ -31,7 +31,7 @@ func TestMergeWindow(t *testing.T) {
 			expectedRowsCount:   10,
 			configIds:           []string{BigqueryBulkerTypeId},
 			frozenTime:          mergeWindowTestTime,
-			streamOptions:       []bulker.StreamOption{bulker.WithTimestamp("_timestamp"), bulker.WithPrimaryKey("id"), bulker.WithMergeRows()},
+			streamOptions:       []bulker.StreamOption{bulker.WithTimestamp("_timestamp"), bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
 		},
 		{
 			name:                "merge_window_default",
@@ -56,7 +56,7 @@ func TestMergeWindow(t *testing.T) {
 				{"_timestamp": timestamp.MustParseTime(time.RFC3339Nano, "2023-02-02T00:00:00.000Z"), "id": 9, "name": "test9B"},
 				{"_timestamp": timestamp.MustParseTime(time.RFC3339Nano, "2023-02-07T00:00:00.000Z"), "id": 10, "name": "test10B"},
 			},
-			streamOptions: []bulker.StreamOption{bulker.WithTimestamp("_timestamp"), bulker.WithPrimaryKey("id"), bulker.WithMergeRows()},
+			streamOptions: []bulker.StreamOption{bulker.WithTimestamp("_timestamp"), bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
 		},
 		{
 			name:                "merge_window_6_days",
@@ -83,7 +83,7 @@ func TestMergeWindow(t *testing.T) {
 				{"_timestamp": timestamp.MustParseTime(time.RFC3339Nano, "2023-02-02T00:00:00.000Z"), "id": 9, "name": "test9C"},
 				{"_timestamp": timestamp.MustParseTime(time.RFC3339Nano, "2023-02-07T00:00:00.000Z"), "id": 10, "name": "test10C"},
 			},
-			streamOptions: []bulker.StreamOption{bulker.WithTimestamp("_timestamp"), bulker.WithPrimaryKey("id"), bulker.WithMergeRows(), WithMergeWindow(5)},
+			streamOptions: []bulker.StreamOption{bulker.WithTimestamp("_timestamp"), bulker.WithPrimaryKey("id"), bulker.WithDeduplicate(), WithDeduplicateWindow(5)},
 		},
 		{
 			name:      "dummy_test_table_cleanup",

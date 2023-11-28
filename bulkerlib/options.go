@@ -72,7 +72,7 @@ var (
 		},
 	}
 
-	MergeRowsOption = ImplementationOption[bool]{
+	DeduplicateOption = ImplementationOption[bool]{
 		Key:          "deduplicate",
 		DefaultValue: false,
 		ParseFunc:    utils.ParseBool,
@@ -97,7 +97,7 @@ func init() {
 	RegisterOption(&RetryFrequencyOption)
 	RegisterOption(&RetryBatchSizeOption)
 	RegisterOption(&PrimaryKeyOption)
-	RegisterOption(&MergeRowsOption)
+	RegisterOption(&DeduplicateOption)
 	RegisterOption(&PartitionIdOption)
 	RegisterOption(&TimestampOption)
 
@@ -196,14 +196,9 @@ func WithPrimaryKey(pkFields ...string) StreamOption {
 	return withPrimaryKey(&PrimaryKeyOption, pkFields...)
 }
 
-// WithMergeRows - when true merge rows on primary keys collision.
-func WithMergeRows() StreamOption {
-	return WithOption(&MergeRowsOption, true)
-}
-
-func WithoutMergeRows() StreamOption {
-	return WithOption(&MergeRowsOption, false)
-
+// WithDeduplicate - when true merge rows on primary keys collision.
+func WithDeduplicate() StreamOption {
+	return WithOption(&DeduplicateOption, true)
 }
 
 // WithPartition settings for bulker.ReplacePartition mode only

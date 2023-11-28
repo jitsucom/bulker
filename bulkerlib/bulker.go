@@ -140,6 +140,21 @@ type State struct {
 	ProcessedRows  int    `json:"processedRows"`
 	SuccessfulRows int    `json:"successfulRows"`
 	ErrorRowIndex  int    `json:"errorRowIndex,omitempty"`
+	WarehouseState `json:",inline,omitempty"`
+}
+
+type WarehouseState struct {
+	BytesProcessed int            `json:"bytesProcessed,omitempty"`
+	EstimatedCost  float64        `json:"estimatedCost,omitempty"`
+	AdditionalInfo map[string]any `json:",inline,omitempty"`
+}
+
+func (ws *WarehouseState) Merge(second WarehouseState) {
+	ws.BytesProcessed += second.BytesProcessed
+	ws.EstimatedCost += second.EstimatedCost
+	for k, v := range second.AdditionalInfo {
+		ws.AdditionalInfo[k] = v
+	}
 }
 
 // SetError sets error to the state

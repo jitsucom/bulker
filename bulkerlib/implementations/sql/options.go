@@ -36,8 +36,8 @@ var (
 		},
 	}
 
-	MergeWindow = bulker.ImplementationOption[int]{
-		Key:          "mergeWindow",
+	DeduplicateWindow = bulker.ImplementationOption[int]{
+		Key:          "deduplicateWindow",
 		DefaultValue: 31,
 		ParseFunc:    utils.ParseInt,
 	}
@@ -48,7 +48,7 @@ var (
 )
 
 func init() {
-	bulker.RegisterOption(&MergeWindow)
+	bulker.RegisterOption(&DeduplicateWindow)
 	bulker.RegisterOption(&ColumnTypesOption)
 }
 
@@ -60,8 +60,8 @@ type S3OptionConfig struct {
 	Folder      string `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
 }
 
-func WithMergeWindow(mergeWindow int) bulker.StreamOption {
-	return bulker.WithOption(&MergeWindow, mergeWindow)
+func WithDeduplicateWindow(deduplicateWindow int) bulker.StreamOption {
+	return bulker.WithOption(&DeduplicateWindow, deduplicateWindow)
 }
 
 func withColumnTypes(o *bulker.ImplementationOption[types.SQLTypes], fields types.SQLTypes) bulker.StreamOption {

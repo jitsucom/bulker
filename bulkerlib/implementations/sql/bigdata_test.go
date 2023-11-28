@@ -69,7 +69,7 @@ func TestMillionRowsBatched(t *testing.T) {
 			expectedRowsCount:   eventsCount,
 			leaveResultingTable: false,
 			configIds:           configIds,
-			streamOptions:       []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithMergeRows()},
+			streamOptions:       []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
 		},
 	}
 	for _, tt := range tests {

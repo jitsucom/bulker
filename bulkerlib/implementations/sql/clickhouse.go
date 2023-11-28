@@ -540,12 +540,12 @@ func (ch *ClickHouse) Insert(ctx context.Context, table *Table, _ bool, objects 
 }
 
 // LoadTable transfer data from local file to ClickHouse table
-func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulkerlib.WarehouseState, err error) {
 	if loadSource.Type != LocalFile {
-		return fmt.Errorf("LoadTable: only local file is supported")
+		return state, fmt.Errorf("LoadTable: only local file is supported")
 	}
 	if loadSource.Format != ch.batchFileFormat {
-		return fmt.Errorf("LoadTable: only %s format is supported", ch.batchFileFormat)
+		return state, fmt.Errorf("LoadTable: only %s format is supported", ch.batchFileFormat)
 	}
 	tableName := ch.quotedTableName(targetTable.Name)
 
@@ -572,7 +572,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 
 	file, err := os.Open(loadSource.Path)
 	if err != nil {
-		return err
+		return state, err
 	}
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
@@ -582,14 +582,14 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		decoder.UseNumber()
 		err = decoder.Decode(&object)
 		if err != nil {
-			return err
+			return state, err
 		}
 		placeholdersBuilder.WriteString(",(")
 		for i, v := range columns {
 			column := targetTable.Columns[v]
 			l, err := convertType(object[v], column)
 			if err != nil {
-				return err
+				return state, err
 			}
 			//ch.Infof("%s: %v (%T) was %v", v, l, l, object[v])
 			if i > 0 {
@@ -601,19 +601,19 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		placeholdersBuilder.WriteString(")")
 	}
 	if err = scanner.Err(); err != nil {
-		return fmt.Errorf("LoadTable: failed to read file: %v", err)
+		return state, fmt.Errorf("LoadTable: failed to read file: %v", err)
 	}
 	if len(args) > 0 {
 		copyStatement = fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
-			return checkErr(err)
+			return state, checkErr(err)
 		}
 	}
-	return nil
+	return state, nil
 }
 
-func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (err error) {
-	return ch.copy(ctx, targetTable, sourceTable)
+func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulkerlib.WarehouseState, err error) {
+	return state, ch.copy(ctx, targetTable, sourceTable)
 }
 
 func (ch *ClickHouse) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {

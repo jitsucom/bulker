@@ -197,7 +197,7 @@ func TestBasics(t *testing.T) {
 				{"_timestamp": constantTimeStr, "id": 1, "name": "test7"},
 			},
 			configIds:     allBulkerConfigs,
-			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithMergeRows()},
+			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
 		},
 	}
 	for _, tt := range tests {

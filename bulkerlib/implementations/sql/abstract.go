@@ -38,13 +38,13 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	for _, option := range streamOptions {
 		ps.options.Add(option)
 	}
-	ps.merge = bulker.MergeRowsOption.Get(&ps.options)
+	ps.merge = bulker.DeduplicateOption.Get(&ps.options)
 	pkColumns := bulker.PrimaryKeyOption.Get(&ps.options)
 	if ps.merge && len(pkColumns) == 0 {
 		return nil, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	if ps.merge {
-		ps.mergeWindow = MergeWindow.Get(&ps.options)
+		ps.mergeWindow = DeduplicateWindow.Get(&ps.options)
 	}
 
 	var customFields = ColumnTypesOption.Get(&ps.options)

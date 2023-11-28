@@ -195,26 +195,26 @@ func (m *MySQL) Insert(ctx context.Context, table *Table, merge bool, objects ..
 	}
 }
 
-func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) error {
+func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (bulker.WarehouseState, error) {
 	if mergeWindow <= 0 {
-		return m.copy(ctx, targetTable, sourceTable)
+		return bulker.WarehouseState{}, m.copy(ctx, targetTable, sourceTable)
 	} else {
-		return m.copyOrMerge(ctx, targetTable, sourceTable, mySQLBulkMergeQueryTemplate, "S")
+		return bulker.WarehouseState{}, m.copyOrMerge(ctx, targetTable, sourceTable, mySQLBulkMergeQueryTemplate, "S")
 	}
 }
 
-func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (err error) {
+func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := m.quotedTableName(targetTable.Name)
 
 	if loadSource.Type != LocalFile {
-		return fmt.Errorf("LoadTable: only local file is supported")
+		return state, fmt.Errorf("LoadTable: only local file is supported")
 	}
 	if loadSource.Format != m.batchFileFormat {
 		mode := "LOCAL INFILE"
 		if !m.infileEnabled {
 			mode = "prepared statement"
 		}
-		return fmt.Errorf("LoadTable: only %s format is supported in %s mode", m.batchFileFormat, mode)
+		return state, fmt.Errorf("LoadTable: only %s format is supported in %s mode", m.batchFileFormat, mode)
 	}
 	if m.infileEnabled {
 		mysql.RegisterLocalFile(loadSource.Path)
@@ -227,14 +227,14 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		}
 		loadStatement := fmt.Sprintf(mySQLLoadTemplate, loadSource.Path, quotedTableName, strings.Join(header, ", "))
 		if _, err := m.txOrDb(ctx).ExecContext(ctx, loadStatement); err != nil {
-			return errorj.LoadError.Wrap(err, "failed to load data from local file system").
+			return state, errorj.LoadError.Wrap(err, "failed to load data from local file system").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Database:  m.config.Db,
 					Table:     quotedTableName,
 					Statement: loadStatement,
 				})
 		}
-		return nil
+		return state, nil
 	} else {
 		columns := targetTable.SortedColumnNames()
 		columnNames := make([]string, len(columns))
@@ -252,7 +252,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		buf := strings.Builder{}
 		err := insertQueryTemplate.Execute(&buf, insertPayload)
 		if err != nil {
-			return errorj.ExecuteInsertError.Wrap(err, "failed to build query from template")
+			return state, errorj.ExecuteInsertError.Wrap(err, "failed to build query from template")
 		}
 		statement := buf.String()
 		defer func() {
@@ -268,7 +268,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 
 		stmt, err := m.txOrDb(ctx).PrepareContext(ctx, statement)
 		if err != nil {
-			return err
+			return state, err
 		}
 		defer func() {
 			_ = stmt.Close()
@@ -278,7 +278,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 
 		file, err := os.Open(loadSource.Path)
 		if err != nil {
-			return err
+			return state, err
 		}
 		scanner := bufio.NewScanner(file)
 		scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
@@ -288,7 +288,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 			decoder.UseNumber()
 			err = decoder.Decode(&object)
 			if err != nil {
-				return err
+				return state, err
 			}
 			args := make([]any, len(columns))
 			for i, v := range columns {
@@ -296,13 +296,13 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 				args[i] = l
 			}
 			if _, err := stmt.ExecContext(ctx, args...); err != nil {
-				return checkErr(err)
+				return state, checkErr(err)
 			}
 		}
 		if err = scanner.Err(); err != nil {
-			return fmt.Errorf("LoadTable: failed to read file: %v", err)
+			return state, fmt.Errorf("LoadTable: failed to read file: %v", err)
 		}
-		return nil
+		return state, nil
 	}
 }
 

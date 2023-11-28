@@ -325,7 +325,7 @@ func TestBasics(t *testing.T) {
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
-			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithMergeRows()},
+			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
 		},
 		{
 			name:              "multi_pk",
@@ -346,7 +346,7 @@ func TestBasics(t *testing.T) {
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
 			orderBy:        []string{"id", "id2"},
-			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id", "id2"), bulker.WithMergeRows()},
+			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id", "id2"), bulker.WithDeduplicate()},
 		},
 		{
 			name:              "timestamp_option",

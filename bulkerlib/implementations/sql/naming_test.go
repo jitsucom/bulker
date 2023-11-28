@@ -66,7 +66,7 @@ func TestNaming(t *testing.T) {
 				Columns:  justColumns("id", "name", "column_12b241e808ae6c964a5bb9f1c012e63d", "_1test_name", "_2", "column_c16da609b86c01f16a2c609eac4ccb0c", "Test_Name", "Test_Name__DROP_DATABASE_public__SELECT_1_from_DUAL_", "Universit_Franais", "_timestamp", "_unnamed", "lorem_ipsum_dolor_sit_amet_consectetur_adipiscing_elit_sed_do_eiusmod_tempor_incididunt_ut_labore_et_dolore_magna_aliqua_ut_enim_ad_minim_veniam_quis_nostrud_exercitation_ullamco_laboris_nisi_ut_aliquip_ex_ea_commodo_consequat", "column_c41d0d6c9ff6db34c6df393bdd283e19", "column_b4de5a5c8f92f77af9904705b3f08253", "camelCase", "int", "user", "select", "___ROOT__", "hash"),
 			},
 			configIds:     []string{BigqueryBulkerTypeId},
-			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithMergeRows()},
+			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
 		},
 		{
 			name:              "naming_test2",

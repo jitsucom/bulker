@@ -185,7 +185,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	}
 	var streamOptions []bulker.StreamOption
 	if len(pkeys) > 0 {
-		streamOptions = append(streamOptions, bulker.WithPrimaryKey(pkeys...), bulker.WithMergeRows())
+		streamOptions = append(streamOptions, bulker.WithPrimaryKey(pkeys...), bulker.WithDeduplicate())
 	}
 	destination.InitBulkerInstance()
 	bulkerStream, err := destination.bulker.CreateStream(jobId, tableName, bulkMode, streamOptions...)
