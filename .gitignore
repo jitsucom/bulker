@@ -1,5 +1,5 @@
 /bulkerapp/config.yaml
-/bulkerapp/bulker.env
+*.env
 
 # Binaries for programs and plugins
 *.exe
