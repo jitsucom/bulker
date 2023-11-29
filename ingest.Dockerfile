@@ -23,17 +23,16 @@ RUN apt-get install gcc libc6-dev
 RUN mkdir /app
 WORKDIR /app
 
-RUN mkdir jitsubase kafkabase eventslog bulkerlib bulkerapp
+RUN mkdir jitsubase kafkabase eventslog ingest
 
 COPY jitsubase/go.* ./jitsubase/
 COPY kafkabase/go.* ./kafkabase/
 COPY eventslog/go.* ./eventslog/
-COPY bulkerlib/go.* ./bulkerlib/
-COPY bulkerapp/go.* ./bulkerapp/
+COPY ingest/go.* ./ingest/
 
-RUN go work init jitsubase kafkabase eventslog bulkerlib bulkerapp
+RUN go work init jitsubase kafkabase eventslog ingest
 
-WORKDIR /app/bulkerapp
+WORKDIR /app/ingest
 
 RUN go mod download
 
@@ -41,8 +40,8 @@ WORKDIR /app
 
 COPY . .
 
-# Build bulker
-RUN go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o bulker ./bulkerapp
+# Build ingest
+RUN go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o ingest ./ingest
 
 #######################################
 # FINAL STAGE
@@ -51,8 +50,8 @@ FROM main as final
 RUN mkdir /app
 WORKDIR /app
 
-# Copy bulkerapp
-COPY --from=build /app/bulker ./
+# Copy ingest
+COPY --from=build /app/ingest ./
 #COPY ./config.yaml ./
 
-CMD ["/app/bulker"]
+CMD ["/app/ingest"]

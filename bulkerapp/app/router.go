@@ -12,6 +12,7 @@ import (
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
@@ -38,7 +39,7 @@ type Router struct {
 	repository       *Repository
 	topicManager     *TopicManager
 	producer         *Producer
-	eventsLogService EventsLogService
+	eventsLogService eventslog.EventsLogService
 	fastStore        *FastStore
 	backupsLogger    *BackupLogger
 }
@@ -262,8 +263,8 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		}
 		if rError != nil {
 			obj := map[string]any{"body": string(body), "error": rError.PublicError.Error(), "status": "FAILED"}
-			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingError, eventsLogId, obj})
-			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingAll, eventsLogId, obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeIncomingError, eventsLogId, obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeIncomingAll, eventsLogId, obj})
 			metrics.IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
 			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), body, map[string]string{"error": rError.Error.Error()})
 		} else {
@@ -274,7 +275,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 				obj["status"] = "SKIPPED"
 				obj["error"] = "no destinations found for stream"
 			}
-			r.eventsLogService.PostAsync(&ActorEvent{EventTypeIncomingAll, eventsLogId, obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeIncomingAll, eventsLogId, obj})
 			metrics.IngestHandlerRequests(domain, "success", "").Inc()
 		}
 	}()
@@ -465,7 +466,7 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 		}
 	}
 
-	eventsLogFilter := &EventsLogFilter{}
+	eventsLogFilter := &eventslog.EventsLogFilter{}
 	eventsLogFilter.Start, err = parseDateQueryParam(start)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "'start' parameter must be either unix timestamp or date in '2006-01-02' format"})
@@ -487,8 +488,8 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 			iLimit = iLimit2
 		}
 	}
-	eventsLogFilter.BeforeId = EventsLogRecordId(beforeId)
-	records, err := r.eventsLogService.GetEvents(EventType(eventType), actorId, eventsLogFilter, iLimit)
+	eventsLogFilter.BeforeId = eventslog.EventsLogRecordId(beforeId)
+	records, err := r.eventsLogService.GetEvents(eventslog.EventType(eventType), actorId, eventsLogFilter, iLimit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get events log: " + err.Error()})
 		return
@@ -531,7 +532,7 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 	}
 }
 
-func maskWriteKeyInObj(eventType string, record EventsLogRecord) {
+func maskWriteKeyInObj(eventType string, record eventslog.EventsLogRecord) {
 	if strings.HasPrefix(eventType, "incoming.") {
 		o, ok := record.Content.(map[string]any)
 		if ok {

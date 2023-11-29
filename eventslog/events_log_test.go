@@ -1,8 +1,8 @@
-package app
+package eventslog
 
 import (
 	"context"
-	"github.com/jitsucom/bulker/bulkerapp/app/testcontainers"
+	"github.com/jitsucom/bulker/eventslog/testcontainers"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -19,10 +19,7 @@ func TestEventsLog(t *testing.T) {
 
 	//1519073278252
 	//1668686118735
-	appConfig := Config{}
-	appConfig.EventsLogMaxSize = 1000
-	appConfig.EventsLogRedisURL = redis.URL()
-	redisEl, err := NewRedisEventsLog(&appConfig, redis.URL())
+	redisEl, err := NewRedisEventsLog(redis.URL(), "", 1000)
 	reqr.NoError(err)
 
 	var tsStart, tsEnd time.Time

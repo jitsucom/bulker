@@ -99,21 +99,6 @@ var (
 		Help:      "Number of other topics. Other topics are any kafka topics not managed by the topic manager",
 	})
 
-	producerMessages = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "producer",
-		Name:      "messages",
-	}, []string{"topicId", "destinationId", "mode", "tableName", "status", "errorType"})
-	ProducerMessages = func(topicId, destinationId, mode, tableName, status, errorType string) prometheus.Counter {
-		return producerMessages.WithLabelValues(topicId, destinationId, mode, tableName, status, errorType)
-	}
-
-	ProducerQueueLength = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "producer",
-		Name:      "queue_length",
-	})
-
 	consumerErrors = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "consumer",
@@ -172,15 +157,6 @@ var (
 	}, []string{"destinationId"})
 	RepositoryDestinationInitError = func(destinationId string) prometheus.Counter {
 		return repositoryDestinationInitError.WithLabelValues(destinationId)
-	}
-
-	eventsLogError = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "event_log",
-		Name:      "error",
-	}, []string{"errorType"})
-	EventsLogError = func(errorType string) prometheus.Counter {
-		return eventsLogError.WithLabelValues(errorType)
 	}
 
 	panics = promauto.NewCounter(prometheus.CounterOpts{

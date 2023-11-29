@@ -8,9 +8,11 @@ import (
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"github.com/jitsucom/bulker/kafkabase"
 	jsoniter "github.com/json-iterator/go"
 	"strconv"
 	"sync/atomic"
@@ -27,14 +29,14 @@ type StreamConsumer struct {
 	consumerConfig kafka.ConfigMap
 	consumer       *kafka.Consumer
 
-	eventsLogService EventsLogService
+	eventsLogService eventslog.EventsLogService
 
 	tableName string
 
 	closed chan struct{}
 }
 
-func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService EventsLogService) (*StreamConsumer, error) {
+func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService eventslog.EventsLogService) (*StreamConsumer, error) {
 	abstract := NewAbstractConsumer(config, repository, topicId, bulkerProducer)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
@@ -194,7 +196,7 @@ func (sc *StreamConsumer) start() {
 					}
 					continue
 				}
-				metricsMeta := GetKafkaHeader(message, MetricsMetaHeader)
+				metricsMeta := kafkabase.GetKafkaHeader(message, MetricsMetaHeader)
 				metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "consumed").Inc()
 				obj := types.Object{}
 				dec := jsoniter.NewDecoder(bytes.NewReader(message.Value))
@@ -205,7 +207,7 @@ func (sc *StreamConsumer) start() {
 					sc.postEventsLog(message.Value, nil, nil, err)
 					sc.Errorf("Failed to parse event from message: %s offset: %s: %v", message.Value, message.TopicPartition.Offset.String(), err)
 				} else {
-					sc.Debugf("Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), sc.destination.config.BulkerType)
+					sc.Debugf("Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", obj.Id(), message.TopicPartition.Offset.String(), kafkabase.GetKafkaHeader(message, retriesCountHeader), sc.destination.config.BulkerType)
 					var state bulker.State
 					var processedObject types.Object
 					state, processedObject, err = (*sc.stream.Load()).Consume(context.Background(), obj)
@@ -221,7 +223,7 @@ func (sc *StreamConsumer) start() {
 				if err != nil {
 					originalError := err
 					failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, allTablesToken, false)
-					retries, err := GetKafkaIntHeader(message, retriesCountHeader)
+					retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
 					if err != nil {
 						sc.Errorf("failed to read retry header: %v", err)
 					}
@@ -237,10 +239,10 @@ func (sc *StreamConsumer) start() {
 						failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, allTablesToken, false)
 					}
 					headers := message.Headers
-					PutKafkaHeader(&headers, errorHeader, originalError.Error())
-					PutKafkaHeader(&headers, originalTopicHeader, sc.topicId)
-					PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
-					PutKafkaHeader(&headers, retryTimeHeader, timestamp.ToISOFormat(RetryBackOffTime(sc.config, retries+1).UTC()))
+					kafkabase.PutKafkaHeader(&headers, errorHeader, originalError.Error())
+					kafkabase.PutKafkaHeader(&headers, originalTopicHeader, sc.topicId)
+					kafkabase.PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
+					kafkabase.PutKafkaHeader(&headers, retryTimeHeader, timestamp.ToISOFormat(RetryBackOffTime(sc.config, retries+1).UTC()))
 					retryMessage := kafka.Message{
 						Key:            message.Key,
 						TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
@@ -300,7 +302,7 @@ func (sc *StreamConsumer) postEventsLog(message []byte, representation any, proc
 	if processedErr != nil {
 		object["error"] = processedErr.Error()
 		object["status"] = "FAILED"
-		sc.eventsLogService.PostAsync(&ActorEvent{EventTypeProcessedError, sc.destination.Id(), object})
+		sc.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeProcessedError, sc.destination.Id(), object})
 	}
-	sc.eventsLogService.PostAsync(&ActorEvent{EventTypeProcessedAll, sc.destination.Id(), object})
+	sc.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeProcessedAll, sc.destination.Id(), object})
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
+	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/safego"
@@ -22,7 +23,7 @@ type Context struct {
 	cron                *Cron
 	batchProducer       *Producer
 	streamProducer      *Producer
-	eventsLogService    EventsLogService
+	eventsLogService    eventslog.EventsLogService
 	topicManager        *TopicManager
 	fastStore           *FastStore
 	server              *http.Server
@@ -57,10 +58,10 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	}
 	a.cron = NewCron(a.config)
 
-	a.eventsLogService = &DummyEventsLogService{}
+	a.eventsLogService = &eventslog.DummyEventsLogService{}
 	eventsLogRedisUrl := utils.NvlString(a.config.EventsLogRedisURL, a.config.RedisURL)
 	if eventsLogRedisUrl != "" {
-		a.eventsLogService, err = NewRedisEventsLog(a.config, eventsLogRedisUrl)
+		a.eventsLogService, err = eventslog.NewRedisEventsLog(eventsLogRedisUrl, a.config.RedisTLSCA, a.config.EventsLogMaxSize)
 		if err != nil {
 			return err
 		}
@@ -80,7 +81,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 			"linger.ms":                    a.config.ProducerLingerMs,
 			"compression.type":             a.config.KafkaTopicCompression,
 		}, *a.kafkaConfig))
-		a.batchProducer, err = NewProducer(a.config, &batchProducerConfig, true)
+		a.batchProducer, err = NewProducer(&a.config.KafkaConfig, &batchProducerConfig, true)
 		if err != nil {
 			return err
 		}
@@ -89,7 +90,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		streamProducerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 			"compression.type": a.config.KafkaTopicCompression,
 		}, *a.kafkaConfig))
-		a.streamProducer, err = NewProducer(a.config, &streamProducerConfig, false)
+		a.streamProducer, err = NewProducer(&a.config.KafkaConfig, &streamProducerConfig, false)
 		if err != nil {
 			return err
 		}

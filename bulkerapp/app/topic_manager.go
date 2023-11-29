@@ -7,6 +7,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
@@ -56,7 +57,7 @@ type TopicManager struct {
 
 	batchProducer    *Producer
 	streamProducer   *Producer
-	eventsLogService EventsLogService
+	eventsLogService eventslog.EventsLogService
 	refreshChan      chan bool
 	closed           chan struct{}
 }
