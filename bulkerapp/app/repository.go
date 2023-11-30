@@ -235,6 +235,9 @@ func (d *Destination) InitBulkerInstance() {
 			metrics.RepositoryDestinationInitError(d.Id()).Inc()
 			err = fmt.Errorf("panic : %v", e)
 			logging.Errorf("Rejecting destination %s – %v", d.Id(), e)
+			if d.bulker != nil {
+				_ = d.bulker.Close()
+			}
 			d.bulker = &bulker.DummyBulker{Error: err}
 		}
 	}()

@@ -420,6 +420,9 @@ func (r *Router) TestConnectionHandler(c *gin.Context) {
 
 	b, err := bulker.CreateBulker(bulkerCfg)
 	if err != nil {
+		if b != nil {
+			_ = b.Close()
+		}
 		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "error creating bulker", false, err, "")
 		return
 	}

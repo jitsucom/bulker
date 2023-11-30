@@ -158,3 +158,36 @@ func (t *TxWrapper) Rollback() error {
 	}
 	return nil
 }
+
+type ConWithDB struct {
+	db  *sql.DB
+	con *sql.Conn
+}
+
+func NewConWithDB(db *sql.DB, con *sql.Conn) *ConWithDB {
+	return &ConWithDB{db: db, con: con}
+}
+
+func (c *ConWithDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return c.con.ExecContext(ctx, query, args...)
+}
+
+func (c *ConWithDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return c.con.QueryContext(ctx, query, args...)
+}
+
+func (c *ConWithDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return c.con.QueryRowContext(ctx, query, args...)
+}
+
+func (c *ConWithDB) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
+	return c.con.PrepareContext(ctx, query)
+}
+
+func (c *ConWithDB) Close() error {
+	_ = c.con.Close()
+	if c.db != nil {
+		return c.db.Close()
+	}
+	return nil
+}

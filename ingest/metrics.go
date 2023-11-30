@@ -26,15 +26,6 @@ var (
 		return ingestedMessages.WithLabelValues(destinationId, status, errorType)
 	}
 
-	eventsLogError = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "event_log",
-		Name:      "error",
-	}, []string{"errorType"})
-	EventsLogError = func(errorType string) prometheus.Counter {
-		return eventsLogError.WithLabelValues(errorType)
-	}
-
 	panics = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "safego",
