@@ -84,8 +84,7 @@ type PostgresConfig struct {
 // Postgres is adapter for creating,patching (schema or table), inserting data to postgres
 type Postgres struct {
 	*SQLAdapterBase[PostgresConfig]
-	dbConnectFunction DbConnectFunction[PostgresConfig]
-	tmpDir            string
+	tmpDir string
 }
 
 // NewPostgres return configured Postgres bulker.Bulker instance
@@ -156,7 +155,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return dataSource, nil
 	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)
-	p := &Postgres{sqlAdapterBase, dbConnectFunction, tmpDir}
+	p := &Postgres{sqlAdapterBase, tmpDir}
 	p.temporaryTables = false
 	p.tableHelper = NewTableHelper(63, '"')
 	return p, err

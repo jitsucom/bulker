@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"math"
 	"time"
 )
+
+const MetricsMetaHeader = "metrics_meta"
 
 type AbstractConsumer struct {
 	appbase.Service
@@ -66,4 +69,9 @@ func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, event
 		ac.Errorf("Error producing metrics to metrics destination: %v", err)
 		return
 	}
+}
+
+func RetryBackOffTime(config *Config, attempt int) time.Time {
+	backOffDelay := time.Duration(math.Min(math.Pow(config.MessagesRetryBackoffBase, float64(attempt)), config.MessagesRetryBackoffMaxDelay)) * time.Minute
+	return time.Now().Add(backOffDelay)
 }

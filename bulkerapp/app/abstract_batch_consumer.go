@@ -8,6 +8,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"github.com/jitsucom/bulker/kafkabase"
 	"reflect"
 	"strings"
 	"sync"
@@ -137,12 +138,12 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 			case e := <-producer.Events():
 				switch ev := e.(type) {
 				case *kafka.Message:
-					messageId := GetKafkaHeader(ev, MessageIdHeader)
+					messageId := kafkabase.GetKafkaHeader(ev, kafkabase.MessageIdHeader)
 					if ev.TopicPartition.Error != nil {
-						metrics.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "error", metrics.KafkaErrorCode(ev.TopicPartition.Error))).Inc()
+						kafkabase.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "error", metrics.KafkaErrorCode(ev.TopicPartition.Error))).Inc()
 						bc.Errorf("Error sending message (ID: %s) to kafka topic %s: %s", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
 					} else {
-						metrics.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "delivered", "")).Inc()
+						kafkabase.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "delivered", "")).Inc()
 						bc.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 					}
 					//case kafka.Error:

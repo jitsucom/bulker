@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/jitsucom/bulker/kafkabase"
 	"strconv"
 	"time"
 )
@@ -93,7 +94,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			txOpened = true
 		}
 		singleCount := BatchCounters{}
-		originalTopic := GetKafkaHeader(message, originalTopicHeader)
+		originalTopic := kafkabase.GetKafkaHeader(message, originalTopicHeader)
 		topic := originalTopic
 		if topic == "" {
 			singleCount.skipped++
@@ -101,7 +102,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			continue
 		}
 		rc.Debugf("message %s header: %v", message.TopicPartition.Offset, message.Headers)
-		retries, err := GetKafkaIntHeader(message, retriesCountHeader)
+		retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
 		if err != nil {
 			singleCount.skipped++
 			rc.Errorf("Failed to get retries count from message headers. Skipping message")
@@ -116,7 +117,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			retries++
 			singleCount.retryScheduled++
 		}
-		PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
+		kafkabase.PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
 		err = producer.Produce(&kafka.Message{
 			Key:            message.Key,
 			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
@@ -151,7 +152,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 }
 
 func (rc *RetryConsumer) isTimeToRetry(message *kafka.Message) bool {
-	retryTime, err := GetKafkaTimeHeader(message, retryTimeHeader)
+	retryTime, err := kafkabase.GetKafkaTimeHeader(message, retryTimeHeader)
 	if err != nil {
 		rc.Errorf("failed to parse retry_time: %v", err)
 		return true

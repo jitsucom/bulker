@@ -8,8 +8,10 @@ import (
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"github.com/jitsucom/bulker/kafkabase"
 	jsoniter "github.com/json-iterator/go"
 	"strconv"
 	"time"
@@ -17,10 +19,10 @@ import (
 
 type BatchConsumerImpl struct {
 	*AbstractBatchConsumer
-	eventsLogService EventsLogService
+	eventsLogService eventslog.EventsLogService
 }
 
-func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService EventsLogService) (*BatchConsumerImpl, error) {
+func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService eventslog.EventsLogService) (*BatchConsumerImpl, error) {
 
 	base, err := NewAbstractBatchConsumer(repository, destinationId, batchPeriodSec, topicId, "batch", config, kafkaConfig, bulkerProducer)
 	if err != nil {
@@ -51,8 +53,8 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			counters.failed = counters.consumed - counters.processed
 			if counters.failed > 0 {
 				// we separate original errors from retry errors
-				bc.SendMetrics(GetKafkaHeader(latestMessage, MetricsMetaHeader), "error", counters.failed-counters.retried)
-				bc.SendMetrics(GetKafkaHeader(latestMessage, MetricsMetaHeader), "retry_error", counters.retried)
+				bc.SendMetrics(kafkabase.GetKafkaHeader(latestMessage, MetricsMetaHeader), "error", counters.failed-counters.retried)
+				bc.SendMetrics(kafkabase.GetKafkaHeader(latestMessage, MetricsMetaHeader), "retry_error", counters.retried)
 			}
 			if failedPosition != nil {
 				cnts, err2 := bc.processFailed(firstPosition, failedPosition, err)
@@ -68,7 +70,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 				}
 			}
 		} else if counters.processed > 0 {
-			bc.SendMetrics(GetKafkaHeader(latestMessage, MetricsMetaHeader), "success", counters.processed)
+			bc.SendMetrics(kafkabase.GetKafkaHeader(latestMessage, MetricsMetaHeader), "success", counters.processed)
 		}
 	}()
 	var processedObjectSample types.Object
@@ -100,7 +102,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			return counters, false, bc.NewError("Failed to consume event from topic. Retryable: %t: %v", kafkaErr.IsRetriable(), kafkaErr)
 		}
 		counters.consumed++
-		retriesHeader := GetKafkaHeader(message, retriesCountHeader)
+		retriesHeader := kafkabase.GetKafkaHeader(message, retriesCountHeader)
 		if retriesHeader != "" {
 			// we perform retries in smaller batches
 			batchSize = retryBatchSize
@@ -125,7 +127,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 				}
 			}
 			if err == nil {
-				bc.Debugf("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
+				bc.Debugf("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), kafkabase.GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
 				_, processedObjectSample, err = bulkerStream.Consume(ctx, obj)
 				if err != nil {
 					bc.errorMetric("bulker_stream_error")
@@ -236,7 +238,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		counters.consumed++
 		deadLettered := false
 		failedTopic, _ := MakeTopicId(bc.destinationId, retryTopicMode, allTablesToken, false)
-		retries, err := GetKafkaIntHeader(message, retriesCountHeader)
+		retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
 		if err != nil {
 			bc.Errorf("failed to read retry header: %v", err)
 		}
@@ -246,10 +248,10 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, false)
 		}
 		headers := message.Headers
-		PutKafkaHeader(&headers, errorHeader, utils.ShortenStringWithEllipsis(originalErr.Error(), 256))
-		PutKafkaHeader(&headers, originalTopicHeader, bc.topicId)
-		PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
-		PutKafkaHeader(&headers, retryTimeHeader, timestamp.ToISOFormat(RetryBackOffTime(bc.config, retries+1).UTC()))
+		kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenStringWithEllipsis(originalErr.Error(), 256))
+		kafkabase.PutKafkaHeader(&headers, originalTopicHeader, bc.topicId)
+		kafkabase.PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
+		kafkabase.PutKafkaHeader(&headers, retryTimeHeader, timestamp.ToISOFormat(RetryBackOffTime(bc.config, retries+1).UTC()))
 		err = producer.Produce(&kafka.Message{
 			Key:            message.Key,
 			TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
@@ -295,9 +297,9 @@ func (bc *BatchConsumerImpl) postEventsLog(state bulker.State, processedObjectSa
 		state.SetError(batchErr)
 	}
 	batchState := BatchState{State: state, LastMappedRow: processedObjectSample}
-	bc.eventsLogService.PostAsync(&ActorEvent{EventTypeBatchAll, bc.destinationId, batchState})
+	bc.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeBatchAll, bc.destinationId, batchState})
 	if batchErr != nil {
-		bc.eventsLogService.PostAsync(&ActorEvent{EventTypeBatchError, bc.destinationId, batchState})
+		bc.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeBatchError, bc.destinationId, batchState})
 	}
 }
 

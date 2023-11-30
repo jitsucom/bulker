@@ -93,9 +93,10 @@ func initViperVariables[C InstanceConfig](appConfig C) {
 	fieldsCount := tp.NumField()
 	for i := 0; i < fieldsCount; i++ {
 		field := tp.Field(i)
-		if field.Type == reflect.TypeOf(Config{}) {
-			// init nested config variables
-			initViperVariables(elem.Field(i).Addr().Interface().(*Config))
+		modelType := reflect.TypeOf((*InstanceConfig)(nil)).Elem()
+		//fmt.Println("field", field.Name, field.Type, "implements", reflect.PointerTo(field.Type).Implements(modelType))
+		if reflect.PointerTo(field.Type).Implements(modelType) {
+			initViperVariables(elem.Field(i).Addr().Interface().(InstanceConfig))
 		}
 		variable := field.Tag.Get("mapstructure")
 		if variable != "" {

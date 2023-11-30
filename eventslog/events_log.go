@@ -1,15 +1,17 @@
-package app
+package eventslog
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"github.com/gomodule/redigo/redis"
-	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	jsoniter "github.com/json-iterator/go"
 	"io"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -76,14 +78,14 @@ type RedisEventsLog struct {
 	closeChan             chan struct{}
 }
 
-func NewRedisEventsLog(config *Config, redisUrl string) (*RedisEventsLog, error) {
+func NewRedisEventsLog(redisUrl, redisTLSCA string, maxLogSize int) (*RedisEventsLog, error) {
 	base := appbase.NewServiceBase(redisEventsLogServiceName)
 	base.Debugf("Creating RedisEventsLog with redisURL: %s", redisUrl)
-	redisPool := newPool(redisUrl, config.RedisTLSCA)
+	redisPool := newPool(redisUrl, redisTLSCA)
 	r := RedisEventsLog{
 		Service:               base,
 		redisPool:             redisPool,
-		maxSize:               config.EventsLogMaxSize,
+		maxSize:               maxLogSize,
 		eventsBuffer:          make(map[string][]*ActorEvent),
 		periodicFlushInterval: time.Second * 5,
 		closeChan:             make(chan struct{}),
@@ -123,7 +125,7 @@ func (r *RedisEventsLog) flush() {
 				var err error
 				serialized, err = jsoniter.Marshal(event.Event)
 				if err != nil {
-					metrics.EventsLogError("marshal_error").Inc()
+					EventsLogError("marshal_error").Inc()
 					r.Errorf("failed to serialize event entity [%v]: %v", event.Event, err)
 					continue
 				}
@@ -138,7 +140,7 @@ func (r *RedisEventsLog) flush() {
 	}
 	_, err := connection.Do("EXEC")
 	if err != nil {
-		metrics.EventsLogError(RedisError(err)).Inc()
+		EventsLogError(RedisError(err)).Inc()
 		r.Errorf("failed to post events: %v", err)
 	} else {
 		clear(r.eventsBuffer)
@@ -174,13 +176,13 @@ func (r *RedisEventsLog) PostEvent(event *ActorEvent) (id EventsLogRecordId, err
 	if !ok {
 		serialized, err = jsoniter.Marshal(event.Event)
 		if err != nil {
-			metrics.EventsLogError("marshal_error").Inc()
+			EventsLogError("marshal_error").Inc()
 			return "", r.NewError("failed to serialize event entity [%v]: %v", event.Event, err)
 		}
 	}
 	idString, err := redis.String(connection.Do("XADD", streamKey, "MAXLEN", "~", r.maxSize, "*", "event", serialized))
 	if err != nil {
-		metrics.EventsLogError(RedisError(err)).Inc()
+		EventsLogError(RedisError(err)).Inc()
 		return "", r.NewError("failed to post event to stream [%s]: %v", streamKey, err)
 	}
 	return EventsLogRecordId(idString), nil
@@ -191,7 +193,7 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *
 
 	start, end, err := filter.GetStartAndEndIds()
 	if err != nil {
-		metrics.EventsLogError("filter_error").Inc()
+		EventsLogError("filter_error").Inc()
 		return nil, r.NewError("%v", err)
 	}
 	args := []interface{}{streamKey, end, start}
@@ -203,7 +205,7 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *
 
 	recordsRaw, err := connection.Do("XREVRANGE", args...)
 	if err != nil {
-		metrics.EventsLogError(RedisError(err)).Inc()
+		EventsLogError(RedisError(err)).Inc()
 		return nil, r.NewError("failed to get events from stream [%s]: %v", streamKey, err)
 	}
 	records := recordsRaw.([]any)
@@ -217,12 +219,12 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, filter *
 		var event map[string]interface{}
 		err = jsoniter.Unmarshal([]byte(mp["event"]), &event)
 		if err != nil {
-			metrics.EventsLogError("unmarshal_error").Inc()
+			EventsLogError("unmarshal_error").Inc()
 			return nil, r.NewError("failed to unmarshal event from stream [%s] %s: %v", streamKey, mp["event"], err)
 		}
 		date, err := parseTimestamp(id)
 		if err != nil {
-			metrics.EventsLogError("parse_timestamp_error").Inc()
+			EventsLogError("parse_timestamp_error").Inc()
 			return nil, r.NewError("failed to parse timestamp from id [%s]: %v", id, err)
 		}
 		if (filter == nil || filter.Filter == nil) || filter.Filter(event) {
@@ -295,4 +297,42 @@ func (d *DummyEventsLogService) GetEvents(_ EventType, _ string, _ *EventsLogFil
 
 func (d *DummyEventsLogService) Close() error {
 	return nil
+}
+
+func newPool(redisURL string, ca string) *redis.Pool {
+	opts := make([]redis.DialOption, 0)
+	if ca != "" || strings.HasPrefix(redisURL, "rediss://") {
+		tlsConfig := tls.Config{InsecureSkipVerify: true}
+		if ca != "" {
+			rootCAs, _ := x509.SystemCertPool()
+			if rootCAs == nil {
+				rootCAs = x509.NewCertPool()
+			}
+			rootCAs.AppendCertsFromPEM([]byte(ca))
+			tlsConfig.RootCAs = rootCAs
+		}
+		opts = append(opts, redis.DialUseTLS(true), redis.DialTLSConfig(&tlsConfig))
+	}
+
+	return &redis.Pool{
+		MaxIdle:     3,
+		IdleTimeout: 240 * time.Second,
+		// Dial or DialContext must be set. When both are set, DialContext takes precedence over Dial.
+		Dial: func() (redis.Conn, error) { return redis.DialURL(redisURL, opts...) },
+	}
+}
+
+func RedisError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if err == redis.ErrPoolExhausted {
+		return "redis error: ERR_POOL_EXHAUSTED"
+	} else if err == redis.ErrNil {
+		return "redis error: ERR_NIL"
+	} else if strings.Contains(strings.ToLower(err.Error()), "timeout") {
+		return "redis error: ERR_TIMEOUT"
+	} else {
+		return "redis error: UNKNOWN"
+	}
 }

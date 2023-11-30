@@ -3,7 +3,7 @@
 To initialize a new Go workspace, run the following command:
 
 ```bash
-go work init ./jitsubase ./bulkerlib ./bulkerapp # and other modules that can be added in future
+go work init ./jitsubase ./kafkabase ./eventslog ./bulkerlib ./bulkerapp # and other modules that can be added in future
 ```
 
 Google is against of committing go.work file to the repository, so it's added to `.gitignore` file.

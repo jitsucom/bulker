@@ -1,9 +1,8 @@
-package app
+package kafkabase
 
 import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
-	"math"
 	"strconv"
 	"time"
 )
@@ -46,9 +45,4 @@ func GetKafkaTimeHeader(message *kafka.Message, name string) (time.Time, error) 
 	} else {
 		return time.Time{}, nil
 	}
-}
-
-func RetryBackOffTime(config *Config, attempt int) time.Time {
-	backOffDelay := time.Duration(math.Min(math.Pow(config.MessagesRetryBackoffBase, float64(attempt)), config.MessagesRetryBackoffMaxDelay)) * time.Minute
-	return time.Now().Add(backOffDelay)
 }

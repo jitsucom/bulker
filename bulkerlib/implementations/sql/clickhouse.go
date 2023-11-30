@@ -291,25 +291,33 @@ func (ch *ClickHouse) Type() string {
 	return ClickHouseBulkerTypeId
 }
 
-// OpenTx opens underline sql transaction and return wrapped instance
+// OpenTx relies on ClickHouse session by creating new connection and wrapping it with TxSQLAdapter
+// it makes sure that all activity happens in one connection.
 func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
-	cfg := ch.config
+	var db DB
 	if ch.httpMode {
 		configCopy := *ch.config
 		configCopy.Parameters = utils.MapCopy(ch.config.Parameters)
 		utils.MapPutIfAbsent(configCopy.Parameters, "session_id", uuid.New())
 		utils.MapPutIfAbsent(configCopy.Parameters, "session_timeout", "3600")
-		cfg = &configCopy
+		// create db pool just for one session because 'session_id' config parameter defines session
+		sessionDb, err := ch.dbConnectFunction(&configCopy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open session: %v", err)
+		}
+		c, err := sessionDb.Conn(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open connection: %v", err)
+		}
+		db = NewConWithDB(sessionDb, c)
+	} else {
+		var err error
+		db, err = ch.dataSource.Conn(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open connection: %v", err)
+		}
 	}
-	db, err := ch.dbConnectFunction(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open session: %v", err)
-	}
-	con, err := db.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open connection: %v", err)
-	}
-	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), con, ch.queryLogger, ch.checkErrFunc, true)}, nil
+	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), db, ch.queryLogger, ch.checkErrFunc, true)}, nil
 }
 
 // InitDatabase create database instance if doesn't exist
