@@ -195,15 +195,15 @@ func (m *MySQL) Insert(ctx context.Context, table *Table, merge bool, objects ..
 	}
 }
 
-func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (bulker.WarehouseState, error) {
+func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (*bulker.WarehouseState, error) {
 	if mergeWindow <= 0 {
-		return bulker.WarehouseState{}, m.copy(ctx, targetTable, sourceTable)
+		return nil, m.copy(ctx, targetTable, sourceTable)
 	} else {
-		return bulker.WarehouseState{}, m.copyOrMerge(ctx, targetTable, sourceTable, mySQLBulkMergeQueryTemplate, "S")
+		return nil, m.copyOrMerge(ctx, targetTable, sourceTable, mySQLBulkMergeQueryTemplate, "S")
 	}
 }
 
-func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
+func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state *bulker.WarehouseState, err error) {
 	quotedTableName := m.quotedTableName(targetTable.Name)
 
 	if loadSource.Type != LocalFile {

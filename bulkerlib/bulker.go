@@ -133,23 +133,34 @@ const (
 // State is used as a Batch storing result
 type State struct {
 	//Representation of message processing. For SQL warehouses it is table schema
-	Representation any    `json:"representation"`
-	Status         Status `json:"status"`
-	LastError      error  `json:"-"`
-	LastErrorText  string `json:"error,omitempty"`
-	ProcessedRows  int    `json:"processedRows"`
-	SuccessfulRows int    `json:"successfulRows"`
-	ErrorRowIndex  int    `json:"errorRowIndex,omitempty"`
-	WarehouseState `json:",inline,omitempty"`
+	Representation  any    `json:"representation"`
+	Status          Status `json:"status"`
+	LastError       error  `json:"-"`
+	LastErrorText   string `json:"error,omitempty"`
+	ProcessedRows   int    `json:"processedRows"`
+	SuccessfulRows  int    `json:"successfulRows"`
+	ErrorRowIndex   int    `json:"errorRowIndex,omitempty"`
+	*WarehouseState `json:",inline,omitempty"`
 }
 
 type WarehouseState struct {
-	BytesProcessed int            `json:"bytesProcessed,omitempty"`
-	EstimatedCost  float64        `json:"estimatedCost,omitempty"`
+	BytesProcessed int            `json:"bytesProcessed"`
+	EstimatedCost  float64        `json:"estimatedCost"`
 	AdditionalInfo map[string]any `json:",inline,omitempty"`
 }
 
-func (ws *WarehouseState) Merge(second WarehouseState) {
+func (s *State) AddWarehouseState(ws *WarehouseState) {
+	if s.WarehouseState == nil {
+		s.WarehouseState = ws
+	} else {
+		s.WarehouseState.Merge(ws)
+	}
+
+}
+func (ws *WarehouseState) Merge(second *WarehouseState) {
+	if ws == nil || second == nil {
+		return
+	}
 	ws.BytesProcessed += second.BytesProcessed
 	ws.EstimatedCost += second.EstimatedCost
 	for k, v := range second.AdditionalInfo {

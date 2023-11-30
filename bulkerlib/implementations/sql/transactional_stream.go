@@ -56,7 +56,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 	if ps.state.SuccessfulRows > 0 {
 		if ps.batchFile != nil {
 			ws, err := ps.flushBatchFile(ctx)
-			ps.state.WarehouseState.Merge(ws)
+			ps.state.AddWarehouseState(ws)
 			if err != nil {
 				return ps.state, err
 			}
@@ -71,7 +71,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 		ps.updateRepresentationTable(ps.dstTable)
 		//copy data from tmp table to destination table
 		ws, err := ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.mergeWindow)
-		ps.state.WarehouseState.Merge(ws)
+		ps.state.AddWarehouseState(ws)
 		if err != nil {
 			return ps.state, err
 		}

@@ -36,8 +36,8 @@ type SQLAdapter interface {
 	TableHelper() *TableHelper
 	GetTableSchema(ctx context.Context, tableName string) (*Table, error)
 	CreateTable(ctx context.Context, schemaToCreate *Table) error
-	CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error)
-	LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error)
+	CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state *bulker.WarehouseState, err error)
+	LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state *bulker.WarehouseState, err error)
 	PatchTableSchema(ctx context.Context, patchTable *Table) error
 	TruncateTable(ctx context.Context, tableName string) error
 	//(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error
@@ -124,11 +124,11 @@ func (tx *TxSQLAdapter) CreateTable(ctx context.Context, schemaToCreate *Table) 
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.CreateTable(ctx, schemaToCreate)
 }
-func (tx *TxSQLAdapter) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (bulker.WarehouseState, error) {
+func (tx *TxSQLAdapter) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (*bulker.WarehouseState, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.CopyTables(ctx, targetTable, sourceTable, mergeWindow)
 }
-func (tx *TxSQLAdapter) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (bulker.WarehouseState, error) {
+func (tx *TxSQLAdapter) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (*bulker.WarehouseState, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.LoadTable(ctx, targetTable, loadSource)
 }

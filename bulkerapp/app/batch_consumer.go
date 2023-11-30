@@ -142,6 +142,8 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			if bulkerStream != nil {
 				state, _ = bulkerStream.Abort(ctx)
 			}
+			//treat failed message as processed
+			state.ProcessedRows++
 			bc.postEventsLog(state, processedObjectSample, err)
 			return counters, false, bc.NewError("Failed to process event to bulker stream: %v", err)
 		} else {

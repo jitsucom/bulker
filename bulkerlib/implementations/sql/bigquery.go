@@ -160,7 +160,7 @@ func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
 	return nil
 }
 
-func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
+func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state *bulker.WarehouseState, err error) {
 	if mergeWindow <= 0 {
 		defer func() {
 			if err != nil {
@@ -544,7 +544,7 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 	return nil
 }
 
-func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
+func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state *bulker.WarehouseState, err error) {
 	tableName := bq.TableName(targetTable.Name)
 	defer func() {
 		if err != nil {
@@ -984,10 +984,11 @@ type JobRunner interface {
 	Run(ctx context.Context) (*bigquery.Job, error)
 }
 
-func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription string) (job *bigquery.Job, state bulker.WarehouseState, err error) {
+func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription string) (job *bigquery.Job, state *bulker.WarehouseState, err error) {
 	defer func() {
 		bq.logQuery(jobDescription, runner, err)
 	}()
+	state = &bulker.WarehouseState{}
 	var status *bigquery.JobStatus
 	var jobID string
 	job, err = runner.Run(ctx)

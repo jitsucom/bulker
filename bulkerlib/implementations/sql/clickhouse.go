@@ -548,7 +548,7 @@ func (ch *ClickHouse) Insert(ctx context.Context, table *Table, _ bool, objects 
 }
 
 // LoadTable transfer data from local file to ClickHouse table
-func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulkerlib.WarehouseState, err error) {
+func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state *bulkerlib.WarehouseState, err error) {
 	if loadSource.Type != LocalFile {
 		return state, fmt.Errorf("LoadTable: only local file is supported")
 	}
@@ -620,7 +620,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	return state, nil
 }
 
-func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulkerlib.WarehouseState, err error) {
+func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state *bulkerlib.WarehouseState, err error) {
 	return state, ch.copy(ctx, targetTable, sourceTable)
 }
 

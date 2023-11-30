@@ -118,11 +118,11 @@ func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err 
 	return ps.AbstractSQLStream.postComplete(err)
 }
 
-func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (state bulker.WarehouseState, err error) {
+func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (state *bulker.WarehouseState, err error) {
 	table := ps.tmpTable
 	err = ps.tx.CreateTable(ctx, table)
 	if err != nil {
-		return bulker.WarehouseState{}, errorj.Decorate(err, "failed to create table")
+		return nil, errorj.Decorate(err, "failed to create table")
 	}
 	columns := table.SortedColumnNames()
 	defer func() {
@@ -135,11 +135,11 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 	}()
 	if ps.eventsInBatch > 0 {
 		if err != nil {
-			return bulker.WarehouseState{}, errorj.Decorate(err, "failed to flush marshaller")
+			return nil, errorj.Decorate(err, "failed to flush marshaller")
 		}
 		err = ps.batchFile.Sync()
 		if err != nil {
-			return bulker.WarehouseState{}, errorj.Decorate(err, "failed to sync batch file")
+			return nil, errorj.Decorate(err, "failed to sync batch file")
 		}
 		workingFile := ps.batchFile
 		needToConvert := false
@@ -150,7 +150,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		if len(ps.batchFileSkipLines) > 0 || needToConvert {
 			workingFile, err = os.CreateTemp("", path.Base(ps.batchFile.Name())+"_2")
 			if err != nil {
-				return bulker.WarehouseState{}, errorj.Decorate(err, "failed to create tmp file for deduplication")
+				return nil, errorj.Decorate(err, "failed to create tmp file for deduplication")
 			}
 			defer func() {
 				_ = workingFile.Close()
@@ -159,12 +159,12 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			if needToConvert {
 				err = ps.targetMarshaller.Init(workingFile, columns)
 				if err != nil {
-					return bulker.WarehouseState{}, errorj.Decorate(err, "failed to write header for converted batch file")
+					return nil, errorj.Decorate(err, "failed to write header for converted batch file")
 				}
 			}
 			file, err := os.Open(ps.batchFile.Name())
 			if err != nil {
-				return bulker.WarehouseState{}, errorj.Decorate(err, "failed to open tmp file")
+				return nil, errorj.Decorate(err, "failed to open tmp file")
 			}
 			scanner := bufio.NewScanner(file)
 			scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
@@ -177,13 +177,13 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 						obj := make(map[string]any)
 						err = dec.Decode(&obj)
 						if err != nil {
-							return bulker.WarehouseState{}, errorj.Decorate(err, "failed to decode json object from batch filer")
+							return nil, errorj.Decorate(err, "failed to decode json object from batch filer")
 						}
 						ps.targetMarshaller.Marshal(obj)
 					} else {
 						_, err = workingFile.Write(scanner.Bytes())
 						if err != nil {
-							return bulker.WarehouseState{}, errorj.Decorate(err, "failed write to deduplication file")
+							return nil, errorj.Decorate(err, "failed write to deduplication file")
 						}
 						_, _ = workingFile.Write([]byte("\n"))
 					}
@@ -191,7 +191,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				i++
 			}
 			if err = scanner.Err(); err != nil {
-				return bulker.WarehouseState{}, errorj.Decorate(err, "failed to read batch file")
+				return nil, errorj.Decorate(err, "failed to read batch file")
 			}
 			ps.targetMarshaller.Flush()
 			workingFile.Sync()
@@ -203,7 +203,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			s3Config := s3BatchFileOption.Get(&ps.options)
 			rFile, err := os.Open(workingFile.Name())
 			if err != nil {
-				return bulker.WarehouseState{}, errorj.Decorate(err, "failed to open tmp file")
+				return nil, errorj.Decorate(err, "failed to open tmp file")
 			}
 			s3FileName := path.Base(workingFile.Name())
 			if s3Config.Folder != "" {
@@ -211,7 +211,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			}
 			err = ps.s3.Upload(s3FileName, rFile)
 			if err != nil {
-				return bulker.WarehouseState{}, errorj.Decorate(err, "failed to upload file to s3")
+				return nil, errorj.Decorate(err, "failed to upload file to s3")
 			}
 			defer ps.s3.DeleteObject(s3FileName)
 			state, err = ps.tx.LoadTable(ctx, table, &LoadSource{Type: AmazonS3, Path: s3FileName, Format: ps.sqlAdapter.GetBatchFileFormat(), S3Config: s3Config})
