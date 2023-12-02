@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/hashicorp/go-multierror"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
@@ -637,6 +638,8 @@ func (b *SQLAdapterBase[T]) ReplaceTable(ctx context.Context, targetTableName st
 	err = b.renameTable(ctx, false, replacementTable.Name, targetTableName)
 	if dropOldTable && err1 == nil && err == nil {
 		return b.DropTable(ctx, tmpTable, true)
+	} else if err != nil {
+		return multierror.Append(err, err1).ErrorOrNil()
 	}
 	return
 }

@@ -40,6 +40,7 @@ WORKDIR /app
 
 COPY . .
 
+ENV GOEXPERIMENT loopvar
 # Build ingest
 RUN go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o ingest ./ingest
 

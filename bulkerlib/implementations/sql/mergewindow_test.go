@@ -3,6 +3,7 @@ package sql
 import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"sync"
 	"testing"
 	"time"
@@ -93,14 +94,16 @@ func TestMergeWindow(t *testing.T) {
 			configIds: []string{BigqueryBulkerTypeId},
 		},
 	}
-	sequentialGroup := sync.WaitGroup{}
-	sequentialGroup.Add(1)
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runTestConfig(t, tt, testStream)
-			sequentialGroup.Done()
-		})
-		sequentialGroup.Wait()
+	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {
+		sequentialGroup := sync.WaitGroup{}
 		sequentialGroup.Add(1)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				runTestConfig(t, tt, testStream)
+				sequentialGroup.Done()
+			})
+			sequentialGroup.Wait()
+			sequentialGroup.Add(1)
+		}
 	}
 }
