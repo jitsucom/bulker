@@ -465,6 +465,33 @@ func (p *Postgres) CreateTable(ctx context.Context, schemaToCreate *Table) error
 	return nil
 }
 
+func (p *Postgres) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
+	targetTable := replacementTable.Clone()
+	targetTable.Name = targetTableName
+	if targetTable.PrimaryKeyName != "" {
+		targetTable.PrimaryKeyName = BuildConstraintName(targetTableName)
+	}
+	_, err = p.tableHelper.EnsureTableWithoutCaching(ctx, p, p.ID, targetTable)
+	if err != nil {
+		return err
+	}
+	err = p.TruncateTable(ctx, targetTableName)
+	if err != nil {
+		return err
+	}
+	_, err = p.CopyTables(ctx, targetTable, replacementTable, 0)
+	if err != nil {
+		return err
+	}
+	if dropOldTable {
+		err = p.DropTable(ctx, replacementTable.Name, true)
+		if err != nil {
+			return err
+		}
+	}
+	return
+}
+
 func (p *Postgres) createIndex(ctx context.Context, table *Table) error {
 	if table.TimestampColumn == "" {
 		return nil

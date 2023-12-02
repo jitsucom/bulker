@@ -249,6 +249,11 @@ func (s *ReadSideCar) saveState(stream string, data any) {
 			s.err("STATE: not saving state for stream '%s' because of previous errors", stream)
 			return
 		}
+	} else {
+		if s.isErr() {
+			s.err("STATE: not saving '%s' state because of previous errors", stream)
+			return
+		}
 	}
 	stateJson, err := json.Marshal(data)
 	if err != nil {

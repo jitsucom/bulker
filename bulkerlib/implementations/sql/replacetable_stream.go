@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/hashicorp/go-multierror"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
@@ -54,9 +55,12 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 					return ps.state, err
 				}
 			}
-			err = ps.tx.ReplaceTable(ctx, ps.tableName, ps.tmpTable, true)
-			if errorx.IsOfType(err, errorj.DropError) {
+			err1 := ps.tx.ReplaceTable(ctx, ps.tableName, ps.tmpTable, true)
+			if errorx.IsOfType(err1, errorj.DropError) {
 				err = ps.tx.ReplaceTable(ctx, ps.tableName, ps.tmpTable, false)
+				if err != nil {
+					err = multierror.Append(err1, err).ErrorOrNil()
+				}
 			}
 			if err != nil {
 				return ps.state, err
