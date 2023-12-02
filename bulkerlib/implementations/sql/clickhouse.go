@@ -702,6 +702,15 @@ func (ch *ClickHouse) ReplaceTable(ctx context.Context, targetTableName string, 
 		return fmt.Errorf("failed to check existence of target table: %s : %v", targetTableName, err)
 	}
 	if targetTable.Exists() {
+		if ch.distributed.Load() {
+			// we need to adjust distributed table schema to mach new table schema
+			targetTable = replacementTable.Clone()
+			targetTable.Name = targetTableName
+			_, err = ch.tableHelper.EnsureTableWithoutCaching(ctx, ch, ch.ID, targetTable)
+			if err != nil {
+				return err
+			}
+		}
 		//exchange local tables only.
 		//For cluster no need to exchange distribute tables. they are linked by name and will represent new data
 		query := fmt.Sprintf(chExchangeTableTemplate, ch.quotedLocalTableName(targetTableName), ch.quotedLocalTableName(replacementTable.Name), ch.getOnClusterClause())
@@ -716,7 +725,7 @@ func (ch *ClickHouse) ReplaceTable(ctx context.Context, targetTableName string, 
 		}
 		//on cluster we also need to create distributed table for newly create target table
 		if ch.distributed.Load() {
-			targetTable := replacementTable.Clone()
+			targetTable = replacementTable.Clone()
 			targetTable.Name = targetTableName
 			return ch.createDistributedTableInTransaction(ctx, targetTable)
 		}
