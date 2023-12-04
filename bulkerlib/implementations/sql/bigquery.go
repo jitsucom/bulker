@@ -586,6 +586,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 		source.SourceFormat = bigquery.CSV
 		source.SkipLeadingRows = 1
 		source.AllowQuotedNewlines = true
+		source.PreserveASCIIControlCharacters = true
 		source.CSVOptions.NullMarker = "\\N"
 	} else if loadSource.Format == types2.FileFormatNDJSON {
 		source.SourceFormat = bigquery.JSON
