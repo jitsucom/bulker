@@ -27,7 +27,7 @@ func NewRouter(appContext *Context) *Router {
 	engine.POST("/read", appContext.taskManager.ReadHandler)
 
 	engine.GET("/health", func(c *gin.Context) {
-		c.Status(http.StatusOK)
+		c.JSON(http.StatusOK, gin.H{"status": "pass"})
 	})
 
 	engine.GET("/debug/pprof/profile", gin.WrapF(pprof.Profile))

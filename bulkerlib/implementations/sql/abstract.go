@@ -23,6 +23,7 @@ type AbstractSQLStream struct {
 	tableName   string
 	merge       bool
 	mergeWindow int
+	omitNils    bool
 
 	state  bulker.State
 	inited bool
@@ -50,6 +51,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	var customFields = ColumnTypesOption.Get(&ps.options)
 	ps.pkColumns = pkColumns.ToSlice()
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
+	ps.omitNils = OmitNilsOption.Get(&ps.options)
 
 	//TODO: max column?
 	ps.state = bulker.State{Status: bulker.Active}
@@ -61,7 +63,7 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Obje
 	if ps.state.Status != bulker.Active {
 		return nil, nil, fmt.Errorf("stream is not active. Status: %s", ps.state.Status)
 	}
-	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes)
+	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.omitNils)
 	if err != nil {
 		return nil, nil, err
 	}

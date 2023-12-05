@@ -80,3 +80,27 @@ func MapToSlice[K comparable, V any, R any](mp map[K]V, mappingFunc func(K, V) R
 	}
 	return result
 }
+
+func MapFilter[K comparable, V any](mp map[K]V, predicate func(K, V) bool) map[K]V {
+	if mp == nil {
+		return nil
+	}
+	result := make(map[K]V, len(mp))
+	for k, v := range mp {
+		if predicate(k, v) {
+			result[k] = v
+		}
+	}
+	return result
+}
+
+func MapMap[K comparable, V any, R any](mp map[K]V, mappingFunc func(K, V) R) map[K]R {
+	if mp == nil {
+		return nil
+	}
+	result := make(map[K]R, len(mp))
+	for k, v := range mp {
+		result[k] = mappingFunc(k, v)
+	}
+	return result
+}

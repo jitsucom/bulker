@@ -43,6 +43,9 @@ const (
 	bigqueryTruncateTemplate = "TRUNCATE TABLE %s"
 	bigquerySelectTemplate   = "SELECT %s FROM %s%s%s"
 
+	bigqueryPKHashLabel = "jitsu_pk_hash"
+	bigqueryPKNameLabel = "jitsu_pk_name"
+
 	bigqueryRowsLimitPerInsertOperation = 500
 )
 
@@ -281,14 +284,15 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 		dt, _ := bq.GetDataType(string(field.Type))
 		table.Columns[field.Name] = types2.SQLColumn{Type: string(field.Type), DataType: dt}
 	}
-	for k, v := range meta.Labels {
-		if strings.HasPrefix(k, BulkerManagedPkConstraintPrefix) {
-			pkFields := strings.Split(v, "---")
-			for _, pkField := range pkFields {
-				table.PKFields.Put(pkField)
-			}
-			table.PrimaryKeyName = k
-			break
+	jitsuPKName := meta.Labels[bigqueryPKNameLabel]
+	jitsuPKHash := meta.Labels[bigqueryPKHashLabel]
+
+	tableConstraints := meta.TableConstraints
+	if tableConstraints != nil && tableConstraints.PrimaryKey != nil {
+		table.PKFields.PutAll(tableConstraints.PrimaryKey.Columns)
+		if table.PKFields.Hash() == jitsuPKHash {
+			// PK was not changed since Jitsu managed this table
+			table.PrimaryKeyName = jitsuPKName
 		}
 	}
 	if meta.TimePartitioning != nil {
@@ -336,16 +340,25 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 		bigQueryType := bigquery.FieldType(strings.ToUpper(column.GetDDLType()))
 		bqSchema = append(bqSchema, &bigquery.FieldSchema{Name: bq.ColumnName(columnName), Type: bigQueryType})
 	}
+	var tableConstraints *bigquery.TableConstraints
 	var labels map[string]string
 	if len(table.PKFields) > 0 && table.PrimaryKeyName != "" {
-		labels = map[string]string{table.PrimaryKeyName: strings.Join(table.GetPKFields(), "---")}
+		tableConstraints = &bigquery.TableConstraints{
+			PrimaryKey: &bigquery.PrimaryKey{
+				Columns: table.GetPKFields(),
+			},
+		}
+		labels = map[string]string{
+			bigqueryPKHashLabel: table.PKFields.Hash(),
+			bigqueryPKNameLabel: table.PrimaryKeyName,
+		}
 	}
-	tableMetaData := bigquery.TableMetadata{Name: tableName, Schema: bqSchema, Labels: labels}
+	tableMetaData := bigquery.TableMetadata{Name: tableName, Schema: bqSchema, TableConstraints: tableConstraints, Labels: labels}
 	if table.Partition.Field == "" && table.TimestampColumn != "" {
 		// partition by timestamp column
 		table = table.Clone()
 		table.Partition.Field = table.TimestampColumn
-		table.Partition.Granularity = MONTH
+		table.Partition.Granularity = DAY
 	}
 	if table.Partition.Field != "" && table.Partition.Granularity != ALL {
 		var partitioningType bigquery.TimePartitioningType
@@ -418,12 +431,26 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 	}
 	//patch primary keys - delete old
 	if patchSchema.DeletePkFields {
-		metadata.Labels = map[string]string{}
+		delete(metadata.Labels, bigqueryPKHashLabel)
+		delete(metadata.Labels, bigqueryPKNameLabel)
+		if metadata.TableConstraints != nil {
+			metadata.TableConstraints.PrimaryKey = &bigquery.PrimaryKey{}
+		}
 	}
 
 	//patch primary keys - create new
 	if len(patchSchema.PKFields) > 0 && patchSchema.PrimaryKeyName != "" {
-		metadata.Labels = map[string]string{patchSchema.PrimaryKeyName: strings.Join(patchSchema.GetPKFields(), ",")}
+		if metadata.Labels == nil {
+			metadata.Labels = map[string]string{}
+		}
+		metadata.Labels[bigqueryPKHashLabel] = patchSchema.PKFields.Hash()
+		metadata.Labels[bigqueryPKNameLabel] = patchSchema.PrimaryKeyName
+		if metadata.TableConstraints == nil {
+			metadata.TableConstraints = &bigquery.TableConstraints{}
+		}
+		metadata.TableConstraints.PrimaryKey = &bigquery.PrimaryKey{
+			Columns: patchSchema.GetPKFields(),
+		}
 	}
 	for _, columnName := range patchSchema.SortedColumnNames() {
 		column := patchSchema.Columns[columnName]

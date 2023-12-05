@@ -7,8 +7,6 @@ import (
 	"reflect"
 )
 
-var DefaultFlattener = NewFlattener()
-
 type Flattener interface {
 	FlattenObject(object map[string]any, sqlTypeHints types.SQLTypes) (map[string]any, error)
 }
@@ -17,9 +15,9 @@ type FlattenerImpl struct {
 	omitNilValues bool
 }
 
-func NewFlattener() Flattener {
+func NewFlattener(omitNilValues bool) Flattener {
 	return &FlattenerImpl{
-		omitNilValues: true,
+		omitNilValues: omitNilValues,
 	}
 }
 

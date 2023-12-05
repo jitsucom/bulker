@@ -3,6 +3,7 @@ package utils
 import (
 	"cmp"
 	"sort"
+	"strconv"
 )
 
 type Set[K cmp.Ordered] map[K]struct{}
@@ -83,4 +84,9 @@ func (s Set[K]) Equals(other Set[K]) bool {
 		}
 	}
 	return true
+}
+
+func (s Set[K]) Hash() string {
+	h, _ := HashAny(s)
+	return strconv.FormatUint(h, 10)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/hjson/hjson-go/v4"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
@@ -47,7 +48,7 @@ type Router struct {
 func NewRouter(appContext *Context) *Router {
 	authTokens := strings.Split(appContext.config.AuthTokens, ",")
 	tokenSecrets := strings.Split(appContext.config.TokenSecrets, ",")
-	base := appbase.NewRouterBase(authTokens, tokenSecrets, []string{"/ready"})
+	base := appbase.NewRouterBase(authTokens, tokenSecrets, []string{"/ready", "/health"})
 
 	router := &Router{
 		Router:           base,
@@ -67,18 +68,8 @@ func NewRouter(appContext *Context) *Router {
 	fast.POST("/ingest", router.IngestHandler)
 	fast.POST("/test", router.TestConnectionHandler)
 	fast.GET("/log/:eventType/:actorId", router.EventsLogHandler)
-	fast.GET("/ready", func(c *gin.Context) {
-		if router.kafkaConfig == nil {
-			c.Status(http.StatusOK)
-			return
-		}
-		if router.topicManager.IsReady() {
-			c.Status(http.StatusOK)
-		} else {
-			logging.Errorf("Health check: FAILED")
-			c.AbortWithStatus(http.StatusServiceUnavailable)
-		}
-	})
+	fast.GET("/ready", router.Health)
+	fast.GET("/health", router.Health)
 
 	engine.POST("/bulk/:destinationId", router.BulkHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
@@ -95,6 +86,19 @@ func NewRouter(appContext *Context) *Router {
 	engine.GET("/debug/pprof", gin.WrapF(pprof.Index))
 
 	return router
+}
+
+func (r *Router) Health(c *gin.Context) {
+	if r.kafkaConfig == nil {
+		c.JSON(http.StatusOK, gin.H{"status": "pass"})
+		return
+	}
+	if r.topicManager.IsReady() {
+		c.JSON(http.StatusOK, gin.H{"status": "pass"})
+	} else {
+		logging.Errorf("Health check: FAILED")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": "topic manager is not ready"})
+	}
 }
 
 func (r *Router) EventsHandler(c *gin.Context) {
@@ -188,6 +192,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	if len(pkeys) > 0 {
 		streamOptions = append(streamOptions, bulker.WithPrimaryKey(pkeys...), bulker.WithDeduplicate())
 	}
+	streamOptions = append(streamOptions, sql.WithoutOmitNils())
 	destination.InitBulkerInstance()
 	bulkerStream, err := destination.bulker.CreateStream(jobId, tableName, bulkMode, streamOptions...)
 	if err != nil {

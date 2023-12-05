@@ -42,6 +42,12 @@ var (
 		ParseFunc:    utils.ParseInt,
 	}
 
+	OmitNilsOption = bulker.ImplementationOption[bool]{
+		Key:          "omitNils",
+		DefaultValue: true,
+		ParseFunc:    utils.ParseBool,
+	}
+
 	localBatchFileOption = bulker.ImplementationOption[string]{Key: "BULKER_OPTION_LOCAL_BATCH_FILE"}
 
 	s3BatchFileOption = bulker.ImplementationOption[*S3OptionConfig]{Key: "BULKER_OPTION_S3_BATCH_FILE"}
@@ -50,6 +56,7 @@ var (
 func init() {
 	bulker.RegisterOption(&DeduplicateWindow)
 	bulker.RegisterOption(&ColumnTypesOption)
+	bulker.RegisterOption(&OmitNilsOption)
 }
 
 type S3OptionConfig struct {
@@ -58,6 +65,14 @@ type S3OptionConfig struct {
 	Bucket      string `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
 	Region      string `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
 	Folder      string `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
+}
+
+func WithOmitNils() bulker.StreamOption {
+	return bulker.WithOption(&OmitNilsOption, true)
+}
+
+func WithoutOmitNils() bulker.StreamOption {
+	return bulker.WithOption(&OmitNilsOption, false)
 }
 
 func WithDeduplicateWindow(deduplicateWindow int) bulker.StreamOption {
