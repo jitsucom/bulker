@@ -11,7 +11,6 @@ import (
 	"github.com/hjson/hjson-go/v4"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
-	"github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
@@ -192,7 +191,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	if len(pkeys) > 0 {
 		streamOptions = append(streamOptions, bulker.WithPrimaryKey(pkeys...), bulker.WithDeduplicate())
 	}
-	streamOptions = append(streamOptions, sql.WithoutOmitNils())
+	//streamOptions = append(streamOptions, sql.WithoutOmitNils())
 	destination.InitBulkerInstance()
 	bulkerStream, err := destination.bulker.CreateStream(jobId, tableName, bulkMode, streamOptions...)
 	if err != nil {
