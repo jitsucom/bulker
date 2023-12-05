@@ -1,4 +1,4 @@
-name: CI
+name: Release
 on:
   push:
     tags:
@@ -17,6 +17,7 @@ jobs:
       - name: Set outputs
         id: vars
         run: |
+          echo "tag=$(echo ${{ github.ref_name }} | sed 's/v//')" >> $GITHUB_OUTPUT
           echo "timestamp=$(date '+%F_%H:%M:%S')" >> $GITHUB_OUTPUT
       - uses: benjlevesque/short-sha@v2.2
         id: short-sha
@@ -35,6 +36,6 @@ jobs:
           file: "bulker.Dockerfile"
           push: true
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ github.ref_name }}.${{ steps.short-sha.outputs.sha }}
             BUILD_TIMESTAMP=${{ steps.vars.outputs.timestamp }}
-          tags: jitsucom/bulker:latest,jitsucom/bulker:${{ github.ref_name }}
+          tags: jitsucom/bulker:latest,jitsucom/bulker:${{ steps.vars.outputs.tag }}
