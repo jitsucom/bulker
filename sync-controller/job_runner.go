@@ -11,6 +11,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/mitchellh/mapstructure"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"math"
@@ -383,6 +384,18 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 					Env: []v1.EnvVar{{Name: "USE_STREAM_CAPABLE_STATE", Value: "true"},
 						{Name: "AUTO_DETECT_SCHEMA", Value: "true"}},
 					VolumeMounts: volumeMounts,
+					Resources: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(2000), resource.DecimalSI),
+							// 2Gi
+							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 31)), resource.BinarySI),
+						},
+						Requests: v1.ResourceList{
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(500), resource.DecimalSI),
+							// 512Mi
+							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 29)), resource.BinarySI),
+						},
+					},
 				},
 				{
 					Name:            "sidecar",
@@ -390,6 +403,18 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 					Image:           j.config.SidecarImage,
 					Env:             sideCarEnvVar,
 					VolumeMounts:    volumeMounts,
+					Resources: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(1000), resource.DecimalSI),
+							// 512Mi
+							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 29)), resource.BinarySI),
+						},
+						Requests: v1.ResourceList{
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(250), resource.DecimalSI),
+							// 256
+							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 28)), resource.BinarySI),
+						},
+					},
 				},
 			},
 			InitContainers: []v1.Container{

@@ -15,6 +15,8 @@ type Config struct {
 
 	DatabaseURL string `mapstructure:"DATABASE_URL"`
 
+	DataDomain string `mapstructure:"DATA_DOMAIN"`
+
 	// For ingest endpoint only
 	GlobalHashSecret string `mapstructure:"GLOBAL_HASH_SECRET" default:"dea42a58-acf4-45af-85bb-e77e94bd5025"`
 	// For ingest endpoint only
@@ -32,6 +34,9 @@ type Config struct {
 	EventsLogMaxSize int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
 
 	RepositoryRefreshPeriodSec int `mapstructure:"REPOSITORY_REFRESH_PERIOD_SEC" default:"5"`
+
+	RotorURL                 string `mapstructure:"ROTOR_URL"`
+	DeviceFunctionsTimeoutMs int    `mapstructure:"DEVICE_FUNCTIONS_TIMEOUT_MS" default:"200"`
 
 	// # GRACEFUL SHUTDOWN
 	//Timeout that give running batch tasks time to finish during shutdown.

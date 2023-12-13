@@ -39,7 +39,7 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 
 func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error) {
 	counters.firstOffset = int64(kafka.OffsetBeginning)
-
+	startTime := time.Now()
 	var bulkerStream bulker.BulkerStream
 	ctx := context.WithValue(context.Background(), bulker.BatchNumberCtxKey, batchNum)
 
@@ -144,6 +144,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			}
 			//treat failed message as processed
 			state.ProcessedRows++
+			state.ProcessingTimeSec = time.Since(startTime).Seconds()
 			bc.postEventsLog(state, processedObjectSample, err)
 			return counters, false, bc.NewError("Failed to process event to bulker stream: %v", err)
 		} else {
@@ -162,6 +163,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		var state bulker.State
 		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(ctx)
+		state.ProcessingTimeSec = time.Since(startTime).Seconds()
 		bc.postEventsLog(state, processedObjectSample, err)
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition

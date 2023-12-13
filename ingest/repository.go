@@ -182,12 +182,13 @@ type ShortDestinationConfig struct {
 	Id              string         `json:"id"`
 	ConnectionId    string         `json:"connectionId"`
 	DestinationType string         `json:"destinationType"`
-	Options         map[string]any `json:"options"`
+	Options         map[string]any `json:"options,omitempty"`
+	Credentials     map[string]any `json:"credentials,omitempty"`
 }
 
 type TagDestinationConfig struct {
-	Mode string `json:"mode"`
-	Code string `json:"code"`
+	Mode string `json:"mode,omitempty"`
+	Code string `json:"code,omitempty"`
 }
 
 type StreamWithDestinations struct {
@@ -207,9 +208,8 @@ func (s *StreamWithDestinations) init() {
 		if d.Id == "" || d.DestinationType == "" {
 			continue
 		}
-		_, hasEventsOption := d.Options["events"]
-		_, hasHostsOption := d.Options["hosts"]
-		if hasEventsOption || hasHostsOption {
+		_, ok := DeviceOptions[d.DestinationType]
+		if ok {
 			s.SynchronousDestinations = append(s.SynchronousDestinations, &d)
 		} else {
 			s.AsynchronousDestinations = append(s.AsynchronousDestinations, &d)

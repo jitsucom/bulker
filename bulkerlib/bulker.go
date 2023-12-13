@@ -133,14 +133,15 @@ const (
 // State is used as a Batch storing result
 type State struct {
 	//Representation of message processing. For SQL warehouses it is table schema
-	Representation  any    `json:"representation"`
-	Status          Status `json:"status"`
-	LastError       error  `json:"-"`
-	LastErrorText   string `json:"error,omitempty"`
-	ProcessedRows   int    `json:"processedRows"`
-	SuccessfulRows  int    `json:"successfulRows"`
-	ErrorRowIndex   int    `json:"errorRowIndex,omitempty"`
-	*WarehouseState `json:",inline,omitempty"`
+	Representation    any     `json:"representation"`
+	Status            Status  `json:"status"`
+	LastError         error   `json:"-"`
+	LastErrorText     string  `json:"error,omitempty"`
+	ProcessedRows     int     `json:"processedRows"`
+	SuccessfulRows    int     `json:"successfulRows"`
+	ErrorRowIndex     int     `json:"errorRowIndex,omitempty"`
+	ProcessingTimeSec float64 `json:"processingTimeSec"`
+	*WarehouseState   `json:",inline,omitempty"`
 }
 
 type WarehouseState struct {

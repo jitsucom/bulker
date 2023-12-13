@@ -17,7 +17,7 @@ type Router struct {
 	engine       *gin.Engine
 	authTokens   []string
 	tokenSecrets []string
-	noAuthPaths  []string
+	noAuthPaths  utils.Set[string]
 }
 
 func NewRouterBase(authTokens, tokenSecrets, noAuthPaths []string) *Router {
@@ -31,7 +31,7 @@ func NewRouterBase(authTokens, tokenSecrets, noAuthPaths []string) *Router {
 		Service:      base,
 		authTokens:   authTokens,
 		tokenSecrets: tokenSecrets,
-		noAuthPaths:  noAuthPaths,
+		noAuthPaths:  utils.NewSet(noAuthPaths...),
 	}
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
@@ -57,7 +57,7 @@ func (r *Router) authMiddleware(c *gin.Context) {
 	if len(r.authTokens) == 0 {
 		return
 	}
-	if utils.ArrayContains(r.noAuthPaths, c.FullPath()) {
+	if r.noAuthPaths.Contains(c.FullPath()) {
 		//no auth for this path
 		return
 	}
@@ -91,7 +91,7 @@ func (r *Router) authMiddleware(c *gin.Context) {
 	return
 }
 
-func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, logFormat string, logArgs ...any) *RouterError {
+func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, logPrefix string, sendResponse bool) *RouterError {
 	routerError := RouterError{ErrorType: errorType}
 	if err != nil {
 		if maskError {
@@ -107,14 +107,11 @@ func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskE
 		routerError.PublicError = err
 	}
 	routerError.Error = err
-	if logFormat == "" {
-		logFormat = "%v"
-	} else {
-		logFormat = logFormat + " %v"
+	logFormat := utils.JoinNonEmptyStrings(" ", logPrefix, "%v")
+	r.Errorf(logFormat, err)
+	if sendResponse {
+		c.JSON(code, gin.H{"error": routerError.PublicError.Error()})
 	}
-	logArgs = append(logArgs, err)
-	r.Errorf(logFormat, logArgs...)
-	c.JSON(code, gin.H{"error": routerError.PublicError.Error()})
 	return &routerError
 }
 

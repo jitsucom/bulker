@@ -1,9 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/base64"
-	"encoding/json"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/safego"
@@ -30,7 +27,7 @@ func NewBackupLogger(config *Config) *BackupLogger {
 	}
 }
 
-func (bl *BackupLogger) Log(logger string, event any) (err error) {
+func (bl *BackupLogger) Log(logger string, eventBytes []byte) (err error) {
 	if bl.config.BackupLogDir == "" {
 		return
 	}
@@ -46,17 +43,7 @@ func (bl *BackupLogger) Log(logger string, event any) (err error) {
 		}
 		bl.Unlock()
 	}
-	buff := bytes.Buffer{}
-	if data, ok := event.([]byte); ok {
-		_, err = base64.NewEncoder(base64.RawStdEncoding, &buff).Write(data)
-		buff.Write([]byte("\n"))
-	} else {
-		err = json.NewEncoder(&buff).Encode(event)
-	}
-	if err != nil {
-		return
-	}
-	_, err = (rwriter.(io.WriteCloser)).Write(buff.Bytes())
+	_, err = (rwriter.(io.WriteCloser)).Write(eventBytes)
 	return
 }
 

@@ -46,3 +46,36 @@ func ArrayMap[V any, R any](arr []V, mappingFunc func(V) R) []R {
 	}
 	return result
 }
+
+func ArrayFilter[V any](arr []V, filterFunc func(V) bool) []V {
+	result := make([]V, 0, len(arr))
+	for i, v := range arr {
+		if filterFunc(v) {
+			result = append(result, arr[i])
+		}
+	}
+	return result
+}
+
+func ArrayFilterMap[V any, R any](arr []V, filterFunc func(V) bool, mappingFunc func(V) R) []R {
+	result := make([]R, 0, len(arr))
+	for i, v := range arr {
+		if filterFunc(v) {
+			result = append(result, mappingFunc(arr[i]))
+		}
+	}
+	return result
+}
+
+func ArrayIndexOf[V any](arr []V, filterFunc func(V) bool) int {
+	for i, v := range arr {
+		if filterFunc(v) {
+			return i
+		}
+	}
+	return -1
+}
+
+func ArrayContainsF[V any](arr []V, filterFunc func(V) bool) bool {
+	return ArrayIndexOf(arr, filterFunc) >= 0
+}

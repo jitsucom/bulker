@@ -114,6 +114,26 @@ func (s *AbstractSideCar) registerErr(err error) {
 	}
 }
 
+func (s *AbstractSideCar) checkJsonRow(json string) bool {
+	if strings.HasPrefix(json, "{") && strings.HasSuffix(json, "}") {
+		return true
+	}
+	//get first word
+	logLine := strings.SplitN(json, " ", 2)
+	firstWord := logLine[0]
+	rest := ""
+	if len(logLine) > 1 {
+		rest = logLine[1]
+	}
+	switch strings.ToLower(firstWord) {
+	case "info", "error", "warn", "debug", "fatal", "trace":
+		s._log(s.packageName, firstWord, rest)
+	default:
+		s._log(s.packageName, "ERROR", json)
+	}
+	return false
+}
+
 func (s *AbstractSideCar) _log(logger, level, message string) {
 	fmt.Printf("%s : %s\n", level, message)
 	err := s.sendLog(logger, level, message)
