@@ -468,7 +468,8 @@ func (r *Router) getDataLocator(c *gin.Context, event *AnalyticsServerEvent, ing
 	} else if c.GetHeader("X-Write-Key") != "" {
 		cred.WriteKey = c.GetHeader("X-Write-Key")
 	}
-	host := c.Request.URL.Hostname()
+	host := strings.Split(c.Request.Host, ":")[0]
+	r.Infof("Host: %s Datahost: %s", host, dataHost)
 	if dataHost != "" && strings.HasSuffix(host, "."+dataHost) {
 		cred.Slug = strings.TrimSuffix(host, "."+dataHost)
 	} else {
@@ -621,7 +622,9 @@ type StreamLocator func(loc *StreamCredentials) *StreamWithDestinations
 
 func (r *Router) getStream(loc *StreamCredentials) *StreamWithDestinations {
 	var locators []StreamLocator
-	if loc.IngestType == IngestTypeS2S || loc.IngestType == IngestTypeWriteKeyDefined {
+	if loc.IngestType == IngestTypeWriteKeyDefined {
+		locators = []StreamLocator{r.WriteKeyStreamLocator}
+	} else if loc.IngestType == IngestTypeS2S {
 		locators = []StreamLocator{r.WriteKeyStreamLocator, r.SlugStreamLocator, r.AmbiguousDomainStreamLocator}
 	} else {
 		locators = []StreamLocator{r.SlugStreamLocator, r.DomainStreamLocator, r.WriteKeyStreamLocator}
