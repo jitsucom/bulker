@@ -22,6 +22,7 @@ type Context struct {
 	producer         *kafkabase.Producer
 	eventsLogService eventslog.EventsLogService
 	server           *http.Server
+	metricsServer    *MetricsServer
 	backupsLogger    *BackupLogger
 }
 
@@ -67,6 +68,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		ReadHeaderTimeout: time.Second * 60,
 		IdleTimeout:       time.Second * 65,
 	}
+	a.metricsServer = NewMetricsServer(a.config)
 	return nil
 }
 
@@ -77,6 +79,7 @@ func (a *Context) Cleanup() error {
 		logging.Infof("Waiting %d seconds before http server shutdown...", a.config.ShutdownExtraDelay)
 		time.Sleep(time.Duration(a.config.ShutdownExtraDelay) * time.Second)
 	}
+	_ = a.metricsServer.Stop()
 	_ = a.eventsLogService.Close()
 	a.repository.Close()
 	a.dbpool.Close()

@@ -38,6 +38,8 @@ type Config struct {
 	RotorURL                 string `mapstructure:"ROTOR_URL"`
 	DeviceFunctionsTimeoutMs int    `mapstructure:"DEVICE_FUNCTIONS_TIMEOUT_MS" default:"200"`
 
+	MetricsPort int `mapstructure:"METRICS_PORT" default:"9091"`
+
 	// # GRACEFUL SHUTDOWN
 	//Timeout that give running batch tasks time to finish during shutdown.
 	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`
