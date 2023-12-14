@@ -58,7 +58,7 @@ func (r *Repository) refresh() {
 	streamsByIds := map[string]*StreamWithDestinations{}
 	streamsByDomains := map[string][]*StreamWithDestinations{}
 	defer func() {
-		r.Infof("Refreshed in %v", time.Now().Sub(start))
+		r.Debugf("Refreshed in %v", time.Now().Sub(start))
 	}()
 	rows, err := r.dbpool.Query(context.Background(), SQLQuery)
 	if err != nil {
