@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"compress/gzip"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
@@ -388,16 +387,16 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	}
 	resp := r.processSyncDestination(ingestMessage, stream, ingestMessageBytes)
 	if resp != nil {
-		if r.ShouldCompress(c.Request) {
-			c.Header("Content-Encoding", "gzip")
-			c.Header("Content-Type", "application/json")
-			c.Header("Vary", "Accept-Encoding")
-			gz := gzip.NewWriter(c.Writer)
-			_ = json.NewEncoder(gz).Encode(resp)
-			_ = gz.Close()
-		} else {
-			c.JSON(http.StatusOK, resp)
-		}
+		//if r.ShouldCompress(c.Request) {
+		//	c.Header("Content-Encoding", "gzip")
+		//	c.Header("Content-Type", "application/json")
+		//	c.Header("Vary", "Accept-Encoding")
+		//	gz := gzip.NewWriter(c.Writer)
+		//	_ = json.NewEncoder(gz).Encode(resp)
+		//	_ = gz.Close()
+		//} else {
+		c.JSON(http.StatusOK, resp)
+		//}
 	} else {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
