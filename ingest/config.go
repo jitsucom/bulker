@@ -22,6 +22,12 @@ type Config struct {
 	// For ingest endpoint only
 	GlobalHashSecrets []string
 
+	// URL to fetch p.js javascript code from
+	ScriptOrigin string `mapstructure:"SCRIPT_ORIGIN" default:"https://cdn.jsdelivr.net/npm/@jitsu/js@latest/dist/web/p.js.txt"`
+
+	//Cache dir for repository and javascript data
+	CacheDir string `mapstructure:"CACHE_DIR"`
+
 	BackupLogDir         string `mapstructure:"BACKUP_LOG_DIR"`
 	BackupLogTTL         int    `mapstructure:"BACKUP_LOG_TTL_DAYS" default:"7"`
 	BackupLogRotateHours int    `mapstructure:"BACKUP_LOG_ROTATE_HOURS" default:"24"`

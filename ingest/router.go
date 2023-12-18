@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/jitsucom/bulker/kafkabase"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/penglongli/gin-metrics/ginmetrics"
 	timeout "github.com/vearne/gin-timeout"
 	"io"
 	"maps"
@@ -39,6 +41,7 @@ type Router struct {
 	config           *Config
 	kafkaConfig      *kafka.ConfigMap
 	repository       *Repository
+	script           *Script
 	producer         *kafkabase.Producer
 	eventsLogService eventslog.EventsLogService
 	backupsLogger    *BackupLogger
@@ -68,6 +71,7 @@ func NewRouter(appContext *Context) *Router {
 	tokenSecrets := strings.Split(appContext.config.TokenSecrets, ",")
 	base := appbase.NewRouterBase(authTokens, tokenSecrets, []string{
 		"/health",
+		"/p.js",
 		"/v1/projects/:writeKey/settings",
 		"/v1/b",
 		"/v1/batch",
@@ -90,9 +94,17 @@ func NewRouter(appContext *Context) *Router {
 		eventsLogService: appContext.eventsLogService,
 		backupsLogger:    appContext.backupsLogger,
 		repository:       appContext.repository,
+		script:           appContext.script,
 		httpClient:       httpClient,
 	}
 	engine := router.Engine()
+	// get global Monitor object
+	m := ginmetrics.GetMonitor()
+	m.SetSlowTime(1)
+	// set request duration, default {0.1, 0.3, 1.2, 5, 10}
+	// used to p95, p99
+	m.SetDuration([]float64{0.02, 0.05, 0.1, 0.2, 0.5})
+	m.UseWithoutExposingEndpoint(engine)
 	fast := engine.Group("")
 	fast.Use(timeout.Timeout(timeout.WithTimeout(10 * time.Second)))
 	fast.Use(router.CorsMiddleware)
@@ -104,6 +116,7 @@ func NewRouter(appContext *Context) *Router {
 	fast.Match([]string{"OPTIONS", "POST"}, "/b", router.BatchHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/:tp", router.IngestHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/s2s/:tp", router.IngestHandler)
+	fast.Match([]string{"GET", "HEAD", "OPTIONS"}, "/p.js", router.ScriptHandler)
 
 	engine.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "pass"})
@@ -125,7 +138,7 @@ func NewRouter(appContext *Context) *Router {
 
 func (r *Router) CorsMiddleware(c *gin.Context) {
 	c.Header("Access-Control-Allow-Origin", utils.NvlString(c.GetHeader("Origin"), "*"))
-	c.Header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+	c.Header("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS")
 	c.Header("Access-Control-Allow-Headers", "x-enable-debug, x-write-key, authorization, content-type")
 	c.Header("Access-Control-Allow-Credentials", "true")
 	if c.Request.Method == "OPTIONS" {
@@ -268,6 +281,25 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	}
 }
 
+func (r *Router) ScriptHandler(c *gin.Context) {
+	if r.script == nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	if c.Request.Method != "GET" && c.Request.Method != "HEAD" {
+		c.AbortWithStatus(http.StatusMethodNotAllowed)
+		return
+	}
+	ifNoneMatch := c.GetHeader("If-None-Match")
+	etag := r.script.GetEtag()
+	if etag != nil && ifNoneMatch != "" && *etag == ifNoneMatch {
+		c.Header("ETag", *etag)
+		c.AbortWithStatus(http.StatusNotModified)
+		return
+	}
+	r.script.WriteScript(c, c.Request.Method == "HEAD", r.ShouldCompress(c.Request))
+}
+
 func (r *Router) IngestHandler(c *gin.Context) {
 	domain := ""
 	// TODO: use workspaceId as default for all stream identification errors
@@ -356,7 +388,16 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	}
 	resp := r.processSyncDestination(ingestMessage, stream, ingestMessageBytes)
 	if resp != nil {
-		c.JSON(http.StatusOK, resp)
+		if r.ShouldCompress(c.Request) {
+			c.Header("Content-Encoding", "gzip")
+			c.Header("Content-Type", "application/json")
+			c.Header("Vary", "Accept-Encoding")
+			gz := gzip.NewWriter(c.Writer)
+			_ = json.NewEncoder(gz).Encode(resp)
+			_ = gz.Close()
+		} else {
+			c.JSON(http.StatusOK, resp)
+		}
 	} else {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}

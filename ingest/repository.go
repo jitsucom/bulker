@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	jsoniter "github.com/json-iterator/go"
+	"io"
+	"os"
+	"path"
 	"sync/atomic"
 	"time"
 )
@@ -33,23 +37,90 @@ type Repository struct {
 	appbase.Service
 	dbpool           *pgxpool.Pool
 	refreshPeriodSec int
+	inited           atomic.Bool
+	cacheDir         string
 	apiKeyBindings   atomic.Pointer[map[string]*ApiKeyBinding]
 	streamsByIds     atomic.Pointer[map[string]*StreamWithDestinations]
 	streamsByDomains atomic.Pointer[map[string][]*StreamWithDestinations]
 	closed           chan struct{}
 }
 
-func NewRepository(dbpool *pgxpool.Pool, refreshPeriodSec int) *Repository {
+type RepositoryCache struct {
+	ApiKeyBindings   map[string]*ApiKeyBinding            `json:"apiKeyBindings"`
+	StreamsByIds     map[string]*StreamWithDestinations   `json:"streamsByIds"`
+	StreamsByDomains map[string][]*StreamWithDestinations `json:"streamsByDomains"`
+}
+
+func NewRepository(dbpool *pgxpool.Pool, refreshPeriodSec int, cacheDir string) *Repository {
 	base := appbase.NewServiceBase("repository")
 	r := &Repository{
 		Service:          base,
 		dbpool:           dbpool,
 		refreshPeriodSec: refreshPeriodSec,
+		cacheDir:         cacheDir,
 		closed:           make(chan struct{}),
 	}
 	r.refresh()
-	r.Start()
+	r.start()
 	return r
+}
+
+func (r *Repository) loadCached() {
+	file, err := os.Open(path.Join(r.cacheDir, "repository.json"))
+	if err != nil {
+		r.Fatalf("Error opening cached repository: %v\nCannot serve without repository. Exitting...", err)
+		return
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		r.Fatalf("Error getting cached repository info: %v\nCannot serve without repository. Exitting...", err)
+		return
+	}
+	fileSize := stat.Size()
+	if fileSize == 0 {
+		r.Fatalf("Cached repository is empty\nCannot serve without repository. Exitting...")
+		return
+	}
+	payload, err := io.ReadAll(file)
+	if err != nil {
+		r.Fatalf("Error reading cached script: %v\nCannot serve without repository. Exitting...", err)
+		return
+	}
+	repositoryCache := RepositoryCache{}
+	err = jsoniter.Unmarshal(payload, &repositoryCache)
+	if err != nil {
+		r.Fatalf("Error unmarshalling cached repository: %v\nCannot serve without repository. Exitting...", err)
+		return
+	}
+	r.apiKeyBindings.Store(&repositoryCache.ApiKeyBindings)
+	r.streamsByIds.Store(&repositoryCache.StreamsByIds)
+	r.streamsByDomains.Store(&repositoryCache.StreamsByDomains)
+	r.inited.Store(true)
+	r.Infof("Loaded cached repository data: %d bytes, last modified: %v", fileSize, stat.ModTime())
+}
+
+func (r *Repository) storeCached(payload RepositoryCache) {
+	filePath := path.Join(r.cacheDir, "repository.json")
+	err := os.MkdirAll(r.cacheDir, 0755)
+	if err != nil {
+		r.Errorf("Cannot write cached repository to %s: cannot make dir: %v", filePath, err)
+		return
+	}
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		r.Errorf("Cannot write cached repository to %s: %v", filePath, err)
+		return
+	}
+	err = json.NewEncoder(file).Encode(payload)
+	if err != nil {
+		r.Errorf("Cannot write cached repository to %s: %v", filePath, err)
+		return
+	}
+	err = file.Sync()
+	if err != nil {
+		r.Errorf("Cannot write cached script to %s: %v", filePath, err)
+		return
+	}
 }
 
 func (r *Repository) refresh() {
@@ -57,29 +128,42 @@ func (r *Repository) refresh() {
 	apiKeyBindings := map[string]*ApiKeyBinding{}
 	streamsByIds := map[string]*StreamWithDestinations{}
 	streamsByDomains := map[string][]*StreamWithDestinations{}
+	var err error
 	defer func() {
-		r.Debugf("Refreshed in %v", time.Now().Sub(start))
+		if err != nil {
+			r.Errorf("Error refreshing repository: %v", err)
+			RepositoryErrors().Add(1)
+			if !r.inited.Load() {
+				if r.cacheDir != "" {
+					r.loadCached()
+				} else {
+					r.Fatalf("Cannot load cached repository. No CACHE_DIR is set. Cannot serve without repository. Exitting...")
+				}
+			}
+		} else {
+			r.Debugf("Refreshed in %v", time.Now().Sub(start))
+		}
 	}()
 	rows, err := r.dbpool.Query(context.Background(), SQLQuery)
 	if err != nil {
-		r.Errorf("Error querying streams: %v", err)
+		err = r.NewError("Error querying streams: %v", err)
 		return
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var streamId string
 		var streamConfig string
-		err := rows.Scan(&streamId, &streamConfig)
+		err = rows.Scan(&streamId, &streamConfig)
 		if err != nil {
-			r.Errorf("Error scanning row: %v", err)
-			continue
+			err = r.NewError("Error scanning row: %v", err)
+			return
 		}
 		//r.Infof("Stream %s: %s", streamId, streamConfig)
 		s := StreamWithDestinations{}
 		err = jsoniter.UnmarshalFromString(streamConfig, &s)
 		if err != nil {
-			r.Errorf("Error unmarshalling stream config: %v", err)
-			continue
+			err = r.NewError("Error unmarshalling stream config: %v", err)
+			return
 		}
 		s.init()
 		streamsByIds[s.Stream.Id] = &s
@@ -108,9 +192,13 @@ func (r *Repository) refresh() {
 	r.apiKeyBindings.Store(&apiKeyBindings)
 	r.streamsByIds.Store(&streamsByIds)
 	r.streamsByDomains.Store(&streamsByDomains)
+	r.inited.Store(true)
+	if r.cacheDir != "" {
+		r.storeCached(RepositoryCache{ApiKeyBindings: apiKeyBindings, StreamsByIds: streamsByIds, StreamsByDomains: streamsByDomains})
+	}
 }
 
-func (r *Repository) Start() {
+func (r *Repository) start() {
 	safego.RunWithRestart(func() {
 		ticker := time.NewTicker(time.Duration(r.refreshPeriodSec) * time.Second)
 		for {

@@ -410,7 +410,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 29)), resource.BinarySI),
 						},
 						Requests: v1.ResourceList{
-							v1.ResourceCPU: *resource.NewMilliQuantity(int64(250), resource.DecimalSI),
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(100), resource.DecimalSI),
 							// 256
 							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 28)), resource.BinarySI),
 						},

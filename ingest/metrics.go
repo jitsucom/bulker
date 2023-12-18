@@ -26,6 +26,15 @@ var (
 		return ingestedMessages.WithLabelValues(destinationId, status, errorType)
 	}
 
+	repositoryErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "ingest",
+		Subsystem: "repository",
+		Name:      "error",
+	})
+	RepositoryErrors = func() prometheus.Counter {
+		return repositoryErrors
+	}
+
 	panics = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "safego",

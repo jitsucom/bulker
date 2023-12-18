@@ -19,6 +19,7 @@ type Context struct {
 	kafkaConfig      *kafka.ConfigMap
 	dbpool           *pgxpool.Pool
 	repository       *Repository
+	script           *Script
 	producer         *kafkabase.Producer
 	eventsLogService eventslog.EventsLogService
 	server           *http.Server
@@ -37,7 +38,8 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	if err != nil {
 		return fmt.Errorf("Unable to create postgres connection pool: %v\n", err)
 	}
-	a.repository = NewRepository(a.dbpool, a.config.RepositoryRefreshPeriodSec)
+	a.repository = NewRepository(a.dbpool, a.config.RepositoryRefreshPeriodSec, a.config.CacheDir)
+	a.script = NewScript(a.config.ScriptOrigin, a.config.CacheDir)
 	a.eventsLogService = &eventslog.DummyEventsLogService{}
 	eventsLogRedisUrl := a.config.RedisURL
 	if eventsLogRedisUrl != "" {
@@ -81,6 +83,7 @@ func (a *Context) Cleanup() error {
 	}
 	_ = a.metricsServer.Stop()
 	_ = a.eventsLogService.Close()
+	a.script.Close()
 	a.repository.Close()
 	a.dbpool.Close()
 	return nil

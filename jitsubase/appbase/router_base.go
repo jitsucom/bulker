@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
-	"github.com/penglongli/gin-metrics/ginmetrics"
 	"net/http"
 	"strings"
 )
@@ -35,13 +34,6 @@ func NewRouterBase(authTokens, tokenSecrets, noAuthPaths []string) *Router {
 	}
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
-	// get global Monitor object
-	m := ginmetrics.GetMonitor()
-	m.SetSlowTime(1)
-	// set request duration, default {0.1, 0.3, 1.2, 5, 10}
-	// used to p95, p99
-	m.SetDuration([]float64{0.01, 0.05, 0.1, 0.3, 1.0, 2.0, 3.0, 10})
-	m.UseWithoutExposingEndpoint(engine)
 	engine.Use(gin.Recovery())
 	engine.Use(router.authMiddleware)
 	router.engine = engine
@@ -113,6 +105,16 @@ func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskE
 		c.JSON(code, gin.H{"error": routerError.PublicError.Error()})
 	}
 	return &routerError
+}
+
+func (r *Router) ShouldCompress(req *http.Request) bool {
+	if !strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") ||
+		strings.Contains(req.Header.Get("Connection"), "Upgrade") ||
+		strings.Contains(req.Header.Get("Accept"), "text/event-stream") {
+		return false
+	}
+
+	return true
 }
 
 func HashToken(token string, salt string, secret string) string {
