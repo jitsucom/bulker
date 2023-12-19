@@ -368,14 +368,14 @@ func (tm *TopicManager) changeListener(changes RepositoryChange) {
 	for _, deletedDstId := range changes.RemovedDestinationIds {
 		for _, consumer := range tm.batchConsumers[deletedDstId] {
 			tm.Lock()
-			_ = tm.cron.RemoveBatchConsumer(consumer)
+			tm.cron.RemoveBatchConsumer(consumer)
 			consumer.Retire()
 			delete(tm.batchConsumers, deletedDstId)
 			tm.Unlock()
 		}
 		for _, consumer := range tm.retryConsumers[deletedDstId] {
 			tm.Lock()
-			_ = tm.cron.RemoveBatchConsumer(consumer)
+			tm.cron.RemoveBatchConsumer(consumer)
 			consumer.Retire()
 			delete(tm.retryConsumers, deletedDstId)
 			tm.Unlock()

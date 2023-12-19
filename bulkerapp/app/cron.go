@@ -1,7 +1,7 @@
 package app
 
 import (
-	"github.com/go-co-op/gocron"
+	"github.com/go-co-op/gocron/v2"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"math/rand"
 	"time"
@@ -10,41 +10,37 @@ import (
 type Cron struct {
 	appbase.Service
 	config    *Config
-	scheduler *gocron.Scheduler
+	scheduler gocron.Scheduler
 }
 
 func NewCron(config *Config) *Cron {
 	base := appbase.NewServiceBase("cron")
-	s := gocron.NewScheduler(time.UTC)
-	s.TagsUnique()
-	s.StartAsync()
+	s, _ := gocron.NewScheduler(gocron.WithLocation(time.UTC))
+	s.Start()
 	return &Cron{Service: base, scheduler: s, config: config}
 }
 
-func (c *Cron) AddBatchConsumer(batchConsumer BatchConsumer) (*gocron.Job, error) {
-	return c.scheduler.Every(batchConsumer.BatchPeriodSec()).Seconds().
-		StartAt(time.Now().Add(time.Duration(rand.Intn(batchConsumer.BatchPeriodSec())) * time.Second)).
-		Tag(batchConsumer.TopicId()).
-		Do(batchConsumer.RunJob)
+func (c *Cron) AddBatchConsumer(batchConsumer BatchConsumer) (gocron.Job, error) {
+	return c.scheduler.NewJob(gocron.DurationJob(time.Duration(batchConsumer.BatchPeriodSec())*time.Second),
+		gocron.NewTask(batchConsumer.RunJob),
+		gocron.WithStartAt(gocron.WithStartDateTime(time.Now().Add(time.Duration(rand.Intn(batchConsumer.BatchPeriodSec()))*time.Second))),
+		gocron.WithTags(batchConsumer.TopicId()))
 }
 
-func (c *Cron) ReplaceBatchConsumer(batchConsumer BatchConsumer) (*gocron.Job, error) {
-	_ = c.scheduler.RemoveByTag(batchConsumer.TopicId())
-	return c.scheduler.Every(batchConsumer.BatchPeriodSec()).Seconds().
-		StartAt(time.Now().Add(time.Duration(rand.Intn(batchConsumer.BatchPeriodSec())) * time.Second)).
-		Tag(batchConsumer.TopicId()).
-		Do(batchConsumer.RunJob)
+func (c *Cron) ReplaceBatchConsumer(batchConsumer BatchConsumer) (gocron.Job, error) {
+	c.RemoveBatchConsumer(batchConsumer)
+	return c.AddBatchConsumer(batchConsumer)
 }
 
-func (c *Cron) RemoveBatchConsumer(batchConsumer BatchConsumer) error {
-	return c.scheduler.RemoveByTag(batchConsumer.TopicId())
+func (c *Cron) RemoveBatchConsumer(batchConsumer BatchConsumer) {
+	c.scheduler.RemoveByTags(batchConsumer.TopicId())
 }
 
 // Close scheduler
 func (c *Cron) Close() {
 	stopped := make(chan struct{})
 	go func() {
-		c.scheduler.Stop()
+		_ = c.scheduler.Shutdown()
 		close(stopped)
 	}()
 	select {
