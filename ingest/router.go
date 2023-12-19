@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/jitsucom/bulker/kafkabase"
@@ -105,7 +106,7 @@ func NewRouter(appContext *Context) *Router {
 	m.SetDuration([]float64{0.02, 0.05, 0.1, 0.2, 0.5})
 	m.UseWithoutExposingEndpoint(engine)
 	fast := engine.Group("")
-	fast.Use(timeout.Timeout(timeout.WithTimeout(10 * time.Second)))
+	fast.Use(timeout.Timeout(timeout.WithTimeout(5 * time.Second)))
 	fast.Use(router.CorsMiddleware)
 	fast.Match([]string{"GET", "OPTIONS", "POST"}, "/v1/projects/:writeKey/settings", router.SettingsHandler)
 	fast.Match([]string{"GET", "OPTIONS", "POST"}, "/projects/:writeKey/settings", router.SettingsHandler)
@@ -490,7 +491,7 @@ func patchEvent(c *gin.Context, event *AnalyticsServerEvent, tp string, ingestTy
 		ctx["locale"] = strings.TrimSpace(strings.Split(c.GetHeader("Accept-Language"), ",")[0])
 	}
 	ev["context"] = ctx
-	nowIsoDate := time.Now().Format(time.RFC3339Nano)
+	nowIsoDate := time.Now().UTC().Format(timestamp.JsonISO)
 	ev["receivedAt"] = nowIsoDate
 	ev["type"] = typeFixed
 	if _, ok = ev["timestamp"]; !ok {
