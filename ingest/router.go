@@ -504,7 +504,7 @@ func patchEvent(c *gin.Context, event *AnalyticsServerEvent, tp string, ingestTy
 }
 
 func (r *Router) getDataLocator(c *gin.Context, event *AnalyticsServerEvent, ingestType IngestType) (cred StreamCredentials, err error) {
-	dataHost := r.config.DataDomain
+	dataHosts := strings.Split(r.config.DataDomain, ",")
 	cred.IngestType = ingestType
 	if c.GetHeader("Authorization") != "" {
 		wk := strings.Replace(c.GetHeader("Authorization"), "Basic ", "", 1)
@@ -519,11 +519,14 @@ func (r *Router) getDataLocator(c *gin.Context, event *AnalyticsServerEvent, ing
 		cred.WriteKey = c.GetHeader("X-Write-Key")
 	}
 	host := strings.Split(c.Request.Host, ":")[0]
-	if dataHost != "" && strings.HasSuffix(host, "."+dataHost) {
-		cred.Slug = strings.TrimSuffix(host, "."+dataHost)
-	} else {
-		cred.Domain = host
+	for _, dataHost := range dataHosts {
+		if dataHost != "" && strings.HasSuffix(host, "."+dataHost) {
+			cred.Slug = strings.TrimSuffix(host, "."+dataHost)
+			return
+		}
 	}
+	cred.Domain = host
+
 	return
 }
 func isInternalHeader(headerName string) bool {
