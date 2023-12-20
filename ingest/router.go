@@ -385,7 +385,8 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
 		return
 	}
-	c.Set(appbase.ContextDomain, utils.DefaultString(loc.Slug, loc.Domain))
+	domain = utils.DefaultString(loc.Slug, loc.Domain)
+	c.Set(appbase.ContextDomain, domain)
 
 	stream := r.getStream(&loc)
 	if stream == nil {

@@ -112,7 +112,7 @@ func (e *AnalyticsServerEvent) GetPathS(path string) string {
 //}
 
 //type ServerContext struct {
-//	RequestIp  string `json:"request_ip,omitempty"`
+//	RequestIp  string `json:"requestIp,omitempty"`
 //	ReceivedAt string `json:"receivedAt,omitempty"`
 //}
 //
