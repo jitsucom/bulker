@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
@@ -226,7 +227,14 @@ func (r *Router) BatchHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true)
 		return
 	}
-	err := json.NewDecoder(c.Request.Body).Decode(&payload)
+	bodyReader := c.Request.Body
+	var err error
+	if strings.Contains(c.GetHeader("Content-Encoding"), "gzip") {
+		bodyReader, err = gzip.NewReader(bodyReader)
+	}
+	if err == nil {
+		err = json.NewDecoder(bodyReader).Decode(&payload)
+	}
 	if err != nil {
 		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
 		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, err, true)
