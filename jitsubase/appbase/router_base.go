@@ -11,6 +11,10 @@ import (
 	"strings"
 )
 
+const ContextLoggerName = "contextLogger"
+const ContextDomain = "contextDomain"
+const ContextMessageId = "contextMessageId"
+
 type Router struct {
 	Service
 	engine       *gin.Engine
@@ -83,7 +87,7 @@ func (r *Router) authMiddleware(c *gin.Context) {
 	return
 }
 
-func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, logPrefix string, sendResponse bool) *RouterError {
+func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, sendResponse bool) *RouterError {
 	routerError := RouterError{ErrorType: errorType}
 	if err != nil {
 		if maskError {
@@ -99,7 +103,20 @@ func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskE
 		routerError.PublicError = err
 	}
 	routerError.Error = err
-	logFormat := utils.JoinNonEmptyStrings(" ", logPrefix, "%v")
+	builder := strings.Builder{}
+	loggerName, ok := c.Get(ContextLoggerName)
+	if ok {
+		builder.WriteString(fmt.Sprintf("[%s]", loggerName))
+	}
+	messageId, ok := c.Get(ContextMessageId)
+	if ok {
+		builder.WriteString(fmt.Sprintf("[messageId: %s]", messageId))
+	}
+	domain, ok := c.Get(ContextDomain)
+	if ok {
+		builder.WriteString(fmt.Sprintf("[domain: %s]", domain))
+	}
+	logFormat := utils.JoinNonEmptyStrings(" ", builder.String(), "%v")
 	r.Errorf(logFormat, err)
 	if sendResponse {
 		c.JSON(code, gin.H{"error": routerError.PublicError.Error()})

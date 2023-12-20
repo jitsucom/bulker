@@ -56,6 +56,8 @@ const (
 	IngestTypeWriteKeyDefined IngestType = "writeKey"
 
 	ConnectionIdsHeader = "connection_ids"
+
+	ErrNoDst = "no destinations found for stream"
 )
 
 type StreamCredentials struct {
@@ -215,59 +217,70 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	}()
 	defer func() {
 		if rerr := recover(); rerr != nil {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), "", true)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), true)
 		}
 	}()
+	c.Set(appbase.ContextLoggerName, "batch")
 	if !strings.HasSuffix(c.ContentType(), "application/json") && !strings.HasSuffix(c.ContentType(), "text/plain") {
-		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), "", true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true)
 		return
 	}
 	loc, err := r.getDataLocator(c, nil, IngestTypeWriteKeyDefined)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, err, "", true)
+		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, err, true)
 		return
 	}
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
-	logPrefix := "[ingest][batch] Domain: " + domain
+	c.Set(appbase.ContextDomain, domain)
+
 	stream := r.getStream(&loc)
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %+v", loc), logPrefix, true)
-		return
-	}
-	if len(stream.AsynchronousDestinations) == 0 {
-		rError = r.ResponseError(c, http.StatusOK, "no destinations found for stream", false, fmt.Errorf(stream.Stream.Id), logPrefix, true)
+		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %+v", loc), true)
 		return
 	}
 	err = json.NewDecoder(c.Request.Body).Decode(&payload)
 	if err != nil {
 		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
-		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, err, logPrefix, true)
+		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, err, true)
 		return
 	}
 	eventsLogId := stream.Stream.Id
 	okEvents := 0
 	errors := make([]string, 0)
 	for _, event := range payload.Batch {
-		messageId, _, ingestMessageBytes, asyncDestinations, tagsDestinations, err1 := r.sendToBulker(c, &event, payload.Context, "event", loc, stream, logPrefix, false)
+		messageId, _ := event["messageId"].(string)
+		messageId = utils.DefaultStringFunc(messageId, uuid.New)
+		c.Set(appbase.ContextMessageId, messageId)
+		_, ingestMessageBytes, err1 := r.buildIngestMessage(c, messageId, &event, payload.Context, "event", loc)
+		var asyncDestinations, tagsDestinations []string
+		if err1 == nil {
+			if len(stream.AsynchronousDestinations) == 0 {
+				rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), false)
+			} else {
+				asyncDestinations, tagsDestinations, rError = r.sendToBulker(c, ingestMessageBytes, stream, false)
+			}
+		} else {
+			rError = r.ResponseError(c, http.StatusOK, "error building ingest message", false, err1, false)
+		}
 		if len(ingestMessageBytes) >= 0 {
 			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
 		}
-		if err1 != nil {
-			rError = err1
+		if rError != nil && rError.ErrorType != ErrNoDst {
 			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": "FAILED"}
 			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingError, ActorId: eventsLogId, Event: obj})
 			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingAll, ActorId: eventsLogId, Event: obj})
 			IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
 			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), ingestMessageBytes, map[string]string{"error": rError.Error.Error()})
-			errors = append(errors, fmt.Sprintf("Message ID: %s: %v", messageId, err1.PublicError))
+			errors = append(errors, fmt.Sprintf("Message ID: %s: %v", messageId, rError.PublicError))
 		} else {
-			okEvents++
 			obj := map[string]any{"body": string(ingestMessageBytes), "asyncDestinations": asyncDestinations, "tags": tagsDestinations}
 			if len(asyncDestinations) > 0 || len(tagsDestinations) > 0 {
+				okEvents++
 				obj["status"] = "SUCCESS"
 			} else {
 				obj["status"] = "SKIPPED"
 				obj["error"] = "no destinations found for stream"
+				errors = append(errors, fmt.Sprintf("Message ID: %s: %v", messageId, rError.PublicError))
 			}
 			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingAll, ActorId: eventsLogId, Event: obj})
 			IngestHandlerRequests(domain, "success", "").Inc()
@@ -318,7 +331,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		if len(ingestMessageBytes) > 0 {
 			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
 		}
-		if rError != nil {
+		if rError != nil && rError.ErrorType != ErrNoDst {
 			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": "FAILED"}
 			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingError, ActorId: eventsLogId, Event: obj})
 			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingAll, ActorId: eventsLogId, Event: obj})
@@ -338,11 +351,12 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	}()
 	defer func() {
 		if rerr := recover(); rerr != nil {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), "", true)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), true)
 		}
 	}()
+	c.Set(appbase.ContextLoggerName, "ingest")
 	if !strings.HasSuffix(c.ContentType(), "application/json") && !strings.HasSuffix(c.ContentType(), "text/plain") {
-		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), "", true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true)
 		return
 	}
 	if c.FullPath() == "/api/s/s2s/:tp" {
@@ -354,35 +368,41 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
-		rError = r.ResponseError(c, http.StatusOK, "error reading HTTP body", false, err, "", true)
+		rError = r.ResponseError(c, http.StatusOK, "error reading HTTP body", false, err, true)
 		return
 	}
 	message := AnalyticsServerEvent{}
 	err = json.Unmarshal(body, &message)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), "", true)
+		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
 		return
 	}
 	messageId, _ := message["messageId"].(string)
+	messageId = utils.DefaultStringFunc(messageId, uuid.New)
+	c.Set(appbase.ContextMessageId, messageId)
 	loc, err := r.getDataLocator(c, &message, ingestType)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, fmt.Errorf("%v: %s", err, string(body)), "", true)
+		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
 		return
 	}
-	domain = utils.DefaultString(loc.Slug, loc.Domain)
-	logPrefix := fmt.Sprintf("[ingest] Message ID: %s Domain: %s", messageId, domain)
+	c.Set(appbase.ContextDomain, utils.DefaultString(loc.Slug, loc.Domain))
+
 	stream := r.getStream(&loc)
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %+v", loc), logPrefix, true)
+		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %+v", loc), true)
 		return
 	}
 	eventsLogId = stream.Stream.Id
-	if len(stream.AsynchronousDestinations) == 0 && len(stream.SynchronousDestinations) == 0 {
-		rError = r.ResponseError(c, http.StatusOK, "no destinations found for stream", false, fmt.Errorf(stream.Stream.Id), logPrefix, true)
+	ingestMessage, ingestMessageBytes, err := r.buildIngestMessage(c, messageId, &message, nil, tp, loc)
+	if err != nil {
+		rError = r.ResponseError(c, http.StatusOK, "error building ingest message", false, err, true)
 		return
 	}
-	var ingestMessage *IngestMessage
-	messageId, ingestMessage, ingestMessageBytes, asyncDestinations, tagsDestinations, rError = r.sendToBulker(c, &message, nil, tp, loc, stream, logPrefix, true)
+	if len(stream.AsynchronousDestinations) == 0 && len(stream.SynchronousDestinations) == 0 {
+		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true)
+		return
+	}
+	asyncDestinations, tagsDestinations, rError = r.sendToBulker(c, ingestMessageBytes, stream, true)
 	if len(tagsDestinations) == 0 {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
@@ -404,26 +424,8 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	}
 }
 
-func (r *Router) sendToBulker(c *gin.Context, message *AnalyticsServerEvent, analyticContext map[string]any, tp string, loc StreamCredentials, stream *StreamWithDestinations, logPrefix string, sendResponse bool) (messageId string, ingestMessage *IngestMessage, ingestMessageBytes []byte, asyncDestinations []string, tagsDestinations []string, rError *appbase.RouterError) {
-	err := patchEvent(c, message, tp, loc.IngestType, analyticContext)
-	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, fmt.Errorf("%v: %+v", err, *message), logPrefix, sendResponse)
-		return
-	}
-	messageId = (*message)["messageId"].(string)
-	logPrefix = fmt.Sprintf("[ingest] Message ID: %s Domain: %s", messageId, loc.Domain)
-
-	ingestMessage, err = r.buildIngestMessage(c, message, loc)
-	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error building ingest message", false, err, logPrefix, sendResponse)
-		return
-	}
-	ingestMessageBytes, err = json.Marshal(ingestMessage)
-	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error marshaling ingest message", false, err, logPrefix, sendResponse)
-		return
-	}
-
+func (r *Router) sendToBulker(c *gin.Context, ingestMessageBytes []byte, stream *StreamWithDestinations, sendResponse bool) (asyncDestinations []string, tagsDestinations []string, rError *appbase.RouterError) {
+	var err error
 	asyncDestinations = utils.ArrayMap(stream.AsynchronousDestinations, func(d *ShortDestinationConfig) string { return d.ConnectionId })
 	tagsDestinations = utils.ArrayMap(stream.SynchronousDestinations, func(d *ShortDestinationConfig) string { return d.ConnectionId })
 
@@ -435,8 +437,6 @@ func (r *Router) sendToBulker(c *gin.Context, message *AnalyticsServerEvent, ana
 		}
 	}
 
-	r.Debugf("[ingest] Message ID: %s Domain: %s to Connections: [%s] Tags: [%s]", messageId, loc.Domain,
-		strings.Join(asyncDestinations, ", "), strings.Join(tagsDestinations, ", "))
 	if len(asyncDestinations) > 0 {
 		topic := r.config.KafkaDestinationsTopicName
 		messageKey := uuid.New()
@@ -445,7 +445,7 @@ func (r *Router) sendToBulker(c *gin.Context, message *AnalyticsServerEvent, ana
 			for _, id := range asyncDestinations {
 				IngestedMessages(id, "error", "producer error").Inc()
 			}
-			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, logPrefix, sendResponse)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, sendResponse)
 		}
 		for _, id := range asyncDestinations {
 			IngestedMessages(id, "success", "").Inc()
@@ -454,7 +454,7 @@ func (r *Router) sendToBulker(c *gin.Context, message *AnalyticsServerEvent, ana
 	return
 }
 
-func patchEvent(c *gin.Context, event *AnalyticsServerEvent, tp string, ingestType IngestType, analyticContext map[string]any) error {
+func patchEvent(c *gin.Context, messageId string, event *AnalyticsServerEvent, tp string, ingestType IngestType, analyticContext map[string]any) error {
 	typeFixed := utils.MapNVL(eventTypesDict, tp, tp)
 	ev := *event
 	if typeFixed == "event" {
@@ -468,7 +468,7 @@ func patchEvent(c *gin.Context, event *AnalyticsServerEvent, tp string, ingestTy
 		return fmt.Errorf("Unknown event type: %s", tp)
 	}
 	ip := utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP())
-	ev["request_ip"] = ip
+	ev["requestIp"] = ip
 
 	ctx, ok := ev["context"].(map[string]any)
 	if !ok {
@@ -499,7 +499,7 @@ func patchEvent(c *gin.Context, event *AnalyticsServerEvent, tp string, ingestTy
 		ev["timestamp"] = nowIsoDate
 	}
 	if _, ok = ev["messageId"]; !ok {
-		ev["messageId"] = uuid.New()
+		ev["messageId"] = messageId
 	}
 	return nil
 }
@@ -608,7 +608,8 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 	return &SyncDestinationsResponse{Destinations: data, OK: true}
 }
 
-func (r *Router) buildIngestMessage(c *gin.Context, event *AnalyticsServerEvent, loc StreamCredentials) (*IngestMessage, error) {
+func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event *AnalyticsServerEvent, analyticContext map[string]any, tp string, loc StreamCredentials) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
+	err = patchEvent(c, messageId, event, tp, loc.IngestType, analyticContext)
 	headers := utils.MapMap(utils.MapFilter(c.Request.Header, func(k string, v []string) bool {
 		return len(v) > 0 && !isInternalHeader(k)
 	}), func(k string, v []string) string {
@@ -617,12 +618,13 @@ func (r *Router) buildIngestMessage(c *gin.Context, event *AnalyticsServerEvent,
 		}
 		return strings.Join(v, ",")
 	})
-	ingestMessage := IngestMessage{
+	bodyType, _ := (*event)["type"].(string)
+	ingestMessage = &IngestMessage{
 		IngestType:     loc.IngestType,
 		MessageCreated: time.Now(),
-		MessageId:      (*event)["messageId"].(string),
+		MessageId:      messageId,
 		WriteKey:       maskWriteKey(loc.WriteKey),
-		Type:           (*event)["type"].(string),
+		Type:           utils.NvlString(bodyType, tp),
 		Origin: IngestMessageOrigin{
 			BaseURL: fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host),
 			Slug:    loc.Slug,
@@ -631,7 +633,11 @@ func (r *Router) buildIngestMessage(c *gin.Context, event *AnalyticsServerEvent,
 		HttpHeaders: headers,
 		HttpPayload: event,
 	}
-	return &ingestMessage, nil
+	ingestMessageBytes, err1 := json.Marshal(ingestMessage)
+	if err1 != nil && err == nil {
+		err = err1
+	}
+	return
 }
 
 func hashApiKey(token string, salt string, secret string) string {

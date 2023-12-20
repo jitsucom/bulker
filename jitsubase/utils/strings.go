@@ -27,6 +27,13 @@ func DefaultString(str, defaultValue string) string {
 	return str
 }
 
+func DefaultStringFunc(str string, f func() string) string {
+	if str == "" {
+		return f()
+	}
+	return str
+}
+
 // ShortenString returns the first N slice of a string.
 func ShortenString(str string, n int) string {
 	if len([]rune(str)) <= n {
