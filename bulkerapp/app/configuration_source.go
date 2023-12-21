@@ -23,6 +23,7 @@ type DestinationConfig struct {
 	UsesBulker          bool      `mapstructure:"usesBulker" json:"usesBulker"`
 	bulker.Config       `mapstructure:",squash"`
 	bulker.StreamConfig `mapstructure:",squash"`
+	Special             string `mapstructure:"special" json:"special"`
 }
 
 func (dc *DestinationConfig) Id() string {

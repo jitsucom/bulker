@@ -249,14 +249,31 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		}
 	}
 	for _, destination := range tm.repository.GetDestinations() {
-		dstTopics, ok := tm.consumedTopics[destination.Id()]
+		dstTopics, hasTopics := tm.consumedTopics[destination.Id()]
 		for mode, config := range tm.requiredDestinationTopics {
 			topicId, _ := MakeTopicId(destination.Id(), mode, allTablesToken, false)
-			if !ok || !dstTopics.Contains(topicId) {
+			if !hasTopics || !dstTopics.Contains(topicId) {
 				//tm.Debugf("Creating topic %s for destination %s", topicId, destination.Id())
 				err := tm.createDestinationTopic(topicId, config)
 				if err != nil {
 					tm.Errorf("Failed to create topic %s for destination %s: %v", topicId, destination.Id(), err)
+				}
+			}
+		}
+		if destination.config.Special == "backup" || destination.config.Special == "metrics" {
+			// create predefined tables for special kind of destinations: backup and metrics
+			tables := []string{destination.config.Special}
+			if destination.config.Special == "metrics" {
+				tables = append(tables, "active_incoming")
+			}
+			for _, table := range tables {
+				topicId, _ := MakeTopicId(destination.Id(), "batch", table, false)
+				if !hasTopics || !dstTopics.Contains(topicId) {
+					tm.Infof("Creating topic %s for destination %s", topicId, destination.Id())
+					err := tm.createDestinationTopic(topicId, nil)
+					if err != nil {
+						tm.Errorf("Failed to create topic %s for destination %s: %v", topicId, destination.Id(), err)
+					}
 				}
 			}
 		}
