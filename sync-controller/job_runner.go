@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/hjson/hjson-go/v4"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
@@ -342,6 +343,14 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			MountPath: "/pipes",
 		},
 	}
+	var nodeSelector map[string]string
+	if j.config.KubernetesNodeSelector != "" {
+		nodeSelector = map[string]string{}
+		err := hjson.Unmarshal([]byte(j.config.KubernetesNodeSelector), &nodeSelector)
+		if err != nil {
+			j.Errorf("failed to parse node selector from string: %s\nIngoring it. Error: %v", j.config.KubernetesNodeSelector, err)
+		}
+	}
 	if !configuration.IsEmpty() {
 		items := []v1.KeyToPath{}
 		for k := range configuration.ToMap() {
@@ -377,6 +386,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 		},
 		Spec: v1.PodSpec{
 			RestartPolicy: v1.RestartPolicyNever,
+			NodeSelector:  nodeSelector,
 			Containers: []v1.Container{
 				{Name: "source",
 					Image:   fmt.Sprintf("%s:%s", task.Package, task.PackageVersion),
@@ -391,8 +401,8 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 31)), resource.BinarySI),
 						},
 						Requests: v1.ResourceList{
-							v1.ResourceCPU: *resource.NewMilliQuantity(int64(500), resource.DecimalSI),
-							// 512Mi
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(125), resource.DecimalSI),
+							// 256Mi
 							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 29)), resource.BinarySI),
 						},
 					},
@@ -410,9 +420,9 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 29)), resource.BinarySI),
 						},
 						Requests: v1.ResourceList{
-							v1.ResourceCPU: *resource.NewMilliQuantity(int64(100), resource.DecimalSI),
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(0), resource.DecimalSI),
 							// 256
-							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 28)), resource.BinarySI),
+							v1.ResourceMemory: *resource.NewQuantity(int64(0), resource.BinarySI),
 						},
 					},
 				},

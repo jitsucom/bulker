@@ -123,20 +123,21 @@ func (a *Context) ShutdownSignal() error {
 
 // TODO: graceful shutdown and cleanups. Flush producer
 func (a *Context) Cleanup() error {
+	time.Sleep(2 * time.Second)
 	a.cron.Close()
 	_ = a.topicManager.Close()
-	_ = a.batchProducer.Close()
-	_ = a.streamProducer.Close()
 	_ = a.backupsLogger.Close()
 	_ = a.repository.Close()
 	_ = a.configurationSource.Close()
+	_ = a.eventsLogService.Close()
+	_ = a.fastStore.Close()
+	_ = a.batchProducer.Close()
+	_ = a.streamProducer.Close()
 	if a.config.ShutdownExtraDelay > 0 {
 		logging.Infof("Waiting %d seconds before http server shutdown...", a.config.ShutdownExtraDelay)
 		time.Sleep(time.Duration(a.config.ShutdownExtraDelay) * time.Second)
 	}
 	_ = a.metricsServer.Stop()
-	_ = a.eventsLogService.Close()
-	_ = a.fastStore.Close()
 	return nil
 }
 

@@ -28,6 +28,8 @@ type Config struct {
 	KubernetesNamespace    string `mapstructure:"KUBERNETES_NAMESPACE" default:"default"`
 	KubernetesClientConfig string `mapstructure:"KUBERNETES_CLIENT_CONFIG" default:"local"`
 	KubernetesContext      string `mapstructure:"KUBERNETES_CONTEXT"`
+	// nodeSelector for sync pods in json format, e.g: {"disktype": "ssd"}
+	KubernetesNodeSelector string `mapstructure:"KUBERNETES_NODE_SELECTOR"`
 
 	ContainerStatusCheckSeconds int `mapstructure:"CONTAINER_STATUS_CHECK_SECONDS" default:"10"`
 	ContainerInitTimeoutSeconds int `mapstructure:"CONTAINER_INIT_TIMEOUT_SECONDS" default:"180"`
