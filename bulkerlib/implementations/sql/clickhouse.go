@@ -65,7 +65,7 @@ const (
 
 var (
 	clickhouseTypes = map[types.DataType][]string{
-		types.STRING:    {"String", "%String%", "%CHAR%", "%TEXT%", "%BLOB%", "%Enum%"},
+		types.STRING:    {"String", "%String%", "%CHAR%", "%TEXT%", "%BLOB%", "%Enum%", "%UUID%"},
 		types.INT64:     {"Int64", "Int", "LowCardinality(Int"},
 		types.FLOAT64:   {"Float64", "Float32", "Decimal"},
 		types.TIMESTAMP: {"DateTime64(6)", "DateTime", "Date"},
