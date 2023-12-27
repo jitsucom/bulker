@@ -20,7 +20,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/pprof"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -36,7 +35,7 @@ var eventTypesDict = map[string]string{
 
 var eventTypesSet = utils.NewSet("page", "identify", "track", "group", "alias", "screen")
 
-var notAllowedEventNameChars = regexp.MustCompile("[^a-zA-Z0-9_ :'/,!-]+")
+//var notAllowedEventNameChars = regexp.MustCompile("[^a-zA-Z0-9_ :'/,!-]+")
 
 type Router struct {
 	*appbase.Router
@@ -207,8 +206,7 @@ func patchEvent(c *gin.Context, messageId string, event *AnalyticsServerEvent, t
 		if !ok || eventName == "" {
 			return fmt.Errorf("'event' property is required for 'track' event")
 		}
-		if notAllowedEventNameChars.MatchString(eventName) || strings.Contains(eventName, "--") {
-			// we allow '-',''','/' and ':' symbols because existing clients already use them. But we don't allow '--' because it's SQL comment (used in SQL injection)
+		if strings.Contains(eventName, "--") || strings.Contains(eventName, ";") || strings.Contains(eventName, "=") || strings.Contains(eventName, "/*") {
 			return fmt.Errorf("Invalid track event name '%s'. Only alpha-numeric characters, underscores and spaces are allowed in track event name.", eventName)
 		}
 		if len(eventName) > 64 {
