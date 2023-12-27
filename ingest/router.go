@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"compress/gzip"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
@@ -21,6 +20,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/pprof"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -35,6 +35,8 @@ var eventTypesDict = map[string]string{
 	"e": "event"}
 
 var eventTypesSet = utils.NewSet("page", "identify", "track", "group", "alias", "screen")
+
+var notAllowedEventNameChars = regexp.MustCompile("[^a-zA-Z0-9_ :-]+")
 
 type Router struct {
 	*appbase.Router
@@ -156,285 +158,6 @@ type BatchPayload struct {
 	WriteKey string                 `json:"writeKey"`
 }
 
-func (r *Router) SettingsHandler(c *gin.Context) {
-	writeKey := c.Param("writeKey")
-	c.Data(http.StatusOK, "application/json", []byte(fmt.Sprintf(`{
-  "integrations": {
-    "Actions Google Analytic 4": {
-      "versionSettings": {
-        "componentTypes": []
-      }
-    },
-    "Segment.io": {
-      "apiKey": "%s",
-      "unbundledIntegrations": [],
-      "addBundledMetadata": true,
-      "maybeBundledConfigIds": {},
-      "versionSettings": {
-        "version": "4.4.7",
-        "componentTypes": [
-          "browser"
-        ]
-      }
-    }
-  },
-  "plan": {
-    "track": {
-      "__default": {
-        "enabled": true,
-        "integrations": {}
-      }
-    },
-    "identify": {
-      "__default": {
-        "enabled": true
-      }
-    },
-    "group": {
-      "__default": {
-        "enabled": true
-      }
-    }
-  },
-  "edgeFunction": {},
-  "analyticsNextEnabled": true,
-  "middlewareSettings": {},
-  "enabledMiddleware": {},
-  "metrics": {
-    "sampleRate": 0.1
-  },
-  "legacyVideoPluginsEnabled": false,
-  "remotePlugins": []
-}`, writeKey)))
-}
-
-func (r *Router) BatchHandler(c *gin.Context) {
-	var rError *appbase.RouterError
-	var payload BatchPayload
-	domain := "BATCH"
-	defer func() {
-		if rError != nil {
-			IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
-		}
-	}()
-	defer func() {
-		if rerr := recover(); rerr != nil {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), true)
-		}
-	}()
-	c.Set(appbase.ContextLoggerName, "batch")
-	if !strings.HasSuffix(c.ContentType(), "application/json") && !strings.HasSuffix(c.ContentType(), "text/plain") {
-		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true)
-		return
-	}
-	bodyReader := c.Request.Body
-	var err error
-	if strings.Contains(c.GetHeader("Content-Encoding"), "gzip") {
-		bodyReader, err = gzip.NewReader(bodyReader)
-	}
-	if err == nil {
-		err = json.NewDecoder(bodyReader).Decode(&payload)
-	}
-	if err != nil {
-		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
-		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, err, true)
-		return
-	}
-	loc, err := r.getDataLocator(c, IngestTypeWriteKeyDefined, func() string { return payload.WriteKey })
-	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, err, true)
-		return
-	}
-	domain = utils.DefaultString(loc.Slug, loc.Domain)
-	c.Set(appbase.ContextDomain, domain)
-
-	stream := r.getStream(&loc)
-	if stream == nil {
-		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %+v", loc), true)
-		return
-	}
-	eventsLogId := stream.Stream.Id
-	okEvents := 0
-	errors := make([]string, 0)
-	for _, event := range payload.Batch {
-		messageId, _ := event["messageId"].(string)
-		messageId = utils.DefaultStringFunc(messageId, uuid.New)
-		c.Set(appbase.ContextMessageId, messageId)
-		_, ingestMessageBytes, err1 := r.buildIngestMessage(c, messageId, &event, payload.Context, "event", loc)
-		var asyncDestinations, tagsDestinations []string
-		if err1 == nil {
-			if len(stream.AsynchronousDestinations) == 0 {
-				rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), false)
-			} else {
-				asyncDestinations, tagsDestinations, rError = r.sendToBulker(c, ingestMessageBytes, stream, false)
-			}
-		} else {
-			rError = r.ResponseError(c, http.StatusOK, "error building ingest message", false, err1, false)
-		}
-		if len(ingestMessageBytes) >= 0 {
-			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
-		}
-		if rError != nil && rError.ErrorType != ErrNoDst {
-			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": "FAILED"}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingError, ActorId: eventsLogId, Event: obj})
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingAll, ActorId: eventsLogId, Event: obj})
-			IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
-			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), ingestMessageBytes, map[string]string{"error": rError.Error.Error()})
-			errors = append(errors, fmt.Sprintf("Message ID: %s: %v", messageId, rError.PublicError))
-		} else {
-			obj := map[string]any{"body": string(ingestMessageBytes), "asyncDestinations": asyncDestinations, "tags": tagsDestinations}
-			if len(asyncDestinations) > 0 || len(tagsDestinations) > 0 {
-				okEvents++
-				obj["status"] = "SUCCESS"
-			} else {
-				obj["status"] = "SKIPPED"
-				obj["error"] = "no destinations found for stream"
-				errors = append(errors, fmt.Sprintf("Message ID: %s: %v", messageId, rError.PublicError))
-			}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingAll, ActorId: eventsLogId, Event: obj})
-			IngestHandlerRequests(domain, "success", "").Inc()
-		}
-	}
-	batchSize := len(payload.Batch)
-	if batchSize == okEvents {
-		c.JSON(http.StatusOK, gin.H{"ok": true, "receivedEvents": batchSize, "okEvents": okEvents})
-	} else {
-		c.JSON(http.StatusOK, gin.H{"ok": false, "errors": errors, "receivedEvents": batchSize, "okEvents": okEvents})
-	}
-}
-
-func (r *Router) ScriptHandler(c *gin.Context) {
-	if r.script == nil {
-		c.AbortWithStatus(http.StatusNotFound)
-		return
-	}
-	if c.Request.Method != "GET" && c.Request.Method != "HEAD" {
-		c.AbortWithStatus(http.StatusMethodNotAllowed)
-		return
-	}
-	ifNoneMatch := c.GetHeader("If-None-Match")
-	etag := r.script.GetEtag()
-	if etag != nil && ifNoneMatch != "" && *etag == ifNoneMatch {
-		c.Header("ETag", *etag)
-		c.AbortWithStatus(http.StatusNotModified)
-		return
-	}
-	r.script.WriteScript(c, c.Request.Method == "HEAD", r.ShouldCompress(c.Request))
-}
-
-func (r *Router) IngestHandler(c *gin.Context) {
-	domain := ""
-	// TODO: use workspaceId as default for all stream identification errors
-	var eventsLogId string
-	var ingestType IngestType
-	var rError *appbase.RouterError
-	var body []byte
-	var ingestMessageBytes []byte
-	var asyncDestinations []string
-	var tagsDestinations []string
-
-	defer func() {
-		if len(ingestMessageBytes) == 0 {
-			ingestMessageBytes = body
-		}
-		if len(ingestMessageBytes) > 0 {
-			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
-		}
-		if rError != nil && rError.ErrorType != ErrNoDst {
-			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": "FAILED"}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingError, ActorId: eventsLogId, Event: obj})
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingAll, ActorId: eventsLogId, Event: obj})
-			IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
-			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), ingestMessageBytes, map[string]string{"error": rError.Error.Error()})
-		} else {
-			obj := map[string]any{"body": string(ingestMessageBytes), "asyncDestinations": asyncDestinations, "tags": tagsDestinations}
-			if len(asyncDestinations) > 0 || len(tagsDestinations) > 0 {
-				obj["status"] = "SUCCESS"
-			} else {
-				obj["status"] = "SKIPPED"
-				obj["error"] = "no destinations found for stream"
-			}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeIncomingAll, eventsLogId, obj})
-			IngestHandlerRequests(domain, "success", "").Inc()
-		}
-	}()
-	defer func() {
-		if rerr := recover(); rerr != nil {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), true)
-		}
-	}()
-	c.Set(appbase.ContextLoggerName, "ingest")
-	if !strings.HasSuffix(c.ContentType(), "application/json") && !strings.HasSuffix(c.ContentType(), "text/plain") {
-		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true)
-		return
-	}
-	if c.FullPath() == "/api/s/s2s/:tp" {
-		ingestType = IngestTypeS2S
-	} else {
-		ingestType = IngestTypeBrowser
-	}
-	tp := c.Param("tp")
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
-		rError = r.ResponseError(c, http.StatusOK, "error reading HTTP body", false, err, true)
-		return
-	}
-	message := AnalyticsServerEvent{}
-	err = json.Unmarshal(body, &message)
-	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
-		return
-	}
-	messageId, _ := message["messageId"].(string)
-	messageId = utils.DefaultStringFunc(messageId, uuid.New)
-	c.Set(appbase.ContextMessageId, messageId)
-	//func() string { wk, _ := message["writeKey"].(string); return wk }
-	loc, err := r.getDataLocator(c, ingestType, nil)
-	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
-		return
-	}
-	domain = utils.DefaultString(loc.Slug, loc.Domain)
-	c.Set(appbase.ContextDomain, domain)
-
-	stream := r.getStream(&loc)
-	if stream == nil {
-		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %+v", loc), true)
-		return
-	}
-	eventsLogId = stream.Stream.Id
-	ingestMessage, ingestMessageBytes, err := r.buildIngestMessage(c, messageId, &message, nil, tp, loc)
-	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error building ingest message", false, err, true)
-		return
-	}
-	if len(stream.AsynchronousDestinations) == 0 && len(stream.SynchronousDestinations) == 0 {
-		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true)
-		return
-	}
-	asyncDestinations, tagsDestinations, rError = r.sendToBulker(c, ingestMessageBytes, stream, true)
-	if len(tagsDestinations) == 0 {
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-		return
-	}
-	resp := r.processSyncDestination(ingestMessage, stream, ingestMessageBytes)
-	if resp != nil {
-		//if r.ShouldCompress(c.Request) {
-		//	c.Header("Content-Encoding", "gzip")
-		//	c.Header("Content-Type", "application/json")
-		//	c.Header("Vary", "Accept-Encoding")
-		//	gz := gzip.NewWriter(c.Writer)
-		//	_ = json.NewEncoder(gz).Encode(resp)
-		//	_ = gz.Close()
-		//} else {
-		c.JSON(http.StatusOK, resp)
-		//}
-	} else {
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-	}
-}
-
 func (r *Router) sendToBulker(c *gin.Context, ingestMessageBytes []byte, stream *StreamWithDestinations, sendResponse bool) (asyncDestinations []string, tagsDestinations []string, rError *appbase.RouterError) {
 	var err error
 	asyncDestinations = utils.ArrayMap(stream.AsynchronousDestinations, func(d *ShortDestinationConfig) string { return d.ConnectionId })
@@ -477,6 +200,19 @@ func patchEvent(c *gin.Context, messageId string, event *AnalyticsServerEvent, t
 	}
 	if !eventTypesSet.Contains(typeFixed) {
 		return fmt.Errorf("Unknown event type: %s", tp)
+	}
+	if typeFixed == "track" {
+		//check event name
+		eventName, ok := ev["event"].(string)
+		if !ok || eventName == "" {
+			return fmt.Errorf("'event' property is required for 'track' event")
+		}
+		if notAllowedEventNameChars.MatchString(eventName) || strings.Contains(eventName, "--") {
+			return fmt.Errorf("Invalid track event name '%s'. Only alpha-numeric characters, underscores and spaces are allowed in track event name.", eventName)
+		}
+		if len(eventName) > 64 {
+			return fmt.Errorf("Invalid track event name '%s'. Max length is 64 characters.", eventName)
+		}
 	}
 	ip := utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP())
 	ev["requestIp"] = ip
