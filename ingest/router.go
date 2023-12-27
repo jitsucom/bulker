@@ -36,7 +36,7 @@ var eventTypesDict = map[string]string{
 
 var eventTypesSet = utils.NewSet("page", "identify", "track", "group", "alias", "screen")
 
-var notAllowedEventNameChars = regexp.MustCompile("[^a-zA-Z0-9_ :'/-]+")
+var notAllowedEventNameChars = regexp.MustCompile("[^a-zA-Z0-9_ :'/,-]+")
 
 type Router struct {
 	*appbase.Router
