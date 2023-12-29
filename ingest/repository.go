@@ -26,10 +26,10 @@ const SQLQuery = `select b."streamId", json_build_object('stream', b."srcConfig"
                                                                                'connectionId', link."id",
                                                                                'options', link."data") end ) as "connectionData",
          max(greatest(link."updatedAt", src."updatedAt", dst."updatedAt", ws."updatedAt")) as "updatedAt"
-     from "ConfigurationObject" src
-              join "Workspace" ws on src."workspaceId" = ws.id
-              left join "ConfigurationObjectLink" link on src.id = link."fromId" and link."workspaceId" = src."workspaceId"
-              left join "ConfigurationObject" dst on dst.id = link."toId" and dst.type='destination' and dst."workspaceId" = link."workspaceId"
+     from newjitsu."ConfigurationObject" src
+              join newjitsu."Workspace" ws on src."workspaceId" = ws.id
+              left join newjitsu."ConfigurationObjectLink" link on src.id = link."fromId" and link."workspaceId" = src."workspaceId"
+              left join newjitsu."ConfigurationObject" dst on dst.id = link."toId" and dst.type='destination' and dst."workspaceId" = link."workspaceId"
      where src."type" ='stream'
      group by 1,2) b`
 
