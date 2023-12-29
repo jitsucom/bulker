@@ -78,7 +78,11 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	messageId, _ := message["messageId"].(string)
-	messageId = utils.DefaultStringFunc(messageId, uuid.New)
+	if messageId == "" {
+		messageId = uuid.New()
+	} else {
+		messageId = utils.ShortenString(messageIdUnsupportedChars.ReplaceAllString(messageId, "_"), 64)
+	}
 	c.Set(appbase.ContextMessageId, messageId)
 	//func() string { wk, _ := message["writeKey"].(string); return wk }
 	loc, err := r.getDataLocator(c, ingestType, nil)

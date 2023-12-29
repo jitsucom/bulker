@@ -63,7 +63,11 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	errors := make([]string, 0)
 	for _, event := range payload.Batch {
 		messageId, _ := event["messageId"].(string)
-		messageId = utils.DefaultStringFunc(messageId, uuid.New)
+		if messageId == "" {
+			messageId = uuid.New()
+		} else {
+			messageId = utils.ShortenString(messageIdUnsupportedChars.ReplaceAllString(messageId, "_"), 64)
+		}
 		c.Set(appbase.ContextMessageId, messageId)
 		_, ingestMessageBytes, err1 := r.buildIngestMessage(c, messageId, &event, payload.Context, "event", loc)
 		var asyncDestinations, tagsDestinations []string

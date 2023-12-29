@@ -20,6 +20,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/pprof"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -35,7 +36,7 @@ var eventTypesDict = map[string]string{
 
 var eventTypesSet = utils.NewSet("page", "identify", "track", "group", "alias", "screen")
 
-//var notAllowedEventNameChars = regexp.MustCompile("[^a-zA-Z0-9_ :'/,!-]+")
+var messageIdUnsupportedChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
 type Router struct {
 	*appbase.Router
