@@ -94,11 +94,11 @@ func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 }
 
 func (ps *AbstractSQLStream) init(ctx context.Context) error {
-	if ps.inited {
-		return nil
-	}
 	if err := ps.sqlAdapter.Ping(ctx); err != nil {
 		return err
+	}
+	if ps.inited {
+		return nil
 	}
 	//setup required db object like 'schema' or 'dataset' if doesn't exist
 	err := ps.sqlAdapter.InitDatabase(ctx)

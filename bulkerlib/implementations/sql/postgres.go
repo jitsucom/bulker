@@ -50,6 +50,7 @@ FROM information_schema.table_constraints tco
 WHERE tco.constraint_type = 'PRIMARY KEY' AND 
       kcu.table_schema = $1 AND
       kcu.table_name = $2`
+	pgSetSearchPath                     = `SET search_path TO "%s";`
 	pgCreateDbSchemaIfNotExistsTemplate = `CREATE SCHEMA IF NOT EXISTS "%s"; SET search_path TO "%s";`
 	pgCreateIndexTemplate               = `CREATE INDEX ON %s (%s);`
 
@@ -510,6 +511,16 @@ func (p *Postgres) createIndex(ctx context.Context, table *Table) error {
 			})
 	}
 
+	return nil
+}
+func (p *Postgres) Ping(ctx context.Context) error {
+	err := p.SQLAdapterBase.Ping(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err = p.txOrDb(ctx).ExecContext(ctx, fmt.Sprintf(pgSetSearchPath, p.config.Schema)); err != nil {
+		return err
+	}
 	return nil
 }
 
