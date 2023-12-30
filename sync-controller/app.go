@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/pg"
 	"net/http"
 	"time"
 )
@@ -24,7 +25,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	if err != nil {
 		return err
 	}
-	a.dbpool, err = pgxpool.New(context.Background(), a.config.DatabaseURL)
+	a.dbpool, err = pg.NewPGPool(a.config.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("Unable to create postgres connection pool: %v\n", err)
 	}

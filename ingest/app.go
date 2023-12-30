@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/pg"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
 	"net/http"
@@ -34,7 +35,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	if err != nil {
 		return err
 	}
-	a.dbpool, err = pgxpool.New(context.Background(), a.config.DatabaseURL)
+	a.dbpool, err = pg.NewPGPool(a.config.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("Unable to create postgres connection pool: %v\n", err)
 	}

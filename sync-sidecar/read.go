@@ -2,10 +2,9 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jitsucom/bulker/jitsubase/pg"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"io"
 	"net/url"
@@ -116,7 +115,7 @@ type ReadSideCar struct {
 
 func (s *ReadSideCar) Run() {
 	var err error
-	s.dbpool, err = pgxpool.New(context.Background(), s.databaseURL)
+	s.dbpool, err = pg.NewPGPool(s.databaseURL)
 	if err != nil {
 		s.panic("Unable to create postgres connection pool: %v", err)
 	}
