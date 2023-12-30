@@ -3,6 +3,7 @@ package pg
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"regexp"
 )
@@ -26,6 +27,10 @@ func NewPGPool(url string) (*pgxpool.Pool, error) {
 	schema := extractSchema(url)
 	if schema != "" {
 		pgCfg.ConnConfig.RuntimeParams["search_path"] = schema
+	}
+	pgCfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, fmt.Sprintf("SET search_path TO '%s'", schema))
+		return err
 	}
 	dbpool, err := pgxpool.NewWithConfig(context.Background(), pgCfg)
 	if err != nil {

@@ -4,21 +4,23 @@ FROM golang:1.21.5-alpine as build
 RUN mkdir /app
 WORKDIR /app
 
-COPY sync-sidecar/go.mod .
-COPY sync-sidecar/go.sum .
+RUN mkdir jitsubase sync-sidecar
+
+COPY jitsubase/go.* ./jitsubase/
+COPY sync-sidecar/go.* ./sync-sidecar/
+
+RUN go work init jitsubase sync-sidecar
+
+WORKDIR /app/sync-sidecar
 
 RUN go mod download
 
-# go mod download applied changes to go.sum that we don't want to override
-RUN mv go.sum go.sum_
+WORKDIR /app
 
-COPY sync-sidecar/. .
-
-# restore modified go.sum
-RUN mv go.sum_ go.sum
+COPY . .
 
 # Build bulker
-RUN go build -o sidecar
+RUN go build -o sidecar ./sync-sidecar
 
 #######################################
 # FINAL STAGE
@@ -30,6 +32,6 @@ RUN mkdir /app
 WORKDIR /app
 
 # Copy bulkerapp
-COPY --from=build /app/sidecar ./sidecar
+COPY --from=build /app/sidecar ./
 
 CMD ["/app/sidecar"]
