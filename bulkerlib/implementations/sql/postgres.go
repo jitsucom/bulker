@@ -50,7 +50,7 @@ FROM information_schema.table_constraints tco
 WHERE tco.constraint_type = 'PRIMARY KEY' AND 
       kcu.table_schema = $1 AND
       kcu.table_name = $2`
-	pgCreateDbSchemaIfNotExistsTemplate = `CREATE SCHEMA IF NOT EXISTS "%s"`
+	pgCreateDbSchemaIfNotExistsTemplate = `CREATE SCHEMA IF NOT EXISTS "%s"; SET search_path TO "%s";`
 	pgCreateIndexTemplate               = `CREATE INDEX ON %s (%s);`
 
 	pgMergeQuery = `INSERT INTO {{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}}) ON CONFLICT ON CONSTRAINT {{.PrimaryKeyName}} DO UPDATE set {{.UpdateSet}}`
@@ -195,7 +195,7 @@ func (p *Postgres) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 
 // InitDatabase creates database schema instance if doesn't exist
 func (p *Postgres) InitDatabase(ctx context.Context) error {
-	query := fmt.Sprintf(pgCreateDbSchemaIfNotExistsTemplate, p.config.Schema)
+	query := fmt.Sprintf(pgCreateDbSchemaIfNotExistsTemplate, p.config.Schema, p.config.Schema)
 
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		//return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
