@@ -39,7 +39,7 @@ type Config struct {
 	RedisTLSCA       string `mapstructure:"REDIS_TLS_CA"`
 	EventsLogMaxSize int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
 
-	RepositoryRefreshPeriodSec int `mapstructure:"REPOSITORY_REFRESH_PERIOD_SEC" default:"5"`
+	RepositoryRefreshPeriodSec int `mapstructure:"REPOSITORY_REFRESH_PERIOD_SEC" default:"2"`
 
 	RotorURL                 string `mapstructure:"ROTOR_URL"`
 	DeviceFunctionsTimeoutMs int    `mapstructure:"DEVICE_FUNCTIONS_TIMEOUT_MS" default:"200"`
