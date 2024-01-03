@@ -213,6 +213,7 @@ func (r *Repository) start() {
 			case <-ticker.C:
 				r.refresh()
 			case <-r.closed:
+				ticker.Stop()
 				return
 			}
 		}

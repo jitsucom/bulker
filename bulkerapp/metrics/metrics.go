@@ -126,20 +126,14 @@ var (
 		return consumerRuns.WithLabelValues(topicId, mode, destinationId, tableName, status)
 	}
 
-	redisConfigurationSourceError = promauto.NewCounterVec(prometheus.CounterOpts{
+	configurationSourceError = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
-		Subsystem: "redis_configuration",
+		Subsystem: "configuration",
 		Name:      "error",
 	}, []string{"errorType"})
-	RedisConfigurationSourceError = func(errorType string) prometheus.Counter {
-		return redisConfigurationSourceError.WithLabelValues(errorType)
+	ConfigurationSourceError = func(errorType string) prometheus.Counter {
+		return configurationSourceError.WithLabelValues(errorType)
 	}
-
-	RedisConfigurationSourceDestinations = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "bulkerapp",
-		Subsystem: "redis_configuration",
-		Name:      "destinations",
-	})
 
 	repositoryDestinations = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",

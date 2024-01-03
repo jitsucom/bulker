@@ -197,6 +197,7 @@ func (s *Script) start() {
 			case <-ticker.C:
 				s.refresh()
 			case <-s.closed:
+				ticker.Stop()
 				return
 			}
 		}

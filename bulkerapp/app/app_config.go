@@ -27,10 +27,18 @@ type Config struct {
 	// ConfigSource source of destinations configs. Can be:
 	//  - `file://...`  for destinations config in yaml format
 	//  - `redis` or `redis://redis_url` to load configs from redis `enrichedConnections` key
+	//  -  postgresql://postgres_url to load configs from postgresql
 	//  - `env://PREFIX` to load each destination environment variables with like `PREFIX_ID` where ID is destination id
 	//
 	// Default: `env://BULKER_DESTINATION`
 	ConfigSource string `mapstructure:"CONFIG_SOURCE"`
+	// ConfigSourceSQLQuery for `postgresql` config source, SQL query to load connections
+	ConfigSourceSQLQuery string `mapstructure:"CONFIG_SOURCE_SQL_QUERY" default:"select * from enriched_connections"`
+	// CacheDir dir for config source data
+	CacheDir string `mapstructure:"CACHE_DIR"`
+	// ConfigRefreshPeriodSec how often config source will check for new configs. Supported by `postgresql` config sources
+	ConfigRefreshPeriodSec int `mapstructure:"CONFIG_REFRESH_PERIOD_SEC" default:"5"`
+
 	// RedisURL that will be used by default by all services that need Redis
 	RedisURL   string `mapstructure:"REDIS_URL"`
 	RedisTLSCA string `mapstructure:"REDIS_TLS_CA"`

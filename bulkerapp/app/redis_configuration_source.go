@@ -137,12 +137,12 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 	defer conn.Close()
 	configsById, err := redis.StringMap(conn.Do("HGETALL", redisDestinationsKey))
 	if err != nil {
-		metrics.RedisConfigurationSourceError(RedisError(err)).Inc()
+		metrics.ConfigurationSourceError(RedisError(err)).Inc()
 		return rcs.NewError("failed to load destinations by key: %s : %v", redisDestinationsKey, err)
 	}
 	newHash, err := utils.HashAny(configsById)
 	if err != nil {
-		metrics.RedisConfigurationSourceError("hash_error").Inc()
+		metrics.ConfigurationSourceError("hash_error").Inc()
 		return rcs.NewError("failed generate hash of redis config: %v", err)
 	}
 	if newHash == rcs.currentHash {
@@ -154,7 +154,7 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 		dstCfg := DestinationConfig{}
 		err := utils.ParseObject(config, &dstCfg)
 		if err != nil {
-			metrics.RedisConfigurationSourceError("parse_error").Inc()
+			metrics.ConfigurationSourceError("parse_error").Inc()
 			rcs.Errorf("failed to parse config for destination %s: %s: %v", id, config, err)
 		} else if dstCfg.UsesBulker {
 			dstCfg.Config.Id = id
@@ -162,7 +162,6 @@ func (rcs *RedisConfigurationSource) load(notify bool) error {
 			newDsts[id] = &dstCfg
 		}
 	}
-	metrics.RedisConfigurationSourceDestinations.Set(float64(len(newDsts)))
 	rcs.Lock()
 	rcs.destinations = newDsts
 	rcs.currentHash = newHash
@@ -225,6 +224,7 @@ func (rcs *RedisConfigurationSource) GetDestinationConfigs() []*DestinationConfi
 
 func (rcs *RedisConfigurationSource) Close() error {
 	close(rcs.refreshChan)
+	close(rcs.changesChan)
 	return rcs.redisPool.Close()
 }
 
