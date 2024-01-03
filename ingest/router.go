@@ -214,7 +214,7 @@ func patchEvent(c *gin.Context, messageId string, event *AnalyticsServerEvent, t
 			return fmt.Errorf("Invalid track event name '%s'. Max length is 64 characters.", eventName)
 		}
 	}
-	ip := utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP())
+	ip := strings.TrimSpace(strings.Split(utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), ",")[0])
 	ev["requestIp"] = ip
 
 	ctx, ok := ev["context"].(map[string]any)
