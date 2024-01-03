@@ -171,7 +171,7 @@ func (r *PostgresConfigurationSource) refresh(notify bool) {
 			metrics.ConfigurationSourceError("parse_error").Inc()
 			r.Errorf("failed to parse config for destination %s: %s: %v", connectionId, connectionConfig, err)
 		}
-		if c.UsesBulker {
+		if c.UsesBulker || tp == "sync" {
 			connections[connectionId] = &c
 		}
 	}
