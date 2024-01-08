@@ -82,6 +82,7 @@ func NewRouter(appContext *Context) *Router {
 		"/projects/:writeKey/settings",
 		"/b",
 		"/batch",
+		"/api/s/s2s/batch",
 		"/api/s/:tp",
 		"/api/s/s2s/:tp",
 	})
@@ -118,8 +119,11 @@ func NewRouter(appContext *Context) *Router {
 	fast.Match([]string{"OPTIONS", "POST"}, "/v1/b", router.BatchHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/batch", router.BatchHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/b", router.BatchHandler)
+	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/s2s/batch", router.BatchHandler)
+
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/:tp", router.IngestHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/s2s/:tp", router.IngestHandler)
+
 	fast.Match([]string{"GET", "HEAD", "OPTIONS"}, "/p.js", router.ScriptHandler)
 
 	engine.GET("/health", func(c *gin.Context) {
@@ -199,7 +203,7 @@ func patchEvent(c *gin.Context, messageId string, event *AnalyticsServerEvent, t
 		}
 	}
 	if !eventTypesSet.Contains(typeFixed) {
-		return fmt.Errorf("Unknown event type: %s", tp)
+		return fmt.Errorf("Unknown event type: %s", typeFixed)
 	}
 	if typeFixed == "track" {
 		//check event name

@@ -45,7 +45,13 @@ func (r *Router) BatchHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, err, true)
 		return
 	}
-	loc, err := r.getDataLocator(c, IngestTypeWriteKeyDefined, func() string { return payload.WriteKey })
+	var ingestType IngestType
+	if c.FullPath() == "/api/s/s2s/batch" {
+		ingestType = IngestTypeS2S
+	} else {
+		ingestType = IngestTypeWriteKeyDefined
+	}
+	loc, err := r.getDataLocator(c, ingestType, func() string { return payload.WriteKey })
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, err, true)
 		return
