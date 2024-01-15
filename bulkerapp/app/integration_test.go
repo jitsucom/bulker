@@ -108,6 +108,7 @@ func TestGoodAndBadStreams(t *testing.T) {
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC": "1"})
 	t.Cleanup(func() {
 		app.Exit(appbase.SIG_SHUTDOWN_FOR_TESTS)
+		time.Sleep(5 * time.Second)
 		if postgresContainer != nil {
 			_ = postgresContainer.Close()
 		}
@@ -185,6 +186,7 @@ func TestEventsRetry(t *testing.T) {
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC":           "1"})
 	t.Cleanup(func() {
 		app.Exit(appbase.SIG_SHUTDOWN_FOR_TESTS)
+		time.Sleep(5 * time.Second)
 		if postgresContainer != nil {
 			_ = postgresContainer.Close()
 		}

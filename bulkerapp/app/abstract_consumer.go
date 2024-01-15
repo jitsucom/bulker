@@ -20,6 +20,11 @@ type AbstractConsumer struct {
 	repository     *Repository
 }
 
+type Consumer interface {
+	Retire()
+	TopicId() string
+}
+
 func NewAbstractConsumer(config *Config, repository *Repository, topicId string, bulkerProducer *Producer) *AbstractConsumer {
 	return &AbstractConsumer{
 		Service:        appbase.NewServiceBase(topicId),

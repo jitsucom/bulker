@@ -21,7 +21,7 @@ import (
 
 const streamConsumerMessageWaitTimeout = 5 * time.Second
 
-type StreamConsumer struct {
+type StreamConsumerImpl struct {
 	*AbstractConsumer
 	repository     *Repository
 	destination    *Destination
@@ -36,7 +36,12 @@ type StreamConsumer struct {
 	closed chan struct{}
 }
 
-func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService eventslog.EventsLogService) (*StreamConsumer, error) {
+type StreamConsumer interface {
+	Consumer
+	UpdateDestination(destination *Destination) error
+}
+
+func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService eventslog.EventsLogService) (*StreamConsumerImpl, error) {
 	abstract := NewAbstractConsumer(config, repository, topicId, bulkerProducer)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
@@ -73,7 +78,7 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 	//	return nil, fmt.Errorf("[%s] Destination not found", destinationId)
 	//}
 
-	sc := &StreamConsumer{
+	sc := &StreamConsumerImpl{
 		AbstractConsumer: abstract,
 		repository:       repository,
 		destination:      destination,
@@ -127,7 +132,7 @@ func (sw *StreamWrapper) Complete(ctx context.Context) (bulker.State, error) {
 	return sw.stream.Complete(ctx)
 }
 
-func (sc *StreamConsumer) restartConsumer() {
+func (sc *StreamConsumerImpl) restartConsumer() {
 	sc.Infof("Restarting consumer")
 	go func(c *kafka.Consumer) {
 		err := c.Close()
@@ -162,7 +167,7 @@ func (sc *StreamConsumer) restartConsumer() {
 }
 
 // start consuming messages from kafka
-func (sc *StreamConsumer) start() {
+func (sc *StreamConsumerImpl) start() {
 	sc.Infof("Starting stream consumer for topic. Ver: %s", sc.destination.config.UpdatedAt)
 	safego.RunWithRestart(func() {
 		var err error
@@ -264,17 +269,26 @@ func (sc *StreamConsumer) start() {
 	})
 }
 
+func (sc *StreamConsumerImpl) TopicId() string {
+	return sc.topicId
+}
+
 // Close consumer
-func (sc *StreamConsumer) Close() error {
+func (sc *StreamConsumerImpl) Retire() {
+	select {
+	case <-sc.closed:
+		return
+	default:
+	}
 	sc.Infof("Closing stream consumer. Ver: %s", sc.destination.config.UpdatedAt)
 	close(sc.closed)
 	sc.destination.Release()
 	//TODO: wait for closing?
-	return nil
+	return
 }
 
 // UpdateDestination
-func (sc *StreamConsumer) UpdateDestination(destination *Destination) error {
+func (sc *StreamConsumerImpl) UpdateDestination(destination *Destination) error {
 	sc.Infof("[Updating stream consumer for topic. Ver: %s", sc.destination.config.UpdatedAt)
 
 	//create new stream
@@ -287,7 +301,7 @@ func (sc *StreamConsumer) UpdateDestination(destination *Destination) error {
 	return nil
 }
 
-func (sc *StreamConsumer) postEventsLog(message []byte, representation any, processedObject types.Object, processedErr error) {
+func (sc *StreamConsumerImpl) postEventsLog(message []byte, representation any, processedObject types.Object, processedErr error) {
 	object := map[string]any{
 		"original": string(message),
 		"status":   "SUCCESS",

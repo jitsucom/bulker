@@ -59,6 +59,10 @@ func (s Set[K]) Clone() Set[K] {
 	return newSet
 }
 
+func (s Set[K]) Size() int {
+	return len(s)
+}
+
 func (s Set[K]) ToSlice() []K {
 	if len(s) == 0 {
 		return []K{}

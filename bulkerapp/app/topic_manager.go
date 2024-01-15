@@ -12,6 +12,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -48,12 +49,13 @@ type TopicManager struct {
 	// consumedTopics by destinationId. Consumed topics are topics that have consumer started
 	consumedTopics  map[string]utils.Set[string]
 	abandonedTopics utils.Set[string]
+	staleTopics     utils.Set[string]
 	allTopics       utils.Set[string]
 
 	//batch consumers by destinationId
 	batchConsumers  map[string][]BatchConsumer
 	retryConsumers  map[string][]BatchConsumer
-	streamConsumers map[string][]*StreamConsumer
+	streamConsumers map[string][]StreamConsumer
 
 	batchProducer    *Producer
 	streamProducer   *Producer
@@ -83,7 +85,7 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		eventsLogService:     appContext.eventsLogService,
 		batchConsumers:       make(map[string][]BatchConsumer),
 		retryConsumers:       make(map[string][]BatchConsumer),
-		streamConsumers:      make(map[string][]*StreamConsumer),
+		streamConsumers:      make(map[string][]StreamConsumer),
 		abandonedTopics:      utils.NewSet[string](),
 		allTopics:            utils.NewSet[string](),
 		closed:               make(chan struct{}),
@@ -129,30 +131,63 @@ func (tm *TopicManager) Start() {
 }
 
 func (tm *TopicManager) LoadMetadata() {
+	topicsLastMessageDates := make(map[string]time.Time)
 	metadata, err := tm.kaftaAdminClient.GetMetadata(nil, true, tm.config.KafkaAdminMetadataTimeoutMs)
+	topicPartitionOffsets := make(map[kafka.TopicPartition]kafka.OffsetSpec)
+	for _, topic := range metadata.Topics {
+		t := topic.Topic
+		if !strings.HasPrefix(t, "__") {
+			for _, partition := range topic.Partitions {
+				topicPartitionOffsets[kafka.TopicPartition{Topic: &t, Partition: partition.ID}] = kafka.MaxTimestampOffsetSpec
+			}
+		}
+	}
+	start := time.Now()
+	res, err := tm.kaftaAdminClient.ListOffsets(context.Background(), topicPartitionOffsets)
+	if err != nil {
+		tm.Errorf("Error getting topic offsets: %v", err)
+	} else {
+		for tp, offset := range res.ResultInfos {
+			if offset.Offset > 0 {
+				topicsLastMessageDates[*tp.Topic] = time.UnixMilli(offset.Timestamp)
+			} else {
+				topicsLastMessageDates[*tp.Topic] = time.Time{}
+			}
+		}
+	}
+	tm.Infof("Got topic offsets in %v", time.Since(start))
+
 	if err != nil {
 		metrics.TopicManagerError("load_metadata_error").Inc()
 		tm.Errorf("Error getting metadata: %v", err)
 	} else {
-		tm.processMetadata(metadata)
+		tm.processMetadata(metadata, topicsLastMessageDates)
 	}
 }
 
-func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
+func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, lastMessageDates map[string]time.Time) {
 	tm.Lock()
 	defer tm.Unlock()
 	start := time.Now()
+	staleTopicsCutOff := time.Now().Add(-1 * time.Duration(tm.config.KafkaTopicRetentionHours) * time.Hour)
 	var abandonedTopicsCount float64
 	var otherTopicsCount float64
 	topicsCountByMode := make(map[string]float64)
 	topicsErrorsByMode := make(map[string]float64)
 
 	allTopics := utils.NewSet[string]()
+	staleTopics := utils.NewSet[string]()
 
 	for topic, topicMetadata := range metadata.Topics {
 		allTopics.Put(topic)
 		if tm.abandonedTopics.Contains(topic) {
 			abandonedTopicsCount++
+			continue
+		}
+		lastMessageDate, ok := lastMessageDates[topic]
+		if ok && (lastMessageDate.IsZero() || lastMessageDate.Before(staleTopicsCutOff)) {
+			staleTopics.Put(topic)
+			tm.Debugf("Topic %s is stale. Last message date: %v", topic, lastMessageDate)
 			continue
 		}
 		destinationId, mode, tableName, err := ParseTopicId(topic)
@@ -161,7 +196,6 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 			continue
 		}
 		var dstTopics utils.Set[string]
-		ok := false
 		if dstTopics, ok = tm.consumedTopics[destinationId]; !ok {
 			dstTopics = utils.NewSet[string]()
 			tm.consumedTopics[destinationId] = dstTopics
@@ -170,7 +204,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 			tm.Debugf("Found topic %s for destination %s and table %s", topic, destinationId, tableName)
 			destination := tm.repository.GetDestination(destinationId)
 			if destination == nil {
-				tm.Warnf("No destination found for topic: %s", topic)
+				tm.Debugf("No destination found for topic: %s", topic)
 				tm.abandonedTopics.Put(topic)
 				continue
 			}
@@ -252,11 +286,25 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		dstTopics, hasTopics := tm.consumedTopics[destination.Id()]
 		for mode, config := range tm.requiredDestinationTopics {
 			topicId, _ := MakeTopicId(destination.Id(), mode, allTablesToken, false)
-			if !hasTopics || !dstTopics.Contains(topicId) {
+			if (!hasTopics || !dstTopics.Contains(topicId)) && !staleTopics.Contains(topicId) {
 				//tm.Debugf("Creating topic %s for destination %s", topicId, destination.Id())
 				err := tm.createDestinationTopic(topicId, config)
 				if err != nil {
 					tm.Errorf("Failed to create topic %s for destination %s: %v", topicId, destination.Id(), err)
+				}
+			}
+		}
+		for topic := range dstTopics {
+			if staleTopics.Contains(topic) {
+				destinationId, mode, _, _ := ParseTopicId(topic)
+				tm.Infof("Removing consumer for stale topic: %s", topic, destinationId)
+				switch mode {
+				case "stream":
+					tm.streamConsumers[destinationId] = ExcludeConsumerForTopic(tm.streamConsumers[destinationId], topic, tm.cron)
+				case "batch":
+					tm.batchConsumers[destinationId] = ExcludeConsumerForTopic(tm.batchConsumers[destinationId], topic, tm.cron)
+				case retryTopicMode:
+					tm.retryConsumers[destinationId] = ExcludeConsumerForTopic(tm.retryConsumers[destinationId], topic, tm.cron)
 				}
 			}
 		}
@@ -279,6 +327,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		}
 	}
 	tm.allTopics = allTopics
+	tm.staleTopics = staleTopics
 	err := tm.ensureTopic(tm.config.KafkaDestinationsTopicName, tm.config.KafkaDestinationsTopicPartitions,
 		map[string]string{
 			"retention.ms": fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
@@ -336,9 +385,28 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata) {
 		metrics.TopicManagerDestinations(mode, "error").Set(count)
 	}
 	metrics.TopicManagerAbandonedTopics.Set(abandonedTopicsCount)
-	metrics.TopicManagerOtherTopics.Set(otherTopicsCount)
+	metrics.TopicManagerAllTopics.Set(float64(allTopics.Size()))
+	metrics.TopicManagerStaleTopics.Set(float64(staleTopics.Size()))
 	tm.Debugf("[topic-manager] Refreshed metadata in %v", time.Since(start))
 	tm.ready = true
+}
+
+func ExcludeConsumerForTopic[T Consumer](consumers []T, topicId string, cron *Cron) []T {
+	newConsumers := make([]T, 0, len(consumers))
+	for _, consumer := range consumers {
+		if consumer.TopicId() != topicId {
+			newConsumers = append(newConsumers, consumer)
+		} else {
+			//if consumer instance of BatchConsumer
+			batchConsumer, ok := any(consumer).(BatchConsumer)
+			if ok {
+				cron.RemoveBatchConsumer(batchConsumer)
+			}
+			consumer.Retire()
+		}
+
+	}
+	return newConsumers
 }
 
 func (tm *TopicManager) changeListener(changes RepositoryChange) {
@@ -376,34 +444,30 @@ func (tm *TopicManager) changeListener(changes RepositoryChange) {
 			err := consumer.UpdateDestination(changedDst)
 			if err != nil {
 				metrics.TopicManagerError("update_stream_consumer_error").Inc()
-				tm.SystemErrorf("Failed to re-create consumer for destination topic: %s: %v", consumer.topicId, err)
+				tm.SystemErrorf("Failed to re-create consumer for destination topic: %s: %v", consumer.TopicId(), err)
 				continue
 			}
 		}
 		tm.Unlock()
 	}
 	for _, deletedDstId := range changes.RemovedDestinationIds {
+		tm.Lock()
 		for _, consumer := range tm.batchConsumers[deletedDstId] {
-			tm.Lock()
 			tm.cron.RemoveBatchConsumer(consumer)
 			consumer.Retire()
 			delete(tm.batchConsumers, deletedDstId)
-			tm.Unlock()
 		}
 		for _, consumer := range tm.retryConsumers[deletedDstId] {
-			tm.Lock()
 			tm.cron.RemoveBatchConsumer(consumer)
 			consumer.Retire()
 			delete(tm.retryConsumers, deletedDstId)
-			tm.Unlock()
 		}
 		for _, consumer := range tm.streamConsumers[deletedDstId] {
-			tm.Lock()
-			_ = consumer.Close()
+			consumer.Retire()
 			delete(tm.streamConsumers, deletedDstId)
-			tm.Unlock()
 		}
 		delete(tm.consumedTopics, deletedDstId)
+		tm.Unlock()
 	}
 	if len(changes.AddedDestinations) > 0 {
 		tm.Lock()
@@ -443,8 +507,7 @@ func (tm *TopicManager) IsReady() bool {
 func (tm *TopicManager) EnsureDestinationTopic(destination *Destination, topicId string) error {
 	tm.Lock()
 	defer tm.Unlock()
-	set := tm.consumedTopics[destination.Id()]
-	if !set.Contains(topicId) {
+	if !tm.allTopics.Contains(topicId) {
 		return tm.createDestinationTopic(topicId, nil)
 	}
 	return nil
@@ -600,7 +663,7 @@ func (tm *TopicManager) Close() error {
 	}
 	for _, consumers := range tm.streamConsumers {
 		for _, consumer := range consumers {
-			consumer.Close()
+			consumer.Retire()
 		}
 	}
 	return nil

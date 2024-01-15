@@ -92,11 +92,17 @@ var (
 		Name:      "abandoned_topics",
 		Help:      "Number of abandoned topics. Abandoned topics are destination topics that are not used by any destination",
 	})
-	TopicManagerOtherTopics = promauto.NewGauge(prometheus.GaugeOpts{
+	TopicManagerAllTopics = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "topic_manager",
-		Name:      "other_topics",
-		Help:      "Number of other topics. Other topics are any kafka topics not managed by the topic manager",
+		Name:      "all_topics",
+		Help:      "Number of topics.",
+	})
+	TopicManagerStaleTopics = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "topic_manager",
+		Name:      "stale_topics",
+		Help:      "Number of stale topics.",
 	})
 
 	consumerErrors = promauto.NewCounterVec(prometheus.CounterOpts{

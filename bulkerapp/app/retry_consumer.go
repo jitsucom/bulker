@@ -47,7 +47,7 @@ func (rc *RetryConsumer) shouldConsumeFuncImpl(committedOffset, highOffset int64
 		message, err := rc.consumer.Load().ReadMessage(rc.waitForMessages)
 		if err != nil {
 			kafkaErr := err.(kafka.Error)
-			if kafkaErr.Code() == kafka.ErrTimedOut && currentOffset == highOffset-1 {
+			if kafkaErr.Code() == kafka.ErrTimedOut {
 				rc.Debugf("Timeout. No messages to retry. %d-%d", committedOffset, highOffset)
 				return false
 			}

@@ -27,12 +27,11 @@ type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatc
 type ShouldConsumeFunction func(committedOffset, highOffset int64) bool
 
 type BatchConsumer interface {
+	Consumer
 	RunJob()
 	ConsumeAll() (consumed BatchCounters, err error)
-	Retire()
 	BatchPeriodSec() int
 	UpdateBatchPeriod(batchPeriodSec int)
-	TopicId() string
 }
 
 type AbstractBatchConsumer struct {
