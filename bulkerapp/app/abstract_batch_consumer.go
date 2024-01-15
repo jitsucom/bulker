@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
@@ -25,6 +24,7 @@ const errorHeader = "error"
 const pauseHeartBeatInterval = 120 * time.Second
 
 type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error)
+type ShouldConsumeFunction func(committedOffset, highOffset int64) bool
 
 type BatchConsumer interface {
 	RunJob()
@@ -38,16 +38,15 @@ type BatchConsumer interface {
 type AbstractBatchConsumer struct {
 	sync.Mutex
 	*AbstractConsumer
-	repository            *Repository
-	destinationId         string
-	batchPeriodSec        int
-	consumerConfig        kafka.ConfigMap
-	consumer              atomic.Pointer[kafka.Consumer]
-	producerConfig        kafka.ConfigMap
-	transactionalProducer atomic.Pointer[kafka.Producer]
-	mode                  string
-	tableName             string
-	waitForMessages       time.Duration
+	repository      *Repository
+	destinationId   string
+	batchPeriodSec  int
+	consumerConfig  kafka.ConfigMap
+	consumer        atomic.Pointer[kafka.Consumer]
+	producerConfig  kafka.ConfigMap
+	mode            string
+	tableName       string
+	waitForMessages time.Duration
 
 	closed chan struct{}
 
@@ -61,7 +60,8 @@ type AbstractBatchConsumer struct {
 	paused        atomic.Bool
 	resumeChannel chan struct{}
 
-	batchFunc BatchFunction
+	batchFunc         BatchFunction
+	shouldConsumeFunc ShouldConsumeFunction
 }
 
 func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer) (*AbstractBatchConsumer, error) {
@@ -122,14 +122,24 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		return nil, abstract.NewError("Failed to subscribe to topic: %v", err)
 	}
 
+	return bc, nil
+}
+
+func (bc *AbstractBatchConsumer) initTransactionalProducer() (*kafka.Producer, error) {
+	//start := time.Now()
+	producer, err := kafka.NewProducer(&bc.producerConfig)
+	if err != nil {
+		metrics.ConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, metrics.KafkaErrorCode(err)).Inc()
+		return nil, fmt.Errorf("error creating kafka producer: %v", err)
+	}
+	err = producer.InitTransactions(nil)
+	if err != nil {
+		metrics.ConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, metrics.KafkaErrorCode(err)).Inc()
+		return nil, fmt.Errorf("error initializing kafka producer transactions: %v", err)
+	}
 	// Delivery reports channel for 'failed' producer messages
 	safego.RunWithRestart(func() {
 		for {
-			producer := bc.transactionalProducer.Load()
-			if producer == nil {
-				time.Sleep(time.Second * 10)
-				continue
-			}
 			select {
 			case <-bc.closed:
 				bc.Infof("Closing producer.")
@@ -146,43 +156,17 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 						kafkabase.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "delivered", "")).Inc()
 						bc.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 					}
-					//case kafka.Error:
-					//	bc.Errorf("Producer error: %v", ev)
+				case *kafka.Error, kafka.Error:
+					bc.Errorf("Producer error: %v", ev)
+				case nil:
+					bc.Debugf("Producer closed")
+					return
 				}
 			}
 		}
 	})
-	return bc, nil
-}
-
-func (bc *AbstractBatchConsumer) initTransactionalProducer() *kafka.Producer {
-	producer := bc.transactionalProducer.Load()
-	if producer != nil {
-		return producer
-	}
-	bc.Infof("Setting up transactional producer.")
-	producer, err := kafka.NewProducer(&bc.producerConfig)
-	if err != nil {
-		metrics.ConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, metrics.KafkaErrorCode(err)).Inc()
-		panic(bc.NewError("error creating kafka producer: %v", err))
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
-	//enable transactions support for producer
-	err = producer.InitTransactions(ctx)
-	if err != nil {
-		metrics.ConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, metrics.KafkaErrorCode(err)).Inc()
-		panic(bc.NewError("error initializing kafka producer transactions for 'failed' producer: %v", err))
-	}
-	bc.transactionalProducer.Store(producer)
-	return producer
-}
-
-func (bc *AbstractBatchConsumer) closeTransactionalProducer() {
-	producer := bc.transactionalProducer.Swap(nil)
-	if producer != nil {
-		producer.Close()
-	}
+	//bc.Infof("Producer initialized in %s", time.Since(start))
+	return producer, nil
 }
 
 func (bc *AbstractBatchConsumer) BatchPeriodSec() int {
@@ -218,7 +202,8 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 	bc.Debugf("Starting consuming messages from topic")
 	bc.idle.Store(false)
-	var lowOffset, highOffset int64
+	lowOffset := int64(kafka.OffsetBeginning)
+	var highOffset int64
 	defer func() {
 		bc.idle.Store(true)
 		bc.pause()
@@ -276,6 +261,10 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.errorMetric("query_watermark_failed")
 		return BatchCounters{}, bc.NewError("Failed to query watermark offsets: %v", err)
 	}
+	if !bc.shouldConsume(lowOffset, highOffset) {
+		bc.Debugf("Consumer should not consume. offsets: %d-%d", lowOffset, highOffset)
+		return BatchCounters{}, nil
+	}
 	batchNumber := 1
 	for {
 		if bc.retired.Load() {
@@ -308,6 +297,17 @@ func (bc *AbstractBatchConsumer) close() error {
 func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBath bool, err error) {
 	bc.resume()
 	return bc.batchFunc(destination, batchNum, batchSize, retryBatchSize, highOffset)
+}
+
+func (bc *AbstractBatchConsumer) shouldConsume(committedOffset, highOffset int64) bool {
+	if highOffset == 0 || committedOffset == highOffset {
+		return false
+	}
+	if bc.shouldConsumeFunc != nil {
+		bc.resume()
+		return bc.shouldConsumeFunc(committedOffset, highOffset)
+	}
+	return true
 }
 
 // pause consumer.

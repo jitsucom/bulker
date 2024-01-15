@@ -22,8 +22,52 @@ func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodS
 		AbstractBatchConsumer: base,
 	}
 	rc.batchFunc = rc.processBatchImpl
+	rc.shouldConsumeFunc = rc.shouldConsumeFuncImpl
 	rc.pause()
 	return &rc, nil
+}
+
+func (rc *RetryConsumer) shouldConsumeFuncImpl(committedOffset, highOffset int64) bool {
+	var firstPosition *kafka.TopicPartition
+	defer func() {
+		//recover
+		if r := recover(); r != nil {
+			rc.SystemErrorf("Recovered from panic: %v", r)
+		}
+		if firstPosition != nil {
+			_, err := rc.consumer.Load().SeekPartitions([]kafka.TopicPartition{*firstPosition})
+			if err != nil {
+				rc.SystemErrorf("Failed to seek to first position: %v", err)
+				//rc.restartConsumer()
+			}
+		}
+	}()
+	currentOffset := committedOffset
+	for currentOffset < highOffset {
+		message, err := rc.consumer.Load().ReadMessage(rc.waitForMessages)
+		if err != nil {
+			kafkaErr := err.(kafka.Error)
+			if kafkaErr.Code() == kafka.ErrTimedOut && currentOffset == highOffset-1 {
+				rc.Debugf("Timeout. No messages to retry. %d-%d", committedOffset, highOffset)
+				return false
+			}
+			rc.Infof("Failed to check shouldConsume. %d-%d. Error: %v", committedOffset, highOffset, err)
+			// we don't handle errors here. allow consuming to handle error properly
+			return true
+		}
+		if firstPosition == nil {
+			firstPosition = &message.TopicPartition
+		}
+		currentOffset = int64(message.TopicPartition.Offset)
+		if rc.isTimeToRetry(message) {
+			rc.Debugf("Found message to retry: %d of %d-%d", currentOffset, committedOffset, highOffset)
+			//at least one message is ready to retry. we should consume
+			return true
+		}
+
+	}
+	rc.Debugf("No messages to retry. %d-%d", committedOffset, highOffset)
+	return false
 }
 
 func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error) {
@@ -55,8 +99,10 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			if txOpened {
 				_ = producer.AbortTransaction(context.Background())
 			}
-			rc.closeTransactionalProducer()
 			nextBatch = false
+		}
+		if producer != nil {
+			producer.Close()
 		}
 	}()
 
@@ -86,7 +132,10 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 		if counters.consumed == 1 {
 			counters.firstOffset = int64(message.TopicPartition.Offset)
 			firstPosition = &message.TopicPartition
-			producer = rc.initTransactionalProducer()
+			producer, err = rc.initTransactionalProducer()
+			if err != nil {
+				return counters, false, err
+			}
 			err = producer.BeginTransaction()
 			if err != nil {
 				return counters, false, fmt.Errorf("failed to begin kafka transaction: %v", err)

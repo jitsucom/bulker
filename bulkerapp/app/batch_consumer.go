@@ -185,6 +185,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 
 // processFailed consumes the latest failed batch of messages and sends them to the 'failed' topic
 func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, failedPosition *kafka.TopicPartition, originalErr error) (counters BatchCounters, err error) {
+	var producer *kafka.Producer
 	defer func() {
 		//recover
 		if r := recover(); r != nil {
@@ -193,10 +194,15 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		}
 		if err != nil {
 			err = bc.NewError("Failed to put unsuccessful batch to 'failed' producer: %v", err)
-			bc.closeTransactionalProducer()
+		}
+		if producer != nil {
+			producer.Close()
 		}
 	}()
-	producer := bc.initTransactionalProducer()
+	producer, err = bc.initTransactionalProducer()
+	if err != nil {
+		return
+	}
 
 	bc.resume()
 

@@ -61,8 +61,8 @@ func (p *Producer) Start() {
 					ProducerMessages(p.metricsLabelFunc(*ev.TopicPartition.Topic, "delivered", "")).Inc()
 					p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 				}
-				//case kafka.Error:
-				//	p.Debugf("Producer error: %v", ev)
+			case *kafka.Error, kafka.Error:
+				p.Errorf("Producer error: %v", ev)
 			}
 		}
 		p.Infof("Producer closed")
