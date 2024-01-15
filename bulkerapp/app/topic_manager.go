@@ -316,7 +316,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, lastMessageDat
 			}
 			for _, table := range tables {
 				topicId, _ := MakeTopicId(destination.Id(), "batch", table, false)
-				if !hasTopics || !dstTopics.Contains(topicId) {
+				if (!hasTopics || !dstTopics.Contains(topicId)) && !staleTopics.Contains(topicId) {
 					tm.Infof("Creating topic %s for destination %s", topicId, destination.Id())
 					err := tm.createDestinationTopic(topicId, nil)
 					if err != nil {
