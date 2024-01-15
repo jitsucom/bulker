@@ -148,7 +148,7 @@ func (tm *TopicManager) LoadMetadata() {
 		tm.Errorf("Error getting topic offsets: %v", err)
 	} else {
 		for tp, offset := range res.ResultInfos {
-			if offset.Offset > 0 {
+			if offset.Offset >= 0 {
 				topicsLastMessageDates[*tp.Topic] = time.UnixMilli(offset.Timestamp)
 			} else {
 				topicsLastMessageDates[*tp.Topic] = time.Time{}
