@@ -142,20 +142,20 @@ func (tm *TopicManager) LoadMetadata() {
 			}
 		}
 	}
-	start := time.Now()
-	res, err := tm.kaftaAdminClient.ListOffsets(context.Background(), topicPartitionOffsets)
-	if err != nil {
-		tm.Errorf("Error getting topic offsets: %v", err)
-	} else {
-		for tp, offset := range res.ResultInfos {
-			if offset.Offset >= 0 {
-				topicsLastMessageDates[*tp.Topic] = time.UnixMilli(offset.Timestamp)
-			} else {
-				topicsLastMessageDates[*tp.Topic] = time.Time{}
-			}
-		}
-	}
-	tm.Infof("Got topic offsets in %v", time.Since(start))
+	//start := time.Now()
+	//res, err := tm.kaftaAdminClient.ListOffsets(context.Background(), topicPartitionOffsets)
+	//if err != nil {
+	//	tm.Errorf("Error getting topic offsets: %v", err)
+	//} else {
+	//	for tp, offset := range res.ResultInfos {
+	//		if offset.Offset >= 0 {
+	//			topicsLastMessageDates[*tp.Topic] = time.UnixMilli(offset.Timestamp)
+	//		} else {
+	//			topicsLastMessageDates[*tp.Topic] = time.Time{}
+	//		}
+	//	}
+	//}
+	//tm.Infof("Got topic offsets in %v", time.Since(start))
 
 	if err != nil {
 		metrics.TopicManagerError("load_metadata_error").Inc()
