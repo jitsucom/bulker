@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -318,31 +319,37 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 	if len(functionDestinations) > 0 {
 		var err error
 		ids := utils.ArrayMap(functionDestinations, func(d *ShortDestinationConfig) string { return d.ConnectionId })
-		defer func() {
+		defer func(ids []string) {
 			for _, id := range ids {
 				if err != nil {
-					IngestedMessages(id, "error", "device functions error").Inc()
+					DeviceFunctions(id, "error").Inc()
+				} else {
+					DeviceFunctions(id, "success").Inc()
 				}
 			}
-		}()
+		}(ids)
 		req, err := http.NewRequest("POST", r.config.RotorURL+"/func/multi?ids="+strings.Join(ids, ","), bytes.NewReader(messageBytes))
 		if err != nil {
 			r.Errorf("failed to create rotor request for connections: %s: %v", ids, err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		res, err := r.httpClient.Do(req)
-		if err != nil {
-			r.Errorf("failed to send rotor request for device functions for connections: %s: %v", ids, err)
 		} else {
-			defer res.Body.Close()
-			//get body
-			body, err := io.ReadAll(res.Body)
-			if res.StatusCode != 200 || err != nil {
-				r.Errorf("Failed to send rotor request for device functions for connections: %s: status: %v body: %s", ids, res.StatusCode, string(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Request-Timeout-Ms", strconv.Itoa(r.config.DeviceFunctionsTimeoutMs))
+			var res *http.Response
+			res, err = r.httpClient.Do(req)
+			if err != nil {
+				r.Errorf("failed to send rotor request for device functions for connections: %s: %v", ids, err)
 			} else {
-				err = json.Unmarshal(body, &functionsResults)
-				if err != nil {
-					r.Errorf("Failed to unmarshal rotor response for connections: %s: %v", ids, err)
+				defer res.Body.Close()
+				//get body
+				var body []byte
+				body, err = io.ReadAll(res.Body)
+				if res.StatusCode != 200 || err != nil {
+					r.Errorf("Failed to send rotor request for device functions for connections: %s: status: %v body: %s", ids, res.StatusCode, string(body))
+				} else {
+					err = json.Unmarshal(body, &functionsResults)
+					if err != nil {
+						r.Errorf("Failed to unmarshal rotor response for connections: %s: %v", ids, err)
+					}
 				}
 			}
 		}

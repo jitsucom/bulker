@@ -26,6 +26,16 @@ var (
 		return ingestedMessages.WithLabelValues(destinationId, status, errorType)
 	}
 
+	deviceFunctions = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "ingest",
+		Name:      "device_functions",
+		Help:      "Device Functions enrichment status by destination Id",
+	}, []string{"destinationId", "status", "errorType"})
+	DeviceFunctions = func(destinationId, status string) prometheus.Counter {
+		return ingestedMessages.WithLabelValues(destinationId, status)
+	}
+
 	repositoryErrors = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "ingest",
 		Subsystem: "repository",
