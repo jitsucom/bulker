@@ -31,9 +31,9 @@ var (
 		Subsystem: "ingest",
 		Name:      "device_functions",
 		Help:      "Device Functions enrichment status by destination Id",
-	}, []string{"destinationId", "status", "errorType"})
+	}, []string{"destinationId", "status"})
 	DeviceFunctions = func(destinationId, status string) prometheus.Counter {
-		return ingestedMessages.WithLabelValues(destinationId, status)
+		return deviceFunctions.WithLabelValues(destinationId, status)
 	}
 
 	repositoryErrors = promauto.NewCounter(prometheus.CounterOpts{
