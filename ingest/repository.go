@@ -1,242 +1,123 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
-	"github.com/jitsucom/bulker/jitsubase/safego"
-	jsoniter "github.com/json-iterator/go"
 	"io"
-	"os"
-	"path"
 	"sync/atomic"
 	"time"
 )
 
-const SQLLastUpdatedQuery = `select * from last_updated`
-const SQLQuery = `select * from streams_with_destinations`
-
-type Repository struct {
-	appbase.Service
-	dbpool           *pgxpool.Pool
-	refreshPeriodSec int
-	inited           atomic.Bool
-	cacheDir         string
-	apiKeyBindings   atomic.Pointer[map[string]*ApiKeyBinding]
-	streamsByIds     atomic.Pointer[map[string]*StreamWithDestinations]
-	streamsByDomains atomic.Pointer[map[string][]*StreamWithDestinations]
-	lastModified     atomic.Pointer[time.Time]
-	closed           chan struct{}
+type RepositoryConfig struct {
+	RepositoryURL              string `mapstructure:"REPOSITORY_URL" default:"http://console:3000/api/admin/export/streams-with-destinations"`
+	RepositoryAuthToken        string `mapstructure:"REPOSITORY_AUTH_TOKEN"`
+	RepositoryRefreshPeriodSec int    `mapstructure:"REPOSITORY_REFRESH_PERIOD_SEC" default:"2"`
 }
 
-type RepositoryCache struct {
-	ApiKeyBindings   map[string]*ApiKeyBinding            `json:"apiKeyBindings"`
-	StreamsByIds     map[string]*StreamWithDestinations   `json:"streamsByIds"`
-	StreamsByDomains map[string][]*StreamWithDestinations `json:"streamsByDomains"`
+type Streams struct {
+	streams          []*StreamWithDestinations
+	apiKeyBindings   map[string]*ApiKeyBinding
+	streamsByIds     map[string]*StreamWithDestinations
+	streamsByDomains map[string][]*StreamWithDestinations
+	lastModified     time.Time
 }
 
-func NewRepository(dbpool *pgxpool.Pool, refreshPeriodSec int, cacheDir string) *Repository {
-	base := appbase.NewServiceBase("repository")
-	r := &Repository{
-		Service:          base,
-		dbpool:           dbpool,
-		refreshPeriodSec: refreshPeriodSec,
-		cacheDir:         cacheDir,
-		closed:           make(chan struct{}),
-	}
-	r.refresh()
-	r.start()
-	return r
+func (s *Streams) getStreamByKeyId(keyId string) *ApiKeyBinding {
+	return s.apiKeyBindings[keyId]
 }
 
-func (r *Repository) loadCached() {
-	file, err := os.Open(path.Join(r.cacheDir, "repository.json"))
-	if err != nil {
-		r.Fatalf("Error opening cached repository: %v\nCannot serve without repository. Exitting...", err)
-		return
-	}
-	stat, err := file.Stat()
-	if err != nil {
-		r.Fatalf("Error getting cached repository info: %v\nCannot serve without repository. Exitting...", err)
-		return
-	}
-	fileSize := stat.Size()
-	if fileSize == 0 {
-		r.Fatalf("Cached repository is empty\nCannot serve without repository. Exitting...")
-		return
-	}
-	payload, err := io.ReadAll(file)
-	if err != nil {
-		r.Fatalf("Error reading cached script: %v\nCannot serve without repository. Exitting...", err)
-		return
-	}
-	repositoryCache := RepositoryCache{}
-	err = jsoniter.Unmarshal(payload, &repositoryCache)
-	if err != nil {
-		r.Fatalf("Error unmarshalling cached repository: %v\nCannot serve without repository. Exitting...", err)
-		return
-	}
-	r.apiKeyBindings.Store(&repositoryCache.ApiKeyBindings)
-	r.streamsByIds.Store(&repositoryCache.StreamsByIds)
-	r.streamsByDomains.Store(&repositoryCache.StreamsByDomains)
-	r.inited.Store(true)
-	r.Infof("Loaded cached repository data: %d bytes, last modified: %v", fileSize, stat.ModTime())
+func (s *Streams) GetStreamById(slug string) *StreamWithDestinations {
+	return s.streamsByIds[slug]
 }
 
-func (r *Repository) storeCached(payload RepositoryCache) {
-	filePath := path.Join(r.cacheDir, "repository.json")
-	err := os.MkdirAll(r.cacheDir, 0755)
-	if err != nil {
-		r.Errorf("Cannot write cached repository to %s: cannot make dir: %v", filePath, err)
-		return
-	}
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
-	if err != nil {
-		r.Errorf("Cannot write cached repository to %s: %v", filePath, err)
-		return
-	}
-	err = json.NewEncoder(file).Encode(payload)
-	if err != nil {
-		r.Errorf("Cannot write cached repository to %s: %v", filePath, err)
-		return
-	}
-	err = file.Sync()
-	if err != nil {
-		r.Errorf("Cannot write cached script to %s: %v", filePath, err)
-		return
-	}
+func (s *Streams) GetStreamsByDomain(domain string) []*StreamWithDestinations {
+	return s.streamsByDomains[domain]
 }
 
-func (r *Repository) refresh() {
-	start := time.Now()
+type StreamsRepositoryData struct {
+	data atomic.Pointer[Streams]
+}
+
+func (s *StreamsRepositoryData) Init(reader io.Reader, tag any) error {
+	dec := json.NewDecoder(reader)
+	// read open bracket
+	_, err := dec.Token()
+	if err != nil {
+		return fmt.Errorf("error reading open bracket: %v", err)
+	}
+	streams := make([]*StreamWithDestinations, 0)
 	apiKeyBindings := map[string]*ApiKeyBinding{}
 	streamsByIds := map[string]*StreamWithDestinations{}
 	streamsByDomains := map[string][]*StreamWithDestinations{}
-	var err error
-	defer func() {
+	// while the array contains values
+	for dec.More() {
+		swd := StreamWithDestinations{}
+		err = dec.Decode(&swd)
 		if err != nil {
-			r.Errorf("Error refreshing repository: %v", err)
-			RepositoryErrors().Add(1)
-			if !r.inited.Load() {
-				if r.cacheDir != "" {
-					r.loadCached()
-				} else {
-					r.Fatalf("Cannot load cached repository. No CACHE_DIR is set. Cannot serve without repository. Exitting...")
-				}
-			}
-		} else {
-			r.Debugf("Refreshed in %v", time.Now().Sub(start))
+			return fmt.Errorf("Error unmarshalling stream config: %v", err)
 		}
-	}()
-	ifModifiedSince := r.lastModified.Load()
-	var lastModified time.Time
-	err = r.dbpool.QueryRow(context.Background(), SQLLastUpdatedQuery).Scan(&lastModified)
-	if err != nil {
-		err = r.NewError("Error querying last updated: %v", err)
-		return
-	} else if errors.Is(err, pgx.ErrNoRows) || lastModified.IsZero() {
-		//Failed to load repository last updated date. Probably database has no records yet.
-		r.apiKeyBindings.Store(&apiKeyBindings)
-		r.streamsByIds.Store(&streamsByIds)
-		r.streamsByDomains.Store(&streamsByDomains)
-		r.inited.Store(true)
-		return
-	}
-	if ifModifiedSince != nil && lastModified.Compare(*ifModifiedSince) <= 0 {
-		return
-	}
-	r.Infof("Config updated: %s previous update date: %s`", lastModified, ifModifiedSince)
-
-	rows, err := r.dbpool.Query(context.Background(), SQLQuery)
-	if err != nil {
-		err = r.NewError("Error querying streams: %v", err)
-		return
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var streamId string
-		var streamConfig string
-		err = rows.Scan(&streamId, &streamConfig)
-		if err != nil {
-			err = r.NewError("Error scanning row: %v", err)
-			return
-		}
-		//r.Infof("Stream %s: %s", streamId, streamConfig)
-		s := StreamWithDestinations{}
-		err = jsoniter.UnmarshalFromString(streamConfig, &s)
-		if err != nil {
-			err = r.NewError("Error unmarshalling stream config: %v", err)
-			return
-		}
-		s.init()
-		streamsByIds[s.Stream.Id] = &s
-		for _, domain := range s.Stream.Domains {
-			streams, ok := streamsByDomains[domain]
+		swd.init()
+		streams = append(streams, &swd)
+		streamsByIds[swd.Stream.Id] = &swd
+		for _, domain := range swd.Stream.Domains {
+			domainStreams, ok := streamsByDomains[domain]
 			if !ok {
-				streams = make([]*StreamWithDestinations, 0, 1)
+				domainStreams = make([]*StreamWithDestinations, 0, 1)
 			}
-			streamsByDomains[domain] = append(streams, &s)
+			streamsByDomains[domain] = append(domainStreams, &swd)
 		}
-		for _, key := range s.Stream.PublicKeys {
+		for _, key := range swd.Stream.PublicKeys {
 			apiKeyBindings[key.Id] = &ApiKeyBinding{
 				Hash:     key.Hash,
 				KeyType:  "browser",
-				StreamId: s.Stream.Id,
+				StreamId: swd.Stream.Id,
 			}
 		}
-		for _, key := range s.Stream.PrivateKeys {
+		for _, key := range swd.Stream.PrivateKeys {
 			apiKeyBindings[key.Id] = &ApiKeyBinding{
 				Hash:     key.Hash,
 				KeyType:  "s2s",
-				StreamId: s.Stream.Id,
+				StreamId: swd.Stream.Id,
 			}
 		}
 	}
-	r.apiKeyBindings.Store(&apiKeyBindings)
-	r.streamsByIds.Store(&streamsByIds)
-	r.streamsByDomains.Store(&streamsByDomains)
-	r.inited.Store(true)
-	r.lastModified.Store(&lastModified)
-	if r.cacheDir != "" {
-		r.storeCached(RepositoryCache{ApiKeyBindings: apiKeyBindings, StreamsByIds: streamsByIds, StreamsByDomains: streamsByDomains})
+
+	// read closing bracket
+	_, err = dec.Token()
+	if err != nil {
+		return fmt.Errorf("error reading closing bracket: %v", err)
 	}
+
+	data := Streams{
+		streams:          streams,
+		apiKeyBindings:   apiKeyBindings,
+		streamsByIds:     streamsByIds,
+		streamsByDomains: streamsByDomains,
+	}
+	if tag != nil {
+		data.lastModified = tag.(time.Time)
+	}
+	s.data.Store(&data)
+	return nil
 }
 
-func (r *Repository) start() {
-	safego.RunWithRestart(func() {
-		ticker := time.NewTicker(time.Duration(r.refreshPeriodSec) * time.Second)
-		for {
-			select {
-			case <-ticker.C:
-				r.refresh()
-			case <-r.closed:
-				ticker.Stop()
-				return
-			}
-		}
-	})
+func (s *StreamsRepositoryData) GetData() *Streams {
+	return s.data.Load()
 }
 
-func (r *Repository) Close() {
-	close(r.closed)
+func (s *StreamsRepositoryData) Store(writer io.Writer) error {
+	d := s.data.Load()
+	if d != nil {
+		encoder := json.NewEncoder(writer)
+		err := encoder.Encode(d.streams)
+		return err
+	}
+	return nil
 }
 
-func (r *Repository) getStreamByKeyId(keyId string) (*ApiKeyBinding, error) {
-	binding := (*r.apiKeyBindings.Load())[keyId]
-	return binding, nil
-}
-
-func (r *Repository) GetStreamById(slug string) (*StreamWithDestinations, error) {
-	stream := (*r.streamsByIds.Load())[slug]
-	return stream, nil
-}
-
-func (r *Repository) GetStreamsByDomain(domain string) ([]*StreamWithDestinations, error) {
-	streams := (*r.streamsByDomains.Load())[domain]
-	return streams, nil
+func NewStreamsRepository(url, token string, refreshPeriodSec int, cacheDir string) appbase.Repository[Streams] {
+	return appbase.NewHTTPRepository[Streams]("streams-with-destinations", url, token, appbase.HTTPTagLastModified, &StreamsRepositoryData{}, 1, refreshPeriodSec, cacheDir)
 }
 
 type DataLayout string
@@ -289,7 +170,6 @@ type TagDestinationConfig struct {
 
 type StreamWithDestinations struct {
 	Stream                   StreamConfig             `json:"stream"`
-	Deleted                  bool                     `json:"deleted"`
 	UpdateAt                 time.Time                `json:"updatedAt"`
 	BackupEnabled            bool                     `json:"backupEnabled"`
 	Destinations             []ShortDestinationConfig `json:"destinations"`

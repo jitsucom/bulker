@@ -60,6 +60,12 @@ func InitConfigurationSource(config *Config) (ConfigurationSource, error) {
 		if err != nil {
 			return nil, fmt.Errorf("❗error creating yaml configuration source from config file: %s: %v", filePath, err)
 		}
+	} else if strings.HasPrefix(cfgSource, "http://") || strings.HasPrefix(cfgSource, "https://") {
+		var err error
+		configurationSource = NewHTTPConfigurationSource(config)
+		if err != nil {
+			return nil, fmt.Errorf("❗️error while init postgres configuration source: %s: %v", cfgSource, err)
+		}
 	} else if strings.HasPrefix(cfgSource, "postgres") {
 		var err error
 		configurationSource, err = NewPostgresConfigurationSource(config)

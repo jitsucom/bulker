@@ -10,8 +10,12 @@ import (
 )
 
 type Config struct {
-	appbase.Config        `mapstructure:",squash"`
+	// # BASE CONFIG - base setting for jitsu apps
+	appbase.Config `mapstructure:",squash"`
+	// # KAFKA CONFIG - base kafka setting
 	kafkabase.KafkaConfig `mapstructure:",squash"`
+	// # REPOSITORY CONFIG - settings for loading streams from repository
+	RepositoryConfig `mapstructure:",squash"`
 
 	DatabaseURL string `mapstructure:"DATABASE_URL"`
 
@@ -38,8 +42,6 @@ type Config struct {
 	RedisURL         string `mapstructure:"REDIS_URL"`
 	RedisTLSCA       string `mapstructure:"REDIS_TLS_CA"`
 	EventsLogMaxSize int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
-
-	RepositoryRefreshPeriodSec int `mapstructure:"REPOSITORY_REFRESH_PERIOD_SEC" default:"2"`
 
 	RotorURL                 string `mapstructure:"ROTOR_URL"`
 	DeviceFunctionsTimeoutMs int    `mapstructure:"DEVICE_FUNCTIONS_TIMEOUT_MS" default:"200"`

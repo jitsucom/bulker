@@ -43,8 +43,8 @@ type Router struct {
 	*appbase.Router
 	config           *Config
 	kafkaConfig      *kafka.ConfigMap
-	repository       *Repository
-	script           *Script
+	repository       appbase.Repository[Streams]
+	scriptRepository appbase.Repository[Script]
 	producer         *kafkabase.Producer
 	eventsLogService eventslog.EventsLogService
 	backupsLogger    *BackupLogger
@@ -100,7 +100,7 @@ func NewRouter(appContext *Context) *Router {
 		eventsLogService: appContext.eventsLogService,
 		backupsLogger:    appContext.backupsLogger,
 		repository:       appContext.repository,
-		script:           appContext.script,
+		scriptRepository: appContext.scriptRepository,
 		httpClient:       httpClient,
 	}
 	engine := router.Engine()
@@ -460,25 +460,17 @@ func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials) *StreamWithDestin
 	if loc.WriteKey != "" {
 		parts := strings.Split(loc.WriteKey, ":")
 		if len(parts) == 1 {
-			stream, err := r.repository.GetStreamById(loc.WriteKey)
-			if err != nil {
-				r.Errorf("error getting stream: %v", err)
-			} else {
-				return stream
-			}
+			return r.repository.GetData().GetStreamById(loc.WriteKey)
 		} else {
-			var binding *ApiKeyBinding
-			binding, err := r.repository.getStreamByKeyId(parts[0])
-			if err == nil && binding != nil {
+			binding := r.repository.GetData().getStreamByKeyId(parts[0])
+			if binding != nil {
 				if loc.IngestType != IngestTypeWriteKeyDefined && binding.KeyType != string(loc.IngestType) {
 					r.Errorf("invalid key type: found %s, expected %s", binding.KeyType, loc.IngestType)
 				} else if !r.checkHash(binding.Hash, parts[1]) {
 					r.Errorf("invalid key secret")
 				} else {
-					stream, err := r.repository.GetStreamById(binding.StreamId)
-					if err != nil {
-						r.Errorf("error getting stream: %v", err)
-					} else {
+					stream := r.repository.GetData().GetStreamById(binding.StreamId)
+					if stream != nil {
 						loc.IngestType = IngestType(binding.KeyType)
 						return stream
 					}
@@ -491,22 +483,15 @@ func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials) *StreamWithDestin
 
 func (r *Router) SlugStreamLocator(loc *StreamCredentials) *StreamWithDestinations {
 	if loc.Slug != "" {
-		stream, err := r.repository.GetStreamById(loc.Slug)
-		if err != nil {
-			r.Errorf("error getting stream: %v", err)
-		} else {
-			return stream
-		}
+		return r.repository.GetData().GetStreamById(loc.Slug)
 	}
 	return nil
 }
 
 func (r *Router) DomainStreamLocator(loc *StreamCredentials) *StreamWithDestinations {
 	if loc.Domain != "" {
-		streams, err := r.repository.GetStreamsByDomain(loc.Domain)
-		if err != nil {
-			r.Errorf("error getting stream: %v", err)
-		} else if len(streams) == 1 {
+		streams := r.repository.GetData().GetStreamsByDomain(loc.Domain)
+		if len(streams) == 1 {
 			return streams[0]
 		} else if loc.WriteKey == "" && len(streams) > 1 {
 			return streams[0]
@@ -517,10 +502,8 @@ func (r *Router) DomainStreamLocator(loc *StreamCredentials) *StreamWithDestinat
 
 func (r *Router) AmbiguousDomainStreamLocator(loc *StreamCredentials) *StreamWithDestinations {
 	if loc.Domain != "" {
-		streams, err := r.repository.GetStreamsByDomain(loc.Domain)
-		if err != nil {
-			r.Errorf("error getting stream: %v", err)
-		} else if len(streams) > 0 {
+		streams := r.repository.GetData().GetStreamsByDomain(loc.Domain)
+		if len(streams) > 0 {
 			return streams[0]
 		}
 	}
