@@ -51,7 +51,7 @@ RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags=
 
 FROM base as bulker
 
-COPY --from=builder /app/bulkerapp/bulker ./
+COPY --from=builder /app/bulker ./
 CMD ["/app/bulker"]
 
 FROM base as ingest
@@ -61,10 +61,10 @@ CMD ["/app/ingest"]
 
 FROM base as sidecar
 
-COPY --from=builder /app/sync-sidecar/sidecar ./
+COPY --from=builder /app/sidecar ./
 CMD ["/app/sidecar"]
 
 FROM base as syncctl
 
-COPY --from=builder /app/sync-controller/syncctl ./
+COPY --from=builder /app/syncctl ./
 CMD ["/app/syncctl"]
