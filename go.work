@@ -1,0 +1,15 @@
+go 1.21
+
+use (
+	./bulkerapp
+	./bulkerlib
+	./connectors/airbytecdk
+	./connectors/firebase
+	./eventslog
+	./ingest
+	./jitsubase
+	./kafkabase
+	./sync-controller
+	./sync-sidecar
+	admin
+)
