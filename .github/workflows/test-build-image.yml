@@ -34,7 +34,6 @@ jobs:
 
     - name: Bulker Test
       run: |
-        go work init jitsubase kafkabase eventslog bulkerlib bulkerapp
         go test -parallel=10 -timeout 60m -json ./jitsubase/... ./kafkabase/... ./eventslog/... ./bulkerlib/... ./bulkerapp/... > test_report.json
 
     - name: Test Report
