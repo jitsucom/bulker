@@ -45,14 +45,14 @@ func (r *HTTPRepository[T]) loadFromHttp(tag any) (reader io.ReadCloser, newTag 
 	if tag != nil && r.tagHeader != HTTPTagNone {
 		switch r.tagHeader {
 		case HTTPTagLastModified:
-			r.Infof("Loading repository from %s with If-Modified-Since: %v", r.url, tag)
+			r.Debugf("Loading repository from %s with If-Modified-Since: %v", r.url, tag)
 			req.Header.Add("If-Modified-Since", (tag.(time.Time)).Format(http.TimeFormat))
 		case HTTPTagETag:
-			r.Infof("Loading repository from %s with If-None-Match: %s", r.url, tag)
+			r.Debugf("Loading repository from %s with If-None-Match: %s", r.url, tag)
 			req.Header.Add("If-None-Match", tag.(string))
 		}
 	} else {
-		r.Infof("Loading repository from %s", r.url)
+		r.Debugf("Loading repository from %s", r.url)
 	}
 	if r.token != "" {
 		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", r.token))

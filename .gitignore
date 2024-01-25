@@ -19,9 +19,12 @@
 
 #Compiled binaries
 bulkerapp/bulkerapp
+bulker
 ingest/ingest
 sync-controller/syncctl
+syncctl
 sync-sidecar/sidecar
+sidecar
 
 #Go workspace files
 #go.work

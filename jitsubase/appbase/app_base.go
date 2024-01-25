@@ -97,6 +97,8 @@ func initViperVariables[C InstanceConfig](appConfig C) {
 		//fmt.Println("field", field.Name, field.Type, "implements", reflect.PointerTo(field.Type).Implements(modelType))
 		if reflect.PointerTo(field.Type).Implements(modelType) {
 			initViperVariables(elem.Field(i).Addr().Interface().(InstanceConfig))
+		} else if field.Type.Kind() == reflect.Struct {
+			logging.Fatalf("Application config has incorrect struct field '%s': all structs nested in config must implement interface 'InstanceConfig'", field.Name)
 		}
 		variable := field.Tag.Get("mapstructure")
 		if variable != "" {
