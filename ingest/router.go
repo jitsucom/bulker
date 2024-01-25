@@ -445,7 +445,7 @@ func (r *Router) getStream(loc *StreamCredentials) *StreamWithDestinations {
 	} else if loc.IngestType == IngestTypeS2S {
 		locators = []StreamLocator{r.WriteKeyStreamLocator, r.SlugStreamLocator, r.AmbiguousDomainStreamLocator}
 	} else {
-		locators = []StreamLocator{r.SlugStreamLocator, r.DomainStreamLocator, r.WriteKeyStreamLocator}
+		locators = []StreamLocator{r.SlugStreamLocator, r.DomainStreamLocator, r.WriteKeyStreamLocator, r.SlugStreamLocator}
 	}
 	for _, locator := range locators {
 		stream := locator(loc)
@@ -506,6 +506,14 @@ func (r *Router) AmbiguousDomainStreamLocator(loc *StreamCredentials) *StreamWit
 		if len(streams) > 0 {
 			return streams[0]
 		}
+	}
+	return nil
+}
+
+func (r *Router) SoleStreamLocator(_ *StreamCredentials) *StreamWithDestinations {
+	streams := r.repository.GetData().GetStreams()
+	if len(streams) == 1 {
+		return streams[0]
 	}
 	return nil
 }

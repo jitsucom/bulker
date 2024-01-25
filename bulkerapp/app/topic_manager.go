@@ -47,10 +47,11 @@ type TopicManager struct {
 	repository *Repository
 	cron       *Cron
 	// consumedTopics by destinationId. Consumed topics are topics that have consumer started
-	consumedTopics  map[string]utils.Set[string]
-	abandonedTopics utils.Set[string]
-	staleTopics     utils.Set[string]
-	allTopics       utils.Set[string]
+	consumedTopics         map[string]utils.Set[string]
+	topicsLastMessageDates map[string]time.Time
+	abandonedTopics        utils.Set[string]
+	staleTopics            utils.Set[string]
+	allTopics              utils.Set[string]
 
 	//batch consumers by destinationId
 	batchConsumers  map[string][]BatchConsumer
@@ -142,20 +143,20 @@ func (tm *TopicManager) LoadMetadata() {
 			}
 		}
 	}
-	//start := time.Now()
-	//res, err := tm.kaftaAdminClient.ListOffsets(context.Background(), topicPartitionOffsets)
-	//if err != nil {
-	//	tm.Errorf("Error getting topic offsets: %v", err)
-	//} else {
-	//	for tp, offset := range res.ResultInfos {
-	//		if offset.Offset >= 0 {
-	//			topicsLastMessageDates[*tp.Topic] = time.UnixMilli(offset.Timestamp)
-	//		} else {
-	//			topicsLastMessageDates[*tp.Topic] = time.Time{}
-	//		}
-	//	}
-	//}
-	//tm.Infof("Got topic offsets in %v", time.Since(start))
+	start := time.Now()
+	res, err := tm.kaftaAdminClient.ListOffsets(context.Background(), topicPartitionOffsets)
+	if err != nil {
+		tm.Errorf("Error getting topic offsets: %v", err)
+	} else {
+		for tp, offset := range res.ResultInfos {
+			if offset.Offset >= 0 {
+				topicsLastMessageDates[*tp.Topic] = time.UnixMilli(offset.Timestamp)
+			} else {
+				topicsLastMessageDates[*tp.Topic] = time.Time{}
+			}
+		}
+		tm.Debugf("Got topic offsets for %d topics in %v", len(topicsLastMessageDates), time.Since(start))
+	}
 
 	if err != nil {
 		metrics.TopicManagerError("load_metadata_error").Inc()
@@ -169,6 +170,9 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, lastMessageDat
 	tm.Lock()
 	defer tm.Unlock()
 	start := time.Now()
+	if len(lastMessageDates) > 0 {
+		tm.topicsLastMessageDates = lastMessageDates
+	}
 	staleTopicsCutOff := time.Now().Add(-1 * time.Duration(tm.config.KafkaTopicRetentionHours) * time.Hour)
 	var abandonedTopicsCount float64
 	var otherTopicsCount float64
@@ -184,7 +188,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, lastMessageDat
 			abandonedTopicsCount++
 			continue
 		}
-		lastMessageDate, ok := lastMessageDates[topic]
+		lastMessageDate, ok := tm.topicsLastMessageDates[topic]
 		if ok && (lastMessageDate.IsZero() || lastMessageDate.Before(staleTopicsCutOff)) {
 			staleTopics.Put(topic)
 			tm.Debugf("Topic %s is stale. Last message date: %v", topic, lastMessageDate)
@@ -517,6 +521,28 @@ func (tm *TopicManager) EnsureDestinationTopic(destination *Destination, topicId
 func (tm *TopicManager) ensureTopic(topicId string, partitions int, config map[string]string) error {
 	if !tm.allTopics.Contains(topicId) {
 		return tm.createTopic(topicId, partitions, config)
+	} else if !tm.ready && partitions > 1 {
+		//check topic partitions count and increase when necessary
+		meta, err := tm.kaftaAdminClient.GetMetadata(&topicId, false, tm.config.KafkaAdminMetadataTimeoutMs)
+		if err != nil {
+			tm.SystemErrorf("Error getting metadata for topic %s: %v", topicId, err)
+		}
+		m, ok := meta.Topics[topicId]
+		if ok {
+			currentPartitionsCount := len(m.Partitions)
+			if partitions > currentPartitionsCount {
+				tm.Infof("Topic %s has %d partitions. Increasing to %d", topicId, currentPartitionsCount, partitions)
+				_, err = tm.kaftaAdminClient.CreatePartitions(context.Background(), []kafka.PartitionsSpecification{
+					{
+						Topic:      topicId,
+						IncreaseTo: partitions,
+					},
+				})
+				if err != nil {
+					tm.SystemErrorf("Error increasing partitions for topic %s: %v", topicId, err)
+				}
+			}
+		}
 	}
 	return nil
 }

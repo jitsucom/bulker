@@ -10,7 +10,7 @@ import (
 )
 
 type RepositoryConfig struct {
-	RepositoryURL              string `mapstructure:"REPOSITORY_URL" default:"http://console:3000/api/admin/export/streams-with-destinations"`
+	RepositoryURL              string `mapstructure:"REPOSITORY_URL"`
 	RepositoryAuthToken        string `mapstructure:"REPOSITORY_AUTH_TOKEN"`
 	RepositoryRefreshPeriodSec int    `mapstructure:"REPOSITORY_REFRESH_PERIOD_SEC" default:"2"`
 }
@@ -33,6 +33,10 @@ func (s *Streams) GetStreamById(slug string) *StreamWithDestinations {
 
 func (s *Streams) GetStreamsByDomain(domain string) []*StreamWithDestinations {
 	return s.streamsByDomains[domain]
+}
+
+func (s *Streams) GetStreams() []*StreamWithDestinations {
+	return s.streams
 }
 
 type StreamsRepositoryData struct {

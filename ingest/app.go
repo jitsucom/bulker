@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/pg"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
 	"net/http"
@@ -18,7 +16,6 @@ import (
 type Context struct {
 	config           *Config
 	kafkaConfig      *kafka.ConfigMap
-	dbpool           *pgxpool.Pool
 	repository       appbase.Repository[Streams]
 	scriptRepository appbase.Repository[Script]
 	producer         *kafkabase.Producer
@@ -34,10 +31,6 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	err = appbase.InitAppConfig(a.config, settings)
 	if err != nil {
 		return err
-	}
-	a.dbpool, err = pg.NewPGPool(a.config.DatabaseURL)
-	if err != nil {
-		return fmt.Errorf("Unable to create postgres connection pool: %v\n", err)
 	}
 	a.repository = NewStreamsRepository(a.config.RepositoryURL, a.config.RepositoryAuthToken, a.config.RepositoryRefreshPeriodSec, a.config.CacheDir)
 	a.scriptRepository = NewScriptRepository(a.config.ScriptOrigin, a.config.CacheDir)
@@ -86,7 +79,6 @@ func (a *Context) Cleanup() error {
 	_ = a.eventsLogService.Close()
 	_ = a.scriptRepository.Close()
 	a.repository.Close()
-	a.dbpool.Close()
 	return nil
 }
 
