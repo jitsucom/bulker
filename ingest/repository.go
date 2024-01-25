@@ -15,6 +15,10 @@ type RepositoryConfig struct {
 	RepositoryRefreshPeriodSec int    `mapstructure:"REPOSITORY_REFRESH_PERIOD_SEC" default:"2"`
 }
 
+func (r *RepositoryConfig) PostInit(settings *appbase.AppSettings) error {
+	return nil
+}
+
 type Streams struct {
 	streams          []*StreamWithDestinations
 	apiKeyBindings   map[string]*ApiKeyBinding
