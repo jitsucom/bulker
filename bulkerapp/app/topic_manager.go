@@ -190,9 +190,9 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, lastMessageDat
 		}
 		lastMessageDate, ok := tm.topicsLastMessageDates[topic]
 		if ok && (lastMessageDate.IsZero() || lastMessageDate.Before(staleTopicsCutOff)) {
-			staleTopics.Put(topic)
+			//staleTopics.Put(topic)
 			tm.Debugf("Topic %s is stale. Last message date: %v", topic, lastMessageDate)
-			continue
+			//continue
 		}
 		destinationId, mode, tableName, err := ParseTopicId(topic)
 		if err != nil {
@@ -301,7 +301,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, lastMessageDat
 		for topic := range dstTopics {
 			if staleTopics.Contains(topic) {
 				destinationId, mode, _, _ := ParseTopicId(topic)
-				tm.Infof("Removing consumer for stale topic: %s", topic, destinationId)
+				tm.Infof("Removing consumer for stale topic: %s", topic)
 				switch mode {
 				case "stream":
 					tm.streamConsumers[destinationId] = ExcludeConsumerForTopic(tm.streamConsumers[destinationId], topic, tm.cron)
