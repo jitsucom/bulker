@@ -153,13 +153,11 @@ type StreamConfig struct {
 	Id                          string   `json:"id"`
 	Type                        string   `json:"type"`
 	WorkspaceId                 string   `json:"workspaceId"`
-	Slug                        string   `json:"slug"`
 	Name                        string   `json:"name"`
 	Domains                     []string `json:"domains"`
 	AuthorizedJavaScriptDomains string   `json:"authorizedJavaScriptDomains"`
 	PublicKeys                  []ApiKey `json:"publicKeys"`
 	PrivateKeys                 []ApiKey `json:"privateKeys"`
-	DataLayout                  string   `json:"dataLayout"`
 }
 
 type ShortDestinationConfig struct {
@@ -193,10 +191,11 @@ func (s *StreamWithDestinations) init() {
 			continue
 		}
 		_, ok := DeviceOptions[d.DestinationType]
+		cp := d
 		if ok {
-			s.SynchronousDestinations = append(s.SynchronousDestinations, &d)
+			s.SynchronousDestinations = append(s.SynchronousDestinations, &cp)
 		} else {
-			s.AsynchronousDestinations = append(s.AsynchronousDestinations, &d)
+			s.AsynchronousDestinations = append(s.AsynchronousDestinations, &cp)
 		}
 	}
 }
