@@ -134,35 +134,35 @@ func (tm *TopicManager) Start() {
 }
 
 func (tm *TopicManager) LoadMetadata() {
-	topicsLastMessageDates := map[string]*time.Time{}
 	metadata, err := tm.kaftaAdminClient.GetMetadata(nil, true, tm.config.KafkaAdminMetadataTimeoutMs)
-	topicPartitionOffsets := make(map[kafka.TopicPartition]kafka.OffsetSpec)
-	for _, topic := range metadata.Topics {
-		t := topic.Topic
-		if !strings.HasPrefix(t, "__") {
-			for _, partition := range topic.Partitions {
-				topicPartitionOffsets[kafka.TopicPartition{Topic: &t, Partition: partition.ID}] = kafka.MaxTimestampOffsetSpec
-			}
-		}
-	}
-	start := time.Now()
-	res, err := tm.kaftaAdminClient.ListOffsets(context.Background(), topicPartitionOffsets)
-	if err != nil {
-		tm.Errorf("Error getting topic offsets: %v", err)
-	} else {
-		for tp, offset := range res.ResultInfos {
-			if offset.Offset >= 0 && offset.Timestamp > 0 {
-				lastMessageDate := time.UnixMilli(offset.Timestamp)
-				topicsLastMessageDates[*tp.Topic] = &lastMessageDate
-			}
-		}
-		tm.Debugf("Got topic offsets for %d topics in %v", len(topicsLastMessageDates), time.Since(start))
-	}
-
 	if err != nil {
 		metrics.TopicManagerError("load_metadata_error").Inc()
 		tm.Errorf("Error getting metadata: %v", err)
 	} else {
+		topicsLastMessageDates := map[string]*time.Time{}
+		topicPartitionOffsets := make(map[kafka.TopicPartition]kafka.OffsetSpec)
+		for _, topic := range metadata.Topics {
+			t := topic.Topic
+			if !strings.HasPrefix(t, "__") {
+				for _, partition := range topic.Partitions {
+					topicPartitionOffsets[kafka.TopicPartition{Topic: &t, Partition: partition.ID}] = kafka.MaxTimestampOffsetSpec
+				}
+			}
+		}
+		start := time.Now()
+		res, err := tm.kaftaAdminClient.ListOffsets(context.Background(), topicPartitionOffsets)
+		if err != nil {
+			tm.Errorf("Error getting topic offsets: %v", err)
+		} else {
+			for tp, offset := range res.ResultInfos {
+				if offset.Offset >= 0 && offset.Timestamp > 0 {
+					lastMessageDate := time.UnixMilli(offset.Timestamp)
+					topicsLastMessageDates[*tp.Topic] = &lastMessageDate
+				}
+			}
+			tm.Debugf("Got topic offsets for %d topics in %v", len(topicsLastMessageDates), time.Since(start))
+		}
+
 		tm.processMetadata(metadata, topicsLastMessageDates)
 	}
 }
