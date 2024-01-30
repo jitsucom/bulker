@@ -38,6 +38,8 @@ ON CONFLICT ON CONSTRAINT source_check_pkey DO UPDATE SET status = $4, descripti
 
 	insertCheckErrorSQL = `INSERT INTO source_check (package, version, key, status, description, timestamp) VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT ON CONSTRAINT source_check_pkey DO NOTHING`
+
+	insertIntoTaskLog = `INSERT INTO task_log (id, level, logger, message, sync_id, task_id, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)`
 )
 
 func UpsertSpec(dbpool *pgxpool.Pool, packageName, packageVersion, specs any, timestamp time.Time, error string) error {
@@ -92,5 +94,10 @@ func UpsertCheck(dbpool *pgxpool.Pool, packageName, packageVersion, storageKey, 
 
 func InsertCheckError(dbpool *pgxpool.Pool, packageName, packageVersion, storageKey, status, description string, timestamp time.Time) error {
 	_, err := dbpool.Exec(context.Background(), insertCheckErrorSQL, packageName, packageVersion, storageKey, status, description, timestamp)
+	return err
+}
+
+func InsertTaskLog(dbpool *pgxpool.Pool, id, level, logger, message, syncId, taskId string, timestamp time.Time) error {
+	_, err := dbpool.Exec(context.Background(), insertIntoTaskLog, id, level, logger, message, syncId, taskId, timestamp)
 	return err
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"io"
 	"net/http"
 	"net/url"
@@ -26,7 +27,6 @@ type AbstractSideCar struct {
 
 	stdOutPipeFile string
 	stdErrPipeFile string
-	logsConnection string
 
 	bulkerURL       string
 	bulkerAuthToken string
@@ -57,7 +57,6 @@ func main() {
 		packageVersion:  os.Getenv("PACKAGE_VERSION"),
 		stdOutPipeFile:  os.Getenv("STDOUT_PIPE_FILE"),
 		stdErrPipeFile:  os.Getenv("STDERR_PIPE_FILE"),
-		logsConnection:  os.Getenv("LOGS_CONNECTION_ID"),
 		bulkerURL:       os.Getenv("BULKER_URL"),
 		bulkerAuthToken: os.Getenv("BULKER_AUTH_TOKEN"),
 		databaseURL:     os.Getenv("DATABASE_URL"),
@@ -143,16 +142,7 @@ func (s *AbstractSideCar) _log(logger, level, message string) {
 }
 
 func (s *AbstractSideCar) sendLog(logger, level string, message string) error {
-	logMessage := map[string]any{
-		"id":        uuid.New().String(),
-		"timestamp": time.Now().Format(time.RFC3339Nano),
-		"sync_id":   s.syncId,
-		"task_id":   s.taskId,
-		"logger":    logger,
-		"level":     level,
-		"message":   message,
-	}
-	return s.bulkerEvent(s.logsConnection, "task_log", logMessage)
+	return db.InsertTaskLog(s.dbpool, uuid.New().String(), level, logger, message, s.syncId, s.taskId, time.Now())
 }
 
 func (s *AbstractSideCar) bulkerEvent(connection, tableName string, payload any) error {

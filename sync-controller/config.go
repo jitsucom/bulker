@@ -20,8 +20,6 @@ type Config struct {
 	BulkerURL       string `mapstructure:"BULKER_URL" default:"http://localhost:3042"`
 	BulkerAuthToken string `mapstructure:"BULKER_AUTH_TOKEN"`
 
-	BulkerLogsConnectionId string `mapstructure:"BULKER_LOGS_CONNECTION_ID"`
-
 	// # Kubernetes
 
 	// KubernetesNamespace namespace of bulker app. Default: `default`

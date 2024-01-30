@@ -58,19 +58,6 @@ A list of auth tokens that authorizes user in HTTP interface separated by comma.
 
 See above. A secret that is used for hashing tokens.
 
-### `BULKER_MODE`
-
->**Note:** 
-> Not available yet. At the moment Bulker is always running in `two-way` mode.
-
-*Optional, default: `two-way`*
-
-How this particular instance of Bulker should work. Possible values:
-
-* `producer` - this instance will only listen to [HTTP requests](./http-api.md) and send data to Kafka. It won't consume from Kafka
-* `consumer` - this instance will only consume from Kafka. It won't listen to [HTTP requests](./http-api.md), except for `/ready` and `/metrics` endpoints
-* `two-way` - this instance will both listen produce messages from [HTTP requests](./http-api.md) and consume from Kafka
-
 
 ## Connection to Kafka
 
@@ -253,6 +240,26 @@ Each environment variable `BULKER_DESTINATION_*` defines a destination. The valu
 ```shell
 BULKER_DESTINATION_POSTGRES="{id: 'postgres', }"
 ```
+
+### With HTTP Endpoint
+
+#### `BULKER_CONFIG_SOURCE`
+
+URL of endpoint that returns configuration of destination entities entities.
+
+E.g. `jitsucom/console`'s export endpoint: `http://<consoles-domain>/api/admin/export/bulker-connections`
+
+#### `BULKER_CONFIG_SOURCE_HTTP_AUTH_TOKEN`
+
+Auth token for accessing `BULKER_CONFIG_SOURCE` endpoint.
+
+E.g. for `jitsucom/console`'s export endpoint: `service-admin-account:CONSOLE_AUTH_TOKENS`
+
+#### `BULKER_CONFIG_REFRESH_PERIOD_SEC`
+
+**Default value: `5`**
+
+Period in seconds for refreshing configuration from `BULKER_CONFIG_SOURCE` endpoint.
 
 ### With Redis
 

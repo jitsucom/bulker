@@ -302,18 +302,17 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	}
 	databaseURL := utils.NvlString(j.config.SidecarDatabaseURL, j.config.DatabaseURL)
 	sideCarEnv := map[string]string{
-		"STDOUT_PIPE_FILE":   "/pipes/stdout",
-		"STDERR_PIPE_FILE":   "/pipes/stderr",
-		"BULKER_URL":         j.config.BulkerURL,
-		"BULKER_AUTH_TOKEN":  j.config.BulkerAuthToken,
-		"LOGS_CONNECTION_ID": j.config.BulkerLogsConnectionId,
-		"PACKAGE":            task.Package,
-		"PACKAGE_VERSION":    task.PackageVersion,
-		"COMMAND":            task.TaskType,
-		"TABLE_NAME_PREFIX":  task.TableNamePrefix,
-		"DATABASE_URL":       databaseURL,
-		"STARTED_BY":         task.StartedBy,
-		"STARTED_AT":         task.StartedAt,
+		"STDOUT_PIPE_FILE":  "/pipes/stdout",
+		"STDERR_PIPE_FILE":  "/pipes/stderr",
+		"BULKER_URL":        j.config.BulkerURL,
+		"BULKER_AUTH_TOKEN": j.config.BulkerAuthToken,
+		"PACKAGE":           task.Package,
+		"PACKAGE_VERSION":   task.PackageVersion,
+		"COMMAND":           task.TaskType,
+		"TABLE_NAME_PREFIX": task.TableNamePrefix,
+		"DATABASE_URL":      databaseURL,
+		"STARTED_BY":        task.StartedBy,
+		"STARTED_AT":        task.StartedAt,
 	}
 	if task.SyncID != "" {
 		sideCarEnv["SYNC_ID"] = task.SyncID

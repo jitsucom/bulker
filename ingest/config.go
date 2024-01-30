@@ -17,8 +17,6 @@ type Config struct {
 	// # REPOSITORY CONFIG - settings for loading streams from repository
 	RepositoryConfig `mapstructure:",squash"`
 
-	DatabaseURL string `mapstructure:"DATABASE_URL"`
-
 	DataDomain string `mapstructure:"DATA_DOMAIN"`
 
 	// For ingest endpoint only
