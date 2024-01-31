@@ -5,7 +5,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"net/http"
 	"net/http/pprof"
-	"strings"
 )
 
 type Router struct {
@@ -13,9 +12,7 @@ type Router struct {
 }
 
 func NewRouter(appContext *Context) *Router {
-	authTokens := strings.Split(appContext.config.AuthTokens, ",")
-	tokenSecrets := strings.Split(appContext.config.TokenSecrets, ",")
-	base := appbase.NewRouterBase(authTokens, tokenSecrets, []string{"/health"})
+	base := appbase.NewRouterBase(appContext.config.Config, []string{"/health"})
 
 	router := &Router{
 		Router: base,

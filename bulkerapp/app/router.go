@@ -45,9 +45,7 @@ type Router struct {
 }
 
 func NewRouter(appContext *Context) *Router {
-	authTokens := strings.Split(appContext.config.AuthTokens, ",")
-	tokenSecrets := strings.Split(appContext.config.TokenSecrets, ",")
-	base := appbase.NewRouterBase(authTokens, tokenSecrets, []string{"/ready", "/health"})
+	base := appbase.NewRouterBase(appContext.config.Config, []string{"/ready", "/health"})
 
 	router := &Router{
 		Router:           base,

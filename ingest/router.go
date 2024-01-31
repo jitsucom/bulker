@@ -72,9 +72,7 @@ type StreamCredentials struct {
 }
 
 func NewRouter(appContext *Context) *Router {
-	authTokens := strings.Split(appContext.config.AuthTokens, ",")
-	tokenSecrets := strings.Split(appContext.config.TokenSecrets, ",")
-	base := appbase.NewRouterBase(authTokens, tokenSecrets, []string{
+	base := appbase.NewRouterBase(appContext.config.Config, []string{
 		"/health",
 		"/p.js",
 		"/v1/projects/:writeKey/settings",

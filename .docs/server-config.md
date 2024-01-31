@@ -47,16 +47,28 @@ reused on next restart.
 
 *Optional, default value: `''`*
 
-A list of auth tokens that authorizes user in HTTP interface separated by comma. Each token can be either:
- * `${token}` un-encrypted token value
- * `${salt}.${hash}` hashed token. `${salt}` should be random string. Hash is `base64(sha512($token + $salt + $BULKER_TOKEN_SECRET)`.
- * Token is `[0-9a-zA-Z_\-]` (only letters, digits, underscore and dash)
+A list of hashed auth tokens that authorizes user in HTTP interface separated by comma. Each must have format:
+
+`${salt}.${hash}` where `${salt}` should be random string. Hash is `base64(sha512($token + $salt + BULKER_TOKEN_SECRET)`.
+
+`$token` must consist only of letters, digits, underscore and dash
 
 ### `BULKER_TOKEN_SECRET`
 
 *Optional, default value: empty string*
 
 See above. A secret that is used for hashing tokens.
+
+### `BULKER_RAW_AUTH_TOKENS`
+
+*Optional, default value: `''`*
+
+A list of plain non hashed tokens separated by comma. Each token must consist only of letters, digits, underscore and dash
+
+Can be used instead of `BULKER_AUTH_TOKENS`,`BULKER_TOKEN_SECRET` pair. It offers simplicity at cost of lower security.
+
+Not recommended for production.
+
 
 
 ## Connection to Kafka

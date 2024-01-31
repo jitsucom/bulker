@@ -36,11 +36,13 @@ type Config struct {
 
 	// # AUTH
 
-	// AuthTokens A list of auth tokens that authorizes user in HTTP interface separated by comma. Each token can be either:
-	// - `${token}` un-encrypted token value
-	// - `${salt}.${hash}` hashed token.` ${salt}` should be random string. Hash is `base64(sha512($token + $salt + TokenSecrets)`.
-	// - Token is `[0-9a-zA-Z_\-]` (only letters, digits, underscore and dash)
+	// AuthTokens A list of hashed auth tokens that authorizes user in HTTP interface separated by comma. Each must have format:
+	// `${salt}.${hash}` where `${salt}` should be random string. Hash is `base64(sha512($token + $salt + TokenSecrets)`.
+	// `$token` must consist only of letters, digits, underscore and dash
 	AuthTokens string `mapstructure:"AUTH_TOKENS"`
+	// RawAuthTokens plain non hashed tokens separated by comma. Each token must consist only of letters, digits, underscore and dash
+	RawAuthTokens string `mapstructure:"RAW_AUTH_TOKENS"`
+
 	// See AuthTokens
 	TokenSecrets string `mapstructure:"TOKEN_SECRET"`
 

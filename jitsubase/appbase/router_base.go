@@ -17,24 +17,39 @@ const ContextMessageId = "contextMessageId"
 
 type Router struct {
 	Service
-	engine       *gin.Engine
-	authTokens   []string
-	tokenSecrets []string
-	noAuthPaths  utils.Set[string]
+	engine        *gin.Engine
+	authTokens    []string
+	rawAuthTokens []string
+	tokenSecrets  []string
+	noAuthPaths   utils.Set[string]
 }
 
-func NewRouterBase(authTokens, tokenSecrets, noAuthPaths []string) *Router {
+func NewRouterBase(config Config, noAuthPaths []string) *Router {
+	authTokens := strings.Split(config.AuthTokens, ",")
+	rawAuthTokens := strings.Split(config.RawAuthTokens, ",")
+	tokenSecrets := strings.Split(config.TokenSecrets, ",")
 	base := NewServiceBase("router")
-	if len(authTokens) == 1 && authTokens[0] == "" {
+	if config.AuthTokens == "" {
 		authTokens = nil
+	}
+	if config.RawAuthTokens == "" {
+		rawAuthTokens = nil
+	}
+	if authTokens == nil && rawAuthTokens == nil {
 		base.Warnf("⚠️ No auth tokens provided. All requests will be allowed")
+	}
+	for _, authToken := range authTokens {
+		if !strings.Contains(authToken, ".") {
+			base.Fatalf("Invalid auth token: %s Should be in format ${salt}.${hash} or %sRAW_AUTH_TOKENS config variable must be used instead", authToken, config.AppSetting.EnvPrefixWithUnderscore())
+		}
 	}
 
 	router := &Router{
-		Service:      base,
-		authTokens:   authTokens,
-		tokenSecrets: tokenSecrets,
-		noAuthPaths:  utils.NewSet(noAuthPaths...),
+		Service:       base,
+		authTokens:    authTokens,
+		rawAuthTokens: rawAuthTokens,
+		tokenSecrets:  tokenSecrets,
+		noAuthPaths:   utils.NewSet(noAuthPaths...),
 	}
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
@@ -64,23 +79,21 @@ func (r *Router) authMiddleware(c *gin.Context) {
 		return
 	}
 	for _, authToken := range r.authTokens {
-		if !strings.Contains(authToken, ".") {
-			if token == authToken {
+		hashedToken := strings.Split(authToken, ".")
+		salt := hashedToken[0]
+		hash := hashedToken[1]
+		for _, secret := range r.tokenSecrets {
+			//a := HashToken(token, salt, secret)
+			//logging.Debugf("Hashed token: %s. Hash: %s ", a, hash)
+			if HashToken(token, salt, secret) == hash {
 				//logging.Debugf("Token %s is valid", token)
 				return
 			}
-		} else {
-			hashedToken := strings.Split(authToken, ".")
-			salt := hashedToken[0]
-			hash := hashedToken[1]
-			for _, secret := range r.tokenSecrets {
-				//a := HashToken(token, salt, secret)
-				//logging.Debugf("Hashed token: %s. Hash: %s ", a, hash)
-				if HashToken(token, salt, secret) == hash {
-					//logging.Debugf("Token %s is valid", token)
-					return
-				}
-			}
+		}
+	}
+	for _, rawAuthToken := range r.rawAuthTokens {
+		if token == rawAuthToken {
+			return
 		}
 	}
 	c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token: " + token})
