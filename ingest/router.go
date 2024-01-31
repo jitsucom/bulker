@@ -236,12 +236,12 @@ func patchEvent(c *gin.Context, messageId string, event *AnalyticsServerEvent, t
 	if ingestType == IngestTypeBrowser {
 		//if ip comes from browser, don't trust it!
 		ctx["ip"] = ip
-	}
-	if _, ok = ctx["userAgent"]; !ok {
-		ctx["userAgent"] = c.GetHeader("User-Agent")
-	}
-	if _, ok = ctx["locale"]; !ok {
-		ctx["locale"] = strings.TrimSpace(strings.Split(c.GetHeader("Accept-Language"), ",")[0])
+		if _, ok = ctx["userAgent"]; !ok {
+			ctx["userAgent"] = c.GetHeader("User-Agent")
+		}
+		if _, ok = ctx["locale"]; !ok {
+			ctx["locale"] = strings.TrimSpace(strings.Split(c.GetHeader("Accept-Language"), ",")[0])
+		}
 	}
 	ev["context"] = ctx
 	nowIsoDate := time.Now().UTC().Format(timestamp.JsonISO)
