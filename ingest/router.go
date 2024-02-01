@@ -20,6 +20,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/pprof"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -49,6 +50,7 @@ type Router struct {
 	eventsLogService eventslog.EventsLogService
 	backupsLogger    *BackupLogger
 	httpClient       *http.Client
+	dataHosts        []string
 }
 
 type IngestType string
@@ -90,6 +92,19 @@ func NewRouter(appContext *Context) *Router {
 		Timeout: time.Duration(appContext.config.DeviceFunctionsTimeoutMs) * time.Millisecond,
 	}
 
+	var dataHosts []string
+	if appContext.config.DataDomain != "" {
+		dataHosts = strings.Split(appContext.config.DataDomain, ",")
+	} else if appContext.config.PublicURL != "" {
+		u, err := url.ParseRequestURI(appContext.config.PublicURL)
+		if err != nil {
+			base.Errorf("Failed to parse %sPUBLIC_URL: %v", appContext.config.AppSetting.EnvPrefixWithUnderscore(), err)
+		} else {
+			dataHosts = []string{u.Hostname()}
+		}
+	}
+	base.Infof("Data hosts: %s", dataHosts)
+
 	router := &Router{
 		Router:           base,
 		config:           appContext.config,
@@ -100,6 +115,7 @@ func NewRouter(appContext *Context) *Router {
 		repository:       appContext.repository,
 		scriptRepository: appContext.scriptRepository,
 		httpClient:       httpClient,
+		dataHosts:        dataHosts,
 	}
 	engine := router.Engine()
 	// get global Monitor object
@@ -255,7 +271,6 @@ func patchEvent(c *gin.Context, messageId string, event *AnalyticsServerEvent, t
 }
 
 func (r *Router) getDataLocator(c *gin.Context, ingestType IngestType, writeKeyExtractor func() string) (cred StreamCredentials, err error) {
-	dataHosts := strings.Split(r.config.DataDomain, ",")
 	cred.IngestType = ingestType
 	if c.GetHeader("Authorization") != "" {
 		wk := strings.Replace(c.GetHeader("Authorization"), "Basic ", "", 1)
@@ -271,7 +286,7 @@ func (r *Router) getDataLocator(c *gin.Context, ingestType IngestType, writeKeyE
 		cred.WriteKey = writeKeyExtractor()
 	}
 	host := strings.Split(c.Request.Host, ":")[0]
-	for _, dataHost := range dataHosts {
+	for _, dataHost := range r.dataHosts {
 		if dataHost != "" && strings.HasSuffix(host, "."+dataHost) {
 			cred.Slug = strings.TrimSuffix(host, "."+dataHost)
 			return

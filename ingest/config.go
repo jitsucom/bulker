@@ -17,7 +17,10 @@ type Config struct {
 	// # REPOSITORY CONFIG - settings for loading streams from repository
 	RepositoryConfig `mapstructure:",squash"`
 
+	// data domain for ingest endpoint. Required for using 'slug' to identify Stream. e.g. in ingest URL like `http://{slug}.{DATA_DOMAIN}/`
 	DataDomain string `mapstructure:"DATA_DOMAIN"`
+	// alternative to DataDomain. data domain will be extracted from this url
+	PublicURL string `mapstructure:"PUBLIC_URL"`
 
 	// For ingest endpoint only
 	GlobalHashSecret string `mapstructure:"GLOBAL_HASH_SECRET" default:"dea42a58-acf4-45af-85bb-e77e94bd5025"`
