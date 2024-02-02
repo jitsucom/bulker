@@ -84,6 +84,8 @@ func (s *SpecCatalogSideCar) Run() {
 				s.processConnectionStatus(row.ConnectionStatus)
 			case CatalogType:
 				s.processCatalog(row.Catalog)
+			case ControlType:
+				s.sourceLog("WARN", "Control messages are not supported and ignored: %s", string(line))
 			case TraceType:
 			default:
 				s.panic("not supported type: %s", row.Type)

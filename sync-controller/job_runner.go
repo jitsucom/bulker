@@ -350,7 +350,9 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			j.Errorf("failed to parse node selector from string: %s\nIngoring it. Error: %v", j.config.KubernetesNodeSelector, err)
 		}
 	}
+	initCommand := []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr"}
 	if !configuration.IsEmpty() {
+		initCommand = []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; cp /configmap/* /config/"}
 		items := []v1.KeyToPath{}
 		for k := range configuration.ToMap() {
 			items = append(items, v1.KeyToPath{
@@ -358,16 +360,25 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 				Path: k + ".json",
 			})
 		}
-		cmVolume := v1.Volume{
-			Name: "config",
+		volumes = append(volumes, v1.Volume{
+			Name: "configmap",
 			VolumeSource: v1.VolumeSource{
 				Secret: &v1.SecretVolumeSource{
 					SecretName: podName + "-config",
 					Items:      items,
 				},
 			},
-		}
-		volumes = append(volumes, cmVolume)
+		})
+		volumes = append(volumes, v1.Volume{
+			Name: "config",
+			VolumeSource: v1.VolumeSource{
+				EmptyDir: &v1.EmptyDirVolumeSource{},
+			},
+		})
+		volumeMounts = append(volumeMounts, v1.VolumeMount{
+			Name:      "configmap",
+			MountPath: "/configmap",
+		})
 		volumeMounts = append(volumeMounts, v1.VolumeMount{
 			Name:      "config",
 			MountPath: "/config",
@@ -428,15 +439,10 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			},
 			InitContainers: []v1.Container{
 				{
-					Name:    "init",
-					Image:   "alpine",
-					Command: []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr"},
-					VolumeMounts: []v1.VolumeMount{
-						{
-							Name:      "pipes",
-							MountPath: "/pipes",
-						},
-					},
+					Name:         "init",
+					Image:        "alpine",
+					Command:      initCommand,
+					VolumeMounts: volumeMounts,
 				},
 			},
 			Volumes: volumes,

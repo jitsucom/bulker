@@ -7,6 +7,7 @@ const (
 	RecordType           = "RECORD"
 	TraceType            = "TRACE"
 	CatalogType          = "CATALOG"
+	ControlType          = "CONTROL"
 	SpecType             = "SPEC"
 )
 
