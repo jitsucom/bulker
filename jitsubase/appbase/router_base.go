@@ -65,7 +65,7 @@ func (r *Router) Engine() *gin.Engine {
 }
 
 func (r *Router) authMiddleware(c *gin.Context) {
-	if len(r.authTokens) == 0 {
+	if len(r.authTokens) == 0 && len(r.rawAuthTokens) == 0 {
 		return
 	}
 	if r.noAuthPaths.Contains(c.FullPath()) {

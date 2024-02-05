@@ -18,7 +18,7 @@ RUN apt-get install gcc libc6-dev
 
 WORKDIR /app
 
-RUN mkdir jitsubase kafkabase eventslog bulkerlib bulkerapp ingest sync-sidecar sync-controller
+RUN mkdir jitsubase kafkabase eventslog bulkerlib bulkerapp ingest sync-sidecar sync-controller ingress-manager admin
 RUN mkdir connectors connectors/airbytecdk connectors/firebase
 
 COPY jitsubase/go.* ./jitsubase/
@@ -29,6 +29,7 @@ COPY bulkerapp/go.* ./bulkerapp/
 COPY ingest/go.* ./ingest/
 COPY sync-sidecar/go.* ./sync-sidecar/
 COPY sync-controller/go.* ./sync-controller/
+COPY ingress-manager/go.* ./ingress-manager/
 
 COPY admin/go.* ./admin/
 COPY connectors/airbytecdk/go.* ./connectors/airbytecdk/
@@ -49,6 +50,7 @@ RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags=
 RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o ingest ./ingest
 RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o sidecar ./sync-sidecar
 RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o syncctl ./sync-controller
+RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o ingmgr ./ingress-manager
 
 
 FROM base as bulker
@@ -70,3 +72,8 @@ FROM base as syncctl
 
 COPY --from=builder /app/syncctl ./
 CMD ["/app/syncctl"]
+
+FROM base as ingmgr
+
+COPY --from=builder /app/ingmgr ./
+CMD ["/app/ingmgr"]
