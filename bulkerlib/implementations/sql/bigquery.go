@@ -152,7 +152,7 @@ func (bq *BigQuery) GetBatchFileFormat() types2.FileFormat {
 }
 
 func (bq *BigQuery) GetBatchFileCompression() types2.FileCompression {
-	return types2.FileCompressionNONE
+	return types2.FileCompressionGZIP
 }
 
 func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {

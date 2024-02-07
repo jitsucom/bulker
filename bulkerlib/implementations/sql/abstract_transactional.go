@@ -197,7 +197,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			workingFile.Sync()
 		}
 		if needToConvert {
-			logging.Infof("[%s] Converted batch file from %s to %s in %s", ps.id, ps.marshaller.Format(), ps.targetMarshaller.Format(), time.Now().Sub(convertStart))
+			logging.Infof("[%s] Converted batch file from %s(%s) to %s(%s) in %s", ps.id, ps.marshaller.Format(), ps.marshaller.Compression(), ps.targetMarshaller.Format(), ps.targetMarshaller.Compression(), time.Now().Sub(convertStart))
 		}
 		if ps.s3 != nil {
 			s3Config := s3BatchFileOption.Get(&ps.options)
