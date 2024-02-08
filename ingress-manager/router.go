@@ -43,7 +43,7 @@ func NewRouter(appContext *Context) *Router {
 }
 
 func (r *Router) DomainHandler(c *gin.Context) {
-	domain := c.Query("domain")
+	domain := c.Query("name")
 	if domain == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "domain is required"})
 		return

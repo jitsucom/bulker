@@ -19,7 +19,8 @@ type Config struct {
 	KubernetesNodeSelector string `mapstructure:"KUBERNETES_NODE_SELECTOR"`
 
 	// InitialSetup if true, ingress-manager will create ingress on start
-	InitialSetup bool `mapstructure:"INITIAL_SETUP" default:"false"`
+	InitialSetup     bool `mapstructure:"INITIAL_SETUP" default:"false"`
+	MigrateFromCaddy bool `mapstructure:"MIGRATE_FROM_CADDY" default:"false"`
 
 	// IngressName name of ingress to create or manage
 	IngressName string `mapstructure:"INGRESS_NAME" default:"ingest-custom-domain"`

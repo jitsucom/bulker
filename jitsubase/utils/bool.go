@@ -18,3 +18,7 @@ func ParseBool(value any) (bool, error) {
 		return false, fmt.Errorf("ParseBool: invalid value type %T", value)
 	}
 }
+
+func BoolPointer(b bool) *bool {
+	return &b
+}
