@@ -216,6 +216,8 @@ func (s *ReadSideCar) Run() {
 				s.processRecord(row.Record)
 			case TraceType:
 				s.processTrace(row.Trace)
+			case ControlType:
+				s.sourceLog("WARN", "Control messages are not supported and ignored: %s", string(line))
 			default:
 				s.panic("not supported type: %s", row.Type)
 			}
