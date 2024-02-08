@@ -15,8 +15,6 @@ type Config struct {
 	KubernetesNamespace    string `mapstructure:"KUBERNETES_NAMESPACE" default:"default"`
 	KubernetesClientConfig string `mapstructure:"KUBERNETES_CLIENT_CONFIG" default:"local"`
 	KubernetesContext      string `mapstructure:"KUBERNETES_CONTEXT"`
-	// nodeSelector for sync pods in json format, e.g: {"disktype": "ssd"}
-	KubernetesNodeSelector string `mapstructure:"KUBERNETES_NODE_SELECTOR"`
 
 	// InitialSetup if true, ingress-manager will create ingress on start
 	InitialSetup     bool `mapstructure:"INITIAL_SETUP" default:"false"`

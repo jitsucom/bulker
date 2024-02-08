@@ -73,6 +73,7 @@ func (m *Manager) Init() error {
 					"kubernetes.io/ingress.class":                 "gce",
 					"cert-manager.io/cluster-issuer":              m.config.CertificateIssuerName,
 					"cert-manager.io/private-key-rotation-policy": "Always",
+					"acme.cert-manager.io/http01-edit-in-place":   "true",
 					"kubernetes.io/ingress.allow-http":            "true",
 					"kubernetes.io/ingress.global-static-ip-name": m.config.StaticIPName,
 				},
