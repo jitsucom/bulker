@@ -1,19 +1,19 @@
 package main
 
 import (
+	certificatemanager "cloud.google.com/go/certificatemanager/apiv1"
 	"context"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
-	"k8s.io/client-go/kubernetes"
 	"net/http"
 	"time"
 )
 
 type Context struct {
-	config    *Config
-	server    *http.Server
-	clientset *kubernetes.Clientset
-	manager   *Manager
+	config  *Config
+	server  *http.Server
+	certMgr *certificatemanager.Client
+	manager *Manager
 }
 
 func (a *Context) InitContext(settings *appbase.AppSettings) error {
@@ -23,10 +23,12 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	if err != nil {
 		return err
 	}
-	a.clientset, err = GetK8SClientSet(a)
+	ctx := context.Background()
+	a.certMgr, err = certificatemanager.NewClient(ctx)
 	if err != nil {
 		return err
 	}
+
 	a.manager = NewManager(a)
 
 	router := NewRouter(a)
@@ -41,6 +43,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 }
 
 func (a *Context) Cleanup() error {
+	_ = a.certMgr.Close()
 	return nil
 }
 

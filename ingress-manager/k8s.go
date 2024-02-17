@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-func GetK8SClientSet(appContext *Context) (*kubernetes.Clientset, error) {
-	config := appContext.config.KubernetesClientConfig
+func GetK8SClientSet(c *Config) (*kubernetes.Clientset, error) {
+	config := c.KubernetesClientConfig
 	if config == "" || config == "local" {
 		// creates the in-cluster config
 		cc, err := rest.InClusterConfig()
@@ -30,7 +30,7 @@ func GetK8SClientSet(appContext *Context) (*kubernetes.Clientset, error) {
 		}
 		rawConfig, _ := clientconfig.RawConfig()
 		clientconfig = clientcmd.NewNonInteractiveClientConfig(rawConfig,
-			utils.NvlString(appContext.config.KubernetesContext, rawConfig.CurrentContext),
+			utils.NvlString(c.KubernetesContext, rawConfig.CurrentContext),
 			&clientcmd.ConfigOverrides{},
 			&clientcmd.ClientConfigLoadingRules{})
 		cc, err := clientconfig.ClientConfig()
@@ -47,7 +47,7 @@ func GetK8SClientSet(appContext *Context) (*kubernetes.Clientset, error) {
 		clientconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 			&clientcmd.ClientConfigLoadingRules{ExplicitPath: config},
 			&clientcmd.ConfigOverrides{
-				CurrentContext: appContext.config.KubernetesContext,
+				CurrentContext: c.KubernetesContext,
 			})
 		cc, err := clientconfig.ClientConfig()
 		if err != nil {

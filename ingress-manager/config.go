@@ -20,16 +20,11 @@ type Config struct {
 	InitialSetup     bool `mapstructure:"INITIAL_SETUP" default:"false"`
 	MigrateFromCaddy bool `mapstructure:"MIGRATE_FROM_CADDY" default:"false"`
 
-	// IngressName name of ingress to create or manage
-	IngressName string `mapstructure:"INGRESS_NAME" default:"ingest-custom-domain"`
-	// CertificateIssuerName name of certificate issuer entity to use for ingress
-	CertificateIssuerName string `mapstructure:"CERT_ISSUER_NAME" default:"cert-issuer"`
-	// StaticIPName name of static ip to use for ingress
-	StaticIPName    string `mapstructure:"STATIC_IP_NAME" default:""`
-	StaticIPAddress string `mapstructure:"STATIC_IP_ADDRESS" default:""`
-
-	BackendServiceName string `mapstructure:"BACKEND_SERVICE_NAME" default:"ingest-service"`
-	BackendServicePort int    `mapstructure:"BACKEND_SERVICE_PORT" default:"8080"`
+	JitsuCnames        string `mapstructure:"JITSU_CNAMES" default:"cname.jitsu.com,cname2.jitsu.com"`
+	CertificateMapName string `mapstructure:"CERTIFICATE_MAP_NAME" default:"custom-domains"`
+	GoogleCloudProject string `mapstructure:"GOOGLE_CLOUD_PROJECT"`
+	// AddGoogleCerts if true, for each CertificateMapEntry with letsencrypt cert ingress-manager will add google certs
+	AddGoogleCerts bool `mapstructure:"ADD_GOOGLE_CERTS" default:"false"`
 }
 
 func init() {

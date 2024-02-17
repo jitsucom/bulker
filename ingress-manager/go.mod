@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/gin-gonic/gin v1.9.1
-	github.com/jetstack/cert-manager v1.6.3
+	cloud.google.com/go/certificatemanager v1.7.5
 	github.com/jitsucom/bulker/jitsubase v0.0.0-20240205125840-24401d69c038
 	github.com/spf13/viper v1.17.0
 	k8s.io/api v0.28.3
