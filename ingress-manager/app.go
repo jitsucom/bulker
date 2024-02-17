@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"google.golang.org/api/option"
 	"net/http"
 	"time"
 )
@@ -24,7 +25,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		return err
 	}
 	ctx := context.Background()
-	a.certMgr, err = certificatemanager.NewClient(ctx)
+	a.certMgr, err = certificatemanager.NewClient(ctx, option.WithCredentialsJSON([]byte(a.config.GoogleServiceAccountJson)))
 	if err != nil {
 		return err
 	}

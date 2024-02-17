@@ -238,7 +238,7 @@ func (m *Manager) IssueGoogleCert(domain string, mapEntry *certificatemanagerpb.
 			return false, fmt.Errorf("[%s] error creating google certificate: %v", domain, err)
 		}
 	} else {
-		m.Infof("[%s] certificate alredy exists: %+v", domain, cert)
+		m.Infof("[%s] certificate already exists: %s", domain, cert.Name)
 	}
 	if mapEntry == nil {
 		mapEntry, _ = m.certMgr.GetCertificateMapEntry(ctx, &certificatemanagerpb.GetCertificateMapEntryRequest{
@@ -267,8 +267,11 @@ func (m *Manager) IssueGoogleCert(domain string, mapEntry *certificatemanagerpb.
 		}
 		return false, nil
 	} else {
-		m.Infof("[%s] certificate map entry alredy exists: %+v", domain, mapEntry)
-		if !utils.ArrayContains(mapEntry.Certificates, fmt.Sprintf("%s/certificates/%s", m.cmParent, name(domain))) {
+		m.Infof("[%s] certificate map entry already exists: %+v", domain, mapEntry)
+		certDomains := utils.ArrayMap(mapEntry.Certificates, func(s string) string {
+			return s[strings.LastIndex(s, "/")+1:]
+		})
+		if !utils.ArrayContains(certDomains, name(domain)) {
 			m.Infof("[%s] adding domain to map entry", domain)
 			mapEntry.Certificates = append(mapEntry.Certificates, fmt.Sprintf("%s/certificates/%s", m.cmParent, name(domain)))
 			op, err := m.certMgr.UpdateCertificateMapEntry(ctx, &certificatemanagerpb.UpdateCertificateMapEntryRequest{

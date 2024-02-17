@@ -20,9 +20,10 @@ type Config struct {
 	InitialSetup     bool `mapstructure:"INITIAL_SETUP" default:"false"`
 	MigrateFromCaddy bool `mapstructure:"MIGRATE_FROM_CADDY" default:"false"`
 
-	JitsuCnames        string `mapstructure:"JITSU_CNAMES" default:"cname.jitsu.com,cname2.jitsu.com"`
-	CertificateMapName string `mapstructure:"CERTIFICATE_MAP_NAME" default:"custom-domains"`
-	GoogleCloudProject string `mapstructure:"GOOGLE_CLOUD_PROJECT"`
+	JitsuCnames              string `mapstructure:"JITSU_CNAMES" default:"cname.jitsu.com,cname2.jitsu.com"`
+	CertificateMapName       string `mapstructure:"CERTIFICATE_MAP_NAME" default:"custom-domains"`
+	GoogleServiceAccountJson string `mapstructure:"GOOGLE_SERVICE_ACCOUNT_JSON"`
+	GoogleCloudProject       string `mapstructure:"GOOGLE_CLOUD_PROJECT"`
 	// AddGoogleCerts if true, for each CertificateMapEntry with letsencrypt cert ingress-manager will add google certs
 	AddGoogleCerts bool `mapstructure:"ADD_GOOGLE_CERTS" default:"false"`
 }
