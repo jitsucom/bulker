@@ -21,7 +21,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.25.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.25.0
 	go.uber.org/atomic v1.11.0
-	google.golang.org/api v0.151.0
+	google.golang.org/api v0.165.0
 )
 
 replace github.com/cucumber/godog => github.com/laurazard/godog v0.0.0-20220922095256-4c4b17abdae7
