@@ -347,6 +347,9 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 		} else {
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Request-Timeout-Ms", strconv.Itoa(r.config.DeviceFunctionsTimeoutMs))
+			if r.config.RotorAuthKey != "" {
+				req.Header.Set("Authorization", "Bearer "+r.config.RotorAuthKey)
+			}
 			var res *http.Response
 			res, err = r.httpClient.Do(req)
 			if err != nil {
@@ -407,8 +410,12 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event *Ana
 		HttpPayload: event,
 	}
 	ingestMessageBytes, err1 := json.Marshal(ingestMessage)
-	if err1 != nil && err == nil {
-		err = err1
+	if err1 != nil {
+		err = utils.Nvl(err, err1)
+	} else {
+		if len(ingestMessageBytes) > r.config.MaxIngestPayloadSize {
+			err = fmt.Errorf("message size is too big. max allowed: %d", len(ingestMessageBytes)/2)
+		}
 	}
 	return
 }

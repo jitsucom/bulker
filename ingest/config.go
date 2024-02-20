@@ -45,9 +45,12 @@ type Config struct {
 	EventsLogMaxSize int    `mapstructure:"EVENTS_LOG_MAX_SIZE" default:"1000"`
 
 	RotorURL                 string `mapstructure:"ROTOR_URL"`
+	RotorAuthKey             string `mapstructure:"ROTOR_AUTH_KEY"`
 	DeviceFunctionsTimeoutMs int    `mapstructure:"DEVICE_FUNCTIONS_TIMEOUT_MS" default:"200"`
 
 	MetricsPort int `mapstructure:"METRICS_PORT" default:"9091"`
+
+	MaxIngestPayloadSize int `mapstructure:"MAX_INGEST_PAYLOAD_SIZE" default:"1048576"`
 
 	// # GRACEFUL SHUTDOWN
 	//Timeout that give running batch tasks time to finish during shutdown.
