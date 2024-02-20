@@ -49,7 +49,7 @@ reused on next restart.
 
 A list of hashed auth tokens that authorizes user in HTTP interface separated by comma. Each must have format:
 
-`${salt}.${hash}` where `${salt}` should be random string. Hash is `base64(sha512($token + $salt + BULKER_TOKEN_SECRET)`.
+`${salt}.${hash}` where `${salt}` should be random string. Hash is `hex(sha512($token + $salt + BULKER_TOKEN_SECRET)`.
 
 `$token` must consist only of letters, digits, underscore and dash
 
