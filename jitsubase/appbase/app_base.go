@@ -16,6 +16,9 @@ import (
 	"syscall"
 )
 
+// DefaultSeed is a default seed for hex encoded hashed tokens
+const DefaultSeed = "dea42a58-acf4-45af-85bb-e77e94bd5025"
+
 type Context[C any] interface {
 	InitContext(settings *AppSettings) error
 	ShutdownSignal() error

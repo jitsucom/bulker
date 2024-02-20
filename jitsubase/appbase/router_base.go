@@ -8,12 +8,15 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"net/http"
+	"regexp"
 	"strings"
 )
 
 const ContextLoggerName = "contextLogger"
 const ContextDomain = "contextDomain"
 const ContextMessageId = "contextMessageId"
+
+var IsHexRegex = regexp.MustCompile(`^[a-fA-F0-9]+$`)
 
 type Router struct {
 	Service
@@ -82,10 +85,13 @@ func (r *Router) authMiddleware(c *gin.Context) {
 		hashedToken := strings.Split(authToken, ".")
 		salt := hashedToken[0]
 		hash := hashedToken[1]
+		hex := IsHexRegex.MatchString(hash)
 		for _, secret := range r.tokenSecrets {
-			//a := HashToken(token, salt, secret)
-			//logging.Debugf("Hashed token: %s. Hash: %s ", a, hash)
-			if HashToken(token, salt, secret) == hash {
+			if hex {
+				if HashTokenHex(token, salt, utils.Nvl(secret, DefaultSeed)) == hash {
+					return
+				}
+			} else if HashTokenBase64(token, salt, secret) == hash {
 				//logging.Debugf("Token %s is valid", token)
 				return
 			}
@@ -147,11 +153,20 @@ func (r *Router) ShouldCompress(req *http.Request) bool {
 	return true
 }
 
-func HashToken(token string, salt string, secret string) string {
+// Deprecated: Use HashTokenHex. Not sure how we started to use base64 encoding for hash.
+// But for compatibility with previous release we must keep it for a while
+func HashTokenBase64(token string, salt string, secret string) string {
 	//logging.Infof("Hashing token: %s. Salt: %s. Secret: %s", token, salt, secret)
 	hash := sha512.New()
 	hash.Write([]byte(token + salt + secret))
 	return base64.RawStdEncoding.EncodeToString(hash.Sum(nil))
+}
+
+func HashTokenHex(token string, salt string, secret string) string {
+	hash := sha512.New()
+	hash.Write([]byte(token + salt + secret))
+	res := hash.Sum(nil)
+	return fmt.Sprintf("%x", res)
 }
 
 type RouterError struct {

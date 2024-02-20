@@ -21,6 +21,6 @@ func main() {
 	}
 	salt := uuid.NewString()
 
-	hashedToken := appbase.HashToken(authToken, salt, tokenSecret)
+	hashedToken := appbase.HashTokenHex(authToken, salt, tokenSecret)
 	fmt.Printf("Hashed token: %s.%s", salt, hashedToken)
 }
