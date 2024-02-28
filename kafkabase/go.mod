@@ -29,7 +29,7 @@ require (
 	github.com/prometheus/procfs v0.11.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
-	github.com/testcontainers/testcontainers-go v0.25.0 // indirect
+	github.com/testcontainers/testcontainers-go v0.28.0 // indirect
 	golang.org/x/exp v0.0.0-20231206192017-f3f8817b8deb // indirect
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sys v0.17.0 // indirect

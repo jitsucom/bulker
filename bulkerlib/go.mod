@@ -18,8 +18,10 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/snowflakedb/gosnowflake v1.6.25
 	github.com/stretchr/testify v1.8.4
-	github.com/testcontainers/testcontainers-go v0.25.0
-	github.com/testcontainers/testcontainers-go/modules/compose v0.25.0
+	github.com/testcontainers/testcontainers-go v0.28.0
+	github.com/testcontainers/testcontainers-go/modules/compose v0.28.0
+	github.com/docker/compose/v2 v2.24.0
+	github.com/compose-spec/compose-go/v2 v2.0.0-rc.4
 	go.uber.org/atomic v1.11.0
 	google.golang.org/api v0.165.0
 )
