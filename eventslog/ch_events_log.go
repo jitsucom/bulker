@@ -2,7 +2,6 @@ package eventslog
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -36,7 +35,6 @@ func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 			Username: utils.NvlString(config.ClickhouseUsername, "default"),
 			Password: config.ClickhousePassword,
 		},
-		TLS: &tls.Config{},
 		Settings: clickhouse.Settings{
 			"async_insert":                 1,
 			"wait_for_async_insert":        0,
