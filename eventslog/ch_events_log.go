@@ -92,11 +92,10 @@ func (r *ClickhouseEventsLog) flush() {
 		r.Errorf("Error preparing batch: %v", err)
 		return
 	}
-	dt := time.Now()
 	for _, event := range bufferCopy {
 		bytes, _ := json.Marshal(event.Event)
 		err = batch.Append(
-			dt,
+			event.Timestamp,
 			event.ActorId,
 			string(event.EventType),
 			string(event.Level),
@@ -121,6 +120,7 @@ func (r *ClickhouseEventsLog) PostAsync(event *ActorEvent) {
 	}
 	r.Lock()
 	defer r.Unlock()
+	event.Timestamp = time.Now()
 	r.eventsBuffer = append(r.eventsBuffer, event)
 }
 

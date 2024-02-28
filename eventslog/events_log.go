@@ -43,6 +43,7 @@ type ActorEvent struct {
 	Level     Level
 	ActorId   string
 	Event     any
+	Timestamp time.Time
 }
 
 type EventsLogService interface {
