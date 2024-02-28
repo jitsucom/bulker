@@ -319,5 +319,5 @@ func (sc *StreamConsumerImpl) postEventsLog(message []byte, representation any, 
 		object["status"] = "FAILED"
 		level = eventslog.LevelError
 	}
-	sc.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeProcessed, level, sc.destination.Id(), object})
+	sc.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeProcessed, Level: level, ActorId: sc.destination.Id(), Event: object})
 }

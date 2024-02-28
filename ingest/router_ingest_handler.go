@@ -45,7 +45,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 				obj["status"] = "SKIPPED"
 				obj["error"] = "no destinations found for stream"
 			}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeIncoming, eventslog.LevelInfo, eventsLogId, obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelInfo, ActorId: eventsLogId, Event: obj})
 			IngestHandlerRequests(domain, "success", "").Inc()
 		}
 	}()
