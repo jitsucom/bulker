@@ -5,7 +5,7 @@ import (
 )
 
 type EventsLogConfig struct {
-	ClickhouseURL      string `mapstructure:"CLICKHOUSE_URL"`
+	ClickhouseHost     string `mapstructure:"CLICKHOUSE_HOST"`
 	ClickhouseDatabase string `mapstructure:"CLICKHOUSE_DATABASE"`
 	ClickhouseUsername string `mapstructure:"CLICKHOUSE_USERNAME"`
 	ClickhousePassword string `mapstructure:"CLICKHOUSE_PASSWORD"`

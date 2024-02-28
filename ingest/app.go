@@ -36,7 +36,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	a.scriptRepository = NewScriptRepository(a.config.ScriptOrigin, a.config.CacheDir)
 	a.eventsLogService = &eventslog.DummyEventsLogService{}
 	elServices := []eventslog.EventsLogService{}
-	if a.config.ClickhouseURL != "" {
+	if a.config.ClickhouseHost != "" {
 		chEventsLogService, err := eventslog.NewClickhouseEventsLog(a.config.EventsLogConfig)
 		if err != nil {
 			return err

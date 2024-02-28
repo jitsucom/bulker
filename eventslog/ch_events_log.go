@@ -30,7 +30,7 @@ type ClickhouseEventsLog struct {
 func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 	base := appbase.NewServiceBase(chEventsLogServiceName)
 	conn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{config.ClickhouseURL},
+		Addr: []string{config.ClickhouseHost},
 		Auth: clickhouse.Auth{
 			Database: config.ClickhouseDatabase,
 			Username: utils.NvlString(config.ClickhouseUsername, "default"),
