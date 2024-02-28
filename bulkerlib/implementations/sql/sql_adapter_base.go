@@ -9,10 +9,10 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 )
 
 const (
@@ -640,7 +640,7 @@ func (b *SQLAdapterBase[T]) renameTable(ctx context.Context, ifExists bool, tabl
 }
 
 func (b *SQLAdapterBase[T]) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
-	tmpTable := "deprecated_" + targetTableName + timestamp.Now().Format("_20060102_150405")
+	tmpTable := "deprecated_" + targetTableName + time.Now().Format("_20060102_150405")
 	err1 := b.renameTable(ctx, true, targetTableName, tmpTable)
 	err = b.renameTable(ctx, false, replacementTable.Name, targetTableName)
 	if dropOldTable && err1 == nil && err == nil {

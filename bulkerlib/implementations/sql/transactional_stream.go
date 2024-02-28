@@ -7,8 +7,8 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
-	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"time"
 )
 
 // TODO: Use real temporary tables
@@ -27,7 +27,7 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		dstTable := tableForObject
 		ps.adjustTableColumnTypes(dstTable, ps.existingTable, tableForObject, object)
-		tmpTableName := fmt.Sprintf("%s_tmp%s", utils.ShortenString(tableName, 47), timestamp.Now().Format("060102150405"))
+		tmpTableName := fmt.Sprintf("%s_tmp%s", utils.ShortenString(tableName, 47), time.Now().Format("060102150405"))
 		return &Table{
 			Name:            tmpTableName,
 			Columns:         dstTable.Columns,

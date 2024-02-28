@@ -8,11 +8,11 @@ import (
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
 	"io"
 	"strings"
+	"time"
 
 	"go.uber.org/atomic"
 
@@ -236,7 +236,7 @@ func (gcs *GoogleCloudStorage) DeleteObject(key string) (err error) {
 // ValidateWritePermission tries to create temporary file and remove it.
 // returns nil if file creation was successful.
 func (gcs *GoogleCloudStorage) ValidateWritePermission() error {
-	filename := fmt.Sprintf("test_%v", timestamp.NowUTC())
+	filename := fmt.Sprintf("test_%v", time.Now())
 
 	if err := gcs.UploadBytes(filename, []byte{}); err != nil {
 		return err

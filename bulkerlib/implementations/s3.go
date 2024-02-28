@@ -11,9 +11,9 @@ import (
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"go.uber.org/atomic"
 	"io"
+	"time"
 )
 
 // S3Config is a dto for config deserialization
@@ -180,7 +180,7 @@ func (a *S3) DeleteObject(key string) error {
 // ValidateWritePermission tries to create temporary file and remove it.
 // returns nil if file creation was successful.
 func (a *S3) ValidateWritePermission() error {
-	filename := fmt.Sprintf("test_%v", timestamp.NowUTC())
+	filename := fmt.Sprintf("test_%v", time.Now())
 
 	if err := a.UploadBytes(filename, []byte{}); err != nil {
 		return err

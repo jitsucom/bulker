@@ -10,7 +10,6 @@ import (
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"os"
 	"path"
@@ -442,7 +441,7 @@ func (s *Snowflake) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 }
 
 func (s *Snowflake) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) error {
-	tmpTable := "deprecated_" + targetTableName + timestamp.Now().Format("_20060102_150405")
+	tmpTable := "deprecated_" + targetTableName + time.Now().Format("_20060102_150405")
 	err1 := s.renameTable(ctx, true, targetTableName, tmpTable)
 	err := s.renameTable(ctx, false, replacementTable.Name, targetTableName)
 	if dropOldTable && err1 == nil && err == nil {

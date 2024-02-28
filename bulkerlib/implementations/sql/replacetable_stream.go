@@ -8,9 +8,9 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
-	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/joomcode/errorx"
+	"time"
 )
 
 type ReplaceTableStream struct {
@@ -27,9 +27,9 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 	}
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		return &Table{
-			Name:           fmt.Sprintf("%s_tmp%s", utils.ShortenString(ps.tableName, 47), timestamp.Now().Format("060102150405")),
+			Name:           fmt.Sprintf("%s_tmp%s", utils.ShortenString(ps.tableName, 47), time.Now().Format("060102150405")),
 			PrimaryKeyName: tableForObject.PrimaryKeyName,
-			//PrimaryKeyName: fmt.Sprintf("%s_%s", tableForObject.PrimaryKeyName, timestamp.Now().Format("060102_150405")),
+			//PrimaryKeyName: fmt.Sprintf("%s_%s", tableForObject.PrimaryKeyName, time.Now().Format("060102_150405")),
 			PKFields:        tableForObject.PKFields,
 			Columns:         tableForObject.Columns,
 			TimestampColumn: tableForObject.TimestampColumn,

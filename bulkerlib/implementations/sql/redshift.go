@@ -6,10 +6,10 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
-	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	_ "github.com/lib/pq"
 	"strings"
+	"time"
 )
 
 func init() {
@@ -231,7 +231,7 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 }
 
 func (p *Redshift) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
-	tmpTable := "deprecated_" + targetTableName + timestamp.Now().Format("_20060102_150405")
+	tmpTable := "deprecated_" + targetTableName + time.Now().Format("_20060102_150405")
 	err1 := p.renameTable(ctx, true, targetTableName, tmpTable)
 	err = p.renameTable(ctx, false, replacementTable.Name, targetTableName)
 	if dropOldTable && err1 == nil && err == nil {
