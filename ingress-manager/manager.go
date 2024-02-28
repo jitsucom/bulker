@@ -51,6 +51,12 @@ func NewManager(appContext *Context) *Manager {
 			panic(err)
 		}
 	}
+	if appContext.config.CleanupCerts {
+		err = m.CleanupCerts()
+		if err != nil {
+			panic(err)
+		}
+	}
 	return m
 }
 
@@ -182,6 +188,152 @@ func (m *Manager) MigrateCaddyCerts() error {
 	return nil
 }
 
+// CleanupCerts deletes all certificates and certificate map entries for domains that no longer lead to a valid cname
+func (m *Manager) CleanupCerts() error {
+	cmi := m.certMgr.ListCertificateMapEntries(context.Background(), &certificatemanagerpb.ListCertificateMapEntriesRequest{
+		Parent:   fmt.Sprintf("%s/certificateMaps/%s", m.cmParent, m.config.CertificateMapName),
+		PageSize: 1000,
+	})
+	cm, err := cmi.Next()
+	for ; err == nil; cm, err = cmi.Next() {
+		domain := cm.GetHostname()
+		if strings.HasSuffix(domain, ".com.br") {
+			continue
+		}
+		ok, _ := m.checkCname(domain)
+		if !ok {
+			m.Infof("[%s] cleaning certificate map entry: %+v", domain, cm)
+			//sleep for 5 seconds to give time for the dns to propagate
+			time.Sleep(5 * time.Second)
+			op, err := m.certMgr.DeleteCertificateMapEntry(context.Background(), &certificatemanagerpb.DeleteCertificateMapEntryRequest{
+				Name: cm.Name,
+			})
+			if err != nil {
+				m.Errorf("[%s] error deleting certificate map entry: %v", domain, err)
+				continue
+			}
+			err = op.Wait(context.Background())
+			if err != nil {
+				m.Errorf("[%s] error deleting certificate map entry: %v", domain, err)
+			} else {
+				m.Infof("[%s] certificate map entry deleted", domain)
+			}
+			for _, certName := range cm.Certificates {
+				cop, err := m.certMgr.DeleteCertificate(context.Background(), &certificatemanagerpb.DeleteCertificateRequest{Name: certName})
+				if err != nil {
+					m.Errorf("[%s] error deleting certificate: %v", certName, err)
+				}
+				if cop != nil {
+					err = cop.Wait(context.Background())
+					if err != nil {
+						m.Errorf("[%s] error deleting certificate: %v", certName, err)
+					} else {
+						m.Infof("[%s] certificate deleted", certName)
+					}
+				}
+			}
+		}
+	}
+	if err != nil && !errors.Is(err, iterator.Done) {
+		return fmt.Errorf("error cleaning up certs: error listing certificate map entries: %v", err)
+	}
+	return nil
+}
+
+// RemoveLegacy One time function to remove legacy certificates from certificate map entries
+func (m *Manager) RemoveLegacy() error {
+	cmi := m.certMgr.ListCertificateMapEntries(context.Background(), &certificatemanagerpb.ListCertificateMapEntriesRequest{
+		Parent:   fmt.Sprintf("%s/certificateMaps/%s", m.cmParent, m.config.CertificateMapName),
+		PageSize: 1000,
+	})
+	cm, err := cmi.Next()
+	for ; err == nil; cm, err = cmi.Next() {
+		domain := cm.GetHostname()
+		if strings.HasSuffix(domain, ".com.br") {
+			continue
+		}
+		//if domain != "data.investing.com" {
+		//	continue
+		//}
+		iof := utils.ArrayIndexOf(cm.Certificates, func(s string) bool {
+			return strings.Contains(s, "/locations/global/certificates/lets-")
+		})
+		if iof >= 0 {
+			m.Infof("[%s] removing legacy from certificate map entry: %+v", domain, cm)
+			toDelete := cm.Certificates[iof]
+			cm.Certificates = utils.ArrayFilter(cm.Certificates, func(s string) bool {
+				return !strings.Contains(s, "/locations/global/certificates/lets-")
+			})
+			if len(cm.Certificates) > 0 {
+				op, err := m.certMgr.UpdateCertificateMapEntry(context.Background(), &certificatemanagerpb.UpdateCertificateMapEntryRequest{
+					CertificateMapEntry: cm,
+					UpdateMask:          &fieldmaskpb.FieldMask{Paths: []string{"certificates"}},
+				})
+				if err != nil {
+					return fmt.Errorf("[%s] error removing legacy cert %s from map entry: %v", domain, toDelete, err)
+				}
+				_, err = op.Wait(context.Background())
+				if err != nil {
+					return fmt.Errorf("[%s] error removing legacy cert %s from map entry: %v", domain, toDelete, err)
+				} else {
+					m.Infof("[%s] legacy cert %s removed from map entry", domain, toDelete)
+				}
+				//cop, err := m.certMgr.DeleteCertificate(context.Background(), &certificatemanagerpb.DeleteCertificateRequest{Name: toDelete})
+				//if err != nil {
+				//	m.Errorf("[%s] error deleting certificate: %v", toDelete, err)
+				//}
+				//if cop != nil {
+				//	err = cop.Wait(context.Background())
+				//	if err != nil {
+				//		m.Errorf("[%s] error deleting certificate: %v", toDelete, err)
+				//	} else {
+				//		m.Infof("[%s] certificate deleted", toDelete)
+				//	}
+				//}
+			}
+		}
+	}
+	if err != nil && !errors.Is(err, iterator.Done) {
+		return fmt.Errorf("error cleaning up certs: error listing certificate map entries: %v", err)
+	}
+	return nil
+}
+
+// RemoveLegacyCerts One time function to remove legacy certificates
+func (m *Manager) RemoveLegacyCerts() error {
+	ci := m.certMgr.ListCertificates(context.Background(), &certificatemanagerpb.ListCertificatesRequest{
+		Parent:   m.cmParent,
+		PageSize: 1000,
+	})
+	c, err := ci.Next()
+	for ; err == nil; c, err = ci.Next() {
+		if !strings.Contains(c.Name, "/locations/global/certificates/lets-") {
+			continue
+		}
+		if strings.HasSuffix(c.Name, "-com-br") {
+			continue
+		}
+		toDelete := c.Name
+		m.Infof("deleting legacy certificate: %s", toDelete)
+		cop, err := m.certMgr.DeleteCertificate(context.Background(), &certificatemanagerpb.DeleteCertificateRequest{Name: toDelete})
+		if err != nil {
+			m.Errorf("[%s] error deleting certificate: %v", toDelete, err)
+		}
+		if cop != nil {
+			err = cop.Wait(context.Background())
+			if err != nil {
+				m.Errorf("[%s] error deleting certificate: %v", toDelete, err)
+			} else {
+				m.Infof("[%s] certificate deleted", toDelete)
+			}
+		}
+	}
+	if err != nil && !errors.Is(err, iterator.Done) {
+		return fmt.Errorf("error cleaning up certs: error listing certificates: %v", err)
+	}
+	return nil
+}
+
 func (m *Manager) AddGoogleCerts() error {
 	cmi := m.certMgr.ListCertificateMapEntries(context.Background(), &certificatemanagerpb.ListCertificateMapEntriesRequest{
 		Parent:   fmt.Sprintf("%s/certificateMaps/%s", m.cmParent, m.config.CertificateMapName),
@@ -190,7 +342,8 @@ func (m *Manager) AddGoogleCerts() error {
 	cm, err := cmi.Next()
 	for ; err == nil; cm, err = cmi.Next() {
 		domain := cm.GetHostname()
-		if domain == "betteruptime-monitoring2.jitsu.dev" {
+		ok, _ := m.checkCname(domain)
+		if ok {
 			m.Infof("[%s] certificate map entry: %+v", domain, cm)
 			alreadyExists, err2 := m.IssueGoogleCert(domain, cm)
 			if err2 != nil {
@@ -201,6 +354,8 @@ func (m *Manager) AddGoogleCerts() error {
 			} else {
 				m.Infof("[%s] certificate issued", domain)
 			}
+		} else {
+			m.Warnf("[%s] CNAME is NOT OK", domain)
 		}
 	}
 	if err != nil && !errors.Is(err, iterator.Done) {
@@ -304,14 +459,9 @@ const (
 
 func (m *Manager) AddDomain(domain string) (status DomainStatus, err error) {
 	m.Infof("[%s] adding domain...", domain)
-	// first check that domain leads to the static ip
-	cname, err := net.LookupCNAME(domain)
-	if err != nil {
-		m.Warnf("[%s] error looking up domain: %v", domain, err)
-		return DomainStatusCNAME, nil
-	}
-	if !m.cnames.Contains(strings.TrimSuffix(cname, ".")) {
-		m.Warnf("[%s] incorrect CNAME record: %s", domain, cname)
+	// first check that domain leads to the cna e
+	cname, _ := m.checkCname(domain)
+	if !cname {
 		return DomainStatusCNAME, nil
 	}
 
@@ -349,6 +499,19 @@ const (
 	CertificateStatusPending CertificateStatus = "pending"
 	CertificateStatusOK      CertificateStatus = "ok"
 )
+
+func (m *Manager) checkCname(domain string) (ok bool, err error) {
+	cname, err := net.LookupCNAME(domain)
+	if err != nil {
+		m.Warnf("[%s] error looking up domain: %v", domain, err)
+		return false, err
+	}
+	if !m.cnames.Contains(strings.TrimSuffix(cname, ".")) {
+		m.Warnf("[%s] incorrect CNAME record: %s", domain, cname)
+		return false, nil
+	}
+	return true, nil
+}
 
 func (m *Manager) checkCertificate(domain string) (status CertificateStatus, err error) {
 	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:443", domain), nil)

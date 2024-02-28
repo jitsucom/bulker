@@ -313,10 +313,11 @@ func (sc *StreamConsumerImpl) postEventsLog(message []byte, representation any, 
 		object["mappedData"] = processedObject
 	}
 
+	level := eventslog.LevelInfo
 	if processedErr != nil {
 		object["error"] = processedErr.Error()
 		object["status"] = "FAILED"
-		sc.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeProcessedError, sc.destination.Id(), object})
+		level = eventslog.LevelError
 	}
-	sc.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeProcessedAll, sc.destination.Id(), object})
+	sc.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeProcessed, level, sc.destination.Id(), object})
 }

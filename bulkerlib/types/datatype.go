@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -183,7 +184,12 @@ func TypeFromValue(v any) (DataType, error) {
 	case bool:
 		return BOOL, nil
 	default:
-		return UNKNOWN, fmt.Errorf("Unknown DataType for value: %v type: %t", v, v)
+		t := reflect.TypeOf(v).Kind()
+		if t == reflect.Map || t == reflect.Slice || t == reflect.Array {
+			return JSON, nil
+		} else {
+			return UNKNOWN, fmt.Errorf("Unknown DataType for value: %v type: %t", v, v)
+		}
 	}
 }
 

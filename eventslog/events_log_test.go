@@ -31,7 +31,7 @@ func TestEventsLog(t *testing.T) {
 			"_timestamp": ts,
 			"id":         i,
 		}
-		id, err := redisEl.PostEvent(&ActorEvent{EventTypeIncomingAll, "test", event})
+		id, err := redisEl.PostEvent(&ActorEvent{EventTypeIncoming, LevelInfo, "test", event})
 		reqr.NoError(err)
 		logging.Infof("Posted event %s", id)
 		// for latter testing of interval filters
@@ -48,7 +48,7 @@ func TestEventsLog(t *testing.T) {
 	}
 
 	// Get last 10 events
-	events, err := redisEl.GetEvents(EventTypeIncomingAll, "test", nil, 10)
+	events, err := redisEl.GetEvents(EventTypeIncoming, "test", "info", nil, 10)
 	reqr.NoError(err)
 	reqr.Len(events, 10)
 	for _, event := range events {
@@ -60,7 +60,7 @@ func TestEventsLog(t *testing.T) {
 	beforeId := lastEvent.Id
 	lastEventId := lastEvent.Content.(map[string]any)["id"].(float64)
 	//test beforeId filter
-	events, err = redisEl.GetEvents(EventTypeIncomingAll, "test", &EventsLogFilter{BeforeId: beforeId}, 10)
+	events, err = redisEl.GetEvents(EventTypeIncoming, "test", "info", &EventsLogFilter{BeforeId: beforeId}, 10)
 	reqr.NoError(err)
 	reqr.Len(events, 10)
 	event := events[0]
@@ -70,7 +70,7 @@ func TestEventsLog(t *testing.T) {
 
 	// Test interval filter
 	logging.Infof("Test interval filter from %d to %d", tsStart.UnixMilli(), tsEnd.UnixMilli())
-	events, err = redisEl.GetEvents(EventTypeIncomingAll, "test", &EventsLogFilter{Start: tsStart, End: tsEnd}, 0)
+	events, err = redisEl.GetEvents(EventTypeIncoming, "test", "info", &EventsLogFilter{Start: tsStart, End: tsEnd}, 0)
 	reqr.NoError(err)
 	reqr.Len(events, 31)
 	firstEventId = events[0].Content.(map[string]any)["id"].(float64)
@@ -80,7 +80,7 @@ func TestEventsLog(t *testing.T) {
 
 	// Test interval filter with beforeId
 	logging.Infof("Test interval filter from %d to %d", tsStart.UnixMilli(), tsEnd.UnixMilli())
-	events, err = redisEl.GetEvents(EventTypeIncomingAll, "test", &EventsLogFilter{Start: tsStart, End: tsEnd, BeforeId: idBefore}, 0)
+	events, err = redisEl.GetEvents(EventTypeIncoming, "test", "info", &EventsLogFilter{Start: tsStart, End: tsEnd, BeforeId: idBefore}, 0)
 	reqr.NoError(err)
 	reqr.Len(events, 20)
 	firstEventId = events[0].Content.(map[string]any)["id"].(float64)

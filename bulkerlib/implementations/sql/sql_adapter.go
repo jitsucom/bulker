@@ -28,6 +28,7 @@ type SQLAdapter interface {
 	GetDataType(sqlType string) (types2.DataType, bool)
 	GetBatchFileFormat() types2.FileFormat
 	GetBatchFileCompression() types2.FileCompression
+	StringifyObjects() bool
 	OpenTx(ctx context.Context) (*TxSQLAdapter, error)
 	Insert(ctx context.Context, table *Table, merge bool, objects ...types2.Object) error
 	Ping(ctx context.Context) error
@@ -86,6 +87,10 @@ func (tx *TxSQLAdapter) GetBatchFileFormat() types2.FileFormat {
 
 func (tx *TxSQLAdapter) GetBatchFileCompression() types2.FileCompression {
 	return tx.sqlAdapter.GetBatchFileCompression()
+}
+
+func (tx *TxSQLAdapter) StringifyObjects() bool {
+	return tx.sqlAdapter.StringifyObjects()
 }
 
 func (tx *TxSQLAdapter) GetSQLType(dataType types2.DataType) (string, bool) {

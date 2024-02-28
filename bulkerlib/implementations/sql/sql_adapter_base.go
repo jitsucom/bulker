@@ -65,6 +65,8 @@ type SQLAdapterBase[T any] struct {
 	batchFileFormat      types2.FileFormat
 	batchFileCompression types2.FileCompression
 	temporaryTables      bool
+	// stringifyObjects objects types like JSON, array will be stringified before sent to warehouse (warehouse will parse them back)
+	stringifyObjects bool
 
 	typesMapping        map[types2.DataType]string
 	reverseTypesMapping map[string]types2.DataType
@@ -90,6 +92,7 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunc
 		valueMappingFunction: valueMappingFunction,
 		_columnDDLFunc:       columnDDLFunc,
 		checkErrFunc:         checkErrFunc,
+		stringifyObjects:     true,
 	}
 	s.temporaryTables = true
 	s.batchFileFormat = types2.FileFormatNDJSON
@@ -128,6 +131,10 @@ func (b *SQLAdapterBase[T]) GetBatchFileFormat() types2.FileFormat {
 
 func (b *SQLAdapterBase[T]) GetBatchFileCompression() types2.FileCompression {
 	return b.batchFileCompression
+}
+
+func (b *SQLAdapterBase[T]) StringifyObjects() bool {
+	return b.stringifyObjects
 }
 
 func (b *SQLAdapterBase[T]) Ping(ctx context.Context) error {

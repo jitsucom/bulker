@@ -63,7 +63,7 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Obje
 	if ps.state.Status != bulker.Active {
 		return nil, nil, fmt.Errorf("stream is not active. Status: %s", ps.state.Status)
 	}
-	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.omitNils)
+	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.omitNils, ps.sqlAdapter.StringifyObjects())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -182,8 +182,12 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 		jsonSQLType, _ := ps.sqlAdapter.GetSQLType(types.JSON)
 		added := utils.MapPutIfAbsent(current, ps.sqlAdapter.ColumnName(unmappedDataColumn), types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
 		columnsAdded = columnsAdded || added
-		b, _ := jsoniter.Marshal(unmappedObj)
-		values[ps.sqlAdapter.ColumnName(unmappedDataColumn)] = string(b)
+		if ps.sqlAdapter.StringifyObjects() {
+			b, _ := jsoniter.Marshal(unmappedObj)
+			values[ps.sqlAdapter.ColumnName(unmappedDataColumn)] = string(b)
+		} else {
+			values[ps.sqlAdapter.ColumnName(unmappedDataColumn)] = unmappedObj
+		}
 	}
 	currentTable.Columns = current
 	return columnsAdded

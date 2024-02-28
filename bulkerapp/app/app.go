@@ -59,12 +59,24 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	a.cron = NewCron(a.config)
 
 	a.eventsLogService = &eventslog.DummyEventsLogService{}
-	eventsLogRedisUrl := utils.NvlString(a.config.EventsLogRedisURL, a.config.RedisURL)
-	if eventsLogRedisUrl != "" {
-		a.eventsLogService, err = eventslog.NewRedisEventsLog(eventsLogRedisUrl, a.config.RedisTLSCA, a.config.EventsLogMaxSize)
+	elServices := []eventslog.EventsLogService{}
+	if a.config.ClickhouseURL != "" {
+		chEventsLogService, err := eventslog.NewClickhouseEventsLog(a.config.EventsLogConfig)
 		if err != nil {
 			return err
 		}
+		elServices = append(elServices, chEventsLogService)
+	}
+	eventsLogRedisUrl := utils.NvlString(a.config.EventsLogRedisURL, a.config.RedisURL)
+	if eventsLogRedisUrl != "" {
+		redisEventsLogService, err := eventslog.NewRedisEventsLog(eventsLogRedisUrl, a.config.RedisTLSCA, a.config.EventsLogMaxSize)
+		if err != nil {
+			return err
+		}
+		elServices = append(elServices, redisEventsLogService)
+	}
+	if len(elServices) > 0 {
+		a.eventsLogService = &eventslog.MultiEventsLogService{Services: elServices}
 	}
 
 	a.fastStore, err = NewFastStore(a.config)

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha512"
-	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
@@ -62,7 +61,6 @@ func NewRouter(appContext *Context) *Router {
 	fast := engine.Group("")
 	fast.Use(timeout.Timeout(timeout.WithTimeout(10 * time.Second)))
 	fast.POST("/post/:destinationId", router.EventsHandler)
-	fast.POST("/ingest", router.IngestHandler)
 	fast.POST("/test", router.TestConnectionHandler)
 	fast.GET("/log/:eventType/:actorId", router.EventsLogHandler)
 	fast.GET("/ready", router.Health)
@@ -250,103 +248,6 @@ func maskWriteKey(wk string) string {
 	}
 }
 
-func (r *Router) IngestHandler(c *gin.Context) {
-	domain := ""
-	// TODO: use workspaceId as default for all stream identification errors
-	var eventsLogId string
-	var rError *appbase.RouterError
-	var body []byte
-	var asyncDestinations []string
-	var tagsDestinations []string
-
-	defer func() {
-		if len(body) > 0 {
-			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), body)
-		}
-		if rError != nil {
-			obj := map[string]any{"body": string(body), "error": rError.PublicError.Error(), "status": "FAILED"}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingError, ActorId: eventsLogId, Event: obj})
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingAll, ActorId: eventsLogId, Event: obj})
-			metrics.IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
-			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), body, map[string]string{"error": rError.Error.Error()})
-		} else {
-			obj := map[string]any{"body": string(body), "asyncDestinations": asyncDestinations, "tags": tagsDestinations}
-			if len(asyncDestinations) > 0 || len(tagsDestinations) > 0 {
-				obj["status"] = "SUCCESS"
-			} else {
-				obj["status"] = "SKIPPED"
-				obj["error"] = "no destinations found for stream"
-			}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingAll, ActorId: eventsLogId, Event: obj})
-			metrics.IngestHandlerRequests(domain, "success", "").Inc()
-		}
-	}()
-	c.Set(appbase.ContextLoggerName, "ingest")
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		rError = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, true)
-		return
-	}
-	ingestMessage := IngestMessage{}
-	err = jsoniter.Unmarshal(body, &ingestMessage)
-	if err != nil {
-		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing IngestMessage", false, fmt.Errorf("%v: %s", err, string(body)), true)
-		return
-	}
-	messageId := ingestMessage.MessageId
-	c.Set(appbase.ContextMessageId, messageId)
-	domain = utils.DefaultString(ingestMessage.Origin.Slug, ingestMessage.Origin.Domain)
-	c.Set(appbase.ContextDomain, domain)
-
-	stream := r.getStream(ingestMessage)
-	if stream == nil {
-		rError = r.ResponseError(c, http.StatusBadRequest, "stream not found", false, nil, true)
-		return
-	}
-	eventsLogId = stream.Stream.Id
-	if len(stream.AsynchronousDestinations) == 0 && len(stream.SynchronousDestinations) == 0 {
-		c.JSON(http.StatusOK, gin.H{"message": "no destinations found for stream"})
-		return
-	}
-	asyncDestinations = utils.ArrayMap(stream.AsynchronousDestinations, func(d ShortDestinationConfig) string { return d.ConnectionId })
-	tagsDestinations = utils.ArrayMap(stream.SynchronousDestinations, func(d ShortDestinationConfig) string { return d.ConnectionId })
-
-	r.Debugf("[ingest] Message ID: %s Domain: %s to Connections: [%s] Tags: [%s]", messageId, domain,
-		strings.Join(asyncDestinations, ", "), strings.Join(tagsDestinations, ", "))
-	for _, destination := range stream.AsynchronousDestinations {
-		messageCopy := ingestMessage
-		messageCopy.ConnectionId = destination.ConnectionId
-		//multithreading, ok := destination.Options["multithreading"].(bool)
-		topic := r.config.KafkaDestinationsTopicName
-		messageKey := uuid.New()
-		payload, err := json.Marshal(messageCopy)
-		r.Debugf("[ingest] Message ID: %s Producing for: %s topic: %s key: %s", messageId, destination.ConnectionId, topic, messageKey)
-		if err != nil {
-			metrics.IngestedMessages(destination.ConnectionId, "error", "message marshal error").Inc()
-			rError = r.ResponseError(c, http.StatusBadRequest, "message marshal error", false, err, true)
-			continue
-		}
-		err = r.producer.ProduceAsync(topic, messageKey, payload, nil)
-		if err != nil {
-			metrics.IngestedMessages(destination.ConnectionId, "error", "producer error").Inc()
-			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true)
-			continue
-		}
-		metrics.IngestedMessages(destination.ConnectionId, "success", "").Inc()
-	}
-	if len(stream.SynchronousDestinations) == 0 {
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-		return
-	}
-
-	tags := make(map[string]TagDestinationConfig, len(stream.SynchronousDestinations))
-	for _, destination := range stream.SynchronousDestinations {
-		tags[destination.Id] = destination.TagDestinationConfig
-		metrics.IngestedMessages(destination.ConnectionId, "success", "").Inc()
-	}
-	c.JSON(http.StatusOK, gin.H{"ok": true, "tags": tags})
-}
-
 func (r *Router) FailedHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	status := utils.DefaultString(c.Query("status"), "dead")
@@ -454,7 +355,7 @@ func (r *Router) TestConnectionHandler(c *gin.Context) {
 
 // EventsLogHandler - gets events log by EventType, actor id. Filtered by date range and cursorId
 func (r *Router) EventsLogHandler(c *gin.Context) {
-	eventType := c.Param("eventType")
+	eventKey := c.Param("eventType")
 	actorId := c.Param("actorId")
 	beforeId := c.Query("beforeId")
 	start := c.Query("start")
@@ -494,8 +395,11 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 			iLimit = iLimit2
 		}
 	}
+	parts := strings.Split(eventKey, ".")
+	eventType := parts[0]
+	level := parts[1]
 	eventsLogFilter.BeforeId = eventslog.EventsLogRecordId(beforeId)
-	records, err := r.eventsLogService.GetEvents(eventslog.EventType(eventType), actorId, eventsLogFilter, iLimit)
+	records, err := r.eventsLogService.GetEvents(eventslog.EventType(eventType), actorId, level, eventsLogFilter, iLimit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get events log: " + err.Error()})
 		return
@@ -539,7 +443,7 @@ func (r *Router) EventsLogHandler(c *gin.Context) {
 }
 
 func maskWriteKeyInObj(eventType string, record eventslog.EventsLogRecord) {
-	if strings.HasPrefix(eventType, "incoming.") {
+	if eventType == "incoming" {
 		o, ok := record.Content.(map[string]any)
 		if ok {
 			b, ok := o["body"].(string)

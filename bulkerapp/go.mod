@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0
 	github.com/gin-gonic/gin v1.9.1
-	github.com/go-co-op/gocron/v2 v2.1.0
+	github.com/go-co-op/gocron/v2 v2.2.4
 	github.com/gomodule/redigo v1.8.9
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hjson/hjson-go/v4 v4.3.1

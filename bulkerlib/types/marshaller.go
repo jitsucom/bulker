@@ -18,6 +18,7 @@ type Marshaller interface {
 	Format() FileFormat
 	Compression() FileCompression
 	Equal(Marshaller) bool
+	FileExtension() string
 }
 
 type AbstractMarshaller struct {
@@ -96,6 +97,13 @@ func (jm *JSONMarshaller) Format() FileFormat {
 
 func (jm *JSONMarshaller) Compression() FileCompression {
 	return jm.compression
+}
+
+func (jm *JSONMarshaller) FileExtension() string {
+	if jm.compression == FileCompressionGZIP {
+		return ".ndjson.gz"
+	}
+	return ".ndjson"
 }
 
 type CSVMarshaller struct {
@@ -190,6 +198,13 @@ func (cm *CSVMarshaller) Flush() error {
 		return cm.gzipWriter.Close()
 	}
 	return nil
+}
+
+func (cm *CSVMarshaller) FileExtension() string {
+	if cm.compression == FileCompressionGZIP {
+		return ".csv.gz"
+	}
+	return ".csv"
 }
 
 type FileFormat string

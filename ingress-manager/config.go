@@ -26,6 +26,8 @@ type Config struct {
 	GoogleCloudProject       string `mapstructure:"GOOGLE_CLOUD_PROJECT"`
 	// AddGoogleCerts if true, for each CertificateMapEntry with letsencrypt cert ingress-manager will add google certs
 	AddGoogleCerts bool `mapstructure:"ADD_GOOGLE_CERTS" default:"false"`
+	// CleanupCerts if true, ingress-manager will delete Certificates and CertificateMapEntry for domain names that no longer leads to a valid cnames
+	CleanupCerts bool `mapstructure:"CLEANUP_CERTS" default:"false"`
 }
 
 func init() {

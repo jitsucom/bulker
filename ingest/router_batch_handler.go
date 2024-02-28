@@ -91,8 +91,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 		}
 		if rError != nil && rError.ErrorType != ErrNoDst {
 			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": "FAILED"}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingError, ActorId: eventsLogId, Event: obj})
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingAll, ActorId: eventsLogId, Event: obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelError, ActorId: eventsLogId, Event: obj})
 			IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
 			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), ingestMessageBytes, map[string]string{"error": rError.Error.Error()})
 			errors = append(errors, fmt.Sprintf("Message ID: %s: %v", messageId, rError.PublicError))
@@ -106,7 +105,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 				obj["error"] = "no destinations found for stream"
 				errors = append(errors, fmt.Sprintf("Message ID: %s: %v", messageId, rError.PublicError))
 			}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncomingAll, ActorId: eventsLogId, Event: obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelInfo, ActorId: eventsLogId, Event: obj})
 			IngestHandlerRequests(domain, "success", "").Inc()
 		}
 	}

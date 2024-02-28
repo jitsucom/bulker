@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
@@ -14,6 +15,9 @@ type Config struct {
 	appbase.Config `mapstructure:",squash"`
 	// # KAFKA CONFIG - base kafka setting
 	kafkabase.KafkaConfig `mapstructure:",squash"`
+	// # EVENTS LOG CONFIG - settings for events log
+	eventslog.EventsLogConfig `mapstructure:",squash"`
+
 	// # REPOSITORY CONFIG - settings for loading streams from repository
 	RepositoryConfig `mapstructure:",squash"`
 

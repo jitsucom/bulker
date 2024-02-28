@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
@@ -16,7 +17,8 @@ import (
 type Config struct {
 	appbase.Config        `mapstructure:",squash"`
 	kafkabase.KafkaConfig `mapstructure:",squash"`
-
+	// # EVENTS LOG CONFIG - settings for events log
+	eventslog.EventsLogConfig `mapstructure:",squash"`
 	// For ingest endpoint only
 	GlobalHashSecret string `mapstructure:"GLOBAL_HASH_SECRET" default:"dea42a58-acf4-45af-85bb-e77e94bd5025"`
 	// For ingest endpoint only

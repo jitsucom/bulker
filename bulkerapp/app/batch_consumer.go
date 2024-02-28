@@ -307,10 +307,11 @@ func (bc *BatchConsumerImpl) postEventsLog(state bulker.State, processedObjectSa
 		state.SetError(batchErr)
 	}
 	batchState := BatchState{State: state, LastMappedRow: processedObjectSample}
-	bc.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeBatchAll, bc.destinationId, batchState})
+	level := eventslog.LevelInfo
 	if batchErr != nil {
-		bc.eventsLogService.PostAsync(&eventslog.ActorEvent{eventslog.EventTypeBatchError, bc.destinationId, batchState})
+		level = eventslog.LevelError
 	}
+	bc.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeBatch, Level: level, ActorId: bc.destinationId, Event: batchState})
 }
 
 type BatchState struct {

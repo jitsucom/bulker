@@ -65,10 +65,6 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 	}
 	localBatchFile := localBatchFileOption.Get(&ps.options)
 	if localBatchFile != "" && ps.batchFile == nil {
-		ps.batchFile, err = os.CreateTemp("", localBatchFile)
-		if err != nil {
-			return err
-		}
 		ps.marshaller, _ = types.NewMarshaller(types.FileFormatNDJSON, types.FileCompressionNONE)
 		ps.targetMarshaller, err = types.NewMarshaller(ps.sqlAdapter.GetBatchFileFormat(), ps.sqlAdapter.GetBatchFileCompression())
 		if err != nil {
@@ -77,6 +73,10 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		if !ps.merge && ps.sqlAdapter.GetBatchFileFormat() == types.FileFormatNDJSON {
 			//without merge we can write file with compression - no need to convert
 			ps.marshaller, _ = types.NewMarshaller(ps.sqlAdapter.GetBatchFileFormat(), ps.sqlAdapter.GetBatchFileCompression())
+		}
+		ps.batchFile, err = os.CreateTemp("", localBatchFile+"_*"+ps.marshaller.FileExtension())
+		if err != nil {
+			return err
 		}
 	}
 	err = ps.AbstractSQLStream.init(ctx)
@@ -148,7 +148,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			needToConvert = true
 		}
 		if len(ps.batchFileSkipLines) > 0 || needToConvert {
-			workingFile, err = os.CreateTemp("", path.Base(ps.batchFile.Name())+"_2")
+			workingFile, err = os.CreateTemp("", path.Base(ps.batchFile.Name())+"_*"+ps.targetMarshaller.FileExtension())
 			if err != nil {
 				return nil, errorj.Decorate(err, "failed to create tmp file for deduplication")
 			}
@@ -195,6 +195,8 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			}
 			ps.targetMarshaller.Flush()
 			workingFile.Sync()
+		} else {
+			ps.marshaller.Flush()
 		}
 		if needToConvert {
 			logging.Infof("[%s] Converted batch file from %s(%s) to %s(%s) in %s", ps.id, ps.marshaller.Format(), ps.marshaller.Compression(), ps.targetMarshaller.Format(), ps.targetMarshaller.Compression(), time.Now().Sub(convertStart))

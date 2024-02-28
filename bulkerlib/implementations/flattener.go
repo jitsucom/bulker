@@ -13,11 +13,14 @@ type Flattener interface {
 
 type FlattenerImpl struct {
 	omitNilValues bool
+	// stringifyObjects objects types like JSON, array will be stringified before sent to warehouse (warehouse will parse them back)
+	stringifyObjects bool
 }
 
-func NewFlattener(omitNilValues bool) Flattener {
+func NewFlattener(omitNilValues, stringifyObjects bool) Flattener {
 	return &FlattenerImpl{
-		omitNilValues: omitNilValues,
+		omitNilValues:    omitNilValues,
+		stringifyObjects: stringifyObjects,
 	}
 }
 
@@ -53,13 +56,17 @@ func (f *FlattenerImpl) flatten(key string, value any, destination map[string]an
 	case reflect.Map:
 		unboxed := value.(map[string]any)
 		if _, ok := sqlTypeHints[key]; ok {
-			// if there is sql type hint for nested object - we don't flatten it.
-			// Instead, we marshal it to json string hoping that database cast function will do the job
-			b, err := jsoniter.Marshal(value)
-			if err != nil {
-				return fmt.Errorf("error marshaling json object with key %s: %v", key, err)
+			if f.stringifyObjects {
+				// if there is sql type hint for nested object - we don't flatten it.
+				// Instead, we marshal it to json string hoping that database cast function will do the job
+				b, err := jsoniter.Marshal(value)
+				if err != nil {
+					return fmt.Errorf("error marshaling json object with key %s: %v", key, err)
+				}
+				destination[key] = string(b)
+			} else {
+				destination[key] = unboxed
 			}
-			destination[key] = string(b)
 			return nil
 		}
 		for k, v := range unboxed {

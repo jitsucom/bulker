@@ -13,7 +13,7 @@ const SqlTypePrefix = "__sql_type"
 // ProcessEvents processes events objects without applying mapping rules
 // returns table headerm array of processed objects
 // or error if at least 1 was occurred
-func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTypes, omitNils bool) (*TypesHeader, types.Object, error) {
+func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTypes, omitNils bool, stringifyObjects bool) (*TypesHeader, types.Object, error) {
 	sqlTypesHints, err := extractSQLTypesHints(event)
 	if err != nil {
 		return nil, nil, err
@@ -21,7 +21,7 @@ func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTy
 	for k, v := range customTypes {
 		sqlTypesHints[k] = v
 	}
-	flatObject, err := implementations.NewFlattener(omitNils).FlattenObject(event, sqlTypesHints)
+	flatObject, err := implementations.NewFlattener(omitNils, stringifyObjects).FlattenObject(event, sqlTypesHints)
 	if err != nil {
 		return nil, nil, err
 	}
