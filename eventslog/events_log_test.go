@@ -31,7 +31,7 @@ func TestEventsLog(t *testing.T) {
 			"_timestamp": ts,
 			"id":         i,
 		}
-		id, err := redisEl.PostEvent(&ActorEvent{EventTypeIncoming, LevelInfo, "test", event})
+		id, err := redisEl.PostEvent(&ActorEvent{EventTypeIncoming, LevelInfo, "test", event, time.Now()})
 		reqr.NoError(err)
 		logging.Infof("Posted event %s", id)
 		// for latter testing of interval filters
