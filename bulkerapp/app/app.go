@@ -29,6 +29,7 @@ type Context struct {
 	server              *http.Server
 	metricsServer       *MetricsServer
 	backupsLogger       *BackupLogger
+	shardNumber         int
 }
 
 func (a *Context) InitContext(settings *appbase.AppSettings) error {
@@ -47,6 +48,8 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 	if err != nil {
 		return err
 	}
+
+	a.shardNumber = a.config.InstanceIndex / a.config.ShardsCount
 
 	a.configurationSource, err = InitConfigurationSource(a.config)
 	if err != nil {

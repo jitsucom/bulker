@@ -85,6 +85,9 @@ type Config struct {
 	BackupLogRotateHours int    `mapstructure:"BACKUP_LOG_ROTATE_HOURS" default:"24"`
 	BackupLogMaxSizeMb   int    `mapstructure:"BACKUP_LOG_MAX_SIZE_MB" default:"100"`
 
+	InstanceIndex int `mapstructure:"INSTANCE_INDEX" default:"0"`
+	ShardsCount   int `mapstructure:"SHARDS" default:"1"`
+
 	// # GRACEFUL SHUTDOWN
 	//Timeout that give running batch tasks time to finish during shutdown.
 	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`

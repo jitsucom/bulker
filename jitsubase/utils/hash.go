@@ -3,12 +3,19 @@ package utils
 import (
 	"crypto/md5"
 	"github.com/mitchellh/hashstructure/v2"
+	"hash/fnv"
 )
 
 var hashOptions = &hashstructure.HashOptions{SlicesAsSets: true}
 
 func HashString(value string) [16]byte {
 	return md5.Sum([]byte(value))
+}
+
+func HashStringInt(value string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(value))
+	return h.Sum32()
 }
 
 func HashBytes(payload []byte) [16]byte {

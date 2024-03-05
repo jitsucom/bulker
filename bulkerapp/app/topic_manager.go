@@ -38,6 +38,7 @@ type TopicManager struct {
 	ready                     bool
 	config                    *Config
 	kafkaConfig               *kafka.ConfigMap
+	shardNumber               int
 	requiredDestinationTopics map[string]map[string]string
 
 	kafkaBootstrapServer string
@@ -77,6 +78,7 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		Service:              base,
 		config:               appContext.config,
 		kafkaConfig:          appContext.kafkaConfig,
+		shardNumber:          appContext.shardNumber,
 		repository:           appContext.repository,
 		cron:                 appContext.cron,
 		kaftaAdminClient:     admin,
@@ -184,6 +186,11 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 	staleTopics := utils.NewSet[string]()
 
 	for topic, topicMetadata := range metadata.Topics {
+		hash := utils.HashStringInt(topic)
+		topicShardNum := hash % uint32(tm.config.ShardsCount)
+		if int(topicShardNum) != tm.shardNumber {
+			continue
+		}
 		allTopics.Put(topic)
 		if tm.abandonedTopics.Contains(topic) {
 			abandonedTopicsCount++
