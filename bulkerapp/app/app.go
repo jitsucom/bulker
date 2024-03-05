@@ -49,7 +49,7 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		return err
 	}
 
-	a.shardNumber = a.config.InstanceIndex / a.config.ShardsCount
+	a.shardNumber = a.config.InstanceIndex % a.config.ShardsCount
 
 	a.configurationSource, err = InitConfigurationSource(a.config)
 	if err != nil {
