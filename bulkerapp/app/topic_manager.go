@@ -187,12 +187,12 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 	staleTopics := utils.NewSet[string]()
 
 	for topic, topicMetadata := range metadata.Topics {
+		allTopics.Put(topic)
 		hash := utils.HashStringInt(topic)
 		topicShardNum := hash % uint32(tm.config.ShardsCount)
 		if int(topicShardNum) != tm.shardNumber {
 			continue
 		}
-		allTopics.Put(topic)
 		if tm.abandonedTopics.Contains(topic) {
 			abandonedTopicsCount++
 			continue
