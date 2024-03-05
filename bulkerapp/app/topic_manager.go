@@ -113,6 +113,7 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 
 // Start starts TopicManager
 func (tm *TopicManager) Start() {
+	tm.Infof("Starting topic manager. Shard Number: %d", tm.shardNumber)
 	tm.LoadMetadata()
 	safego.RunWithRestart(func() {
 		ticker := time.NewTicker(time.Duration(tm.config.TopicManagerRefreshPeriodSec) * time.Second)
