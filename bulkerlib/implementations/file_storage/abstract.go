@@ -64,6 +64,7 @@ func newAbstractFileStorageStream(id string, p implementations2.FileAdapter, fil
 		ps.batchFileLinesByPK = make(map[string]int)
 		ps.batchFileSkipLines = utils.NewSet[int]()
 	}
+	ps.csvHeader = utils.NewSet[string]()
 	ps.state = bulker.State{Status: bulker.Active}
 	return ps, nil
 }
