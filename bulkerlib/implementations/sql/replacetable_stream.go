@@ -55,6 +55,11 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 					return ps.state, err
 				}
 			}
+			r, ok := ps.state.Representation.(RepresentationTable)
+			if ok {
+				r.Name = ps.tableName
+				r.Temporary = false
+			}
 			err1 := ps.tx.ReplaceTable(ctx, ps.tableName, ps.tmpTable, true)
 			if errorx.IsOfType(err1, errorj.DropError) {
 				err = ps.tx.ReplaceTable(ctx, ps.tableName, ps.tmpTable, false)
