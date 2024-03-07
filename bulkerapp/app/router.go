@@ -164,10 +164,15 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	mode := ""
 	bytesRead := 0
 	var rError *appbase.RouterError
+	var processedObjectSample types.Object
+	var state bulker.State
 	defer func() {
+		state.ProcessingTimeSec = time.Since(start).Seconds()
 		if rError != nil {
+			r.postEventsLog(destinationId, state, processedObjectSample, rError.PublicError)
 			metrics.BulkHandlerRequests(destinationId, mode, tableName, "error", rError.ErrorType).Inc()
 		} else {
+			r.postEventsLog(destinationId, state, processedObjectSample, nil)
 			metrics.BulkHandlerRequests(destinationId, mode, tableName, "success", "").Inc()
 			metrics.EventsHandlerBytes(destinationId, mode, tableName, "success", "").Add(float64(bytesRead))
 		}
@@ -200,7 +205,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	for scanner.Scan() {
 		eventBytes := scanner.Bytes()
 		if len(eventBytes) >= 5 && string(eventBytes[:5]) == "ABORT" {
-			_, _ = bulkerStream.Abort(c)
+			state, _ = bulkerStream.Abort(c)
 			rError = r.ResponseError(c, http.StatusBadRequest, "aborted", false, fmt.Errorf(string(eventBytes)), true)
 			return
 		}
@@ -209,24 +214,24 @@ func (r *Router) BulkHandler(c *gin.Context) {
 		dec := jsoniter.NewDecoder(bytes.NewReader(eventBytes))
 		dec.UseNumber()
 		if err = dec.Decode(&obj); err != nil {
-			_, _ = bulkerStream.Abort(c)
+			state, _ = bulkerStream.Abort(c)
 			rError = r.ResponseError(c, http.StatusBadRequest, "unmarhsal error", false, err, true)
 			return
 		}
-		if _, _, err = bulkerStream.Consume(c, obj); err != nil {
-			_, _ = bulkerStream.Abort(c)
+		if _, processedObjectSample, err = bulkerStream.Consume(c, obj); err != nil {
+			state, _ = bulkerStream.Abort(c)
 			rError = r.ResponseError(c, http.StatusBadRequest, "stream consume error", false, err, true)
 			return
 		}
 		consumed++
 	}
 	if err = scanner.Err(); err != nil {
-		_, _ = bulkerStream.Abort(c)
+		state, _ = bulkerStream.Abort(c)
 		rError = r.ResponseError(c, http.StatusBadRequest, "scanner error", false, err, true)
 		return
 	}
 	if consumed > 0 {
-		state, err := bulkerStream.Complete(c)
+		state, err = bulkerStream.Complete(c)
 		if err != nil {
 			rError = r.ResponseError(c, http.StatusBadRequest, "stream complete error", false, err, true)
 			return
@@ -234,9 +239,21 @@ func (r *Router) BulkHandler(c *gin.Context) {
 		r.Infof("Bulk stream for %s mode: %s Completed. Processed: %d in %dms.", jobId, mode, state.SuccessfulRows, time.Since(start).Milliseconds())
 		c.JSON(http.StatusOK, gin.H{"message": "ok", "state": state})
 	} else {
-		_, _ = bulkerStream.Abort(c)
+		state, _ = bulkerStream.Abort(c)
 		c.JSON(http.StatusOK, gin.H{"message": "ok"})
 	}
+}
+
+func (r *Router) postEventsLog(destinationId string, state bulker.State, processedObjectSample types.Object, batchErr error) {
+	if batchErr != nil && state.LastError == nil {
+		state.SetError(batchErr)
+	}
+	batchState := BatchState{State: state, LastMappedRow: processedObjectSample}
+	level := eventslog.LevelInfo
+	if batchErr != nil {
+		level = eventslog.LevelError
+	}
+	r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeBatch, Level: level, ActorId: destinationId, Event: batchState})
 }
 
 func maskWriteKey(wk string) string {

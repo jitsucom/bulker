@@ -395,6 +395,9 @@ func getDefaultValueStatement(sqlType string) string {
 	if strings.Contains(sqlType, "timestamp") {
 		return "default CURRENT_TIMESTAMP"
 	}
+	if strings.Contains(sqlType, "boolean") {
+		return "default false"
+	}
 	return "default 0"
 }
 
