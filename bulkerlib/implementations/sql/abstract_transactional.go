@@ -134,6 +134,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		_ = os.Remove(ps.batchFile.Name())
 	}()
 	if ps.eventsInBatch > 0 {
+		err = ps.marshaller.Flush()
 		if err != nil {
 			return nil, errorj.Decorate(err, "failed to flush marshaller")
 		}
@@ -195,8 +196,6 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			}
 			ps.targetMarshaller.Flush()
 			workingFile.Sync()
-		} else {
-			ps.marshaller.Flush()
 		}
 		if needToConvert {
 			logging.Infof("[%s] Converted batch file from %s(%s) to %s(%s) in %s", ps.id, ps.marshaller.Format(), ps.marshaller.Compression(), ps.targetMarshaller.Format(), ps.targetMarshaller.Compression(), time.Now().Sub(convertStart))
