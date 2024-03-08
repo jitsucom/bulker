@@ -103,11 +103,13 @@ func (ps *AbstractFileStorageStream) preprocess(object types2.Object) (types2.Ob
 		if err != nil {
 			return nil, err
 		} else {
+			ps.state.ProcessedRows++
 			return flatObject, nil
 		}
+	} else {
+		ps.state.ProcessedRows++
+		return object, nil
 	}
-	ps.state.ProcessedRows++
-	return object, nil
 }
 
 func (ps *AbstractFileStorageStream) postConsume(err error) error {
