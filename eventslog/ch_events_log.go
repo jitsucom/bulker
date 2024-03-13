@@ -2,6 +2,7 @@ package eventslog
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -28,7 +29,7 @@ type ClickhouseEventsLog struct {
 
 func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 	base := appbase.NewServiceBase(chEventsLogServiceName)
-	conn, err := clickhouse.Open(&clickhouse.Options{
+	opts := &clickhouse.Options{
 		Addr: []string{config.ClickhouseHost},
 		Auth: clickhouse.Auth{
 			Database: config.ClickhouseDatabase,
@@ -46,7 +47,13 @@ func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 		Compression: &clickhouse.Compression{
 			Method: clickhouse.CompressionZSTD,
 		},
-	})
+	}
+	if config.ClickhouseSSL {
+		opts.TLS = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	}
+	conn, err := clickhouse.Open(opts)
 	if err != nil {
 		return nil, err
 	}

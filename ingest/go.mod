@@ -10,6 +10,7 @@ require (
 	github.com/spf13/viper v1.17.0
 	github.com/vearne/gin-timeout v0.1.7
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
+	github.com/mroth/weightedrand/v2 v2.1.0
 )
 
 require (

@@ -11,7 +11,7 @@ type Producer struct {
 
 // NewProducer creates new Producer
 func NewProducer(config *kafkabase.KafkaConfig, kafkaConfig *kafka.ConfigMap, reportQueueLength bool) (*Producer, error) {
-	base, err := kafkabase.NewProducer(config, kafkaConfig, reportQueueLength, ProducerMessageLabels)
+	base, err := kafkabase.NewProducer(config, kafkaConfig, reportQueueLength, ProducerMessageLabels, nil)
 	if err != nil {
 		return nil, err
 	}

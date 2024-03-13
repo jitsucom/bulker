@@ -23,6 +23,7 @@ type Context struct {
 	server           *http.Server
 	metricsServer    *MetricsServer
 	backupsLogger    *BackupLogger
+	consumerMonitor  *ConsumerMonitor
 }
 
 func (a *Context) InitContext(settings *appbase.AppSettings) error {
@@ -54,11 +55,20 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		"linger.ms":                    a.config.ProducerLingerMs,
 		"compression.type":             a.config.KafkaTopicCompression,
 	}, *a.kafkaConfig))
-	a.producer, err = kafkabase.NewProducer(&a.config.KafkaConfig, &producerConfig, true, nil)
+	var partitionSelector kafkabase.PartitionSelector = &kafkabase.DummyPartitionSelector{}
+	if a.config.WeightedPartitionSelectorLagThreshold > 0 {
+		a.consumerMonitor, err = NewConsumerMonitor(a, a.config.KafkaDestinationsTopicName, "rotor")
+		if err != nil {
+			return err
+		}
+		partitionSelector = a.consumerMonitor
+	}
+	a.producer, err = kafkabase.NewProducer(&a.config.KafkaConfig, &producerConfig, true, nil, partitionSelector)
 	if err != nil {
 		return err
 	}
 	a.producer.Start()
+
 	a.backupsLogger = NewBackupLogger(a.config)
 	router := NewRouter(a)
 	a.server = &http.Server{
@@ -74,6 +84,9 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 
 func (a *Context) Cleanup() error {
 	_ = a.producer.Close()
+	if a.consumerMonitor != nil {
+		_ = a.consumerMonitor.Close()
+	}
 	_ = a.backupsLogger.Close()
 	if a.config.ShutdownExtraDelay > 0 {
 		logging.Infof("Waiting %d seconds before http server shutdown...", a.config.ShutdownExtraDelay)
