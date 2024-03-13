@@ -42,15 +42,16 @@ var messageIdUnsupportedChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
 type Router struct {
 	*appbase.Router
-	config           *Config
-	kafkaConfig      *kafka.ConfigMap
-	repository       appbase.Repository[Streams]
-	scriptRepository appbase.Repository[Script]
-	producer         *kafkabase.Producer
-	eventsLogService eventslog.EventsLogService
-	backupsLogger    *BackupLogger
-	httpClient       *http.Client
-	dataHosts        []string
+	config            *Config
+	kafkaConfig       *kafka.ConfigMap
+	repository        appbase.Repository[Streams]
+	scriptRepository  appbase.Repository[Script]
+	producer          *kafkabase.Producer
+	eventsLogService  eventslog.EventsLogService
+	backupsLogger     *BackupLogger
+	httpClient        *http.Client
+	dataHosts         []string
+	partitionSelector kafkabase.PartitionSelector
 }
 
 type IngestType string
@@ -73,7 +74,7 @@ type StreamCredentials struct {
 	IngestType IngestType `json:"ingestType"`
 }
 
-func NewRouter(appContext *Context) *Router {
+func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelector) *Router {
 	base := appbase.NewRouterBase(appContext.config.Config, []string{
 		"/health",
 		"/p.js",
@@ -106,16 +107,17 @@ func NewRouter(appContext *Context) *Router {
 	base.Infof("Data hosts: %s", dataHosts)
 
 	router := &Router{
-		Router:           base,
-		config:           appContext.config,
-		kafkaConfig:      appContext.kafkaConfig,
-		producer:         appContext.producer,
-		eventsLogService: appContext.eventsLogService,
-		backupsLogger:    appContext.backupsLogger,
-		repository:       appContext.repository,
-		scriptRepository: appContext.scriptRepository,
-		httpClient:       httpClient,
-		dataHosts:        dataHosts,
+		Router:            base,
+		config:            appContext.config,
+		kafkaConfig:       appContext.kafkaConfig,
+		producer:          appContext.producer,
+		eventsLogService:  appContext.eventsLogService,
+		backupsLogger:     appContext.backupsLogger,
+		repository:        appContext.repository,
+		scriptRepository:  appContext.scriptRepository,
+		httpClient:        httpClient,
+		dataHosts:         dataHosts,
+		partitionSelector: partitionSelector,
 	}
 	engine := router.Engine()
 	// get global Monitor object
@@ -184,7 +186,7 @@ func (r *Router) sendToBulker(c *gin.Context, ingestMessageBytes []byte, stream 
 
 	if stream.BackupEnabled {
 		backupTopic := fmt.Sprintf("in.id.%s_backup.m.batch.t.backup", stream.Stream.WorkspaceId)
-		err2 := r.producer.ProduceAsync(backupTopic, uuid.New(), ingestMessageBytes, nil)
+		err2 := r.producer.ProduceAsync(backupTopic, uuid.New(), ingestMessageBytes, nil, kafka.PartitionAny)
 		if err2 != nil {
 			r.Errorf("Error producing to backup topic %s: %v", backupTopic, err2)
 		}
@@ -193,7 +195,7 @@ func (r *Router) sendToBulker(c *gin.Context, ingestMessageBytes []byte, stream 
 	if len(asyncDestinations) > 0 {
 		topic := r.config.KafkaDestinationsTopicName
 		messageKey := uuid.New()
-		err = r.producer.ProduceAsync(topic, messageKey, ingestMessageBytes, map[string]string{ConnectionIdsHeader: strings.Join(asyncDestinations, ",")})
+		err = r.producer.ProduceAsync(topic, messageKey, ingestMessageBytes, map[string]string{ConnectionIdsHeader: strings.Join(asyncDestinations, ",")}, r.partitionSelector.SelectPartition())
 		if err != nil {
 			for _, id := range asyncDestinations {
 				IngestedMessages(id, "error", "producer error").Inc()

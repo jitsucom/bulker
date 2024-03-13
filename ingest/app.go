@@ -63,14 +63,14 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		}
 		partitionSelector = a.consumerMonitor
 	}
-	a.producer, err = kafkabase.NewProducer(&a.config.KafkaConfig, &producerConfig, true, nil, partitionSelector)
+	a.producer, err = kafkabase.NewProducer(&a.config.KafkaConfig, &producerConfig, true, nil)
 	if err != nil {
 		return err
 	}
 	a.producer.Start()
 
 	a.backupsLogger = NewBackupLogger(a.config)
-	router := NewRouter(a)
+	router := NewRouter(a, partitionSelector)
 	a.server = &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", a.config.HTTPPort),
 		Handler:           router.Engine(),

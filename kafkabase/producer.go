@@ -35,11 +35,10 @@ type Producer struct {
 	waitForDelivery      time.Duration
 	closed               chan struct{}
 	metricsLabelFunc     MetricsLabelsFunc
-	partitionSelector    PartitionSelector
 }
 
 // NewProducer creates new Producer
-func NewProducer(config *KafkaConfig, kafkaConfig *kafka.ConfigMap, reportQueueLength bool, metricsLabelFunc MetricsLabelsFunc, partitionSelector PartitionSelector) (*Producer, error) {
+func NewProducer(config *KafkaConfig, kafkaConfig *kafka.ConfigMap, reportQueueLength bool, metricsLabelFunc MetricsLabelsFunc) (*Producer, error) {
 	base := appbase.NewServiceBase("producer")
 	producer, err := kafka.NewProducer(kafkaConfig)
 	if err != nil {
@@ -49,9 +48,6 @@ func NewProducer(config *KafkaConfig, kafkaConfig *kafka.ConfigMap, reportQueueL
 	if metricsLabelFunc == nil {
 		metricsLabelFunc = defaultMetricsLabelFunc
 	}
-	if partitionSelector == nil {
-		partitionSelector = &DummyPartitionSelector{}
-	}
 	return &Producer{
 		Service:              base,
 		producer:             producer,
@@ -60,7 +56,6 @@ func NewProducer(config *KafkaConfig, kafkaConfig *kafka.ConfigMap, reportQueueL
 		closed:               make(chan struct{}),
 		waitForDelivery:      time.Millisecond * time.Duration(config.ProducerWaitForDeliveryMs),
 		metricsLabelFunc:     metricsLabelFunc,
-		partitionSelector:    partitionSelector,
 	}, nil
 }
 
@@ -141,7 +136,7 @@ func (p *Producer) ProduceSync(topic string, event kafka.Message) error {
 
 // ProduceAsync TODO: transactional delivery?
 // produces messages to kafka
-func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte, headers map[string]string) error {
+func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte, headers map[string]string, partition int32) error {
 	if p.isClosed() {
 		return p.NewError("producer is closed")
 	}
@@ -155,7 +150,7 @@ func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte, h
 		Headers: utils.MapToSlice(headers, func(k string, v string) kafka.Header {
 			return kafka.Header{Key: k, Value: []byte(v)}
 		}),
-		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: p.partitionSelector.SelectPartition()},
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: partition},
 		Value:          event,
 	}, nil)
 	if err != nil {

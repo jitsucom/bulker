@@ -144,7 +144,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		return
 	}
 	bytesRead = len(body)
-	err = r.producer.ProduceAsync(topicId, uuid.New(), body, map[string]string{MetricsMetaHeader: metricsMeta})
+	err = r.producer.ProduceAsync(topicId, uuid.New(), body, map[string]string{MetricsMetaHeader: metricsMeta}, kafka.PartitionAny)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true)
 		return

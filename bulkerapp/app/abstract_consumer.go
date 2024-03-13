@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	kafka2 "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"math"
@@ -69,7 +70,7 @@ func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, event
 	meta["timestamp"] = timestamp.ToISOFormat(time.Now().Truncate(time.Minute))
 	payload, _ := json.Marshal(meta)
 	//ac.Infof("Sending metrics to topic %s: %+v", topicId, meta)
-	err = ac.bulkerProducer.ProduceAsync(topicId, "", payload, nil)
+	err = ac.bulkerProducer.ProduceAsync(topicId, "", payload, nil, kafka2.PartitionAny)
 	if err != nil {
 		ac.Errorf("Error producing metrics to metrics destination: %v", err)
 		return
