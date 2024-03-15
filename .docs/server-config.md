@@ -221,17 +221,17 @@ Clickhouse host and port to store events log. E.g. `clickhouse.example.com:9440`
 
 Clickhouse database where to store events log.
 
-### `CLICKHOUSE_SSL`
+### `BULKER_CLICKHOUSE_SSL`
 
 *Optional*
 
 Enable SSL for Clickhouse connection
 
-### `CLICKHOUSE_USERNAME`
+### `BULKER_CLICKHOUSE_USERNAME`
 
 *Optional*
 
-### `CLICKHOUSE_PASSWORD`
+### `BULKER_CLICKHOUSE_PASSWORD`
 
 *Optional*
 
