@@ -40,7 +40,6 @@ type Router struct {
 	producer         *Producer
 	eventsLogService eventslog.EventsLogService
 	fastStore        *FastStore
-	backupsLogger    *BackupLogger
 }
 
 func NewRouter(appContext *Context) *Router {
@@ -55,7 +54,6 @@ func NewRouter(appContext *Context) *Router {
 		producer:         appContext.batchProducer,
 		eventsLogService: appContext.eventsLogService,
 		fastStore:        appContext.fastStore,
-		backupsLogger:    appContext.backupsLogger,
 	}
 	engine := router.Engine()
 	fast := engine.Group("")

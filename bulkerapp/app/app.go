@@ -28,7 +28,6 @@ type Context struct {
 	fastStore           *FastStore
 	server              *http.Server
 	metricsServer       *MetricsServer
-	backupsLogger       *BackupLogger
 	shardNumber         int
 }
 
@@ -111,7 +110,6 @@ func (a *Context) InitContext(settings *appbase.AppSettings) error {
 		a.topicManager.Start()
 	}
 
-	a.backupsLogger = NewBackupLogger(a.config)
 	router := NewRouter(a)
 	a.server = &http.Server{
 		Addr:        fmt.Sprintf(":%d", a.config.HTTPPort),
@@ -134,7 +132,6 @@ func (a *Context) Cleanup() error {
 	time.Sleep(2 * time.Second)
 	a.cron.Close()
 	_ = a.topicManager.Close()
-	_ = a.backupsLogger.Close()
 	_ = a.repository.Close()
 	_ = a.configurationSource.Close()
 	_ = a.eventsLogService.Close()

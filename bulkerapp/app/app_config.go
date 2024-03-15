@@ -80,11 +80,6 @@ type Config struct {
 	MetricsRelayDestination string `mapstructure:"METRICS_RELAY_DESTINATION"`
 	MetricsRelayPeriodSec   int    `mapstructure:"METRICS_RELAY_PERIOD_SEC" default:"60"`
 
-	BackupLogDir         string `mapstructure:"BACKUP_LOG_DIR"`
-	BackupLogTTL         int    `mapstructure:"BACKUP_LOG_TTL_DAYS" default:"7"`
-	BackupLogRotateHours int    `mapstructure:"BACKUP_LOG_ROTATE_HOURS" default:"24"`
-	BackupLogMaxSizeMb   int    `mapstructure:"BACKUP_LOG_MAX_SIZE_MB" default:"100"`
-
 	InstanceIndex int `mapstructure:"INSTANCE_INDEX" default:"0"`
 	ShardsCount   int `mapstructure:"SHARDS" default:"1"`
 
