@@ -7,7 +7,7 @@
 * [Streaming](#streaming)
 * [Error Handling and Retries](#error-handling-and-retries)
 * [Advanced Kafka Tuning](#kafka-topic-management--advanced-)
-* [Redis Connection](#connection-to-redis--optional-) *(optional)*
+* [Events Log](#events-log) *(optional)*
 * [Defining Destination](#defining-destinations)
   * [Postgres / MySQL / Redshift / Snowflake credentials](#postgres--mysql--redshift--snowflake-credentials)
   * [Clickhouse](#clickhouse)
@@ -205,35 +205,35 @@ Replication factor for topics.
 > **Note**
 > For production, it should be set to at least 2.
 
-## Connection to Redis (optional)
+## Events Log
 
-If `BULKER_REDIS_URL` is set, Bulker will use Redis for storing a history of processed events
-in following format:
+If `BULKER_CLICKHOUSE_HOST` is set, Bulker will use ClickHouse for storing a history of processed events
 
- * `events_log:bulker_stream.all:<destination-id>` - all events that have been sent to `<destination-id>` in streaming mode. Includes failed events too
- * `events_log:bulker_stream.error:<destination-id>` - all events that have been sent to `<destination-id>` in streaming mode and failed
+### `BULKER_CLICKHOUSE_HOST`
 
- * `events_log:bulker_batch.all:<destination-id>` - all processed batches including failed ones
- * `events_log:bulker_batch.error:<destination-id>` - all failed batches
+*Optional*
 
-Each key is a [redis stream](https://redis.io/docs/data-types/streams/)
- 
-### `BULKER_REDIS_URL`
+Clickhouse host and port to store events log. E.g. `clickhouse.example.com:9440`
 
-**Optional**
+### `BULKER_CLICKHOUSE_DATABASE`
 
-Url for connecting to Redis: `redis[s]://[[username :]password@]host[:port][/database]`
+*Optional*
 
-Example: `redis://default:secret@localhost:6379`
+Clickhouse database where to store events log.
 
-> **Note**
-> If username is not set use `default`
+### `CLICKHOUSE_SSL`
 
-### `BULKER_EVENTS_LOG_MAX_SIZE`
+*Optional*
 
-*Optional, default value: `1000`*
+Enable SSL for Clickhouse connection
 
-Maximum number of events in each `events_log:*` stream
+### `CLICKHOUSE_USERNAME`
+
+*Optional*
+
+### `CLICKHOUSE_PASSWORD`
+
+*Optional*
 
 
 ## Defining destinations
