@@ -14,7 +14,7 @@ const quotaByteValue = 34
 
 type Marshaller interface {
 	Init(writer io.Writer, header []string) error
-	InitSchema(writer io.Writer, columns []string, table AvroSchema) error
+	InitSchema(writer io.Writer, columns []string, table *AvroSchema) error
 	Marshal(...Object) error
 	Flush() error
 	NeedHeader() bool
@@ -62,7 +62,7 @@ func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
 	return nil
 }
 
-func (jm *JSONMarshaller) InitSchema(writer io.Writer, columns []string, table AvroSchema) error {
+func (jm *JSONMarshaller) InitSchema(writer io.Writer, columns []string, table *AvroSchema) error {
 	return jm.Init(writer, nil)
 }
 
@@ -139,7 +139,7 @@ func (cm *CSVMarshaller) Init(writer io.Writer, header []string) error {
 	return nil
 }
 
-func (cm *CSVMarshaller) InitSchema(writer io.Writer, columns []string, table AvroSchema) error {
+func (cm *CSVMarshaller) InitSchema(writer io.Writer, columns []string, table *AvroSchema) error {
 	return cm.Init(writer, columns)
 }
 
@@ -239,7 +239,7 @@ const (
 
 type AvroMarshaller struct {
 	AbstractMarshaller
-	schema  AvroSchema
+	schema  *AvroSchema
 	encoder *ocf.Encoder
 }
 
@@ -247,7 +247,7 @@ func (a *AvroMarshaller) Init(writer io.Writer, header []string) error {
 	return fmt.Errorf("Avro marshaller doesn't support Init methodut table w/o schema")
 }
 
-func (a *AvroMarshaller) InitSchema(writer io.Writer, columns []string, table AvroSchema) error {
+func (a *AvroMarshaller) InitSchema(writer io.Writer, columns []string, table *AvroSchema) error {
 	avroSchemaStr, _ := json.Marshal(table)
 	//fmt.Println("Avro schema: ", string(avroSchemaStr))
 	enc, err := ocf.NewEncoder(string(avroSchemaStr), writer, ocf.WithCodec(ocf.Snappy))

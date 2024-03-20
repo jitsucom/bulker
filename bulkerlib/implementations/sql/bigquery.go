@@ -1044,7 +1044,7 @@ func (bq *BigQuery) GetAvroType(sqlType string) (any, bool) {
 	return v, ok
 }
 
-func (bq *BigQuery) GetAvroSchema(table *Table) types2.AvroSchema {
+func (bq *BigQuery) GetAvroSchema(table *Table) *types2.AvroSchema {
 	schema := types2.AvroSchema{
 		Type: "record",
 		Name: "jitsu",
@@ -1067,7 +1067,7 @@ func (bq *BigQuery) GetAvroSchema(table *Table) types2.AvroSchema {
 	}
 	schema.DataTypes = dataTypes
 	schema.Fields = fields
-	return schema
+	return &schema
 }
 
 func (bq *BigQuery) TableHelper() *TableHelper {

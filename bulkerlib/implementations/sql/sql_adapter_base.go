@@ -727,9 +727,9 @@ func (b *SQLAdapterBase[T]) GetAvroType(sqlType string) (any, bool) {
 	return "", false
 }
 
-func (b *SQLAdapterBase[T]) GetAvroSchema(table *Table) types2.AvroSchema {
+func (b *SQLAdapterBase[T]) GetAvroSchema(table *Table) *types2.AvroSchema {
 	// not really an avro schema in a base driver
-	return types2.AvroSchema{}
+	return nil
 }
 
 func match(target, pattern string) bool {

@@ -26,7 +26,7 @@ type SQLAdapter interface {
 	GetSQLType(dataType types2.DataType) (string, bool)
 	GetDataType(sqlType string) (types2.DataType, bool)
 	GetAvroType(sqlType string) (any, bool)
-	GetAvroSchema(table *Table) types2.AvroSchema
+	GetAvroSchema(table *Table) *types2.AvroSchema
 	GetBatchFileFormat() types2.FileFormat
 	GetBatchFileCompression() types2.FileCompression
 	StringifyObjects() bool
@@ -106,7 +106,7 @@ func (tx *TxSQLAdapter) GetAvroType(sqlType string) (any, bool) {
 	return tx.sqlAdapter.GetAvroType(sqlType)
 }
 
-func (tx *TxSQLAdapter) GetAvroSchema(table *Table) types2.AvroSchema {
+func (tx *TxSQLAdapter) GetAvroSchema(table *Table) *types2.AvroSchema {
 	return tx.sqlAdapter.GetAvroSchema(table)
 }
 
