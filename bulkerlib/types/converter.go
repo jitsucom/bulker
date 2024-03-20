@@ -103,14 +103,14 @@ func IsConvertible(from DataType, to DataType) bool {
 
 // Convert returns converted into toType value
 // or error if occurred
-func Convert(toType DataType, v any) (any, error) {
+func Convert(toType DataType, v any) (any, bool, error) {
 	currentType, err := TypeFromValue(v)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if currentType == toType {
-		return v, nil
+		return v, false, nil
 	}
 	if toType == UNKNOWN {
 		// we allow any type for columns of type UNKNOWN. Otherwise, column with custom sql types like maps or array won't work
@@ -120,10 +120,15 @@ func Convert(toType DataType, v any) (any, error) {
 
 	f, ok := convertRules[rule{from: currentType, to: toType}]
 	if !ok {
-		return nil, fmt.Errorf("No rule for converting %s to %s", currentType.String(), toType.String())
+		return nil, false, fmt.Errorf("No rule for converting %s to %s", currentType.String(), toType.String())
 	}
 
-	return f(v)
+	r, err := f(v)
+	if err != nil {
+		return nil, false, err
+	} else {
+		return r, true, nil
+	}
 }
 
 // GetCommonAncestorType returns lowest common ancestor type
@@ -335,12 +340,13 @@ func stringToFloat(v any) (any, error) {
 }
 
 func stringToTimestamp(v any) (any, error) {
-	t, err := time.Parse(time.RFC3339Nano, v.(string))
-	if err != nil {
-		return nil, fmt.Errorf("Error stringToTimestamp() for value: %v: %v", v, err)
+	t := ReformatTimeValue(v, true)
+	ts, ok := t.(time.Time)
+	if !ok {
+		return nil, fmt.Errorf("Error stringToTimestamp() for value: %v", v)
 	}
 
-	return t, nil
+	return ts, nil
 }
 
 // StringWithCommasToFloat return float64 value from string (1,200.50)

@@ -62,25 +62,50 @@ var (
 		types2.STRING:    {string(bigquery.StringFieldType)},
 		types2.INT64:     {string(bigquery.IntegerFieldType)},
 		types2.FLOAT64:   {string(bigquery.FloatFieldType)},
-		types2.TIMESTAMP: {string(bigquery.TimestampFieldType)},
+		types2.TIMESTAMP: {string(bigquery.TimestampFieldType), string(bigquery.DateFieldType), string(bigquery.DateTimeFieldType)},
 		types2.BOOL:      {string(bigquery.BooleanFieldType)},
 		types2.JSON:      {string(bigquery.JSONFieldType)},
 		types2.UNKNOWN:   {string(bigquery.StringFieldType)},
 	}
 	bigqueryTypeMapping        map[types2.DataType]string
 	bigqueryReverseTypeMapping map[string]types2.DataType
+
+	bigqueryAvroTypes = map[string]any{
+		"STRING":     []any{"null", map[string]string{"type": "string", "sqlType": "STRING"}},
+		"BYTES":      []any{"null", map[string]string{"type": "bytes", "sqlType": "BYTES"}},
+		"INTEGER":    []any{"null", map[string]string{"type": "long", "sqlType": "INTEGER"}},
+		"INT64":      []any{"null", map[string]string{"type": "long", "sqlType": "INT64"}},
+		"FLOAT":      []any{"null", map[string]string{"type": "double", "sqlType": "FLOAT"}},
+		"FLOAT64":    []any{"null", map[string]string{"type": "double", "sqlType": "FLOAT64"}},
+		"DECIMAL":    []any{"null", map[string]string{"type": "double", "sqlType": "DECIMAL"}},
+		"BIGDECIMAL": []any{"null", map[string]string{"type": "double", "sqlType": "BIGDECIMAL"}},
+		"BOOLEAN":    []any{"null", map[string]string{"type": "boolean", "sqlType": "BOOLEAN"}},
+		"BOOL":       []any{"null", map[string]string{"type": "boolean", "sqlType": "BOOL"}},
+		"TIMESTAMP":  []any{"null", map[string]string{"logicalType": "timestamp-millis", "type": "long"}},
+		"RECORD":     []any{"null", map[string]string{"type": "string", "sqlType": "RECORD"}},
+		"STRUCT":     []any{"null", map[string]string{"type": "string", "sqlType": "STRUCT"}},
+		"DATE":       []any{"null", map[string]string{"logicalType": "date", "type": "int"}},
+		"TIME":       []any{"null", map[string]string{"logicalType": "time-millis", "type": "int"}},
+		"DATETIME":   []any{"null", map[string]string{"logicalType": "timestamp-millis", "type": "long"}},
+		"NUMERIC":    []any{"null", map[string]string{"type": "double", "sqlType": "NUMERIC"}},
+		"GEOGRAPHY":  []any{"null", map[string]string{"type": "string", "sqlType": "GEOGRAPHY"}},
+		"BIGNUMERIC": []any{"null", map[string]string{"type": "long", "sqlType": "BIGNUMERIC"}},
+		"INTERVAL":   []any{"null", map[string]string{"type": "int", "sqlType": "INTERVAL"}},
+		"JSON":       []any{"null", map[string]string{"type": "string", "sqlType": "JSON"}},
+		"RANGE":      []any{"null", map[string]string{"type": "string", "sqlType": "RANGE"}},
+	}
 )
 
 func init() {
 	bigqueryTypeMapping = make(map[types2.DataType]string, len(bigqueryTypes))
 	bigqueryReverseTypeMapping = make(map[string]types2.DataType, len(bigqueryTypes)+3)
-	for dataType, postgresTypes := range bigqueryTypes {
-		for i, postgresType := range postgresTypes {
+	for dataType, bqTypes := range bigqueryTypes {
+		for i, bqType := range bqTypes {
 			if i == 0 {
-				bigqueryTypeMapping[dataType] = postgresType
+				bigqueryTypeMapping[dataType] = bqType
 			}
 			if dataType != types2.UNKNOWN {
-				bigqueryReverseTypeMapping[postgresType] = dataType
+				bigqueryReverseTypeMapping[bqType] = dataType
 			}
 		}
 	}
@@ -148,15 +173,15 @@ func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, str
 }
 
 func (bq *BigQuery) GetBatchFileFormat() types2.FileFormat {
-	return types2.FileFormatNDJSON
+	return types2.FileFormatAVRO
 }
 
 func (bq *BigQuery) GetBatchFileCompression() types2.FileCompression {
-	return types2.FileCompressionGZIP
+	return types2.FileCompressionNONE
 }
 
 func (bq *BigQuery) StringifyObjects() bool {
-	return false
+	return true
 }
 
 func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
@@ -613,14 +638,20 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	source := bigquery.NewReaderSource(file)
 	source.Schema = meta.Schema
 
-	if loadSource.Format == types2.FileFormatCSV {
+	switch loadSource.Format {
+	case types2.FileFormatCSV:
 		source.SourceFormat = bigquery.CSV
 		source.SkipLeadingRows = 1
 		source.AllowQuotedNewlines = true
 		source.PreserveASCIIControlCharacters = true
 		source.CSVOptions.NullMarker = "\\N"
-	} else if loadSource.Format == types2.FileFormatNDJSON {
+	case types2.FileFormatNDJSON:
 		source.SourceFormat = bigquery.JSON
+	case types2.FileFormatAVRO:
+		source.SourceFormat = bigquery.Avro
+		source.AvroOptions = &bigquery.AvroOptions{
+			UseAvroLogicalTypes: true,
+		}
 	}
 	loader := bq.client.Dataset(bq.config.Dataset).Table(tableName).LoaderFrom(source)
 	loader.CreateDisposition = bigquery.CreateIfNeeded
@@ -1006,6 +1037,37 @@ func (bq *BigQuery) GetSQLType(dataType types2.DataType) (string, bool) {
 func (bq *BigQuery) GetDataType(sqlType string) (types2.DataType, bool) {
 	v, ok := bigqueryReverseTypeMapping[sqlType]
 	return v, ok
+}
+
+func (bq *BigQuery) GetAvroType(sqlType string) (any, bool) {
+	v, ok := bigqueryAvroTypes[strings.ToUpper(sqlType)]
+	return v, ok
+}
+
+func (bq *BigQuery) GetAvroSchema(table *Table) types2.AvroSchema {
+	schema := types2.AvroSchema{
+		Type: "record",
+		Name: "jitsu",
+	}
+	fields := make([]types2.AvroType, 0, len(table.Columns))
+	dataTypes := make(map[string]types2.DataType, len(table.Columns))
+	sortedColumnNames := table.SortedColumnNames()
+	for _, name := range sortedColumnNames {
+		col := table.Columns[name]
+		dataTypes[name] = col.DataType
+		if col.Override && col.Type != "" {
+			avroType, ok := bq.GetAvroType(col.Type)
+			if !ok {
+				avroType = []any{"null", map[string]string{"type": "string", "sqlType": col.Type}}
+			}
+			fields = append(fields, types2.AvroType{Name: name, Type: avroType, Default: nil})
+		} else {
+			fields = append(fields, types2.AvroType{Name: name, Type: col.DataType.AvroType(), Default: nil})
+		}
+	}
+	schema.DataTypes = dataTypes
+	schema.Fields = fields
+	return schema
 }
 
 func (bq *BigQuery) TableHelper() *TableHelper {

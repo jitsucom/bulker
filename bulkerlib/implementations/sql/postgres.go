@@ -67,7 +67,7 @@ var (
 	pgBulkMergeQueryTemplate, _ = template.New("postgresBulkMergeQuery").Parse(pgBulkMergeQuery)
 
 	postgresDataTypes = map[types2.DataType][]string{
-		types2.STRING:    {"text", "uuid"},
+		types2.STRING:    {"text", "varchar", "uuid"},
 		types2.INT64:     {"bigint"},
 		types2.FLOAT64:   {"double precision"},
 		types2.TIMESTAMP: {"timestamp with time zone", "timestamp", "timestamp without time zone"},

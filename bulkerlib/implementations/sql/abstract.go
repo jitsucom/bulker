@@ -147,7 +147,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 		if !existingCol.New {
 			//column exists in database - check if its DataType is castable to DataType of existing column
 			if types.IsConvertible(newCol.DataType, existingCol.DataType) {
-				newVal, err := types.Convert(existingCol.DataType, values[name])
+				newVal, _, err := types.Convert(existingCol.DataType, values[name])
 				if err != nil {
 					//logging.Warnf("Can't convert '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), err)
 					unmappedObj[name] = values[name]

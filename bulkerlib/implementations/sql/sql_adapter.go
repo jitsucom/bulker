@@ -24,8 +24,9 @@ type SQLAdapter interface {
 
 	//GetSQLType return mapping from generic bulker type to SQL type specific for this database
 	GetSQLType(dataType types2.DataType) (string, bool)
-	//GetDataType return mapping from sql type to generic bulker type
 	GetDataType(sqlType string) (types2.DataType, bool)
+	GetAvroType(sqlType string) (any, bool)
+	GetAvroSchema(table *Table) types2.AvroSchema
 	GetBatchFileFormat() types2.FileFormat
 	GetBatchFileCompression() types2.FileCompression
 	StringifyObjects() bool
@@ -99,6 +100,14 @@ func (tx *TxSQLAdapter) GetSQLType(dataType types2.DataType) (string, bool) {
 
 func (tx *TxSQLAdapter) GetDataType(sqlType string) (types2.DataType, bool) {
 	return tx.sqlAdapter.GetDataType(sqlType)
+}
+
+func (tx *TxSQLAdapter) GetAvroType(sqlType string) (any, bool) {
+	return tx.sqlAdapter.GetAvroType(sqlType)
+}
+
+func (tx *TxSQLAdapter) GetAvroSchema(table *Table) types2.AvroSchema {
+	return tx.sqlAdapter.GetAvroSchema(table)
 }
 
 func (tx *TxSQLAdapter) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {

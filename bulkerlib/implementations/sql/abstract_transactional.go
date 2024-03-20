@@ -124,7 +124,6 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 	if err != nil {
 		return nil, errorj.Decorate(err, "failed to create table")
 	}
-	columns := table.SortedColumnNames()
 	defer func() {
 		if ps.merge {
 			ps.batchFileLinesByPK = make(map[string]int)
@@ -158,7 +157,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				_ = os.Remove(workingFile.Name())
 			}()
 			if needToConvert {
-				err = ps.targetMarshaller.Init(workingFile, columns)
+				err = ps.targetMarshaller.InitSchema(workingFile, table.SortedColumnNames(), ps.sqlAdapter.GetAvroSchema(table))
 				if err != nil {
 					return nil, errorj.Decorate(err, "failed to write header for converted batch file")
 				}
@@ -174,13 +173,18 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				if !ps.batchFileSkipLines.Contains(i) {
 					if needToConvert {
 						dec := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
-						dec.UseNumber()
+						if ps.targetMarshaller.Format() != types.FileFormatAVRO {
+							dec.UseNumber()
+						}
 						obj := make(map[string]any)
 						err = dec.Decode(&obj)
 						if err != nil {
 							return nil, errorj.Decorate(err, "failed to decode json object from batch filer")
 						}
-						ps.targetMarshaller.Marshal(obj)
+						err = ps.targetMarshaller.Marshal(obj)
+						if err != nil {
+							return nil, errorj.Decorate(err, "failed to marshal object to converted batch file")
+						}
 					} else {
 						_, err = workingFile.Write(scanner.Bytes())
 						if err != nil {
@@ -269,7 +273,10 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, targetTable *Table, processedObject types.Object) error {
 	ps.adjustTables(ctx, targetTable, processedObject)
 	ps.updateRepresentationTable(ps.tmpTable)
-	ps.marshaller.Init(ps.batchFile, targetTable.SortedColumnNames())
+	err := ps.marshaller.InitSchema(ps.batchFile, targetTable.SortedColumnNames(), ps.sqlAdapter.GetAvroSchema(targetTable))
+	if err != nil {
+		return err
+	}
 	if ps.merge {
 		pk, err := ps.getPKValue(processedObject)
 		if err != nil {
@@ -285,7 +292,7 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 		}
 		ps.batchFileLinesByPK[pk] = lineNumber
 	}
-	err := ps.marshaller.Marshal(processedObject)
+	err = ps.marshaller.Marshal(processedObject)
 	if err != nil {
 		return errorj.Decorate(err, "failed to marshall into csv file")
 	}

@@ -90,6 +90,10 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 		}
 		suggestedSQLType, ok := field.GetSuggestedSQLType()
 		if ok {
+			dt, ok := sqlAdapter.GetDataType(suggestedSQLType.Type)
+			if ok {
+				suggestedSQLType.DataType = dt
+			}
 			table.Columns[colName] = suggestedSQLType
 			continue
 		}

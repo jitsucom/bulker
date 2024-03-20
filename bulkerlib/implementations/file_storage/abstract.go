@@ -194,7 +194,10 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 						if err != nil {
 							return errorj.Decorate(err, "failed to decode json object from batch filer")
 						}
-						ps.targetMarshaller.Marshal(obj)
+						err = ps.targetMarshaller.Marshal(obj)
+						if err != nil {
+							return errorj.Decorate(err, "failed to marshall object to target format")
+						}
 					} else {
 						_, err = workingFile.Write(scanner.Bytes())
 						if err != nil {
@@ -322,7 +325,7 @@ func (ps *AbstractFileStorageStream) Abort(ctx context.Context) (state bulker.St
 
 func (ps *AbstractFileStorageStream) getEventTime(object types2.Object) time.Time {
 	if ps.timestampColumn != "" {
-		tm, ok := types2.ReformatTimeValue(object[ps.timestampColumn]).(time.Time)
+		tm, ok := types2.ReformatTimeValue(object[ps.timestampColumn], false).(time.Time)
 		if ok {
 			return tm
 		}

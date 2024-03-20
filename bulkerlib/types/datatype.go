@@ -68,6 +68,25 @@ func (dt DataType) String() string {
 	}
 }
 
+func (dt DataType) AvroType() any {
+	switch dt {
+	case INT64:
+		return []any{"null", "long"}
+	case FLOAT64:
+		return []any{"null", "double"}
+	case TIMESTAMP:
+		return []any{"null", map[string]string{"logicalType": "timestamp-millis", "type": "long"}}
+	case BOOL:
+		return []any{"null", "boolean"}
+	case JSON:
+		return []any{"null", map[string]string{"type": "string", "sqlType": "json"}}
+	case UNKNOWN:
+		return []any{"null", "string"}
+	default:
+		return []any{"null", "string"}
+	}
+}
+
 // TypeFromString returns DataType from input string
 // or error if mapping doesn't exist
 func TypeFromString(t string) (DataType, error) {
@@ -99,7 +118,7 @@ func StringFromType(dataType DataType) (string, error) {
 // if have -> return float64 otherwise int64
 func ReformatValue(v any) any {
 	v = ReformatNumberValue(v)
-	return ReformatTimeValue(v)
+	return ReformatTimeValue(v, false)
 }
 
 // ReformatNumberValue process json.Number types into int64 or float64
@@ -133,14 +152,14 @@ func ReformatNumberValue(v any) any {
 }
 
 // ReformatTimeValue processes string with ISO DateTime or Golang layout into time.Time
-func ReformatTimeValue(value any) any {
+func ReformatTimeValue(value any, supportDates bool) any {
 	stringValue, ok := value.(string)
 	if !ok {
 		return value
 	}
 
 	l := len(stringValue)
-	if l < len("2006-01-02T15:04:05") || l > len(time.RFC3339Nano) {
+	if l < len("2006-01-02") || l > len(time.RFC3339Nano) {
 		//strings shorter than shortest of layouts or longer then longest of layouts are obviously not dates
 		return value
 	}
@@ -157,6 +176,11 @@ func ReformatTimeValue(value any) any {
 
 	if l == len(timestamp.GolangLayout) {
 		timeValue, err = time.Parse(timestamp.GolangLayout, stringValue)
+		if err == nil {
+			return timeValue
+		}
+	} else if supportDates && l == len(timestamp.DashDayLayout) {
+		timeValue, err = time.Parse(timestamp.DashDayLayout, stringValue)
 		if err == nil {
 			return timeValue
 		}

@@ -723,6 +723,15 @@ func (b *SQLAdapterBase[T]) GetDataType(sqlType string) (types2.DataType, bool) 
 	return v, ok
 }
 
+func (b *SQLAdapterBase[T]) GetAvroType(sqlType string) (any, bool) {
+	return "", false
+}
+
+func (b *SQLAdapterBase[T]) GetAvroSchema(table *Table) types2.AvroSchema {
+	// not really an avro schema in a base driver
+	return types2.AvroSchema{}
+}
+
 func match(target, pattern string) bool {
 	suff := pattern[0] == '%'
 	pref := pattern[len(pattern)-1] == '%'

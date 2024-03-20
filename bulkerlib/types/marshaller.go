@@ -3,7 +3,9 @@ package types
 import (
 	"compress/gzip"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
+	"github.com/hamba/avro/v2/ocf"
 	jsoniter "github.com/json-iterator/go"
 	"io"
 )
@@ -12,6 +14,7 @@ const quotaByteValue = 34
 
 type Marshaller interface {
 	Init(writer io.Writer, header []string) error
+	InitSchema(writer io.Writer, columns []string, table AvroSchema) error
 	Marshal(...Object) error
 	Flush() error
 	NeedHeader() bool
@@ -36,6 +39,8 @@ func NewMarshaller(format FileFormat, compression FileCompression) (Marshaller, 
 		return &CSVMarshaller{AbstractMarshaller: AbstractMarshaller{format: format, compression: compression}}, nil
 	case FileFormatNDJSON, FileFormatNDJSONFLAT:
 		return &JSONMarshaller{AbstractMarshaller: AbstractMarshaller{format: format, compression: compression}}, nil
+	case FileFormatAVRO:
+		return &AvroMarshaller{AbstractMarshaller: AbstractMarshaller{format: format, compression: compression}}, nil
 	default:
 		return nil, fmt.Errorf("Unknown file format: %s", format)
 	}
@@ -55,6 +60,10 @@ func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
 		}
 	}
 	return nil
+}
+
+func (jm *JSONMarshaller) InitSchema(writer io.Writer, columns []string, table AvroSchema) error {
+	return jm.Init(writer, nil)
 }
 
 // Marshal object as json
@@ -128,6 +137,10 @@ func (cm *CSVMarshaller) Init(writer io.Writer, header []string) error {
 		}
 	}
 	return nil
+}
+
+func (cm *CSVMarshaller) InitSchema(writer io.Writer, columns []string, table AvroSchema) error {
+	return cm.Init(writer, columns)
 }
 
 // Marshal marshals input object as csv values string with delimiter
@@ -211,6 +224,7 @@ type FileFormat string
 
 const (
 	FileFormatCSV        FileFormat = "csv"
+	FileFormatAVRO       FileFormat = "avro"
 	FileFormatNDJSON     FileFormat = "ndjson"
 	FileFormatNDJSONFLAT FileFormat = "ndjson_flat"
 )
@@ -222,3 +236,65 @@ const (
 	FileCompressionNONE    FileCompression = "none"
 	FileCompressionUNKNOWN FileCompression = ""
 )
+
+type AvroMarshaller struct {
+	AbstractMarshaller
+	schema  AvroSchema
+	encoder *ocf.Encoder
+}
+
+func (a *AvroMarshaller) Init(writer io.Writer, header []string) error {
+	return fmt.Errorf("Avro marshaller doesn't support Init methodut table w/o schema")
+}
+
+func (a *AvroMarshaller) InitSchema(writer io.Writer, columns []string, table AvroSchema) error {
+	avroSchemaStr, _ := json.Marshal(table)
+	//fmt.Println("Avro schema: ", string(avroSchemaStr))
+	enc, err := ocf.NewEncoder(string(avroSchemaStr), writer, ocf.WithCodec(ocf.Snappy))
+	if err != nil {
+		return err
+	}
+	a.schema = table
+	a.encoder = enc
+
+	return nil
+}
+
+// Marshal marshals input object as csv values string with delimiter
+func (a *AvroMarshaller) Marshal(object ...Object) error {
+	for _, obj := range object {
+		for k, v := range obj {
+			dt := a.schema.DataTypes[k]
+			//fmt.Println("Avro marshaller: ", k, v, dt)
+			cv, ok, _ := Convert(dt, v)
+			if ok {
+				obj[k] = cv
+			}
+		}
+		err := a.encoder.Encode(obj)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *AvroMarshaller) NeedHeader() bool {
+	return true
+}
+
+func (a *AvroMarshaller) Format() FileFormat {
+	return a.format
+}
+
+func (a *AvroMarshaller) Compression() FileCompression {
+	return FileCompressionNONE
+}
+
+func (a *AvroMarshaller) Flush() error {
+	return a.encoder.Close()
+}
+
+func (a *AvroMarshaller) FileExtension() string {
+	return ".avro"
+}
