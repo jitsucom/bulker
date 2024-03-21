@@ -38,6 +38,7 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 }
 
 func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error) {
+	bc.Infof("Processing batch #%d", batchNum)
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 	startTime := time.Now()
 	var bulkerStream bulker.BulkerStream

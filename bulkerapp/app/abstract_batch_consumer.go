@@ -264,6 +264,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.Debugf("Consumer should not consume. offsets: %d-%d", lowOffset, highOffset)
 		return BatchCounters{}, nil
 	}
+	bc.Infof("Starting consuming messages from topic. Messages in topic: ~%d. ", highOffset-lowOffset)
 	batchNumber := 1
 	for {
 		if bc.retired.Load() {

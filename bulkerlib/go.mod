@@ -1,6 +1,6 @@
 module github.com/jitsucom/bulker/bulkerlib
 
-go 1.21
+go 1.22
 
 require (
 	cloud.google.com/go v0.112.0

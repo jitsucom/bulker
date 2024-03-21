@@ -107,6 +107,8 @@ func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err 
 			_ = ps.tx.Rollback()
 		}
 	} else {
+		sec := time.Since(ps.startTime).Seconds()
+		logging.Infof("[%s] Stream completed successfully in %.2f s. Avg Speed: %.2f events/sec.", ps.id, sec, float64(ps.state.SuccessfulRows)/sec)
 		if ps.tx != nil {
 			if ps.tmpTable != nil {
 				_ = ps.tx.Drop(ctx, ps.tmpTable, true)
@@ -140,6 +142,13 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		err = ps.batchFile.Sync()
 		if err != nil {
 			return nil, errorj.Decorate(err, "failed to sync batch file")
+		}
+		stat, _ := ps.batchFile.Stat()
+		var batchSizeMb float64
+		if stat != nil {
+			batchSizeMb = float64(stat.Size()) / 1024 / 1024
+			sec := time.Since(ps.startTime).Seconds()
+			logging.Infof("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
 		}
 		workingFile := ps.batchFile
 		needToConvert := false
@@ -202,7 +211,12 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			workingFile.Sync()
 		}
 		if needToConvert {
-			logging.Infof("[%s] Converted batch file from %s(%s) to %s(%s) in %s", ps.id, ps.marshaller.Format(), ps.marshaller.Compression(), ps.targetMarshaller.Format(), ps.targetMarshaller.Compression(), time.Now().Sub(convertStart))
+			stat, _ = workingFile.Stat()
+			var convertedSizeMb float64
+			if stat != nil {
+				convertedSizeMb = float64(stat.Size()) / 1024 / 1024
+			}
+			logging.Infof("[%s] Converted batch file from %s (%.2f mb) to %s (%.2f mb) in %.2f s.", ps.id, ps.marshaller.FileExtension(), batchSizeMb, ps.targetMarshaller.FileExtension(), convertedSizeMb, time.Since(convertStart).Seconds())
 		}
 		if ps.s3 != nil {
 			s3Config := s3BatchFileOption.Get(&ps.options)

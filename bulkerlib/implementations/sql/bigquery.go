@@ -1082,6 +1082,7 @@ func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription
 	defer func() {
 		bq.logQuery(jobDescription, runner, err)
 	}()
+	startTime := time.Now()
 	state = &bulker.WarehouseState{}
 	var status *bigquery.JobStatus
 	var jobID string
@@ -1109,7 +1110,7 @@ func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription
 		}
 		return job, state, fmt.Errorf("Failed to %s.%s Completed with error: %v%s", jobDescription, jobID, err, bytesProcessed)
 	} else {
-		bq.Infof("Successfully %s.%s%s", jobDescription, jobID, bytesProcessed)
+		bq.Infof("Successfully %s.%s%s in %.2f s.", jobDescription, jobID, bytesProcessed, time.Since(startTime).Seconds())
 		return job, state, nil
 	}
 }

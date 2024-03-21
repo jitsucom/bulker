@@ -45,6 +45,8 @@ type AbstractFileStorageStream struct {
 
 	state  bulker.State
 	inited bool
+
+	startTime time.Time
 }
 
 func newAbstractFileStorageStream(id string, p implementations2.FileAdapter, filenameFunc func(ctx context.Context) string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractFileStorageStream, error) {
@@ -66,6 +68,7 @@ func newAbstractFileStorageStream(id string, p implementations2.FileAdapter, fil
 	}
 	ps.csvHeader = utils.NewSet[string]()
 	ps.state = bulker.State{Status: bulker.Active}
+	ps.startTime = time.Now()
 	return ps, nil
 }
 
@@ -130,6 +133,8 @@ func (ps *AbstractFileStorageStream) postComplete(err error) (bulker.State, erro
 		ps.state.SetError(err)
 		ps.state.Status = bulker.Failed
 	} else {
+		sec := time.Since(ps.startTime).Seconds()
+		logging.Infof("[%s] Stream completed successfully in %.2f s. Avg Speed: %.2f events/sec.", ps.id, sec, float64(ps.state.SuccessfulRows)/sec)
 		ps.state.Status = bulker.Completed
 	}
 	return ps.state, err
@@ -153,6 +158,13 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 		err = ps.batchFile.Sync()
 		if err != nil {
 			return errorj.Decorate(err, "failed to sync batch file")
+		}
+		stat, _ := ps.batchFile.Stat()
+		var batchSizeMb float64
+		if stat != nil {
+			batchSizeMb = float64(stat.Size()) / 1024 / 1024
+			sec := time.Since(ps.startTime).Seconds()
+			logging.Infof("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
 		}
 		workingFile := ps.batchFile
 		needToConvert := false
@@ -215,7 +227,12 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 			workingFile.Sync()
 		}
 		if needToConvert {
-			logging.Infof("[%s] Converted batch file from %s to %s in %s", ps.id, ps.marshaller.Format(), ps.targetMarshaller.Format(), time.Now().Sub(convertStart))
+			stat, _ = workingFile.Stat()
+			var convertedSizeMb float64
+			if stat != nil {
+				convertedSizeMb = float64(stat.Size()) / 1024 / 1024
+			}
+			logging.Infof("[%s] Converted batch file from %s (%.2f mb) to %s (%.2f mb) in %.2f s.", ps.id, ps.marshaller.FileExtension(), batchSizeMb, ps.targetMarshaller.FileExtension(), convertedSizeMb, time.Since(convertStart).Seconds())
 		}
 		//create file reader for workingFile
 		_, err = workingFile.Seek(0, 0)

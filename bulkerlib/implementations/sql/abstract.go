@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
+	"time"
 )
 
 // TODO: check whether COPY is transactional ?
@@ -31,6 +32,8 @@ type AbstractSQLStream struct {
 	customTypes     types.SQLTypes
 	pkColumns       []string
 	timestampColumn string
+
+	startTime time.Time
 }
 
 func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (*AbstractSQLStream, error) {
@@ -56,6 +59,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	//TODO: max column?
 	ps.state = bulker.State{Status: bulker.Active}
 	ps.customTypes = customFields
+	ps.startTime = time.Now()
 	return &ps, nil
 }
 

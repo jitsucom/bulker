@@ -1,6 +1,6 @@
 module github.com/jitsucom/bulker/bulkerapp
 
-go 1.21
+go 1.22
 
 require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0

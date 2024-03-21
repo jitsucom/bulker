@@ -1,6 +1,6 @@
 module github.com/jitsucom/bulker/sync-controller
 
-go 1.21
+go 1.22
 
 require (
 	github.com/gin-gonic/gin v1.9.1

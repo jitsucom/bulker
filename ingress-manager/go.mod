@@ -1,6 +1,6 @@
 module github.com/jitsucom/bulker/ingress-manager
 
-go 1.21
+go 1.22
 
 require (
 	cloud.google.com/go/certificatemanager v1.7.5
