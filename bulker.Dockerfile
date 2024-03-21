@@ -5,7 +5,7 @@ RUN apt-get install -y ca-certificates curl
 
 ENV TZ=UTC
 
-FROM golang:1.21.5-bullseye as build
+FROM golang:1.22.1-bullseye as build
 
 ARG VERSION
 ENV VERSION $VERSION
