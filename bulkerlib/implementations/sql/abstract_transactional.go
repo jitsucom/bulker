@@ -218,6 +218,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			}
 			logging.Infof("[%s] Converted batch file from %s (%.2f mb) to %s (%.2f mb) in %.2f s.", ps.id, ps.marshaller.FileExtension(), batchSizeMb, ps.targetMarshaller.FileExtension(), convertedSizeMb, time.Since(convertStart).Seconds())
 		}
+		loadTime := time.Now()
 		if ps.s3 != nil {
 			s3Config := s3BatchFileOption.Get(&ps.options)
 			rFile, err := os.Open(workingFile.Name())
@@ -233,14 +234,20 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				return nil, errorj.Decorate(err, "failed to upload file to s3")
 			}
 			defer ps.s3.DeleteObject(s3FileName)
+			logging.Infof("[%s] Batch file uploaded to s3 in %.2f s.", ps.id, time.Since(loadTime).Seconds())
+			loadTime = time.Now()
 			state, err = ps.tx.LoadTable(ctx, table, &LoadSource{Type: AmazonS3, Path: s3FileName, Format: ps.sqlAdapter.GetBatchFileFormat(), S3Config: s3Config})
 			if err != nil {
 				return state, errorj.Decorate(err, "failed to flush tmp file to the warehouse")
+			} else {
+				logging.Infof("[%s] Batch file loaded to %s in %.2f s.", ps.id, ps.sqlAdapter.Type(), time.Since(loadTime).Seconds())
 			}
 		} else {
 			state, err = ps.tx.LoadTable(ctx, table, &LoadSource{Type: LocalFile, Path: workingFile.Name(), Format: ps.sqlAdapter.GetBatchFileFormat()})
 			if err != nil {
 				return state, errorj.Decorate(err, "failed to flush tmp file to the warehouse")
+			} else {
+				logging.Infof("[%s] Batch file loaded to %s in %.2f s.", ps.id, ps.sqlAdapter.Type(), time.Since(loadTime).Seconds())
 			}
 		}
 	}

@@ -55,3 +55,7 @@ func (gcs *GCSBulker) CreateStream(id, tableName string, mode bulker.BulkMode, s
 	}
 	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
 }
+
+func (gcs *GCSBulker) Type() string {
+	return GCSBulkerTypeId
+}

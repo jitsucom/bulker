@@ -81,7 +81,9 @@ func (jm *JSONMarshaller) Marshal(object ...Object) error {
 			return err
 		}
 		_, err = jm.writer.Write([]byte("\n"))
-		return err
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

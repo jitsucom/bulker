@@ -244,9 +244,12 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 		ps.state.Representation = map[string]string{
 			"name": ps.fileAdapter.Path(fileName),
 		}
+		loadTime := time.Now()
 		err = ps.fileAdapter.Upload(fileName, workingFile)
 		if err != nil {
 			return errorj.Decorate(err, "failed to flush tmp file to the warehouse")
+		} else {
+			logging.Infof("[%s] Batch file loaded to %s in %.2f s.", ps.id, ps.fileAdapter.Type(), time.Since(loadTime).Seconds())
 		}
 	}
 	return nil

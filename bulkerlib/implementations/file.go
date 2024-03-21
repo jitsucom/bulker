@@ -19,6 +19,7 @@ var folderMacro = map[string]func() string{
 
 type FileAdapter interface {
 	io.Closer
+	Type() string
 	UploadBytes(fileName string, fileBytes []byte) error
 	Upload(fileName string, fileReader io.ReadSeeker) error
 	Download(fileName string) ([]byte, error)

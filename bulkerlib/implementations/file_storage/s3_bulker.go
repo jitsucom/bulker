@@ -44,3 +44,7 @@ func (s3 *S3Bulker) CreateStream(id, tableName string, mode bulker.BulkMode, str
 	}
 	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
 }
+
+func (s3 *S3Bulker) Type() string {
+	return S3BulkerTypeId
+}
