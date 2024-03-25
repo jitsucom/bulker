@@ -281,6 +281,8 @@ func (r *Router) getDataLocator(c *gin.Context, ingestType IngestType, writeKeyE
 		if err != nil {
 			return cred, fmt.Errorf("failed to decode writeKey from Authorization header as base64: %v", err)
 		}
+		//remove trailing :
+		wkDecoded = bytes.TrimSuffix(wkDecoded, []byte(":"))
 		cred.WriteKey = string(wkDecoded)
 	} else if c.GetHeader("X-Write-Key") != "" {
 		cred.WriteKey = c.GetHeader("X-Write-Key")
@@ -386,7 +388,7 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 	return &SyncDestinationsResponse{Destinations: data, OK: true}
 }
 
-func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event *AnalyticsServerEvent, analyticContext map[string]any, tp string, loc StreamCredentials) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
+func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event *AnalyticsServerEvent, analyticContext map[string]any, tp string, loc StreamCredentials, stream *StreamWithDestinations) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
 	err = patchEvent(c, messageId, event, tp, loc.IngestType, analyticContext)
 	headers := utils.MapMap(utils.MapFilter(c.Request.Header, func(k string, v []string) bool {
 		return len(v) > 0 && !isInternalHeader(k)
@@ -404,9 +406,10 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event *Ana
 		WriteKey:       maskWriteKey(loc.WriteKey),
 		Type:           utils.NvlString(bodyType, tp),
 		Origin: IngestMessageOrigin{
-			BaseURL: fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host),
-			Slug:    loc.Slug,
-			Domain:  loc.Domain,
+			BaseURL:  fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host),
+			Slug:     loc.Slug,
+			SourceId: stream.Stream.Id,
+			Domain:   loc.Domain,
 		},
 		HttpHeaders: headers,
 		HttpPayload: event,
@@ -442,9 +445,10 @@ func (r *Router) checkHash(hash string, secret string) bool {
 }
 
 type IngestMessageOrigin struct {
-	BaseURL string `json:"baseUrl,omitempty"`
-	Slug    string `json:"slug,omitempty"`
-	Domain  string `json:"domain,omitempty"`
+	BaseURL  string `json:"baseUrl,omitempty"`
+	Slug     string `json:"slug,omitempty"`
+	SourceId string `json:"sourceId,omitempty"`
+	Domain   string `json:"domain,omitempty"`
 }
 
 type IngestMessage struct {

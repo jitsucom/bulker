@@ -100,7 +100,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	eventsLogId = stream.Stream.Id
-	ingestMessage, ingestMessageBytes, err := r.buildIngestMessage(c, messageId, &message, nil, tp, loc)
+	ingestMessage, ingestMessageBytes, err := r.buildIngestMessage(c, messageId, &message, nil, tp, loc, stream)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusOK, "event error", false, err, true)
 		return
