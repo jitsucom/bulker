@@ -111,7 +111,10 @@ func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err 
 		logging.Infof("[%s] Stream completed successfully in %.2f s. Avg Speed: %.2f events/sec.", ps.id, sec, float64(ps.state.SuccessfulRows)/sec)
 		if ps.tx != nil {
 			if ps.tmpTable != nil {
-				_ = ps.tx.Drop(ctx, ps.tmpTable, true)
+				err = ps.tx.Drop(ctx, ps.tmpTable, true)
+				if err != nil {
+					logging.Errorf("[%s] Failed to drop tmp table: %v", ps.id, err)
+				}
 			}
 			err = ps.tx.Commit()
 		}

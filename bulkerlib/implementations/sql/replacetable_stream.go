@@ -8,6 +8,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/joomcode/errorx"
 	"time"
@@ -66,6 +67,9 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 				ps.state.Representation = r
 			}
 			err1 := ps.tx.ReplaceTable(ctx, ps.tableName, ps.tmpTable, true)
+			if err1 != nil {
+				logging.Errorf("[%s] Error replacing table: %v", ps.id, err1)
+			}
 			if errorx.IsOfType(err1, errorj.DropError) {
 				err = ps.tx.ReplaceTable(ctx, ps.tableName, ps.tmpTable, false)
 				if err != nil {
