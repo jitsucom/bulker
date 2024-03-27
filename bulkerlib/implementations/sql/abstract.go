@@ -206,6 +206,60 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 	return columnsAdded
 }
 
+func (ps *AbstractSQLStream) adjustTableToSchema(currentTable, existingTable, schemaTable *Table) bool {
+	columnsAdded := false
+	current := currentTable.Columns.Clone()
+	for name, newCol := range schemaTable.Columns {
+		var existingCol types.SQLColumn
+		ok := false
+		if existingTable != nil {
+			existingCol, ok = existingTable.Columns[name]
+		}
+		if !ok {
+			existingCol, ok = current[name]
+			if !ok {
+				//column not exist in database - adding as New
+				newCol.New = true
+				current[name] = newCol
+				columnsAdded = true
+				continue
+			}
+		} else {
+			current[name] = existingCol
+		}
+		if existingCol.DataType == newCol.DataType {
+			continue
+		}
+		if newCol.Override {
+			//if column sql type is overridden by user - leave it this way
+			current[name] = newCol
+			continue
+		}
+		// when we have uncommitted tables schemas in both sides
+		if existingCol.New {
+			// source schema may have STRING type e.g. for File source date columns for what we usually treat as TIMESTAMP
+			if existingCol.DataType == types.TIMESTAMP && newCol.DataType == types.STRING {
+				// keep TIMESTAMP type in such case
+				continue
+			}
+			common := types.GetCommonAncestorType(existingCol.DataType, newCol.DataType)
+			if common != existingCol.DataType {
+				//logging.Warnf("Changed '%s' type from %s to %s because of %s", name, existingCol.DataType.String(), common.String(), newCol.DataType.String())
+				sqlType, ok := ps.sqlAdapter.GetSQLType(common)
+				if ok {
+					existingCol.DataType = common
+					existingCol.Type = sqlType
+					current[name] = existingCol
+				} else {
+					logging.SystemErrorf("Unknown column type %s mapping for %s", common, ps.sqlAdapter.Type())
+				}
+			}
+		}
+	}
+	currentTable.Columns = current
+	return columnsAdded
+}
+
 func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 	if ps.state.Representation == nil ||
 		ps.state.Representation.(RepresentationTable).Name != table.Name ||
