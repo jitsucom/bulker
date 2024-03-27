@@ -156,22 +156,25 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 		}
 		if !existingCol.New {
 			//column exists in database - check if its DataType is castable to DataType of existing column
-			if types.IsConvertible(newCol.DataType, existingCol.DataType) {
-				newVal, _, err := types.Convert(existingCol.DataType, values[name])
-				if err != nil {
-					//logging.Warnf("Can't convert '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), err)
-					unmappedObj[name] = values[name]
+			v, ok := values[name]
+			if ok && v != nil {
+				if types.IsConvertible(newCol.DataType, existingCol.DataType) {
+					newVal, _, err := types.Convert(existingCol.DataType, v)
+					if err != nil {
+						//logging.Warnf("Can't convert '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), err)
+						unmappedObj[name] = v
+						delete(values, name)
+						continue
+					} else {
+						//logging.Infof("Converted '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), newVal)
+						values[name] = newVal
+					}
+				} else {
+					//logging.Warnf("Can't convert '%s' value '%v' from %s to %s", name, values[name], newCol.DataType.String(), existingCol.DataType.String())
+					unmappedObj[name] = v
 					delete(values, name)
 					continue
-				} else {
-					//logging.Infof("Converted '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), newVal)
-					values[name] = newVal
 				}
-			} else {
-				//logging.Warnf("Can't convert '%s' value '%v' from %s to %s", name, values[name], newCol.DataType.String(), existingCol.DataType.String())
-				unmappedObj[name] = values[name]
-				delete(values, name)
-				continue
 			}
 		} else {
 			common := types.GetCommonAncestorType(existingCol.DataType, newCol.DataType)

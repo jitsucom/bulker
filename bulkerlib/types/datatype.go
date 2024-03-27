@@ -207,6 +207,8 @@ func TypeFromValue(v any) (DataType, error) {
 		return TIMESTAMP, nil
 	case bool:
 		return BOOL, nil
+	case nil:
+		return UNKNOWN, fmt.Errorf("Unknown DataType for value: %v type: %t", v, v)
 	default:
 		t := reflect.TypeOf(v).Kind()
 		if t == reflect.Map || t == reflect.Slice || t == reflect.Array {
