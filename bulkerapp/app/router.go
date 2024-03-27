@@ -202,6 +202,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 		if !schema.IsEmpty() {
 			streamOptions = append(streamOptions, bulker.WithSchema(schema))
 		}
+		r.Infof("Schema for %s: %+v\njson:%s", jobId, schema, schemaHeader)
 	}
 	//streamOptions = append(streamOptions, sql.WithoutOmitNils())
 	destination.InitBulkerInstance()
