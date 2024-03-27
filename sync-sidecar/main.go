@@ -1,16 +1,15 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -145,25 +144,19 @@ func (s *AbstractSideCar) sendLog(logger, level string, message string) error {
 	return db.InsertTaskLog(s.dbpool, uuid.New().String(), level, logger, message, s.syncId, s.taskId, time.Now())
 }
 
-func (s *AbstractSideCar) bulkerEvent(connection, tableName string, payload any) error {
-	v, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("error marshalling event payload %v for %s: %v", payload, tableName, err)
-	}
-	body := bytes.NewReader(v)
-	_, err = s.bulkerRequest(fmt.Sprintf("%s/post/%s?tableName=%s", s.bulkerURL, connection, url.QueryEscape(tableName)), body)
-	if err != nil {
-		return fmt.Errorf("error sending event to %s: %v", tableName, err)
-	}
-	return nil
-}
-
-func (s *AbstractSideCar) bulkerRequest(url string, payload io.Reader) ([]byte, error) {
+func (s *AbstractSideCar) bulkerRequest(url string, payload io.Reader, schema types.Schema) ([]byte, error) {
 	req, err := http.NewRequest("POST", url, payload)
 	if err != nil {
 		return nil, fmt.Errorf("error creating POST %s request: %v", url, err)
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.bulkerAuthToken))
+	if !schema.IsEmpty() {
+		schemaBytes, err := json.Marshal(schema)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling schema: %v", err)
+		}
+		req.Header.Set("X-Jitsu-Schema", string(schemaBytes))
+	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("POST %s error: %v", url, err)

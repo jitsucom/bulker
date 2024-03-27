@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha512"
+	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
@@ -158,9 +159,10 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	jobId := c.DefaultQuery("jobId", fmt.Sprintf("%s_%s_%s", destinationId, tableName, taskId))
 	bulkMode := bulker.BulkMode(c.DefaultQuery("mode", string(bulker.ReplaceTable)))
 	pkeys := c.QueryArray("pk")
-
+	schemaHeader := c.GetHeader("X-Jitsu-Schema")
 	mode := ""
 	bytesRead := 0
+	var err error
 	var rError *appbase.RouterError
 	var processedObjectSample types.Object
 	var state bulker.State
@@ -189,6 +191,17 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	var streamOptions []bulker.StreamOption
 	if len(pkeys) > 0 {
 		streamOptions = append(streamOptions, bulker.WithPrimaryKey(pkeys...), bulker.WithDeduplicate())
+	}
+	if schemaHeader != "" {
+		schema := types.Schema{}
+		err = json.Unmarshal([]byte(schemaHeader), &schema)
+		if err != nil {
+			rError = r.ResponseError(c, http.StatusBadRequest, "schema unmarshal error", false, err, true)
+			return
+		}
+		if !schema.IsEmpty() {
+			streamOptions = append(streamOptions, bulker.WithSchema(schema))
+		}
 	}
 	//streamOptions = append(streamOptions, sql.WithoutOmitNils())
 	destination.InitBulkerInstance()

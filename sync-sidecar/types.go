@@ -1,5 +1,11 @@
 package main
 
+import (
+	"fmt"
+	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/utils"
+)
+
 const (
 	LogType              = "LOG"
 	ConnectionStatusType = "CONNECTION_STATUS"
@@ -81,9 +87,79 @@ type Catalog struct {
 }
 
 type StreamMeta struct {
-	Name        string     `json:"name"`
-	Namespace   string     `json:"namespace"`
-	PrimaryKeys [][]string `json:"source_defined_primary_key"`
+	Name        string           `json:"name"`
+	Namespace   string           `json:"namespace"`
+	TableName   string           `json:"table_name,omitempty"`
+	JSONSchema  StreamJsonSchema `json:"json_schema"`
+	PrimaryKeys [][]string       `json:"source_defined_primary_key"`
+}
+
+type StreamJsonSchema struct {
+	Properties map[string]StreamSchemaProperty `json:"properties"`
+}
+
+func (s *StreamMeta) ToSchema() types.Schema {
+	fields := make([]types.SchemaField, 0, len(s.JSONSchema.Properties))
+	for name, prop := range s.JSONSchema.Properties {
+		fields = append(fields, types.SchemaField{
+			Name: name,
+			Type: prop.ToDataType(),
+		})
+	}
+	return types.Schema{
+		Name:   s.Name,
+		Fields: fields,
+	}
+}
+
+type StreamSchemaProperty struct {
+	Type        any    `json:"type"`
+	Format      string `json:"format"`
+	AirbyteType string `json:"airbyte_type"`
+	OneOf       []any  `json:"oneOf"`
+}
+
+func (ssp *StreamSchemaProperty) ToDataType() types.DataType {
+	if len(ssp.OneOf) > 0 {
+		return types.STRING
+	}
+	var tp string
+	switch v := ssp.Type.(type) {
+	case string:
+		tp = v
+	case []string:
+		a := utils.ArrayExcluding(v, "null")
+		if len(a) > 0 {
+			tp = a[0]
+		}
+	case []any:
+		a := utils.ArrayExcluding(v, "null")
+		if len(a) > 0 {
+			tp = fmt.Sprint(a[0])
+		}
+	}
+	switch tp {
+	case "string":
+		if ssp.Format == "date-time" {
+			return types.TIMESTAMP
+		}
+		return types.STRING
+	case "boolean":
+		return types.BOOL
+	case "integer":
+		return types.INT64
+	case "number":
+		if ssp.AirbyteType == "integer" {
+			return types.INT64
+		}
+		return types.FLOAT64
+	case "array":
+		return types.JSON
+	case "object":
+		return types.JSON
+	default:
+		return types.STRING
+	}
 }
 
 func (s *StreamMeta) GetPrimaryKeys() []string {

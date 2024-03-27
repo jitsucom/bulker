@@ -17,14 +17,15 @@ import (
 const unmappedDataColumn = "_unmapped_data"
 
 type AbstractSQLStream struct {
-	id          string
-	sqlAdapter  SQLAdapter
-	mode        bulker.BulkMode
-	options     bulker.StreamOptions
-	tableName   string
-	merge       bool
-	mergeWindow int
-	omitNils    bool
+	id                string
+	sqlAdapter        SQLAdapter
+	mode              bulker.BulkMode
+	options           bulker.StreamOptions
+	tableName         string
+	merge             bool
+	mergeWindow       int
+	omitNils          bool
+	schemaFromOptions *Table
 
 	state  bulker.State
 	inited bool
@@ -55,6 +56,11 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	ps.pkColumns = pkColumns.ToSlice()
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
 	ps.omitNils = OmitNilsOption.Get(&ps.options)
+
+	schema := bulker.SchemaOption.Get(&ps.options)
+	if !schema.IsEmpty() {
+		ps.schemaFromOptions = ps.sqlAdapter.TableHelper().MapSchema(ps.sqlAdapter, schema)
+	}
 
 	//TODO: max column?
 	ps.state = bulker.State{Status: bulker.Active}

@@ -117,6 +117,26 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 	}
 }
 
+// MapSchema maps types.Schema into types.Table (structure with SQL types)
+func (th *TableHelper) MapSchema(sqlAdapter SQLAdapter, schema types2.Schema) *Table {
+	table := &Table{
+		Name:    sqlAdapter.TableName(schema.Name),
+		Columns: Columns{},
+	}
+
+	for _, field := range schema.Fields {
+		colName := th.ColumnName(field.Name)
+		//map Jitsu type -> SQL type
+		sqlType, ok := sqlAdapter.GetSQLType(field.Type)
+		if ok {
+			table.Columns[colName] = types2.SQLColumn{DataType: field.Type, Type: sqlType, New: true}
+		} else {
+			logging.SystemErrorf("Unknown column type %s mapping for %s", field.Type, sqlAdapter.Type())
+		}
+	}
+	return table
+}
+
 // EnsureTableWithCaching calls ensureTable with cacheTable = true
 // it is used in stream destinations (because we don't have time to select table schema, but there is retry on error)
 func (th *TableHelper) EnsureTableWithCaching(ctx context.Context, sqlAdapter SQLAdapter, destinationID string, dataSchema *Table) (*Table, error) {

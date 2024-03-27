@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/pg"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"io"
 	"net/url"
@@ -41,7 +42,7 @@ func (s *StreamStat) Merge(chunk *StreamStat) {
 type ActiveStream struct {
 	name string
 	mode string
-	// write stream of io.Pipe. Bulker reads from this read stream of this pipe
+	// write stream of io.Pipe. Bulker reads from the read stream of this pipe
 	writer *io.PipeWriter
 	// wait group to wait for stream to finish HTTP request to bulker fully completed after closing writer
 	waitGroup        sync.WaitGroup
@@ -312,14 +313,14 @@ func (s *ReadSideCar) openStream(streamName string, previousStats *StreamStat) *
 		// switch from replace_table to batch mode, to continue adding data to the table
 		mode = "batch"
 	}
-
 	bulkerConnFunc := func(streamReader *io.PipeReader) {
-		s.log("Creating bulker stream: %s mode: %s primary keys: %s", streamName, mode, str.GetPrimaryKeys())
-		bulkerUrl := fmt.Sprintf("%s/bulk/%s?tableName=%s&mode=%s&taskId=%s", s.bulkerURL, s.syncId, url.QueryEscape(s.tableNamePrefix+streamName), mode, s.taskId)
+		tableName := utils.NvlString(str.TableName, s.tableNamePrefix+streamName)
+		s.log("Creating bulker stream: %s table: %s mode: %s primary keys: %s", streamName, tableName, mode, str.GetPrimaryKeys())
+		bulkerUrl := fmt.Sprintf("%s/bulk/%s?tableName=%s&mode=%s&taskId=%s", s.bulkerURL, s.syncId, url.QueryEscape(tableName), mode, s.taskId)
 		for _, v := range str.GetPrimaryKeys() {
 			bulkerUrl += fmt.Sprintf("&pk=%s", url.QueryEscape(v))
 		}
-		_, err := s.bulkerRequest(bulkerUrl, streamReader)
+		_, err := s.bulkerRequest(bulkerUrl, streamReader, str.ToSchema())
 		if err != nil {
 			s.err("error sending bulk: %v", err)
 			return

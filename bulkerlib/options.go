@@ -1,7 +1,9 @@
 package bulkerlib
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
@@ -88,6 +90,25 @@ var (
 		Key:       "timestampColumn",
 		ParseFunc: utils.ParseString,
 	}
+
+	SchemaOption = ImplementationOption[types.Schema]{
+		Key: "schema",
+		ParseFunc: func(serialized any) (types.Schema, error) {
+			switch v := serialized.(type) {
+			case types.Schema:
+				return v, nil
+			case string:
+				schema := types.Schema{}
+				err := json.Unmarshal([]byte(v), &schema)
+				if err != nil {
+					return types.Schema{}, fmt.Errorf("failed to parse schema: %v", err)
+				}
+				return schema, nil
+			default:
+				return types.Schema{}, fmt.Errorf("invalid value type of schema option: %T", v)
+			}
+		},
+	}
 )
 
 func init() {
@@ -100,6 +121,7 @@ func init() {
 	RegisterOption(&DeduplicateOption)
 	RegisterOption(&PartitionIdOption)
 	RegisterOption(&TimestampOption)
+	RegisterOption(&SchemaOption)
 
 	dummyParse := func(_ any) (any, error) { return nil, nil }
 	for _, ignoredOption := range ignoredOptions {
@@ -210,4 +232,8 @@ func WithPartition(partitionId string) StreamOption {
 
 func WithTimestamp(timestampField string) StreamOption {
 	return WithOption(&TimestampOption, timestampField)
+}
+
+func WithSchema(schema types.Schema) StreamOption {
+	return WithOption(&SchemaOption, schema)
 }

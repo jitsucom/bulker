@@ -384,6 +384,33 @@ func TestBasics(t *testing.T) {
 			configIds:      allBulkerConfigs,
 			streamOptions:  []bulker.StreamOption{bulker.WithTimestamp("_timestamp")},
 		},
+		{
+			name:              "schema_option",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/schema_option.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("_timestamp", "column1", "column2", "column3", "id", "name"),
+			},
+			expectedRowsCount: 2,
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": nil, "column1": nil, "column2": nil, "column3": nil},
+				{"_timestamp": constantTime, "id": 2, "name": nil, "column1": nil, "column2": nil, "column3": nil},
+			},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "schema_option",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "column1", Type: types2.STRING},
+					{Name: "column2", Type: types2.STRING},
+					{Name: "column3", Type: types2.STRING},
+				},
+			})},
+		},
 	}
 	for _, tt := range tests {
 		tt := tt

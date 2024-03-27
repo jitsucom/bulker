@@ -26,7 +26,7 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 		return nil, err
 	}
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
-		return &Table{
+		tmpTable := &Table{
 			Name:           fmt.Sprintf("%s_tmp%s", utils.ShortenString(ps.tableName, 47), time.Now().Format("060102150405")),
 			PrimaryKeyName: tableForObject.PrimaryKeyName,
 			//PrimaryKeyName: fmt.Sprintf("%s_%s", tableForObject.PrimaryKeyName, time.Now().Format("060102_150405")),
@@ -34,6 +34,10 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 			Columns:         tableForObject.Columns,
 			TimestampColumn: tableForObject.TimestampColumn,
 		}
+		if ps.schemaFromOptions != nil {
+			ps.adjustTableColumnTypes(tmpTable, nil, ps.schemaFromOptions, object)
+		}
+		return tmpTable
 	}
 	return &ps, nil
 }

@@ -35,6 +35,9 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		dstTable := tableForObject
 		ps.adjustTableColumnTypes(dstTable, ps.existingTable, tableForObject, object)
+		if ps.schemaFromOptions != nil {
+			ps.adjustTableColumnTypes(dstTable, ps.existingTable, ps.schemaFromOptions, object)
+		}
 		tmpTableName := fmt.Sprintf("%s_tmp%s", utils.ShortenString(tableName, 47), time.Now().Format("060102150405"))
 		return &Table{
 			Name:            tmpTableName,
