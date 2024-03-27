@@ -36,7 +36,7 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 			TimestampColumn: tableForObject.TimestampColumn,
 		}
 		if ps.schemaFromOptions != nil {
-			ps.adjustTableToSchema(tmpTable, nil, ps.schemaFromOptions)
+			ps.adjustTableColumnTypes(tmpTable, nil, ps.schemaFromOptions, object)
 		}
 		return tmpTable
 	}

@@ -32,7 +32,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	}
 	table, processedObject, err := ps.preprocess(object)
 	if ps.schemaFromOptions != nil {
-		ps.adjustTableToSchema(table, nil, ps.schemaFromOptions)
+		ps.adjustTableColumnTypes(table, nil, ps.schemaFromOptions, object)
 	}
 	if err != nil {
 		return

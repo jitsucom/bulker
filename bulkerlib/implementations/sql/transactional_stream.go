@@ -28,7 +28,7 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 		dstTable := tableForObject
 		ps.adjustTableColumnTypes(dstTable, ps.existingTable, tableForObject, object)
 		if ps.schemaFromOptions != nil {
-			ps.adjustTableToSchema(dstTable, ps.existingTable, ps.schemaFromOptions)
+			ps.adjustTableColumnTypes(dstTable, ps.existingTable, ps.schemaFromOptions, object)
 		}
 		tmpTableName := fmt.Sprintf("%s_tmp%s", utils.ShortenString(tableName, 47), time.Now().Format("060102150405"))
 		return &Table{
