@@ -10,12 +10,16 @@ import (
 
 var mock bool
 
-//InitMock initializes mock flag => New() func will return mock value everytime
+// InitMock initializes mock flag => New() func will return mock value everytime
 func InitMock() {
 	mock = true
 }
 
-//New returns uuid v4 string or the mocked value
+func init() {
+	googleuuid.EnableRandPool()
+}
+
+// New returns uuid v4 string or the mocked value
 func New() string {
 	if mock {
 		return "mockeduuid"
@@ -24,7 +28,7 @@ func New() string {
 	return googleuuid.New().String()
 }
 
-//NewLettersNumbers returns uuid without "-"
+// NewLettersNumbers returns uuid without "-"
 func NewLettersNumbers() string {
 	if mock {
 		return "mockeduuid"
@@ -34,7 +38,7 @@ func NewLettersNumbers() string {
 	return strings.ReplaceAll(uuidValue, "-", "")
 }
 
-//GetHash returns GetKeysHash result with keys from m
+// GetHash returns GetKeysHash result with keys from m
 func GetHash(m map[string]any) string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -44,7 +48,7 @@ func GetHash(m map[string]any) string {
 	return GetKeysHash(m, keys)
 }
 
-//GetKeysHash returns md5 hashsum of concatenated map values (sort keys before)
+// GetKeysHash returns md5 hashsum of concatenated map values (sort keys before)
 func GetKeysHash(m map[string]any, keys []string) string {
 	sort.Strings(keys)
 
@@ -57,7 +61,7 @@ func GetKeysHash(m map[string]any, keys []string) string {
 	return fmt.Sprintf("%x", md5.Sum([]byte(str.String())))
 }
 
-//GetKeysUnhashed returns keys values joined by '_'
+// GetKeysUnhashed returns keys values joined by '_'
 func GetKeysUnhashed(m map[string]any, keys []string) string {
 	sort.Strings(keys)
 

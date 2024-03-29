@@ -34,6 +34,7 @@ type AppTestConfig struct {
 	expectedRowsCount          int
 	expectedDeadCount          int
 	waitAfterAllMessageSentSec int
+	loadTestEvents             int
 	//map of expected errors by step name. May be error type or string. String is used for error message partial matching.
 	expectedErrors map[string]any
 	//map of function to run after each step by step name.

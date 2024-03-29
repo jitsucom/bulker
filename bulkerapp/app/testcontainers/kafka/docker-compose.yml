@@ -1,12 +1,14 @@
 version: "3"
 services:
   zookeeper:
-    image: wurstmeister/zookeeper:latest
+    image: bitnami/zookeeper:latest
     container_name: zoo
     expose:
       - 2181
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
   kafka:
-    image: wurstmeister/kafka:latest
+    image: bitnami/kafka:latest
     container_name: kafka
     depends_on:
       - zookeeper

@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bufio"
 	"compress/gzip"
 	"encoding/csv"
 	"encoding/json"
@@ -48,7 +49,9 @@ func NewMarshaller(format FileFormat, compression FileCompression) (Marshaller, 
 
 type JSONMarshaller struct {
 	AbstractMarshaller
-	writer io.Writer
+	writer    io.Writer
+	bufWriter *bufio.Writer
+	encoder   *jsoniter.Encoder
 }
 
 func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
@@ -58,6 +61,9 @@ func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
 		} else {
 			jm.writer = writer
 		}
+		jm.bufWriter = bufio.NewWriterSize(jm.writer, 10*1024*1024)
+		jm.encoder = jsoniter.NewEncoder(jm.bufWriter)
+		jm.encoder.SetEscapeHTML(false)
 	}
 	return nil
 }
@@ -72,15 +78,7 @@ func (jm *JSONMarshaller) Marshal(object ...Object) error {
 		return fmt.Errorf("marshaller wasn't initialized. Run Init() first")
 	}
 	for _, obj := range object {
-		bytes, err := jsoniter.Marshal(obj)
-		if err != nil {
-			return err
-		}
-		_, err = jm.writer.Write(bytes)
-		if err != nil {
-			return err
-		}
-		_, err = jm.writer.Write([]byte("\n"))
+		err := jm.encoder.Encode(obj)
 		if err != nil {
 			return err
 		}
@@ -91,6 +89,10 @@ func (jm *JSONMarshaller) Marshal(object ...Object) error {
 func (jm *JSONMarshaller) Flush() error {
 	if jm.writer == nil {
 		return fmt.Errorf("marshaller wasn't initialized. Run Init() first")
+	}
+	err := jm.bufWriter.Flush()
+	if err != nil {
+		return err
 	}
 	if jm.compression == FileCompressionGZIP {
 		return jm.writer.(*gzip.Writer).Close()

@@ -60,8 +60,50 @@ func IsLetterOrNumber(symbol int32) bool {
 		('0' <= symbol && symbol <= '9')
 }
 
+func IsLowerLetterOrNumber(symbol int32) bool {
+	return ('a' <= symbol && symbol <= 'z') ||
+		('0' <= symbol && symbol <= '9')
+}
+
+func IsLetterOrUnderscore(symbol int32) bool {
+	return ('a' <= symbol && symbol <= 'z') ||
+		('A' <= symbol && symbol <= 'Z') || symbol == '_'
+}
+
+func IsLowerLetterOrUnderscore(symbol int32) bool {
+	return ('a' <= symbol && symbol <= 'z') || symbol == '_'
+}
+
 func IsNumber(symbol int32) bool {
 	return '0' <= symbol && symbol <= '9'
+}
+
+func IsAlphanumeric(str string) bool {
+	for _, symbol := range str {
+		if !IsLetterOrNumber(symbol) && symbol != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func IsLowerAlphanumeric(str string) bool {
+	for _, symbol := range str {
+		if !IsLowerLetterOrNumber(symbol) && symbol != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func IsSameSymbol(str string, symbol int32) bool {
+	for _, s := range str {
+		if s != symbol {
+			return false
+		}
+	}
+	return true
+
 }
 
 // SanitizeString returns string with only alphanumeric characters and underscores

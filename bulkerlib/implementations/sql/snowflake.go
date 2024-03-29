@@ -461,11 +461,11 @@ func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions
 	return s.SQLAdapterBase.Select(ctx, tableName, whenConditions, orderBy)
 }
 
-func sfIdentifierFunction(value string) (adapted string, needQuotes bool) {
+func sfIdentifierFunction(value string, alphanumeric bool) (adapted string, needQuotes bool) {
 	if sfReservedWordsSet.Contains(value) {
 		return strings.ToUpper(value), true
 	}
-	if !sfUnquotedIdentifierPattern.MatchString(value) {
+	if !alphanumeric || !utils.IsLetterOrUnderscore(int32(value[0])) || !sfUnquotedIdentifierPattern.MatchString(value) {
 		return value, true
 	} else {
 		return strings.ToUpper(value), false

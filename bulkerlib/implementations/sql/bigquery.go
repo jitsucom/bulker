@@ -55,7 +55,6 @@ var (
 	bigqueryReservedPrefixes = [...]string{"_table_", "_file_", "_partition", "_row_timestamp", "__root__", "_colidentifier"}
 
 	bigqueryColumnUnsupportedCharacters = regexp.MustCompile(`[^0-9A-Za-z_]`)
-	bigqueryColumnUndescores            = regexp.MustCompile(`_{2,}`)
 
 	//SchemaToBigQueryString is mapping between JSON types and BigQuery types
 	bigqueryTypes = map[types2.DataType][]string{
@@ -990,31 +989,34 @@ func (bq *BigQuery) fullTableName(tableName string) string {
 	return fmt.Sprintf("`%s`.`%s`", bq.config.Project, bq.config.Dataset) + "." + bq.tableHelper.quotedTableName(tableName)
 }
 
-func tableNameFunc(identifier string) (adapted string, needQuote bool) {
-	return identifier, !sqlUnquotedIdentifierPattern.MatchString(identifier)
+func tableNameFunc(identifier string, alphanumeric bool) (adapted string, needQuote bool) {
+	return identifier, !alphanumeric ||
+		!utils.IsLowerAlphanumeric(identifier) ||
+		!utils.IsLowerLetterOrUnderscore(int32(identifier[0]))
 }
 
-func columnNameFunc(identifier string) (adapted string, needQuote bool) {
-	cleanIdentifier := bigqueryColumnUnsupportedCharacters.ReplaceAllString(identifier, "")
-	cleanIdentifier = bigqueryColumnUndescores.ReplaceAllString(cleanIdentifier, "_")
-	if cleanIdentifier == "" || cleanIdentifier == "_" {
-		return fmt.Sprintf("column_%x", utils.HashString(identifier)), false
+func columnNameFunc(identifier string, alphanumeric bool) (adapted string, needQuote bool) {
+	cleanIdentifier := identifier
+	if !alphanumeric {
+		cleanIdentifier = bigqueryColumnUnsupportedCharacters.ReplaceAllString(strings.ReplaceAll(identifier, " ", "_"), "")
+		if cleanIdentifier == "" || utils.IsSameSymbol(cleanIdentifier, '_') {
+			return fmt.Sprintf("column_%x", utils.HashString(identifier)), false
+		}
 	}
-	identifier = strings.ReplaceAll(identifier, " ", "_")
-	result := bigqueryColumnUnsupportedCharacters.ReplaceAllString(identifier, "")
-	if utils.IsNumber(int32(result[0])) {
-		result = "_" + result
+	if utils.IsNumber(int32(cleanIdentifier[0])) {
+		cleanIdentifier = "_" + cleanIdentifier
 	}
-	lc := strings.ToLower(result)
+
+	lc := strings.ToLower(cleanIdentifier)
 	if bigqueryReservedWordsSet.Contains(lc) {
-		return result, true
+		return cleanIdentifier, true
 	}
 	for _, reserved := range bigqueryReservedPrefixes {
 		if strings.HasPrefix(lc, reserved) {
-			return utils.ShortenString("_"+result, 300), false
+			return utils.ShortenString("_"+cleanIdentifier, 300), false
 		}
 	}
-	return utils.ShortenString(result, 300), false
+	return utils.ShortenString(cleanIdentifier, 300), false
 }
 
 func (bq *BigQuery) TableName(identifier string) string {

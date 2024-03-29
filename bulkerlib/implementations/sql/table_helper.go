@@ -17,13 +17,11 @@ import (
 const tableLockTimeout = time.Minute
 
 // IdentifierFunction adapts identifier name to format required by database e.g. masks or escapes special characters
-type IdentifierFunction func(identifier string) (adapted string, needQuotes bool)
+type IdentifierFunction func(identifier string, alphanumeric bool) (adapted string, needQuotes bool)
 
 var (
 	// Generally unsupported characters in SQL identifiers: all except letters(any languages), underscore, numbers, space, dollar sign, hyphen
 	sqlIdentifierUnsupportedCharacters = regexp.MustCompile(`[^\p{L}_\d $-]+`)
-	// SQL identifier that can be used without quotes: starts with latin letter or underscore, contains only lowercase latin letters, numbers and underscores
-	sqlUnquotedIdentifierPattern = regexp.MustCompile(`^[a-z_][0-9a-z_]*$`)
 )
 
 // TableHelper keeps tables schema state inmemory and update it according to incoming new data
@@ -38,7 +36,7 @@ type TableHelper struct {
 	maxColumns int
 
 	maxIdentifierLength int
-	identifierQuoteChar rune
+	identifierQuoteStr  string
 
 	tableNameFunc  IdentifierFunction
 	columnNameFunc IdentifierFunction
@@ -54,7 +52,7 @@ func NewTableHelper(maxIdentifierLength int, identifierQuoteChar rune) TableHelp
 		maxColumns: 1000,
 
 		maxIdentifierLength: maxIdentifierLength,
-		identifierQuoteChar: identifierQuoteChar,
+		identifierQuoteStr:  string(identifierQuoteChar),
 	}
 }
 
@@ -369,18 +367,23 @@ func (th *TableHelper) adaptColumnName(columnName string) (quotedIfNeeded string
 // - must only contain letters, numbers, underscores, hyphen, and spaces - all other characters are removed
 // - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
 func (th *TableHelper) adaptSqlIdentifier(identifier string, kind string, idFunc IdentifierFunction) (quotedIfNeeded string, unquoted string) {
-	useQuoting := th.identifierQuoteChar != rune(0)
-	cleanIdentifier := sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "_")
-	if cleanIdentifier == "" || cleanIdentifier == "_" {
-		cleanIdentifier = fmt.Sprintf("%s_%x", kind, utils.HashString(identifier))
+	useQuoting := th.identifierQuoteStr != ""
+	cleanIdentifier := identifier
+	alphanumeric := utils.IsAlphanumeric(identifier)
+	if !alphanumeric {
+		cleanIdentifier = sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "_")
+		if cleanIdentifier == "" || cleanIdentifier == "_" {
+			cleanIdentifier = fmt.Sprintf("%s_%x", kind, utils.HashString(identifier))
+			alphanumeric = true
+		}
 	}
 	result := utils.ShortenString(cleanIdentifier, th.maxIdentifierLength)
 	if idFunc != nil {
-		result, useQuoting = idFunc(result)
+		result, useQuoting = idFunc(result, alphanumeric)
 	}
 
 	if useQuoting {
-		return fmt.Sprintf(`%c%s%c`, th.identifierQuoteChar, result, th.identifierQuoteChar), result
+		return th.identifierQuoteStr + result + th.identifierQuoteStr, result
 	} else {
 		return result, result
 	}

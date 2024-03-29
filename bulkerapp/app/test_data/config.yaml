@@ -28,4 +28,17 @@ destinations:
       defaultSchema: bulker
       parameters:
         sslmode: disable
-
+  load_test_postgres:
+    type: "postgres"
+    options:
+      mode: "batch"
+      batchSize: 500000
+    credentials:
+      host: localhost
+      port: [[POSTGRES_PORT]]
+      database: test
+      username: test
+      password: test
+      defaultSchema: bulker
+      parameters:
+        sslmode: disable

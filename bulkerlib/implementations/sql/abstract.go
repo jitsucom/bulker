@@ -126,7 +126,7 @@ func (ps *AbstractSQLStream) init(ctx context.Context) error {
 // returns true if new column was added to the currentTable as a result of this function call
 func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable, desiredTable *Table, values types.Object) bool {
 	columnsAdded := false
-	current := currentTable.Columns.Clone()
+	current := currentTable.Columns
 	unmappedObj := map[string]any{}
 	for name, newCol := range desiredTable.Columns {
 		var existingCol types.SQLColumn
@@ -202,7 +202,6 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 			values[ps.sqlAdapter.ColumnName(unmappedDataColumn)] = unmappedObj
 		}
 	}
-	currentTable.Columns = current
 	return columnsAdded
 }
 
