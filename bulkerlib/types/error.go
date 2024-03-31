@@ -52,7 +52,7 @@ func (ep *ErrorPayload) String() string {
 		msgParts = append(msgParts, fmt.Sprintf("primary keys: %v", ep.PrimaryKeys))
 	}
 	if ep.Statement != "" {
-		msgParts = append(msgParts, fmt.Sprintf("statement: %s", utils.ShortenStringWithEllipsis(ep.Statement, 1000)))
+		msgParts = append(msgParts, fmt.Sprintf("statement: %s", utils.ShortenStringWithEllipsis(ep.Statement, 10000)))
 	}
 	if len(ep.Values) > 0 {
 		msgParts = append(msgParts, fmt.Sprintf("values: %v", ep.Values))
