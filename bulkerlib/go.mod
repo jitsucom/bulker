@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go v0.112.0
 	cloud.google.com/go/bigquery v1.58.0
 	cloud.google.com/go/storage v1.36.0
-	github.com/ClickHouse/clickhouse-go/v2 v2.14.3
+	github.com/ClickHouse/clickhouse-go/v2 v2.23.0
 	github.com/Kount/pq-timeouts v1.0.0
 	github.com/aws/aws-sdk-go v1.45.25
 	github.com/docker/go-connections v0.5.0
