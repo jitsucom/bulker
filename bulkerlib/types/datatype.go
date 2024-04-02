@@ -168,11 +168,6 @@ func ReformatTimeValue(value any, supportDates bool) (time.Time, bool) {
 		return zeroTime, false
 	}
 
-	char := stringValue[0]
-	if char != '1' && char != '2' {
-		return zeroTime, false
-	}
-
 	l := len(stringValue)
 
 	minLength := 19 // len("2006-01-02T15:04:05")
@@ -182,6 +177,11 @@ func ReformatTimeValue(value any, supportDates bool) (time.Time, bool) {
 
 	if l < minLength || l > 35 {
 		//strings shorter than shortest of layouts or longer then longest of layouts are obviously not dates
+		return zeroTime, false
+	}
+
+	char := stringValue[0]
+	if char != '1' && char != '2' {
 		return zeroTime, false
 	}
 
