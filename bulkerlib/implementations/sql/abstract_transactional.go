@@ -297,7 +297,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, targetTable *Table, processedObject types.Object) error {
 	ps.adjustTables(ctx, targetTable, processedObject)
 	ps.updateRepresentationTable(ps.tmpTable)
-	err := ps.marshaller.InitSchema(ps.batchFile, targetTable.SortedColumnNames(), nil)
+	err := ps.marshaller.InitSchema(ps.batchFile, nil, nil)
 	if err != nil {
 		return err
 	}

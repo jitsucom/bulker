@@ -47,6 +47,8 @@ var (
 		TIMESTAMP: "timestamp",
 		BOOL:      "boolean",
 	}
+
+	zeroTime = time.Time{}
 )
 
 func (dt DataType) String() string {
@@ -117,8 +119,16 @@ func StringFromType(dataType DataType) (string, error) {
 //
 // if have -> return float64 otherwise int64
 func ReformatValue(v any) any {
-	v = ReformatNumberValue(v)
-	return ReformatTimeValue(v, false)
+	n, ok := ReformatNumberValue(v)
+	if ok {
+		return n
+	}
+	ts, ok := ReformatTimeValue(v, false)
+	if ok {
+		return ts
+	} else {
+		return v
+	}
 }
 
 // ReformatNumberValue process json.Number types into int64 or float64
@@ -127,10 +137,10 @@ func ReformatValue(v any) any {
 //	we have to check does json number have dot in string representation
 //
 // if have -> return float64 otherwise int64
-func ReformatNumberValue(v any) any {
+func ReformatNumberValue(v any) (any, bool) {
 	jsonNumber, ok := v.(json.Number)
 	if !ok {
-		return v
+		return v, false
 	}
 
 	str := jsonNumber.String()
@@ -138,60 +148,66 @@ func ReformatNumberValue(v any) any {
 		floatValue, err := jsonNumber.Float64()
 		if err != nil {
 			logging.Errorf("Error parsing %s into float64: %v", str, err)
-			return str
+			return str, false
 		}
-		return any(floatValue)
+		return any(floatValue), true
 	}
 
 	intValue, err := jsonNumber.Int64()
 	if err != nil {
 		logging.Errorf("Error parsing %s into int64: %v", str, err)
-		return str
+		return str, false
 	}
-	return any(intValue)
+	return any(intValue), true
 }
 
 // ReformatTimeValue processes string with ISO DateTime or Golang layout into time.Time
-func ReformatTimeValue(value any, supportDates bool) any {
+func ReformatTimeValue(value any, supportDates bool) (time.Time, bool) {
 	stringValue, ok := value.(string)
 	if !ok {
-		return value
-	}
-
-	l := len(stringValue)
-	if l < len("2006-01-02") || l > len(time.RFC3339Nano) {
-		//strings shorter than shortest of layouts or longer then longest of layouts are obviously not dates
-		return value
+		return zeroTime, false
 	}
 
 	char := stringValue[0]
-	if char < '0' || char > '9' {
-		return value
+	if char != '1' && char != '2' {
+		return zeroTime, false
+	}
+
+	l := len(stringValue)
+
+	minLength := 19 // len("2006-01-02T15:04:05")
+	if supportDates {
+		minLength = 10 //len("2006-01-02")
+	}
+
+	if l < minLength || l > 35 {
+		//strings shorter than shortest of layouts or longer then longest of layouts are obviously not dates
+		return zeroTime, false
 	}
 
 	timeValue, err := time.Parse(time.RFC3339Nano, stringValue)
 	if err == nil {
-		return timeValue
+		return timeValue, true
 	}
 
 	if l == len(timestamp.GolangLayout) {
 		timeValue, err = time.Parse(timestamp.GolangLayout, stringValue)
 		if err == nil {
-			return timeValue
+			return timeValue, true
 		}
 	} else if supportDates && l == len(timestamp.DashDayLayout) {
 		timeValue, err = time.Parse(timestamp.DashDayLayout, stringValue)
 		if err == nil {
-			return timeValue
+			return timeValue, true
 		}
 	}
 
 	timeValue, err = time.Parse(timestamp.DBLayout, stringValue)
 	if err == nil {
-		return timeValue
+		return timeValue, true
 	}
 
-	return value
+	return zeroTime, false
 }
 
 // TypeFromValue return DataType from v type

@@ -345,7 +345,7 @@ func (ps *AbstractFileStorageStream) Abort(ctx context.Context) (state bulker.St
 
 func (ps *AbstractFileStorageStream) getEventTime(object types2.Object) time.Time {
 	if ps.timestampColumn != "" {
-		tm, ok := types2.ReformatTimeValue(object[ps.timestampColumn], false).(time.Time)
+		tm, ok := types2.ReformatTimeValue(object[ps.timestampColumn], false)
 		if ok {
 			return tm
 		}

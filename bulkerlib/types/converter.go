@@ -340,8 +340,7 @@ func stringToFloat(v any) (any, error) {
 }
 
 func stringToTimestamp(v any) (any, error) {
-	t := ReformatTimeValue(v, true)
-	ts, ok := t.(time.Time)
+	ts, ok := ReformatTimeValue(v, true)
 	if !ok {
 		return nil, fmt.Errorf("Error stringToTimestamp() for value: %v", v)
 	}

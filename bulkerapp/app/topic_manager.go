@@ -18,9 +18,6 @@ import (
 )
 
 const (
-	topicExpression       = "in.id.%s.m.%s.t.%s"
-	topicExpressionBase64 = "in.id.%s.m.%s.b64.%s"
-
 	retryTopicMode = "retry"
 	deadTopicMode  = "dead"
 
@@ -29,7 +26,6 @@ const (
 	topicLengthLimit = 249
 )
 
-var topicUnsupportedCharacters = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 var topicPattern = regexp.MustCompile(`^in[.]id[.](.*)[.]m[.](.*)[.](t|b64)[.](.*)$`)
 
 type TopicManager struct {
@@ -706,12 +702,13 @@ func (tm *TopicManager) Close() error {
 }
 
 func ParseTopicId(topic string) (destinationId, mode, tableName string, err error) {
-	topicGroups := topicPattern.FindStringSubmatch(topic)
-	if len(topicGroups) == 5 {
-		destinationId = topicGroups[1]
-		mode = topicGroups[2]
-		tableEncoding := topicGroups[3]
-		tableName = topicGroups[4]
+	// in.id.(.*).m.(.*).(t|b64).(.*)
+	topicGroups := strings.SplitN(topic, ".", 7)
+	if len(topicGroups) == 7 {
+		destinationId = topicGroups[2]
+		mode = topicGroups[4]
+		tableEncoding := topicGroups[5]
+		tableName = topicGroups[6]
 		if tableEncoding == "b64" {
 			b, err := base64.RawURLEncoding.DecodeString(tableName)
 			if err != nil {
@@ -719,7 +716,6 @@ func ParseTopicId(topic string) (destinationId, mode, tableName string, err erro
 			}
 			tableName = string(b)
 		}
-
 	} else {
 		err = fmt.Errorf("topic name %s doesn't match pattern %s", topic, topicPattern.String())
 	}
@@ -727,19 +723,30 @@ func ParseTopicId(topic string) (destinationId, mode, tableName string, err erro
 }
 
 func MakeTopicId(destinationId, mode, tableName string, checkLength bool) (string, error) {
+	validName := true
 	if mode == retryTopicMode || mode == deadTopicMode {
 		tableName = allTablesToken
-	}
-	unsupportedChars := topicUnsupportedCharacters.FindString(tableName)
-	topicId := ""
-	if unsupportedChars != "" {
-		tableName = base64.RawURLEncoding.EncodeToString([]byte(tableName))
-		topicId = fmt.Sprintf(topicExpressionBase64, destinationId, mode, tableName)
 	} else {
-		topicId = fmt.Sprintf(topicExpression, destinationId, mode, tableName)
+		validName = IsValidTopicName(tableName)
+	}
+	topicId := ""
+	if !validName {
+		tableName = base64.RawURLEncoding.EncodeToString([]byte(tableName))
+		topicId = "in.id." + destinationId + ".m." + mode + ".b64." + tableName
+	} else {
+		topicId = "in.id." + destinationId + ".m." + mode + ".t." + tableName
 	}
 	if checkLength && len(topicId) > topicLengthLimit {
 		return "", fmt.Errorf("topic name %s length %d exceeds limit (%d). Please choose shorter table name. Recommended table name length is <= 63 symbols", topicId, len(topicId), topicLengthLimit)
 	}
 	return topicId, nil
+}
+
+func IsValidTopicName(str string) bool {
+	for _, symbol := range str {
+		if !utils.IsLetterOrNumber(symbol) && symbol != '_' && symbol != '-' && symbol != '.' {
+			return false
+		}
+	}
+	return true
 }
