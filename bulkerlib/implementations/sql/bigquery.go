@@ -1002,6 +1002,12 @@ func columnNameFunc(identifier string, alphanumeric bool) (adapted string, needQ
 	if identifier == "Product_id" {
 		identifier = "product_id"
 	}
+	if identifier == "Location" {
+		identifier = "location"
+	}
+	if identifier == "Pass" {
+		identifier = "pass"
+	}
 	cleanIdentifier := identifier
 	if !alphanumeric {
 		cleanIdentifier = bigqueryColumnUnsupportedCharacters.ReplaceAllString(strings.ReplaceAll(identifier, " ", "_"), "")
