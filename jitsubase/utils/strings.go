@@ -3,7 +3,6 @@ package utils
 import (
 	"fmt"
 	"regexp"
-	"strings"
 )
 
 var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
@@ -112,29 +111,14 @@ func SanitizeString(str string) string {
 }
 
 // JoinNonEmptyStrings joins strings with separator, but ignoring empty strings
-func JoinNonEmptyStrings(sep string, elems ...string) string {
-	switch len(elems) {
-	case 0:
-		return ""
-	case 1:
-		return elems[0]
+func JoinNonEmptyStrings(sep, elem1, elem2 string) string {
+	if elem1 == "" {
+		return elem2
+	} else if elem2 == "" {
+		return elem1
+	} else {
+		return elem1 + sep + elem2
 	}
-	n := len(sep) * (len(elems) - 1)
-	for i := 0; i < len(elems); i++ {
-		n += len(elems[i])
-	}
-
-	var b strings.Builder
-	b.Grow(n)
-	for _, s := range elems {
-		if len(s) > 0 {
-			if b.Len() > 0 {
-				b.WriteString(sep)
-			}
-			b.WriteString(s)
-		}
-	}
-	return b.String()
 }
 
 // ParseString parses value of string - effectively strict type checking.

@@ -25,15 +25,6 @@ func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTy
 	if err != nil {
 		return nil, nil, err
 	}
-	//TODO tmp workaround for avalanche of context_client_ids_ga4_session_ids_ and context_client_ids_ga4_sessions_ fields
-	for name, _ := range flatObject {
-		if strings.HasPrefix(name, "context_client_ids_ga4_session_ids_") {
-			delete(flatObject, name)
-		}
-		if strings.HasPrefix(name, "context_client_ids_ga4_sessions_") {
-			delete(flatObject, name)
-		}
-	}
 	fields, err := DefaultTypeResolver.Resolve(flatObject, sqlTypesHints)
 	if err != nil {
 		return nil, nil, err
@@ -52,9 +43,9 @@ func extractSQLTypesHints(object map[string]any) (types.SQLTypes, error) {
 func _extractSQLTypesHints(key string, object map[string]any, result types.SQLTypes) error {
 	for k, v := range object {
 		//if column has __sql_type_ prefix
-		if columnName := strings.TrimPrefix(k, SqlTypePrefix); columnName != k {
+		if strings.HasPrefix(k, SqlTypePrefix) {
 			delete(object, k)
-			columnName = strings.TrimPrefix(columnName, "_")
+			columnName := strings.TrimPrefix(k[len(SqlTypePrefix):], "_")
 			//when columnName is empty it means that provided sql type is meant for the whole object
 			//e.g. to map nested object to sql JSON type you can add the following property to nested object: "__sql_type_": "JSON" )
 			mappedColumnName := utils.JoinNonEmptyStrings("_", key, columnName)

@@ -172,15 +172,15 @@ func (bq *BigQuery) CreateStream(id, tableName string, mode bulker.BulkMode, str
 }
 
 func (bq *BigQuery) GetBatchFileFormat() types2.FileFormat {
-	return types2.FileFormatAVRO
+	return types2.FileFormatNDJSON
 }
 
 func (bq *BigQuery) GetBatchFileCompression() types2.FileCompression {
-	return types2.FileCompressionNONE
+	return types2.FileCompressionGZIP
 }
 
 func (bq *BigQuery) StringifyObjects() bool {
-	return true
+	return false
 }
 
 func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
