@@ -996,18 +996,6 @@ func tableNameFunc(identifier string, alphanumeric bool) (adapted string, needQu
 }
 
 func columnNameFunc(identifier string, alphanumeric bool) (adapted string, needQuote bool) {
-	if identifier == "context_campaign_Quotes" {
-		identifier = "context_campaign_quotes"
-	}
-	if identifier == "Product_id" {
-		identifier = "product_id"
-	}
-	if identifier == "Location" {
-		identifier = "location"
-	}
-	if identifier == "Pass" {
-		identifier = "pass"
-	}
 	cleanIdentifier := identifier
 	if !alphanumeric {
 		cleanIdentifier = bigqueryColumnUnsupportedCharacters.ReplaceAllString(strings.ReplaceAll(identifier, " ", "_"), "")
