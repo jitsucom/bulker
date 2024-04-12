@@ -39,8 +39,8 @@ func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 		Settings: clickhouse.Settings{
 			"async_insert":                 1,
 			"wait_for_async_insert":        0,
-			"async_insert_max_data_size":   "5000000",
-			"async_insert_busy_timeout_ms": 5000,
+			"async_insert_max_data_size":   "10000000",
+			"async_insert_busy_timeout_ms": 10000,
 			"date_time_input_format":       "best_effort",
 		},
 		DialTimeout: time.Second * 30,
@@ -117,7 +117,7 @@ func (r *ClickhouseEventsLog) flush() {
 	if err != nil {
 		r.Errorf("Error sending batch: %v", err)
 	} else {
-		r.Infof("Inserted %d events in %v", len(bufferCopy), time.Since(tm))
+		r.Debugf("Inserted %d events in %v", len(bufferCopy), time.Since(tm))
 	}
 }
 
