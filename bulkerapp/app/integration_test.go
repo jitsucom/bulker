@@ -252,6 +252,9 @@ func integrationTest(t *testing.T, tt AppTestConfig, postgresContainer *testcont
 	if err != nil {
 		t.Fatalf("could not open file %s: %v", tt.eventsFile, err)
 	}
+	defer func() {
+		_ = file.Close()
+	}()
 	scanner := bufio.NewScanner(file)
 	i := 0
 	for scanner.Scan() {

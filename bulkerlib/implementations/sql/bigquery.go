@@ -619,6 +619,9 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	if err != nil {
 		return state, err
 	}
+	defer func() {
+		_ = file.Close()
+	}()
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
 	meta, err := bqTable.Metadata(ctx)
 

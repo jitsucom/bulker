@@ -193,6 +193,9 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 			if err != nil {
 				return errorj.Decorate(err, "failed to open tmp file")
 			}
+			defer func() {
+				_ = file.Close()
+			}()
 			scanner := bufio.NewScanner(file)
 			scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
 			i := 0

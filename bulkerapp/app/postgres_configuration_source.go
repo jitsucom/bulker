@@ -63,6 +63,9 @@ func (r *PostgresConfigurationSource) loadCached() {
 		r.Fatalf("Error opening cached repository: %v\nCannot serve without repository. Exitting...", err)
 		return
 	}
+	defer func() {
+		_ = file.Close()
+	}()
 	stat, err := file.Stat()
 	if err != nil {
 		r.Fatalf("Error getting cached repository info: %v\nCannot serve without repository. Exitting...", err)
@@ -101,6 +104,9 @@ func (r *PostgresConfigurationSource) storeCached(payload RepositoryCache) {
 		r.Errorf("Cannot write cached repository to %s: %v", filePath, err)
 		return
 	}
+	defer func() {
+		_ = file.Close()
+	}()
 	err = json.NewEncoder(file).Encode(payload)
 	if err != nil {
 		r.Errorf("Cannot write cached repository to %s: %v", filePath, err)

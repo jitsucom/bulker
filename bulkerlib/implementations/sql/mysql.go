@@ -279,6 +279,9 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		if err != nil {
 			return state, err
 		}
+		defer func() {
+			_ = file.Close()
+		}()
 		scanner := bufio.NewScanner(file)
 		scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
 		for scanner.Scan() {

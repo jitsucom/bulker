@@ -178,6 +178,9 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			if err != nil {
 				return nil, errorj.Decorate(err, "failed to open tmp file")
 			}
+			defer func() {
+				_ = file.Close()
+			}()
 			scanner := bufio.NewScanner(file)
 			scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
 			i := 0
@@ -228,6 +231,9 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			if err != nil {
 				return nil, errorj.Decorate(err, "failed to open tmp file")
 			}
+			defer func() {
+				_ = rFile.Close()
+			}()
 			s3FileName := path.Base(workingFile.Name())
 			if s3Config.Folder != "" {
 				s3FileName = s3Config.Folder + "/" + s3FileName

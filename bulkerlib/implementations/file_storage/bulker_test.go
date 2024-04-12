@@ -278,7 +278,9 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 
 	file, err := os.Open(testConfig.dataFile)
 	PostStep("open_file", testConfig, mode, reqr, err)
-
+	defer func() {
+		_ = file.Close()
+	}()
 	scanner := bufio.NewScanner(file)
 	i := 0
 	streamNum := 0
