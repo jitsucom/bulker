@@ -277,9 +277,7 @@ func (ps *AbstractFileStorageStream) getPKValue(object types2.Object) (string, e
 }
 
 func (ps *AbstractFileStorageStream) writeToBatchFile(ctx context.Context, processedObject types2.Object) error {
-	header := ps.csvHeader.ToSlice()
-	sort.Strings(header)
-	ps.marshaller.Init(ps.batchFile, header)
+	ps.marshaller.Init(ps.batchFile, nil)
 	if ps.merge {
 		pk, err := ps.getPKValue(processedObject)
 		if err != nil {
@@ -325,7 +323,7 @@ func (ps *AbstractFileStorageStream) Consume(ctx context.Context, object types2.
 		return
 	}
 
-	if ps.targetMarshaller.Format() == "csv" {
+	if ps.targetMarshaller.Format() == types2.FileFormatCSV {
 		ps.csvHeader.PutAllKeys(processedObject)
 	}
 
