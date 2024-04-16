@@ -177,7 +177,7 @@ func (s *ReadSideCar) Run() {
 	go func() {
 		defer stdOutErrWaitGroup.Done()
 		scanner := bufio.NewScanner(errPipe)
-		scanner.Buffer(make([]byte, 1024*10), 1024*1024)
+		scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
 		for scanner.Scan() {
 			line := scanner.Text()
 			s.sourceLog("ERRSTD", line)
@@ -196,7 +196,7 @@ func (s *ReadSideCar) Run() {
 		defer stdOutErrWaitGroup.Done()
 
 		scanner := bufio.NewScanner(outPipe)
-		scanner.Buffer(make([]byte, 1024*10), 1024*1024)
+		scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
 		for scanner.Scan() {
 			line := scanner.Bytes()
 			ok = s.checkJsonRow(string(line))

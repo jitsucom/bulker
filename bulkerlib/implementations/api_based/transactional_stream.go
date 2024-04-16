@@ -18,6 +18,8 @@ type ApiImplementation interface {
 	io.Closer
 	Type() string
 	Upload(fileReader io.ReadSeeker) (string, error)
+	GetBatchFileFormat() types2.FileFormat
+	GetBatchFileCompression() types2.FileCompression
 }
 
 type ApiBasedStream struct {
@@ -59,7 +61,7 @@ func (ps *ApiBasedStream) init(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		ps.marshaller, _ = types2.NewMarshaller(types2.FileFormatNDJSON, types2.FileCompressionNONE)
+		ps.marshaller, _ = types2.NewMarshaller(ps.implementation.GetBatchFileFormat(), ps.implementation.GetBatchFileCompression())
 	}
 	ps.inited = true
 	return nil

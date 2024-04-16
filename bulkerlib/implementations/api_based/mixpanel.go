@@ -1,13 +1,11 @@
 package api_based
 
 import (
-	"bufio"
-	"bytes"
-	"compress/gzip"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
@@ -71,40 +69,12 @@ func (mp *MixpanelBulker) Upload(fileReader io.ReadSeeker) (string, error) {
 	if mp.closed.Load() {
 		return "", fmt.Errorf("attempt to use closed Mixpanel instance")
 	}
-	buff := bytes.Buffer{}
-	gz := gzip.NewWriter(&buff)
-	buf := bufio.NewWriter(gz)
-	_, _ = buf.WriteRune('[')
-	scanner := bufio.NewScanner(fileReader)
-	scanner.Buffer(make([]byte, 1024*10), 1024*1024*1)
-	first := true
-	for scanner.Scan() {
-		if !first {
-			_, _ = buf.WriteRune(',')
-		} else {
-			first = false
-		}
-		_, _ = buf.WriteString(scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		mp.Errorf("Upload: failed to read file: %v", err)
-	} else {
-		_, _ = buf.WriteRune(']')
-	}
-	err := buf.Flush()
-	if err != nil {
-		mp.Errorf("Upload: failed to flush buffered writer: %v", err)
-	}
-	err = gz.Close()
-	if err != nil {
-		mp.Errorf("Upload: failed to close gzip writer: %v", err)
-	}
-
-	req, err := http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, &buff)
+	
+	req, err := http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, fileReader)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/x-ndjson")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 	serviceAccount := fmt.Sprintf("%s:%s", mp.config.ServiceAccountUserName, mp.config.ServiceAccountPassword)
@@ -126,6 +96,14 @@ func (mp *MixpanelBulker) Upload(fileReader io.ReadSeeker) (string, error) {
 	}
 
 }
+
+func (mp *MixpanelBulker) GetBatchFileFormat() types2.FileFormat {
+	return types2.FileFormatNDJSON
+}
+func (mp *MixpanelBulker) GetBatchFileCompression() types2.FileCompression {
+	return types2.FileCompressionGZIP
+}
+
 func (mp *MixpanelBulker) Close() error {
 	mp.closed.Store(true)
 	mp.httpClient.CloseIdleConnections()
