@@ -2,6 +2,7 @@ package implementations
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
@@ -106,7 +107,9 @@ func (a *S3) Upload(fileName string, fileReader io.ReadSeeker) error {
 	}
 	params.Key = aws.String(fileName)
 	params.Body = fileReader
-	if _, err := a.client.PutObject(params); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	defer cancel()
+	if _, err := a.client.PutObjectWithContext(ctx, params); err != nil {
 		return errorj.SaveOnStageError.Wrap(err, "failed to write file to s3").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Bucket:    a.config.Bucket,

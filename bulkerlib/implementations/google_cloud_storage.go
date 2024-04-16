@@ -130,7 +130,9 @@ func (gcs *GoogleCloudStorage) Upload(fileName string, fileReader io.ReadSeeker)
 
 	bucket := gcs.client.Bucket(gcs.config.Bucket)
 	object := bucket.Object(fileName)
-	w := object.NewWriter(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+	defer cancel()
+	w := object.NewWriter(ctx)
 
 	if _, err := io.Copy(w, fileReader); err != nil {
 		return errorj.SaveOnStageError.Wrap(err, "failed to write file to google cloud storage").
