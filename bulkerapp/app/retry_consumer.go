@@ -23,7 +23,7 @@ func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodS
 	}
 	rc.batchFunc = rc.processBatchImpl
 	rc.shouldConsumeFunc = rc.shouldConsumeFuncImpl
-	rc.pause()
+	rc.pause(false)
 	return &rc, nil
 }
 

@@ -33,7 +33,7 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 		eventsLogService:      eventsLogService,
 	}
 	bc.batchFunc = bc.processBatchImpl
-	bc.pause()
+	bc.pause(false)
 	return &bc, nil
 }
 
@@ -157,13 +157,16 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		if processed == batchSize {
 			nextBatch = true
 		}
-		// we need to pause consumer to avoid kafka session timeout while loading huge batches to slow destinations
-		bc.pause()
+		pauseTimer := time.AfterFunc(time.Duration(bc.config.KafkaMaxPollIntervalMs)*time.Millisecond/2, func() {
+			// we need to pause consumer to avoid kafka session timeout while loading huge batches to slow destinations
+			bc.pause(true)
+		})
 
 		bc.Infof("Committing %d events to %s", processed, destination.config.BulkerType)
 		var state bulker.State
 		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(ctx)
+		pauseTimer.Stop()
 		state.ProcessingTimeSec = time.Since(startTime).Seconds()
 		bc.postEventsLog(state, processedObjectSample, err)
 		if err != nil {

@@ -98,6 +98,7 @@ func (r *Router) Health(c *gin.Context) {
 func (r *Router) EventsHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
+	modeOverride := c.Query("modeOverride")
 	metricsMeta := utils.NvlString(c.GetHeader("metricsMeta"), c.Query("metricsMeta"))
 	mode := ""
 	bytesRead := 0
@@ -116,12 +117,16 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId), true)
 		return
 	}
-	mode = string(destination.Mode())
+	mode = utils.DefaultString(modeOverride, string(destination.Mode()))
+	if mode != string(bulker.Batch) && mode != string(bulker.Stream) {
+		rError = r.ResponseError(c, http.StatusBadRequest, "invalid bulker mode", false, fmt.Errorf("invalid bulker mode: %s", mode), true)
+		return
+	}
 	if tableName == "" {
 		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), true)
 		return
 	}
-	topicId, err := destination.TopicId(tableName)
+	topicId, err := destination.TopicId(tableName, mode)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true)
 		return

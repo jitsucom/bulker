@@ -205,7 +205,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 	var highOffset int64
 	defer func() {
 		bc.idle.Store(true)
-		bc.pause()
+		bc.pause(false)
 		bc.countersMetric(counters)
 		if err != nil {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "fail").Inc()
@@ -311,7 +311,7 @@ func (bc *AbstractBatchConsumer) shouldConsume(committedOffset, highOffset int64
 }
 
 // pause consumer.
-func (bc *AbstractBatchConsumer) pause() {
+func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 	if bc.idle.Load() && bc.retired.Load() {
 		// Close retired idling consumer
 		bc.Infof("Consumer is retired. Closing")
@@ -325,6 +325,7 @@ func (bc *AbstractBatchConsumer) pause() {
 
 	safego.RunWithRestart(func() {
 		errorReported := false
+		firstPoll := immediatePoll
 		//this loop keeps heatbeating consumer to prevent it from being kicked out from group
 		pauseTicker := time.NewTicker(time.Duration(bc.config.KafkaMaxPollIntervalMs) * time.Millisecond / 2)
 		defer pauseTicker.Stop()
@@ -336,13 +337,16 @@ func (bc *AbstractBatchConsumer) pause() {
 				_ = bc.close()
 				return
 			}
-			select {
-			case <-bc.resumeChannel:
-				bc.paused.Store(false)
-				bc.Debugf("Consumer resumed.")
-				break loop
-			case <-pauseTicker.C:
+			if !firstPoll {
+				select {
+				case <-bc.resumeChannel:
+					bc.paused.Store(false)
+					bc.Debugf("Consumer resumed.")
+					break loop
+				case <-pauseTicker.C:
+				}
 			}
+			firstPoll = false
 			message, err := bc.consumer.Load().ReadMessage(bc.waitForMessages)
 			if err != nil {
 				kafkaErr := err.(kafka.Error)
