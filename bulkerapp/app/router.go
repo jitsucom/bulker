@@ -212,7 +212,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 		return
 	}
 	scanner := bufio.NewScanner(c.Request.Body)
-	scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
+	scanner.Buffer(make([]byte, 1024*10), 1024*1024)
 	consumed := 0
 	for scanner.Scan() {
 		eventBytes := scanner.Bytes()

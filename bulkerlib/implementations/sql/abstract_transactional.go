@@ -182,7 +182,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				_ = file.Close()
 			}()
 			scanner := bufio.NewScanner(file)
-			scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
+			scanner.Buffer(make([]byte, 1024*10), 1024*1024)
 			i := 0
 			for scanner.Scan() {
 				if !ps.batchFileSkipLines.Contains(i) {
@@ -324,7 +324,7 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 	}
 	err = ps.marshaller.Marshal(processedObject)
 	if err != nil {
-		return errorj.Decorate(err, "failed to marshall into csv file")
+		return errorj.Decorate(err, "failed to marshall into json file")
 	}
 	ps.eventsInBatch++
 	return nil

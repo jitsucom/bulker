@@ -217,7 +217,7 @@ func (j *JobRunner) getPodErrorLogs(podName, container string) string {
 	defer podLogs.Close()
 	buf := strings.Builder{}
 	scanner := bufio.NewScanner(podLogs)
-	scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
+	scanner.Buffer(make([]byte, 1024*10), 1024*1024)
 	errFound := false
 	for scanner.Scan() {
 		t := scanner.Text()

@@ -345,7 +345,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		_ = file.Close()
 	}()
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 1024*100), 1024*1024*10)
+	scanner.Buffer(make([]byte, 1024*10), 1024*1024)
 	for scanner.Scan() {
 		object := map[string]any{}
 		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
