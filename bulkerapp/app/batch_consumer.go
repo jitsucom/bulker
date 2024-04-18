@@ -106,7 +106,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		retriesHeader := kafkabase.GetKafkaHeader(message, retriesCountHeader)
 		if retriesHeader != "" {
 			// we perform retries in smaller batches
-			batchSize = retryBatchSize
+			//batchSize = retryBatchSize
 			counters.retried++
 		}
 		latestMessage = message
