@@ -61,7 +61,7 @@ func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
 		} else {
 			jm.writer = writer
 		}
-		jm.bufWriter = bufio.NewWriterSize(jm.writer, 10*1024*1024)
+		jm.bufWriter = bufio.NewWriterSize(jm.writer, 100*1024)
 		jm.encoder = jsoniter.NewEncoder(jm.bufWriter)
 		jm.encoder.SetEscapeHTML(false)
 	}

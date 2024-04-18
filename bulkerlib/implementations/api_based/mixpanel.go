@@ -65,12 +65,12 @@ func (mp *MixpanelBulker) Type() string {
 	return MixpanelBulkerTypeId
 }
 
-func (mp *MixpanelBulker) Upload(fileReader io.ReadSeeker) (string, error) {
+func (mp *MixpanelBulker) Upload(reader io.Reader) (string, error) {
 	if mp.closed.Load() {
 		return "", fmt.Errorf("attempt to use closed Mixpanel instance")
 	}
-	
-	req, err := http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, fileReader)
+
+	req, err := http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, reader)
 	if err != nil {
 		return "", err
 	}
@@ -102,6 +102,10 @@ func (mp *MixpanelBulker) GetBatchFileFormat() types2.FileFormat {
 }
 func (mp *MixpanelBulker) GetBatchFileCompression() types2.FileCompression {
 	return types2.FileCompressionGZIP
+}
+
+func (mp *MixpanelBulker) InmemoryBatch() bool {
+	return true
 }
 
 func (mp *MixpanelBulker) Close() error {

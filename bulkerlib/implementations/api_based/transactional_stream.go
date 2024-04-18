@@ -1,6 +1,7 @@
 package api_based
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,9 +18,10 @@ import (
 type ApiImplementation interface {
 	io.Closer
 	Type() string
-	Upload(fileReader io.ReadSeeker) (string, error)
+	Upload(reader io.Reader) (string, error)
 	GetBatchFileFormat() types2.FileFormat
 	GetBatchFileCompression() types2.FileCompression
+	InmemoryBatch() bool
 }
 
 type ApiBasedStream struct {
@@ -28,6 +30,8 @@ type ApiBasedStream struct {
 	implementation ApiImplementation
 
 	batchFile     *os.File
+	batchBuffer   *bytes.Buffer
+	inmemoryBatch bool
 	marshaller    types2.Marshaller
 	eventsInBatch int
 
@@ -47,6 +51,7 @@ func NewTransactionalStream(id string, impl ApiImplementation, streamOptions ...
 		"name": impl.Type(),
 	}}
 	ps.startTime = time.Now()
+	ps.inmemoryBatch = impl.InmemoryBatch()
 	return &ps, nil
 }
 
@@ -55,14 +60,16 @@ func (ps *ApiBasedStream) init(ctx context.Context) error {
 		return nil
 	}
 
-	if ps.batchFile == nil {
+	if ps.inmemoryBatch {
+		ps.batchBuffer = &bytes.Buffer{}
+	} else if ps.batchFile == nil {
 		var err error
 		ps.batchFile, err = os.CreateTemp("", fmt.Sprintf("bulker_%s", utils.SanitizeString(ps.id)))
 		if err != nil {
 			return err
 		}
-		ps.marshaller, _ = types2.NewMarshaller(ps.implementation.GetBatchFileFormat(), ps.implementation.GetBatchFileCompression())
 	}
+	ps.marshaller, _ = types2.NewMarshaller(ps.implementation.GetBatchFileFormat(), ps.implementation.GetBatchFileCompression())
 	ps.inited = true
 	return nil
 }
@@ -84,8 +91,10 @@ func (ps *ApiBasedStream) postConsume(err error) error {
 }
 
 func (ps *ApiBasedStream) postComplete(err error) (bulker.State, error) {
-	_ = ps.batchFile.Close()
-	_ = os.Remove(ps.batchFile.Name())
+	if ps.batchFile != nil {
+		_ = ps.batchFile.Close()
+		_ = os.Remove(ps.batchFile.Name())
+	}
 	if err != nil {
 		ps.state.SetError(err)
 		ps.state.Status = bulker.Failed
@@ -99,34 +108,43 @@ func (ps *ApiBasedStream) postComplete(err error) (bulker.State, error) {
 
 func (ps *ApiBasedStream) flushBatchFile(ctx context.Context) (err error) {
 	defer func() {
-		_ = ps.batchFile.Close()
-		_ = os.Remove(ps.batchFile.Name())
+		if ps.batchFile != nil {
+			_ = ps.batchFile.Close()
+			_ = os.Remove(ps.batchFile.Name())
+		}
 	}()
 	if ps.eventsInBatch > 0 {
 		err = ps.marshaller.Flush()
 		if err != nil {
 			return errorj.Decorate(err, "failed to flush marshaller")
 		}
-		err = ps.batchFile.Sync()
-		if err != nil {
-			return errorj.Decorate(err, "failed to sync batch file")
-		}
-		stat, _ := ps.batchFile.Stat()
-		var batchSizeMb float64
-		if stat != nil {
-			batchSizeMb = float64(stat.Size()) / 1024 / 1024
+		var batch io.Reader
+		if ps.inmemoryBatch {
 			sec := time.Since(ps.startTime).Seconds()
-			logging.Infof("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
-		}
-		workingFile := ps.batchFile
-		//create file reader for workingFile
-		_, err = workingFile.Seek(0, 0)
-		if err != nil {
-			return errorj.Decorate(err, "failed to seek to beginning of tmp file")
+			batchSizeMb := float64(ps.batchBuffer.Len()) / 1024 / 1024
+			logging.Infof("[%s] Flushed %d events to batch buffer. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
+			batch = ps.batchBuffer
+		} else {
+			err = ps.batchFile.Sync()
+			if err != nil {
+				return errorj.Decorate(err, "failed to sync batch file")
+			}
+			stat, _ := ps.batchFile.Stat()
+			var batchSizeMb float64
+			if stat != nil {
+				batchSizeMb = float64(stat.Size()) / 1024 / 1024
+				sec := time.Since(ps.startTime).Seconds()
+				logging.Infof("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
+			}
+			_, err = ps.batchFile.Seek(0, 0)
+			if err != nil {
+				return errorj.Decorate(err, "failed to seek to beginning of tmp file")
+			}
+			batch = ps.batchFile
 		}
 
 		loadTime := time.Now()
-		resp, err := ps.implementation.Upload(workingFile)
+		resp, err := ps.implementation.Upload(batch)
 		if err != nil {
 			return errorj.Decorate(err, "failed to upload data to "+ps.implementation.Type())
 		} else {
@@ -140,8 +158,12 @@ func (ps *ApiBasedStream) flushBatchFile(ctx context.Context) (err error) {
 	return nil
 }
 
-func (ps *ApiBasedStream) writeToBatchFile(ctx context.Context, processedObject types2.Object) error {
-	ps.marshaller.Init(ps.batchFile, nil)
+func (ps *ApiBasedStream) writeToBatch(ctx context.Context, processedObject types2.Object) error {
+	if ps.inmemoryBatch {
+		ps.marshaller.Init(ps.batchBuffer, nil)
+	} else {
+		ps.marshaller.Init(ps.batchFile, nil)
+	}
 	err := ps.marshaller.Marshal(processedObject)
 	if err != nil {
 		return errorj.Decorate(err, "failed to marshall into json file")
@@ -165,7 +187,7 @@ func (ps *ApiBasedStream) Consume(ctx context.Context, object types2.Object) (st
 		return
 	}
 
-	err = ps.writeToBatchFile(ctx, processedObject)
+	err = ps.writeToBatch(ctx, processedObject)
 
 	return
 }
@@ -192,7 +214,7 @@ func (ps *ApiBasedStream) Complete(ctx context.Context) (state bulker.State, err
 	if ps.state.LastError == nil {
 		//if at least one object was inserted
 		if ps.state.SuccessfulRows > 0 {
-			if ps.batchFile != nil {
+			if ps.batchFile != nil || ps.batchBuffer != nil {
 				if err = ps.flushBatchFile(ctx); err != nil {
 					return ps.state, err
 				}
