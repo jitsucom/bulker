@@ -10,6 +10,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -88,10 +89,18 @@ func (mp *MixpanelBulker) Upload(reader io.Reader) (int, string, error) {
 		//get body
 		var body []byte
 		body, err = io.ReadAll(res.Body)
-		if res.StatusCode == 200 || res.StatusCode == 400 {
-			return res.StatusCode, string(body), nil
+		strbody := string(body)
+		statusCode := res.StatusCode
+		if statusCode == 200 {
+			return statusCode, strbody, nil
+		} else if statusCode == 400 {
+			if strings.Contains(strbody, "some data points in the request failed validation") {
+				return statusCode, strbody, nil
+			} else {
+				return statusCode, "", mp.NewError("status: %v body: %s", statusCode, strbody)
+			}
 		} else {
-			return res.StatusCode, "", mp.NewError("status: %v body: %s err: %v", res.StatusCode, string(body), err)
+			return statusCode, "", mp.NewError("status: %v body: %s err: %v", statusCode, strbody, err)
 		}
 	}
 
