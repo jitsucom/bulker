@@ -65,14 +65,14 @@ func (mp *MixpanelBulker) Type() string {
 	return MixpanelBulkerTypeId
 }
 
-func (mp *MixpanelBulker) Upload(reader io.Reader) (string, error) {
+func (mp *MixpanelBulker) Upload(reader io.Reader) (int, string, error) {
 	if mp.closed.Load() {
-		return "", fmt.Errorf("attempt to use closed Mixpanel instance")
+		return 0, "", fmt.Errorf("attempt to use closed Mixpanel instance")
 	}
 
 	req, err := http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, reader)
 	if err != nil {
-		return "", err
+		return 0, "", err
 	}
 	req.Header.Set("Content-Type", "application/x-ndjson")
 	req.Header.Set("Accept", "application/json")
@@ -82,16 +82,16 @@ func (mp *MixpanelBulker) Upload(reader io.Reader) (string, error) {
 
 	res, err := mp.httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return 0, "", err
 	} else {
 		defer res.Body.Close()
 		//get body
 		var body []byte
 		body, err = io.ReadAll(res.Body)
-		if res.StatusCode != 200 || err != nil {
-			return "", mp.NewError("Failed to send Mixpanel batch: status: %v body: %s", res.StatusCode, string(body))
+		if res.StatusCode == 200 || res.StatusCode == 400 {
+			return res.StatusCode, string(body), nil
 		} else {
-			return string(body), nil
+			return res.StatusCode, "", mp.NewError("status: %v body: %s err: %v", res.StatusCode, string(body), err)
 		}
 	}
 

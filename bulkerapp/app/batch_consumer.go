@@ -38,7 +38,7 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 }
 
 func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error) {
-	bc.Infof("Processing batch #%d", batchNum)
+	bc.Debugf("Starting batch #%d", batchNum)
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 	startTime := time.Now()
 	var bulkerStream bulker.BulkerStream
@@ -162,7 +162,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			bc.pause(true)
 		})
 
-		bc.Infof("Committing %d events to %s", processed, destination.config.BulkerType)
+		bc.Infof("Batch #%d Committing %d events to %s", batchNum, processed, destination.config.BulkerType)
 		var state bulker.State
 		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(ctx)

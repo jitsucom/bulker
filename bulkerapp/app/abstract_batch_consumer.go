@@ -198,6 +198,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.Errorf("No messages were consumed. Consumer is retired.")
 		return BatchCounters{}, bc.NewError("Consumer is retired")
 	}
+	startedAt := time.Now()
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 	bc.Debugf("Starting consuming messages from topic")
 	bc.idle.Store(false)
@@ -207,23 +208,24 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.idle.Store(true)
 		bc.pause(false)
 		bc.countersMetric(counters)
+		sec := time.Since(startedAt).Seconds()
 		if err != nil {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "fail").Inc()
-			bc.Errorf("Consume finished with error: %v stats: %s offsets: %d-%d", err, counters.String(), lowOffset, highOffset)
+			bc.Errorf("Consume finished with error: %v stats: %s offsets: %d-%d time: %.2f s.", err, counters.String(), lowOffset, highOffset, sec)
 		} else {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "success").Inc()
 			if counters.processed > 0 {
-				bc.Infof("Successfully %s offsets: %d-%d", counters.String(), lowOffset, highOffset)
+				bc.Infof("Successfully %s offsets: %d-%d time: %.2f s. Avg Speed: %.2f events/sec", counters.String(), lowOffset, highOffset, sec, float64(counters.processed)/sec)
 			} else {
 				countersString := counters.String()
 				if countersString != "" {
 					if bc.mode == "retry" {
-						bc.Infof("Retry consumer finished: %s offsets: %d-%d", countersString, lowOffset, highOffset)
+						bc.Infof("Retry consumer finished: %s offsets: %d-%d time: %.2f s.", countersString, lowOffset, highOffset, sec)
 					} else {
-						bc.Infof("No messages were processed: %s offsets: %d-%d", countersString, lowOffset, highOffset)
+						bc.Infof("No messages were processed: %s offsets: %d-%d time: %.2f s.", countersString, lowOffset, highOffset, sec)
 					}
 				} else {
-					bc.Debugf("No messages were processed. offsets: %d-%d", lowOffset, highOffset)
+					bc.Debugf("No messages were processed. offsets: %d-%d time: %.2f s.", lowOffset, highOffset, sec)
 				}
 			}
 		}

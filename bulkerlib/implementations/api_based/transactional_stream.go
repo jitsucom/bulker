@@ -18,7 +18,7 @@ import (
 type ApiImplementation interface {
 	io.Closer
 	Type() string
-	Upload(reader io.Reader) (string, error)
+	Upload(reader io.Reader) (int, string, error)
 	GetBatchFileFormat() types2.FileFormat
 	GetBatchFileCompression() types2.FileCompression
 	InmemoryBatch() bool
@@ -100,7 +100,7 @@ func (ps *ApiBasedStream) postComplete(err error) (bulker.State, error) {
 		ps.state.Status = bulker.Failed
 	} else {
 		sec := time.Since(ps.startTime).Seconds()
-		logging.Infof("[%s] Stream completed successfully in %.2f s. Avg Speed: %.2f events/sec.", ps.id, sec, float64(ps.state.SuccessfulRows)/sec)
+		logging.Debugf("[%s] Stream completed successfully in %.2f s. Avg Speed: %.2f events/sec.", ps.id, sec, float64(ps.state.SuccessfulRows)/sec)
 		ps.state.Status = bulker.Completed
 	}
 	return ps.state, err
@@ -122,7 +122,7 @@ func (ps *ApiBasedStream) flushBatchFile(ctx context.Context) (err error) {
 		if ps.inmemoryBatch {
 			sec := time.Since(ps.startTime).Seconds()
 			batchSizeMb := float64(ps.batchBuffer.Len()) / 1024 / 1024
-			logging.Infof("[%s] Flushed %d events to batch buffer. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
+			logging.Debugf("[%s] Flushed %d events to batch buffer. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
 			batch = ps.batchBuffer
 		} else {
 			err = ps.batchFile.Sync()
@@ -144,15 +144,20 @@ func (ps *ApiBasedStream) flushBatchFile(ctx context.Context) (err error) {
 		}
 
 		loadTime := time.Now()
-		resp, err := ps.implementation.Upload(batch)
+		status, resp, err := ps.implementation.Upload(batch)
 		if err != nil {
-			return errorj.Decorate(err, "failed to upload data to "+ps.implementation.Type())
+			return errorj.Decorate(err, fmt.Sprintf("failed to upload data to %s code: %d resp: %s", ps.implementation.Type(), status, resp))
 		} else {
-			ps.state.Representation = map[string]string{
+			ps.state.Representation = map[string]any{
 				"name":     ps.implementation.Type(),
+				"status":   status,
 				"response": resp,
 			}
-			logging.Infof("[%s] Batch file loaded to %s in %.2f s. Response: %s", ps.id, ps.implementation.Type(), time.Since(loadTime).Seconds(), resp)
+			if status >= 200 && status < 300 {
+				logging.Debugf("[%s] Batch file loaded to %s in %.2f s. Response: %s", ps.id, ps.implementation.Type(), time.Since(loadTime).Seconds(), resp)
+			} else {
+				logging.Warnf("[%s] Batch file loaded to %s in %.2f s. Response: %s", ps.id, ps.implementation.Type(), time.Since(loadTime).Seconds(), resp)
+			}
 		}
 	}
 	return nil
