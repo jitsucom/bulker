@@ -317,6 +317,25 @@ func (th *TableHelper) getTableIdentifier(destinationID, tableName string) strin
 	return destinationID + "_" + tableName
 }
 
+func (th *TableHelper) Get(ctx context.Context, sqlAdapter SQLAdapter, tableName string, cacheTable bool) (*Table, error) {
+	var table *Table
+	var ok bool
+	if cacheTable {
+		table, ok = th.GetCached(tableName)
+		if ok {
+			return table, nil
+		}
+	}
+	table, err := sqlAdapter.GetTableSchema(ctx, tableName)
+	if err != nil {
+		return nil, err
+	}
+	if table.Exists() && cacheTable {
+		th.updateCached(table.Name, table)
+	}
+	return table, nil
+}
+
 func (th *TableHelper) GetCached(tableName string) (*Table, bool) {
 	th.RLock()
 	dbSchema, ok := th.tablesCache[tableName]

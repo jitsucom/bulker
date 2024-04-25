@@ -32,50 +32,55 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	}
 	table, processedObject, err := ps.preprocess(object)
 	if ps.schemaFromOptions != nil {
+		//just to convert values to schema data types
 		ps.adjustTableColumnTypes(table, nil, ps.schemaFromOptions, object)
 	}
 	if err != nil {
 		return
 	}
-	existingTable, err := ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
-	if err == nil {
-		// for autocommit mode this method only tries to convert values to existing column types
-		columnsAdded := ps.adjustTableColumnTypes(table, existingTable, table, processedObject)
-		if columnsAdded {
-			ps.updateRepresentationTable(existingTable)
-			// if new columns were added - update table. (for _unmapped_data column)
-			existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
-		}
-		if err == nil {
-			existingTable.Columns = table.Columns
-			ps.updateRepresentationTable(existingTable)
-			err = ps.sqlAdapter.Insert(ctx, existingTable, ps.merge, processedObject)
-		}
-	}
+	existingTable, err := ps.sqlAdapter.TableHelper().Get(ctx, ps.sqlAdapter, table.Name, true)
 	if err != nil {
-		// give another try without using table cache
-		existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.sqlAdapter, ps.id, table)
-		if err != nil {
-			ps.updateRepresentationTable(table)
-			err = errorj.Decorate(err, "failed to ensure table")
-			return
-		}
-		// for autocommit mode this method only tries to convert values to existing column types
-		columnsAdded := ps.adjustTableColumnTypes(table, existingTable, table, processedObject)
+		err = errorj.Decorate(err, "failed to get current table table")
+		return
+	}
+	if existingTable.Exists() {
+		currentTable := existingTable.Clone()
+		columnsAdded := ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
 		if columnsAdded {
-			ps.updateRepresentationTable(existingTable)
+			ps.updateRepresentationTable(currentTable)
 			// if new columns were added - update table. (for _unmapped_data column)
-			existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
+			existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, currentTable)
 			if err != nil {
-				err = errorj.Decorate(err, "failed to ensure table")
-				return
+				// give another try without using table cache
+				existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.sqlAdapter, ps.id, currentTable)
+				if err != nil {
+					ps.updateRepresentationTable(currentTable)
+					err = errorj.Decorate(err, "failed to ensure table")
+					return
+				}
+				currentTable = existingTable.Clone()
+				// here this method only tries to convert values to existing column types
+				columnsAdded = ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
+				if columnsAdded {
+					ps.updateRepresentationTable(currentTable)
+					// if new columns were added - update table. (for _unmapped_data column)
+					existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, currentTable)
+					if err != nil {
+						err = errorj.Decorate(err, "failed to ensure table")
+						return
+					}
+					currentTable = existingTable
+				}
 			}
 		}
-		existingTable.Columns = table.Columns
-		ps.updateRepresentationTable(existingTable)
-		return ps.state, processedObject, ps.sqlAdapter.Insert(ctx, existingTable, ps.merge, processedObject)
+		ps.updateRepresentationTable(currentTable)
+		err = ps.sqlAdapter.Insert(ctx, currentTable, ps.merge, processedObject)
+	} else {
+		existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
+		err = ps.sqlAdapter.Insert(ctx, existingTable, ps.merge, processedObject)
 	}
-	return ps.state, processedObject, nil
+
+	return ps.state, processedObject, err
 }
 
 func (ps *AutoCommitStream) Complete(ctx context.Context) (state bulker.State, err error) {

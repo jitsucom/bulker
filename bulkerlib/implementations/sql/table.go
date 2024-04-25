@@ -60,7 +60,11 @@ func (t *Table) SortedColumnNames() []string {
 func (t *Table) Clone() *Table {
 	clonedColumns := Columns{}
 	for k, v := range t.Columns {
-		clonedColumns[k] = v
+		clonedColumns[k] = types.SQLColumn{
+			Type:     v.Type,
+			DdlType:  v.DdlType,
+			DataType: v.DataType,
+		}
 	}
 
 	clonedPkFields := t.PKFields.Clone()
