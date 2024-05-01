@@ -283,7 +283,7 @@ func (th *TableHelper) getOrCreate(ctx context.Context, sqlAdapter SQLAdapter, d
 
 	//create new
 	if !dbTableSchema.Exists() {
-		if err := sqlAdapter.CreateTable(context.Background(), dataSchema); err != nil {
+		if err := sqlAdapter.CreateTable(ctx, dataSchema); err != nil {
 			return nil, err
 		}
 
