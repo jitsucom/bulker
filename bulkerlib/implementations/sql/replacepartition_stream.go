@@ -60,10 +60,6 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 		return ps.state, errors.New("stream is not active")
 	}
 	defer func() {
-		if err != nil {
-			ps.state.SuccessfulRows = 0
-			_ = ps.tx.Rollback()
-		}
 		state, err = ps.postComplete(ctx, err)
 	}()
 	//if no error happened during inserts. empty stream is valid - means no data for sync period
