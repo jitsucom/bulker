@@ -36,7 +36,6 @@ type MixpanelBulker struct {
 }
 
 func NewMixpanelBulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
-	fmt.Println("Init MixpanelBulker")
 	mixpanelConfig := MixpanelConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, &mixpanelConfig); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %v", err)

@@ -75,6 +75,8 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 				if err != nil {
 					err = multierror.Append(err1, err).ErrorOrNil()
 				}
+			} else {
+				err = err1
 			}
 			if err != nil {
 				return ps.state, err
