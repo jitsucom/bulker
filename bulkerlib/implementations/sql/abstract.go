@@ -26,6 +26,7 @@ type AbstractSQLStream struct {
 	mergeWindow       int
 	omitNils          bool
 	schemaFreeze      bool
+	maxColumnsCount   int
 	schemaFromOptions *Table
 
 	state  bulker.State
@@ -58,6 +59,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
 	ps.omitNils = OmitNilsOption.Get(&ps.options)
 	ps.schemaFreeze = SchemaFreezeOption.Get(&ps.options)
+	ps.maxColumnsCount = MaxColumnsCount.Get(&ps.options)
 
 	schema := bulker.SchemaOption.Get(&ps.options)
 	if !schema.IsEmpty() {
@@ -137,7 +139,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 			existingCol, ok = existingTable.Columns[name]
 		}
 		if !ok {
-			if ps.schemaFreeze {
+			if ps.schemaFreeze || len(current) >= ps.maxColumnsCount {
 				// when schemaFreeze=true all new columns values go to _unmapped_data
 				v, ok := values[name]
 				if ok {

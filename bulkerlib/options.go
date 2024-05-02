@@ -214,6 +214,10 @@ func withPrimaryKey(o *ImplementationOption[utils.Set[string]], pkFields ...stri
 	}
 }
 
+func WithBatchSize(batchSize int) StreamOption {
+	return WithOption(&BatchSizeOption, batchSize)
+}
+
 func WithPrimaryKey(pkFields ...string) StreamOption {
 	return withPrimaryKey(&PrimaryKeyOption, pkFields...)
 }
