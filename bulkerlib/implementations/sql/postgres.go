@@ -37,7 +37,7 @@ const (
          					LEFT JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
          					LEFT JOIN pg_constraint ON pg_constraint.conrelid = pg_class.oid AND pg_attribute.attnum = ANY (pg_constraint.conkey)
 						WHERE pg_class.relkind = 'r'::char
-  							AND  pg_namespace.nspname = $1
+  							AND  pg_namespace.nspname ilike $1
   							AND pg_class.relname = $2
   							AND pg_attribute.attnum > 0`
 	pgPrimaryKeyFieldsQuery = `SELECT tco.constraint_name as constraint_name,
@@ -48,7 +48,7 @@ FROM information_schema.table_constraints tco
                   AND kcu.constraint_schema = tco.constraint_schema
                   AND kcu.constraint_name = tco.constraint_name
 WHERE tco.constraint_type = 'PRIMARY KEY' AND 
-      kcu.table_schema = $1 AND
+      kcu.table_schema ilike $1 AND
       kcu.table_name = $2`
 	pgSetSearchPath                     = `SET search_path TO "%s";`
 	pgCreateDbSchemaIfNotExistsTemplate = `CREATE SCHEMA IF NOT EXISTS "%s"; SET search_path TO "%s";`

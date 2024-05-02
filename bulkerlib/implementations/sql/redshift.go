@@ -39,7 +39,7 @@ const (
              						   on kcu.constraint_name = tco.constraint_name
                                           and kcu.constraint_schema = tco.constraint_schema
  										  and kcu.constraint_name = tco.constraint_name
-				                     where tco.table_schema = $1 and tco.table_name = $2 and tco.constraint_type = 'PRIMARY KEY'
+				                     where tco.table_schema ilike $1 and tco.table_name = $2 and tco.constraint_type = 'PRIMARY KEY'
                                      order by kcu.ordinal_position`
 
 	credentialsMask = "*****"
