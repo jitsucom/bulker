@@ -79,7 +79,7 @@ func TestMaxColumns(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
 			name:                "added_columns_first_run",
-			tableName:           "schema_freeze_test",
+			tableName:           "max_columns_test",
 			modes:               []bulker.BulkMode{bulker.Batch, bulker.Stream},
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added.ndjson",
