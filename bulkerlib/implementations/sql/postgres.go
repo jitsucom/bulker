@@ -1,10 +1,9 @@
 package sql
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
@@ -12,7 +11,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	jsoniter "github.com/json-iterator/go"
+	"io"
 	"os"
 	"path"
 	"strings"
@@ -341,14 +340,15 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	defer func() {
 		_ = file.Close()
 	}()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 1024*10), 1024*1024)
-	for scanner.Scan() {
+	decoder := json.NewDecoder(file)
+	decoder.UseNumber()
+	for {
 		object := map[string]any{}
-		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
-		decoder.UseNumber()
 		err = decoder.Decode(&object)
 		if err != nil {
+			if err == io.EOF {
+				break
+			}
 			return state, err
 		}
 		args := make([]any, len(columnNames))
@@ -359,9 +359,6 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		if _, err := stmt.ExecContext(ctx, args...); err != nil {
 			return state, checkErr(err)
 		}
-	}
-	if err = scanner.Err(); err != nil {
-		return state, fmt.Errorf("LoadTable: failed to read file: %v", err)
 	}
 	_, err = stmt.ExecContext(ctx)
 	if err != nil {
