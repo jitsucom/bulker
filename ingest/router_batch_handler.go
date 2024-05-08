@@ -69,14 +69,14 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	okEvents := 0
 	errors := make([]string, 0)
 	for _, event := range payload.Batch {
-		messageId, _ := event["messageId"].(string)
+		messageId := event.GetS("messageId")
 		if messageId == "" {
 			messageId = uuid.New()
 		} else {
 			messageId = utils.ShortenString(messageIdUnsupportedChars.ReplaceAllString(messageId, "_"), 64)
 		}
 		c.Set(appbase.ContextMessageId, messageId)
-		_, ingestMessageBytes, err1 := r.buildIngestMessage(c, messageId, &event, payload.Context, "event", loc, stream)
+		_, ingestMessageBytes, err1 := r.buildIngestMessage(c, messageId, event, payload.Context, "event", loc, stream)
 		var asyncDestinations, tagsDestinations []string
 		if err1 == nil {
 			if len(stream.AsynchronousDestinations) == 0 {

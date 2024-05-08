@@ -10,6 +10,7 @@ import (
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"os"
 	"path"
@@ -43,7 +44,7 @@ const (
 
 var (
 	sfReservedWords             = []string{"all", "alter", "and", "any", "as", "between", "by", "case", "cast", "check", "column", "connect", "constraint", "create", "cross", "current", "current_date", "current_time", "current_timestamp", "current_user", "delete", "distinct", "drop", "else", "exists", "false", "following", "for", "from", "full", "grant", "group", "having", "ilike", "in", "increment", "inner", "insert", "intersect", "into", "is", "join", "lateral", "left", "like", "localtime", "localtimestamp", "minus", "natural", "not", "null", "of", "on", "or", "order", "qualify", "regexp", "revoke", "right", "rlike", "row", "rows", "sample", "select", "set", "some", "start", "table", "tablesample", "then", "to", "trigger", "true", "try_cast", "union", "unique", "update", "using", "values", "when", "whenever", "where", "with"}
-	sfReservedWordsSet          = utils.NewSet(sfReservedWords...)
+	sfReservedWordsSet          = types.NewSet(sfReservedWords...)
 	sfUnquotedIdentifierPattern = regexp.MustCompile(`^[a-z_][0-9a-z_]*$|^[A-Z_][0-9A-Z_]*$`)
 
 	sfMergeQueryTemplate, _ = template.New("snowflakeMergeQuery").Parse(sfMergeStatement)
@@ -233,7 +234,7 @@ func (s *Snowflake) InitDatabase(ctx context.Context) error {
 // GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
 func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
 	quotedTableName, tableName := s.tableHelper.adaptTableName(tableName)
-	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.NewSet[string]()}
+	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewSet[string]()}
 
 	query := fmt.Sprintf(sfDescTableQuery, quotedTableName)
 	rows, err := s.txOrDb(ctx).QueryContext(ctx, query)
@@ -265,7 +266,7 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 		columnName := fmt.Sprint(row["name"])
 		columnSnowflakeType := fmt.Sprint(row["type"])
 		dt, _ := s.GetDataType(columnSnowflakeType)
-		table.Columns[columnName] = types2.SQLColumn{Type: columnSnowflakeType, DataType: dt}
+		table.Columns.Set(columnName, types2.SQLColumn{Type: columnSnowflakeType, DataType: dt})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
@@ -293,10 +294,10 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 }
 
 // getPrimaryKey returns primary key name and fields
-func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string, utils.Set[string], error) {
+func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string, types.Set[string], error) {
 	quotedTableName := s.quotedTableName(tableName)
 
-	primaryKeys := utils.Set[string]{}
+	primaryKeys := types.Set[string]{}
 	statement := fmt.Sprintf(sfPrimaryKeyFieldsQuery, quotedTableName)
 	pkFieldsRows, err := s.txOrDb(ctx).QueryContext(ctx, statement)
 	if err != nil {
@@ -379,12 +380,7 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 			err = multierror.Append(err, err2)
 		}
 	}()
-	columns := targetTable.SortedColumnNames()
-	columnNames := make([]string, len(columns))
-	for i, name := range columns {
-		columnNames[i] = s.quotedColumnName(name)
-	}
-
+	columnNames := targetTable.MappedColumnNames(s.quotedColumnName)
 	statement := fmt.Sprintf(sfCopyStatement, quotedTableName, strings.Join(columnNames, ","), path.Base(loadSource.Path))
 
 	if _, err := s.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
@@ -407,7 +403,7 @@ func (s *Snowflake) Insert(ctx context.Context, table *Table, merge bool, object
 	for _, object := range objects {
 		pkMatchConditions := &WhenConditions{}
 		for _, pkColumn := range table.GetPKFields() {
-			value := object[pkColumn]
+			value := object.GetN(pkColumn)
 			if value == nil {
 				pkMatchConditions = pkMatchConditions.Add(pkColumn, "IS NULL", nil)
 			} else {
@@ -451,8 +447,7 @@ func (s *Snowflake) ReplaceTable(ctx context.Context, targetTableName string, re
 }
 
 // columnDDLsfColumnDDL returns column DDL (column name, mapped sql type)
-func sfColumnDDL(quotedName, name string, table *Table) string {
-	column := table.Columns[name]
+func sfColumnDDL(quotedName, _ string, _ *Table, column types2.SQLColumn) string {
 	return fmt.Sprintf(`%s %s`, quotedName, column.GetDDLType())
 }
 

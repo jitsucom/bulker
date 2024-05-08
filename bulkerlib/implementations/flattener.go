@@ -1,14 +1,21 @@
 package implementations
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
-	jsoniter "github.com/json-iterator/go"
 	"reflect"
+	"strings"
 )
 
+const SqlTypePrefix = "__sql_type"
+
+var filterFunc = func(s string) bool {
+	return !strings.HasPrefix(s, SqlTypePrefix)
+}
+
 type Flattener interface {
-	FlattenObject(object map[string]any, sqlTypeHints types.SQLTypes) (map[string]any, error)
+	FlattenObject(object types.Object, sqlTypeHints types.SQLTypes) (types.Object, error)
 }
 
 type FlattenerImpl struct {
@@ -27,63 +34,77 @@ func NewFlattener(omitNilValues, stringifyObjects bool) Flattener {
 // FlattenObject flatten object e.g. from {"key1":{"key2":123}} to {"key1_key2":123}
 // from {"$key1":1} to {"_key1":1}
 // from {"(key1)":1} to {"_key1_":1}
-func (f *FlattenerImpl) FlattenObject(object map[string]any, sqlTypeHints types.SQLTypes) (map[string]any, error) {
-	flattenMap := make(map[string]any)
+func (f *FlattenerImpl) FlattenObject(object types.Object, sqlTypeHints types.SQLTypes) (types.Object, error) {
+	flattenMap := types.NewObject()
 
 	err := f.flatten("", object, flattenMap, sqlTypeHints)
 	if err != nil {
 		return nil, err
 	}
-	emptyKeyValue, hasEmptyKey := flattenMap[""]
+	emptyKeyValue, hasEmptyKey := flattenMap.Get("")
 	if hasEmptyKey {
-		flattenMap["_unnamed"] = emptyKeyValue
-		delete(flattenMap, "")
+		flattenMap.Set("_unnamed", emptyKeyValue)
+		flattenMap.Delete("")
 	}
 	return flattenMap, nil
 }
 
 // recursive function for flatten key (if value is inner object -> recursion call)
 // Reformat key
-func (f *FlattenerImpl) flatten(key string, value any, destination map[string]any, sqlTypeHints types.SQLTypes) error {
-	t := reflect.ValueOf(value)
-	switch t.Kind() {
-	case reflect.Slice:
-		b, err := jsoniter.Marshal(value)
-		if err != nil {
-			return fmt.Errorf("error marshaling array with key %s: %v", key, err)
+func (f *FlattenerImpl) flatten(key string, value types.Object, destination types.Object, sqlTypeHints types.SQLTypes) error {
+	if _, ok := sqlTypeHints[key]; ok {
+		if f.stringifyObjects {
+
+			// if there is sql type hint for nested object - we don't flatten it.
+			// Instead, we marshal it to json string hoping that database cast function will do the job
+			b, err := value.ToJSONFilter(filterFunc)
+			if err != nil {
+				return fmt.Errorf("error marshaling json object with key %s: %v", key, err)
+			}
+			destination.Set(key, b)
+		} else {
+			destination.Set(key, types.ObjectToMapFilter(value, filterFunc))
 		}
-		destination[key] = string(b)
-	case reflect.Map:
-		unboxed := value.(map[string]any)
-		if _, ok := sqlTypeHints[key]; ok {
-			if f.stringifyObjects {
-				// if there is sql type hint for nested object - we don't flatten it.
-				// Instead, we marshal it to json string hoping that database cast function will do the job
-				b, err := jsoniter.Marshal(value)
-				if err != nil {
-					return fmt.Errorf("error marshaling json object with key %s: %v", key, err)
-				}
-				destination[key] = string(b)
+		return nil
+	}
+	for el := value.Front(); el != nil; el = el.Next() {
+		newKey := el.Key
+		if strings.HasPrefix(newKey, SqlTypePrefix) {
+			continue
+		}
+		if key != "" {
+			newKey = key + "_" + newKey
+		}
+		elv := el.Value
+		if elv == nil {
+			if !f.omitNilValues {
+				destination.Set(newKey, elv)
 			} else {
-				destination[key] = unboxed
+				continue
 			}
-			return nil
-		}
-		for k, v := range unboxed {
-			newKey := k
-			if key != "" {
-				newKey = key + "_" + newKey
+		} else {
+			k := reflect.TypeOf(elv).Kind()
+			switch k {
+			case reflect.Slice, reflect.Array:
+				b, err := json.Marshal(elv)
+				if err != nil {
+					return fmt.Errorf("error marshaling array with key %s: %v", key, err)
+				}
+				destination.Set(key, string(b))
+			case reflect.Map:
+				return fmt.Errorf("flatter doesn't support map. Object is required")
+			default:
+				obj, ok := elv.(types.Object)
+				if ok {
+					if err := f.flatten(newKey, obj, destination, sqlTypeHints); err != nil {
+						return err
+					}
+				} else {
+					destination.Set(newKey, elv)
+				}
 			}
-			if err := f.flatten(newKey, v, destination, sqlTypeHints); err != nil {
-				return err
-			}
-		}
-	default:
-		if !f.omitNilValues || value != nil {
-			destination[key] = value
 		}
 	}
-
 	return nil
 }
 

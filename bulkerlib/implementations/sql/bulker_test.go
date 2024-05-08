@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	testcontainers2 "github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers"
@@ -12,9 +13,9 @@ import (
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/require"
 	"os"
 	"strings"
@@ -44,7 +45,7 @@ var configRegistry = map[string]any{}
 
 type ExpectedTable struct {
 	Name     string
-	PKFields utils.Set[string]
+	PKFields types.Set[string]
 	Columns  Columns
 }
 
@@ -56,7 +57,7 @@ var clickhouseClusterContainerNoShards *clickhouse_noshards.ClickHouseClusterCon
 
 func init() {
 	//uncomment to run tests locally with just one bulker type
-	//allBulkerConfigs = []string{PostgresBulkerTypeId}
+	allBulkerConfigs = []string{MySQLBulkerTypeId}
 
 	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {
 		bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
@@ -271,7 +272,7 @@ func TestBasics(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/columns_added.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("_timestamp", "column1", "column2", "column3", "id", "name"),
+				Columns: justColumns("_timestamp", "id", "name", "column1", "column2", "column3"),
 			},
 			expectedRowsCount: 6,
 			expectedRows: []map[string]any{
@@ -291,7 +292,7 @@ func TestBasics(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/repeated_ids.ndjson",
 			expectedTable: ExpectedTable{
-				PKFields: utils.Set[string]{},
+				PKFields: types.Set[string]{},
 				Columns:  justColumns("_timestamp", "id", "name"),
 			},
 			expectedRows: []map[string]any{
@@ -309,12 +310,13 @@ func TestBasics(t *testing.T) {
 			configIds:      allBulkerConfigs,
 		},
 		{
-			name:              "repeated_ids_pk",
-			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
-			expectPartitionId: true,
-			dataFile:          "test_data/repeated_ids.ndjson",
+			name:                "repeated_ids_pk",
+			modes:               []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId:   true,
+			dataFile:            "test_data/repeated_ids.ndjson",
+			leaveResultingTable: true,
 			expectedTable: ExpectedTable{
-				PKFields: utils.NewSet("id"),
+				PKFields: types.NewSet("id"),
 				Columns:  justColumns("_timestamp", "id", "name"),
 			},
 			expectedRows: []map[string]any{
@@ -333,7 +335,7 @@ func TestBasics(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/repeated_ids_multi.ndjson",
 			expectedTable: ExpectedTable{
-				PKFields: utils.NewSet("id", "id2"),
+				PKFields: types.NewSet("id", "id2"),
 				Columns:  justColumns("_timestamp", "id", "id2", "name"),
 			},
 			expectedRows: []map[string]any{
@@ -390,7 +392,7 @@ func TestBasics(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/schema_option.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("_timestamp", "column1", "column2", "column3", "id", "name"),
+				Columns: justColumns("_timestamp", "id", "name", "column1", "column2", "column3"),
 			},
 			expectedRowsCount: 2,
 			expectedRows: []map[string]any{
@@ -516,10 +518,9 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				return
 			}
 		}
-		obj := types2.Object{}
-		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
 		decoder.UseNumber()
-		err = decoder.Decode(&obj)
+		obj, err := types2.ObjectFromDecoder(decoder)
 		PostStep("decode_json", testConfig, mode, reqr, err)
 		_, _, err = stream.Consume(ctx, obj)
 		PostStep(fmt.Sprintf("consume_object_%d", i), testConfig, mode, reqr, err)
@@ -539,51 +540,51 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		return
 	}
 	//PostStep("state_lasterror", testConfig, mode, reqr, state.LastError)
-	if len(testConfig.expectedTable.Columns) > 0 {
+	if testConfig.expectedTable.Columns.Len() > 0 {
 		//Check table schema
 		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
 		PostStep("get_table", testConfig, mode, reqr, err)
 		switch testConfig.expectedTableTypeChecking {
 		case TypeCheckingDisabled:
-			for k := range testConfig.expectedTable.Columns {
-				testConfig.expectedTable.Columns[k] = types2.SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
+			for el := testConfig.expectedTable.Columns.Front(); el != nil; el = el.Next() {
+				el.Value = types2.SQLColumn{Type: "__type_checking_disabled_"}
 			}
-			for k := range table.Columns {
-				table.Columns[k] = types2.SQLColumn{Type: "__TEST_type_checking_disabled_by_expectedTableTypeChecking__"}
+			for el := table.Columns.Front(); el != nil; el = el.Next() {
+				el.Value = types2.SQLColumn{Type: "__type_checking_disabled_"}
 			}
 		case TypeCheckingDataTypesOnly:
-			for k := range testConfig.expectedTable.Columns {
-				testConfig.expectedTable.Columns[k] = types2.SQLColumn{DataType: testConfig.expectedTable.Columns[k].DataType}
+			for el := testConfig.expectedTable.Columns.Front(); el != nil; el = el.Next() {
+				el.Value = types2.SQLColumn{DataType: el.Value.DataType}
 			}
-			for k := range table.Columns {
-				table.Columns[k] = types2.SQLColumn{DataType: table.Columns[k].DataType}
+			for el := table.Columns.Front(); el != nil; el = el.Next() {
+				el.Value = types2.SQLColumn{DataType: el.Value.DataType}
 			}
 		case TypeCheckingSQLTypesOnly:
-			for k := range testConfig.expectedTable.Columns {
-				testConfig.expectedTable.Columns[k] = types2.SQLColumn{Type: testConfig.expectedTable.Columns[k].Type}
+			for el := testConfig.expectedTable.Columns.Front(); el != nil; el = el.Next() {
+				el.Value = types2.SQLColumn{Type: el.Value.Type}
 			}
-			for k := range table.Columns {
-				table.Columns[k] = types2.SQLColumn{Type: table.Columns[k].Type}
+			for el := table.Columns.Front(); el != nil; el = el.Next() {
+				el.Value = types2.SQLColumn{Type: el.Value.Type}
 			}
 		}
 		if !testConfig.expectedTableCaseChecking {
-			newColumns := make(Columns, len(testConfig.expectedTable.Columns))
-			for k := range testConfig.expectedTable.Columns {
-				newColumns[strings.ToLower(k)] = testConfig.expectedTable.Columns[k]
+			newColumns := NewColumns()
+			for el := testConfig.expectedTable.Columns.Front(); el != nil; el = el.Next() {
+				newColumns.Set(strings.ToLower(el.Key), el.Value)
 			}
 			testConfig.expectedTable.Columns = newColumns
-			newColumns = make(Columns, len(table.Columns))
-			for k := range table.Columns {
-				newColumns[strings.ToLower(k)] = table.Columns[k]
+			newColumns = NewColumns()
+			for el := table.Columns.Front(); el != nil; el = el.Next() {
+				newColumns.Set(strings.ToLower(el.Key), el.Value)
 			}
 			table.Columns = newColumns
 
-			newPKFields := utils.NewSet[string]()
+			newPKFields := types.NewSet[string]()
 			for k := range testConfig.expectedTable.PKFields {
 				newPKFields.Put(strings.ToLower(k))
 			}
 			testConfig.expectedTable.PKFields = newPKFields
-			newPKFields = utils.NewSet[string]()
+			newPKFields = types.NewSet[string]()
 			for k := range table.PKFields {
 				newPKFields.Put(strings.ToLower(k))
 			}
@@ -594,7 +595,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 
 			table.PrimaryKeyName = strings.ToLower(table.PrimaryKeyName)
 		}
-		expectedPKFields := utils.NewSet[string]()
+		expectedPKFields := types.NewSet[string]()
 		if len(testConfig.expectedTable.PKFields) > 0 {
 			expectedPKFields = testConfig.expectedTable.PKFields
 		}
@@ -613,7 +614,13 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			// don't check this yet
 			TimestampColumn: table.TimestampColumn,
 		}
+		actualColumns := table.Columns
+		expectedColumns := expectedTable.Columns
+		table.Columns = nil
+		expectedTable.Columns = nil
 		reqr.Equal(expectedTable, table)
+		reqr.Equal(expectedColumns.ToArray(), actualColumns.ToArray())
+
 	}
 	if testConfig.expectedRowsCount != nil || testConfig.expectedRows != nil {
 		time.Sleep(1 * time.Second)
@@ -655,16 +662,17 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 			newOptions = append(newOptions, bulker.WithPartition(partitionId))
 			testConfig.streamOptions = newOptions
 			//add partition id column to expectedTable
-			if len(testConfig.expectedTable.Columns) > 0 {
-				textColumn, ok := testConfig.expectedTable.Columns["name"]
+			if testConfig.expectedTable.Columns.Len() > 0 {
+				textColumn, ok := testConfig.expectedTable.Columns.Get("name")
 				if !ok {
-					textColumn, ok = testConfig.expectedTable.Columns["NAME"]
+					textColumn, ok = testConfig.expectedTable.Columns.Get("NAME")
 					if !ok {
 						t.Fatalf("test config error: expected table must have a 'name' column of string type to guess what type to expect for %s column", PartitonIdKeyword)
 					}
 				}
-				newExpectedTable := ExpectedTable{Columns: testConfig.expectedTable.Columns.Clone(), PKFields: testConfig.expectedTable.PKFields.Clone()}
-				newExpectedTable.Columns[PartitonIdKeyword] = textColumn
+				newExpectedTable := ExpectedTable{Columns: NewColumns(), PKFields: testConfig.expectedTable.PKFields.Clone()}
+				newExpectedTable.Columns.Set(PartitonIdKeyword, textColumn)
+				newExpectedTable.Columns.SetAll(testConfig.expectedTable.Columns)
 				testConfig.expectedTable = newExpectedTable
 			}
 			//add partition id value to all expected rows
@@ -721,9 +729,9 @@ func PostStep(step string, testConfig bulkerTestConfig, mode bulker.BulkMode, re
 
 // Returns Columns map with no type information
 func justColumns(columns ...string) Columns {
-	colsMap := make(Columns, len(columns))
+	colsMap := NewColumns()
 	for _, col := range columns {
-		colsMap[col] = types2.SQLColumn{}
+		colsMap.Set(col, types2.SQLColumn{})
 	}
 	return colsMap
 }

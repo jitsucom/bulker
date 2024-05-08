@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"io"
@@ -72,13 +73,12 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusOK, "error reading HTTP body", false, err, true)
 		return
 	}
-	message := AnalyticsServerEvent{}
-	err = json.Unmarshal(body, &message)
+	message, err := types.JsonFromBytes(body)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
 		return
 	}
-	messageId, _ := message["messageId"].(string)
+	messageId := message.GetS("messageId")
 	if messageId == "" {
 		messageId = uuid.New()
 	} else {
@@ -100,7 +100,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	eventsLogId = stream.Stream.Id
-	ingestMessage, ingestMessageBytes, err := r.buildIngestMessage(c, messageId, &message, nil, tp, loc, stream)
+	ingestMessage, ingestMessageBytes, err := r.buildIngestMessage(c, messageId, message, nil, tp, loc, stream)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusOK, "event error", false, err, true)
 		return

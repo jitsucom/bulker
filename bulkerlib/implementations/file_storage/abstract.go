@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
@@ -11,8 +12,8 @@ import (
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	jsoniter "github.com/json-iterator/go"
 	"os"
 	"path"
 	"sort"
@@ -37,8 +38,8 @@ type AbstractFileStorageStream struct {
 	targetMarshaller   types2.Marshaller
 	eventsInBatch      int
 	batchFileLinesByPK map[string]int
-	batchFileSkipLines utils.Set[int]
-	csvHeader          utils.Set[string]
+	batchFileSkipLines types.Set[int]
+	csvHeader          types.Set[string]
 
 	firstEventTime time.Time
 	lastEventTime  time.Time
@@ -64,9 +65,9 @@ func newAbstractFileStorageStream(id string, p implementations2.FileAdapter, fil
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
 	if ps.merge {
 		ps.batchFileLinesByPK = make(map[string]int)
-		ps.batchFileSkipLines = utils.NewSet[int]()
+		ps.batchFileSkipLines = types.NewSet[int]()
 	}
-	ps.csvHeader = utils.NewSet[string]()
+	ps.csvHeader = types.NewSet[string]()
 	ps.state = bulker.State{Status: bulker.Active}
 	ps.startTime = time.Now()
 	return ps, nil
@@ -144,7 +145,7 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 	defer func() {
 		if ps.merge {
 			ps.batchFileLinesByPK = make(map[string]int)
-			ps.batchFileSkipLines = utils.NewSet[int]()
+			ps.batchFileSkipLines = types.NewSet[int]()
 		}
 		_ = ps.batchFile.Close()
 		_ = os.Remove(ps.batchFile.Name())
@@ -202,10 +203,9 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 			for scanner.Scan() {
 				if !ps.batchFileSkipLines.Contains(i) {
 					if needToConvert {
-						dec := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
+						dec := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
 						dec.UseNumber()
-						obj := make(map[string]any)
-						err = dec.Decode(&obj)
+						obj, err := types2.ObjectFromDecoder(dec)
 						if err != nil {
 							return errorj.Decorate(err, "failed to decode json object from batch filer")
 						}
@@ -265,12 +265,12 @@ func (ps *AbstractFileStorageStream) getPKValue(object types2.Object) (string, e
 		return "", fmt.Errorf("primary key is not set")
 	}
 	if l == 1 {
-		pkValue, _ := object[pkColumns[0]]
+		pkValue := object.GetN(pkColumns[0])
 		return fmt.Sprint(pkValue), nil
 	}
 	pkArr := make([]string, 0, l)
 	for _, col := range pkColumns {
-		pkValue, _ := object[col]
+		pkValue := object.GetN(col)
 		pkArr = append(pkArr, fmt.Sprint(pkValue))
 	}
 	return strings.Join(pkArr, "_###_"), nil
@@ -301,6 +301,18 @@ func (ps *AbstractFileStorageStream) writeToBatchFile(ctx context.Context, proce
 	return nil
 }
 
+func (ps *AbstractFileStorageStream) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types2.Object, err error) {
+	obj, err := types2.ObjectFromBytes(json)
+	if err != nil {
+		return ps.state, nil, fmt.Errorf("Error parsing JSON: %v", err)
+	}
+	return ps.Consume(ctx, obj)
+}
+
+func (ps *AbstractFileStorageStream) ConsumeMap(ctx context.Context, mp map[string]any) (state bulker.State, processedObject types2.Object, err error) {
+	return ps.Consume(ctx, types2.ObjectFromMap(mp))
+}
+
 func (ps *AbstractFileStorageStream) Consume(ctx context.Context, object types2.Object) (state bulker.State, processedObject types2.Object, err error) {
 	defer func() {
 		err = ps.postConsume(err)
@@ -324,7 +336,7 @@ func (ps *AbstractFileStorageStream) Consume(ctx context.Context, object types2.
 	}
 
 	if ps.targetMarshaller.Format() == types2.FileFormatCSV {
-		ps.csvHeader.PutAllKeys(processedObject)
+		ps.csvHeader.PutAllOrderedKeys(processedObject)
 	}
 
 	err = ps.writeToBatchFile(ctx, processedObject)
@@ -346,7 +358,7 @@ func (ps *AbstractFileStorageStream) Abort(ctx context.Context) (state bulker.St
 
 func (ps *AbstractFileStorageStream) getEventTime(object types2.Object) time.Time {
 	if ps.timestampColumn != "" {
-		tm, ok := types2.ReformatTimeValue(object[ps.timestampColumn], false)
+		tm, ok := types2.ReformatTimeValue(object.GetN(ps.timestampColumn), false)
 		if ok {
 			return tm
 		}

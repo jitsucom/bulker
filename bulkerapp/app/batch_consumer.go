@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
@@ -12,7 +13,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
-	jsoniter "github.com/json-iterator/go"
 	"strconv"
 	"time"
 )
@@ -114,10 +114,9 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			firstPosition = &message.TopicPartition
 			counters.firstOffset = int64(message.TopicPartition.Offset)
 		}
-		obj := types.Object{}
-		dec := jsoniter.NewDecoder(bytes.NewReader(message.Value))
+		dec := json.NewDecoder(bytes.NewReader(message.Value))
 		dec.UseNumber()
-		err = dec.Decode(&obj)
+		obj, err := types.ObjectFromDecoder(dec)
 		if err == nil {
 			if bulkerStream == nil {
 				destination.InitBulkerInstance()
@@ -128,7 +127,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 				}
 			}
 			if err == nil {
-				bc.Debugf("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), kafkabase.GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
+				//bc.Debugf("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), kafkabase.GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
 				_, processedObjectSample, err = bulkerStream.Consume(ctx, obj)
 				if err != nil {
 					bc.errorMetric("bulker_stream_error")

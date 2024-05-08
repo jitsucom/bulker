@@ -296,10 +296,9 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				return
 			}
 		}
-		obj := types.Object{}
-		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
 		decoder.UseNumber()
-		err = decoder.Decode(&obj)
+		obj, err := types.ObjectFromDecoder(decoder)
 		PostStep("decode_json", testConfig, mode, reqr, err)
 		_, _, err = stream.Consume(ctx, obj)
 		PostStep(fmt.Sprintf("consume_object_%d", i), testConfig, mode, reqr, err)

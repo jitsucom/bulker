@@ -10,6 +10,7 @@ import (
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"regexp"
 	"strings"
@@ -44,12 +45,12 @@ type TopicManager struct {
 	repository *Repository
 	cron       *Cron
 	// destinationTopics by destinationId.
-	destinationTopics map[string]utils.Set[string]
+	destinationTopics map[string]types.Set[string]
 	// topicLastActiveDate last message timestamp found in topic
 	topicLastActiveDate map[string]*time.Time
-	abandonedTopics     utils.Set[string]
-	staleTopics         utils.Set[string]
-	allTopics           utils.Set[string]
+	abandonedTopics     types.Set[string]
+	staleTopics         types.Set[string]
+	allTopics           types.Set[string]
 
 	//batch consumers by destinationId
 	batchConsumers  map[string][]BatchConsumer
@@ -79,7 +80,7 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		cron:                 appContext.cron,
 		kaftaAdminClient:     admin,
 		kafkaBootstrapServer: appContext.config.KafkaBootstrapServers,
-		destinationTopics:    make(map[string]utils.Set[string]),
+		destinationTopics:    make(map[string]types.Set[string]),
 		topicLastActiveDate:  make(map[string]*time.Time),
 		batchProducer:        appContext.batchProducer,
 		streamProducer:       appContext.streamProducer,
@@ -87,8 +88,8 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		batchConsumers:       make(map[string][]BatchConsumer),
 		retryConsumers:       make(map[string][]BatchConsumer),
 		streamConsumers:      make(map[string][]StreamConsumer),
-		abandonedTopics:      utils.NewSet[string](),
-		allTopics:            utils.NewSet[string](),
+		abandonedTopics:      types.NewSet[string](),
+		allTopics:            types.NewSet[string](),
 		closed:               make(chan struct{}),
 		refreshChan:          make(chan bool, 1),
 		requiredDestinationTopics: map[string]map[string]string{
@@ -179,8 +180,8 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 	topicsCountByMode := make(map[string]float64)
 	topicsErrorsByMode := make(map[string]float64)
 
-	allTopics := utils.NewSet[string]()
-	staleTopics := utils.NewSet[string]()
+	allTopics := types.NewSet[string]()
+	staleTopics := types.NewSet[string]()
 
 	for topic, topicMetadata := range metadata.Topics {
 		allTopics.Put(topic)
@@ -199,9 +200,9 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 			otherTopicsCount++
 			continue
 		}
-		var dstTopics utils.Set[string]
+		var dstTopics types.Set[string]
 		if dstTopics, ok = tm.destinationTopics[destinationId]; !ok {
-			dstTopics = utils.NewSet[string]()
+			dstTopics = types.NewSet[string]()
 			tm.destinationTopics[destinationId] = dstTopics
 		}
 		if !dstTopics.Contains(topic) {

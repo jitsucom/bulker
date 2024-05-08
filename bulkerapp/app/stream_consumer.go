@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
@@ -13,7 +14,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
-	jsoniter "github.com/json-iterator/go"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -100,6 +100,18 @@ type StreamWrapper struct {
 	stream      bulker.BulkerStream
 	topicId     string
 	tableName   string
+}
+
+func (ps *StreamWrapper) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types.Object, err error) {
+	obj, err := types.ObjectFromBytes(json)
+	if err != nil {
+		return bulker.State{}, nil, fmt.Errorf("Error parsing JSON: %v", err)
+	}
+	return ps.Consume(ctx, obj)
+}
+
+func (ps *StreamWrapper) ConsumeMap(ctx context.Context, mp map[string]any) (state bulker.State, processedObject types.Object, err error) {
+	return ps.Consume(ctx, types.ObjectFromMap(mp))
 }
 
 func (sw *StreamWrapper) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObject types.Object, err error) {
@@ -203,16 +215,15 @@ func (sc *StreamConsumerImpl) start() {
 				}
 				metricsMeta := kafkabase.GetKafkaHeader(message, MetricsMetaHeader)
 				metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "consumed").Inc()
-				obj := types.Object{}
-				dec := jsoniter.NewDecoder(bytes.NewReader(message.Value))
+				dec := json.NewDecoder(bytes.NewReader(message.Value))
 				dec.UseNumber()
-				err = dec.Decode(&obj)
+				obj, err := types.ObjectFromDecoder(dec)
 				if err != nil {
 					metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "parse_event_error").Inc()
 					sc.postEventsLog(message.Value, nil, nil, err)
 					sc.Errorf("Failed to parse event from message: %s offset: %s: %v", message.Value, message.TopicPartition.Offset.String(), err)
 				} else {
-					sc.Debugf("Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", obj.Id(), message.TopicPartition.Offset.String(), kafkabase.GetKafkaHeader(message, retriesCountHeader), sc.destination.config.BulkerType)
+					//sc.Debugf("Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", obj.Id(), message.TopicPartition.Offset.String(), kafkabase.GetKafkaHeader(message, retriesCountHeader), sc.destination.config.BulkerType)
 					var state bulker.State
 					var processedObject types.Object
 					state, processedObject, err = (*sc.stream.Load()).Consume(context.Background(), obj)
@@ -309,7 +320,7 @@ func (sc *StreamConsumerImpl) postEventsLog(message []byte, representation any, 
 	if representation != nil {
 		object["representation"] = representation
 	}
-	if len(processedObject) > 0 {
+	if processedObject.Len() > 0 {
 		object["mappedData"] = processedObject
 	}
 

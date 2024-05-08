@@ -49,9 +49,22 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 	return &ps, nil
 }
 
+func (ps *ReplacePartitionStream) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types.Object, err error) {
+	obj, err := types.ObjectFromBytes(json)
+	if err != nil {
+		return ps.state, nil, fmt.Errorf("Error parsing JSON: %v", err)
+	}
+	return ps.Consume(ctx, obj)
+}
+
+func (ps *ReplacePartitionStream) ConsumeMap(ctx context.Context, mp map[string]any) (state bulker.State, processedObject types.Object, err error) {
+	return ps.Consume(ctx, types.ObjectFromMap(mp))
+}
+
 func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects types.Object, err error) {
-	objCopy := utils.MapCopy(object)
-	objCopy[PartitonIdKeyword] = ps.partitionId
+	objCopy := types.NewObject()
+	objCopy.Set(PartitonIdKeyword, ps.partitionId)
+	objCopy.SetAll(object)
 	return ps.AbstractTransactionalSQLStream.Consume(ctx, objCopy)
 }
 
@@ -110,7 +123,7 @@ func (ps *ReplacePartitionStream) clearPartition(ctx context.Context, tx *TxSQLA
 	if table.Exists() {
 		//if table exists we need to delete previous data associated with partitionId,
 		//but we need to check if partitionId column exists in table first
-		_, ok := table.Columns[tx.ColumnName(PartitonIdKeyword)]
+		_, ok := table.Columns.Get(tx.ColumnName(PartitonIdKeyword))
 		if !ok {
 			return fmt.Errorf("couldn't start ReplacePartitionStream: destination table [%s] exist but it is not managed by ReplacePartitionStream: %s column is missing", ps.tableName, tx.ColumnName(PartitonIdKeyword))
 		}

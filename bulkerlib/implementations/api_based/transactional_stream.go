@@ -177,6 +177,18 @@ func (ps *ApiBasedStream) writeToBatch(ctx context.Context, processedObject type
 	return nil
 }
 
+func (ps *ApiBasedStream) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types2.Object, err error) {
+	obj, err := types2.ObjectFromBytes(json)
+	if err != nil {
+		return ps.state, nil, fmt.Errorf("Error parsing JSON: %v", err)
+	}
+	return ps.Consume(ctx, obj)
+}
+
+func (ps *ApiBasedStream) ConsumeMap(ctx context.Context, mp map[string]any) (state bulker.State, processedObject types2.Object, err error) {
+	return ps.Consume(ctx, types2.ObjectFromMap(mp))
+}
+
 func (ps *ApiBasedStream) Consume(ctx context.Context, object types2.Object) (state bulker.State, processedObject types2.Object, err error) {
 	defer func() {
 		err = ps.postConsume(err)

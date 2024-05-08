@@ -227,10 +227,10 @@ func (r *Router) BulkHandler(c *gin.Context) {
 			return
 		}
 		bytesRead += len(eventBytes)
-		obj := types.Object{}
-		dec := jsoniter.NewDecoder(bytes.NewReader(eventBytes))
+		var obj types.Object
+		dec := json.NewDecoder(bytes.NewReader(eventBytes))
 		dec.UseNumber()
-		if err = dec.Decode(&obj); err != nil {
+		if obj, err = types.ObjectFromDecoder(dec); err != nil {
 			state, _ = bulkerStream.Abort(c)
 			rError = r.ResponseError(c, http.StatusBadRequest, "unmarhsal error", false, err, true)
 			return

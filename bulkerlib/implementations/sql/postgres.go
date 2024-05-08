@@ -10,6 +10,7 @@ import (
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
 	"os"
@@ -39,7 +40,7 @@ const (
 						WHERE pg_class.relkind = 'r'::char
   							AND  pg_namespace.nspname ilike $1
   							AND pg_class.relname = $2
-  							AND pg_attribute.attnum > 0`
+  							AND pg_attribute.attnum > 0 order by pg_attribute.attnum`
 	pgPrimaryKeyFieldsQuery = `SELECT tco.constraint_name as constraint_name,
        kcu.column_name as key_column
 FROM information_schema.table_constraints tco
@@ -217,7 +218,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, tableName string) (*Table
 	}
 
 	//don't select primary keys of non-existent table
-	if len(table.Columns) == 0 {
+	if table.ColumnsCount() == 0 {
 		return table, nil
 	}
 
@@ -237,7 +238,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, tableName string) (*Table
 
 func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
-	table := &Table{Name: tableName, Columns: map[string]types2.SQLColumn{}, PKFields: utils.Set[string]{}}
+	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.Set[string]{}}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, p.config.Schema, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -268,7 +269,7 @@ func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, erro
 			continue
 		}
 		dt, _ := p.GetDataType(columnPostgresType)
-		table.Columns[columnName] = types2.SQLColumn{Type: columnPostgresType, DataType: dt}
+		table.Columns.Set(columnName, types2.SQLColumn{Type: columnPostgresType, DataType: dt})
 	}
 
 	if err := rows.Err(); err != nil {
@@ -309,11 +310,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if loadSource.Format != p.batchFileFormat {
 		return state, fmt.Errorf("LoadTable: only %s format is supported", p.batchFileFormat)
 	}
-	columns := targetTable.SortedColumnNames()
-	columnNames := make([]string, len(columns))
-	for i, name := range columns {
-		columnNames[i] = p.quotedColumnName(name)
-	}
+	columnNames := targetTable.MappedColumnNames(p.quotedColumnName)
 	copyStatement := fmt.Sprintf(pgCopyTemplate, quotedTableName, strings.Join(columnNames, ", "))
 	defer func() {
 		if err != nil {
@@ -354,11 +351,11 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		if err != nil {
 			return state, err
 		}
-		args := make([]any, len(columns))
-		for i, v := range columns {
+		args := make([]any, len(columnNames))
+		targetTable.Columns.ForEachIndexed(func(i int, v string, _ types2.SQLColumn) {
 			l := types2.ReformatValue(object[v])
 			args[i] = l
-		}
+		})
 		if _, err := stmt.ExecContext(ctx, args...); err != nil {
 			return state, checkErr(err)
 		}
@@ -375,9 +372,8 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 }
 
 // pgColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func pgColumnDDL(quotedName, name string, table *Table) string {
+func pgColumnDDL(quotedName, name string, table *Table, column types2.SQLColumn) string {
 	var notNullClause string
-	column := table.Columns[name]
 	sqlType := column.GetDDLType()
 
 	//not null
@@ -405,9 +401,9 @@ func getDefaultValueStatement(sqlType string) string {
 }
 
 // getPrimaryKey returns primary key name and fields
-func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string, utils.Set[string], error) {
+func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string, types.Set[string], error) {
 	tableName = p.TableName(tableName)
-	primaryKeys := utils.Set[string]{}
+	primaryKeys := types.Set[string]{}
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, pgPrimaryKeyFieldsQuery, p.config.Schema, tableName)
 	if err != nil {
 		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").

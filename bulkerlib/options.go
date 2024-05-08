@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
@@ -56,10 +57,10 @@ var (
 	},
 	}
 
-	PrimaryKeyOption = ImplementationOption[utils.Set[string]]{
+	PrimaryKeyOption = ImplementationOption[types2.Set[string]]{
 		Key:          "primaryKey",
-		DefaultValue: utils.Set[string]{},
-		AdvancedParseFunc: func(o *ImplementationOption[utils.Set[string]], serializedValue any) (StreamOption, error) {
+		DefaultValue: types2.Set[string]{},
+		AdvancedParseFunc: func(o *ImplementationOption[types2.Set[string]], serializedValue any) (StreamOption, error) {
 			switch v := serializedValue.(type) {
 			case []string:
 				return withPrimaryKey(o, v...), nil
@@ -203,11 +204,11 @@ func WithOption[T any](o *ImplementationOption[T], value T) StreamOption {
 	}
 }
 
-func withPrimaryKey(o *ImplementationOption[utils.Set[string]], pkFields ...string) StreamOption {
+func withPrimaryKey(o *ImplementationOption[types2.Set[string]], pkFields ...string) StreamOption {
 	return func(options *StreamOptions) {
 		set := o.Get(options)
 		if len(set) == 0 {
-			o.Set(options, utils.NewSet(pkFields...))
+			o.Set(options, types2.NewSet(pkFields...))
 		} else {
 			set.PutAll(pkFields)
 		}

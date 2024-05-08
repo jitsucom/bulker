@@ -12,6 +12,7 @@ import (
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	jsoniter "github.com/json-iterator/go"
@@ -208,8 +209,8 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	if config.Engine != nil {
 		nullableFields = config.Engine.NullableFields
 	}
-	columnDDlFunc := func(quotedName, name string, table *Table) string {
-		return chColumnDDL(quotedName, name, table, nullableFields)
+	columnDDlFunc := func(quotedName, name string, table *Table, column types.SQLColumn) string {
+		return chColumnDDL(quotedName, name, table, column, nullableFields)
 	}
 	var queryLogger *logging.QueryLogger
 	if bulkerConfig.LogLevel == bulkerlib.Verbose {
@@ -363,12 +364,10 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 	if table.Temporary {
 		table := table.Clone()
-		table.PKFields = utils.NewSet[string]()
-		columns := table.SortedColumnNames()
-		columnsDDL := make([]string, len(columns))
-		for i, columnName := range columns {
-			columnsDDL[i] = ch.columnDDL(columnName, table)
-		}
+		table.PKFields = types2.NewSet[string]()
+		columnsDDL := table.MappedColumns(func(name string, column types.SQLColumn) string {
+			return ch.columnDDL(name, table, column)
+		})
 
 		query := fmt.Sprintf(createTableTemplate, "TEMPORARY", ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
 
@@ -381,11 +380,9 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 		}
 		return nil
 	}
-	columns := table.SortedColumnNames()
-	columnsDDL := make([]string, len(columns))
-	for i, columnName := range table.SortedColumnNames() {
-		columnsDDL[i] = ch.columnDDL(columnName, table)
-	}
+	columnsDDL := table.MappedColumns(func(name string, column types.SQLColumn) string {
+		return ch.columnDDL(name, table, column)
+	})
 
 	statementStr := ch.tableStatementFactory.CreateTableStatement(ch.quotedLocalTableName(table.Name), ch.TableName(table.Name), strings.Join(columnsDDL, ","), table)
 
@@ -413,7 +410,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 	//local table name since schema of distributed table lacks primary keys
 	queryTableName := ch.TableName(ch.localTableName(tableName))
 	tableName = ch.TableName(tableName)
-	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.NewSet[string]()}
+	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types2.NewSet[string]()}
 	rows, err := ch.txOrDb(ctx).QueryContext(ctx, chTableSchemaQuery, ch.config.Database, queryTableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -443,7 +440,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 				})
 		}
 		dt, _ := ch.GetDataType(columnClickhouseType)
-		table.Columns[columnName] = types.SQLColumn{Type: columnClickhouseType, DataType: dt}
+		table.Columns.Set(columnName, types.SQLColumn{Type: columnClickhouseType, DataType: dt})
 		if isPk {
 			table.PKFields.Put(columnName)
 			table.PrimaryKeyName = BuildConstraintName(tableName)
@@ -467,15 +464,12 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 // PatchTableSchema add new columns(from provided Table) to existing table
 // drop and create distributed table
 func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) error {
-	if len(patchSchema.Columns) == 0 {
+	if patchSchema.ColumnsCount() == 0 {
 		return nil
 	}
-	columns := patchSchema.SortedColumnNames()
-	addedColumnsDDL := make([]string, len(patchSchema.Columns))
-	for i, columnName := range columns {
-		columnDDL := ch.columnDDL(columnName, patchSchema)
-		addedColumnsDDL[i] = "ADD COLUMN " + columnDDL
-	}
+	addedColumnsDDL := patchSchema.MappedColumns(func(columnName string, column types.SQLColumn) string {
+		return "ADD COLUMN " + ch.columnDDL(columnName, patchSchema, column)
+	})
 
 	query := fmt.Sprintf(chAlterTableTemplate, ch.quotedLocalTableName(patchSchema.Name), ch.getOnClusterClause(), strings.Join(addedColumnsDDL, ", "))
 
@@ -557,13 +551,10 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	}
 	tableName := ch.quotedTableName(targetTable.Name)
 
-	columns := targetTable.SortedColumnNames()
-	columnNames := make([]string, len(columns))
-	for i, name := range columns {
-		columnNames[i] = ch.quotedColumnName(name)
-	}
+	count := targetTable.ColumnsCount()
+	columnNames := targetTable.MappedColumnNames(ch.quotedColumnName)
 	var placeholdersBuilder strings.Builder
-	args := make([]any, 0, len(columns))
+	args := make([]any, 0, count)
 	var copyStatement string
 	defer func() {
 		if err != nil {
@@ -596,18 +587,20 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 			return state, err
 		}
 		placeholdersBuilder.WriteString(",(")
-		for i, v := range columns {
-			column := targetTable.Columns[v]
-			l, err := convertType(object[v], column)
-			if err != nil {
-				return state, err
+		err = targetTable.Columns.ForEachIndexedE(func(i int, name string, column types.SQLColumn) error {
+			l, err2 := convertType(object[name], column)
+			if err2 != nil {
+				return err2
 			}
-			//ch.Infof("%s: %v (%T) was %v", v, l, l, object[v])
 			if i > 0 {
 				placeholdersBuilder.WriteString(",")
 			}
-			placeholdersBuilder.WriteString(ch.typecastFunc(ch.parameterPlaceholder(i, ch.quotedColumnName(v)), column))
+			placeholdersBuilder.WriteString(ch.typecastFunc(ch.parameterPlaceholder(i, columnNames[i]), column))
 			args = append(args, l)
+			return nil
+		})
+		if err != nil {
+			return state, err
 		}
 		placeholdersBuilder.WriteString(")")
 	}
@@ -857,9 +850,8 @@ func convertType(value any, column types.SQLColumn) (any, error) {
 }
 
 // chColumnDDL returns column DDL (column name, mapped sql type)
-func chColumnDDL(quotedName, name string, table *Table, nullableFields []string) string {
+func chColumnDDL(quotedName, name string, _ *Table, column types.SQLColumn, nullableFields []string) string {
 	//get sql type
-	column := table.Columns[name]
 	columnSQLType := column.GetDDLType()
 
 	//get nullable or plain

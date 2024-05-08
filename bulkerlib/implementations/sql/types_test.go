@@ -5,6 +5,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func TestTypesMappingAndCollision(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18"},
@@ -35,7 +36,7 @@ func TestTypesMappingAndCollision(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18"},
@@ -135,13 +136,13 @@ func TestReverseDataTypeMapping(t *testing.T) {
 			dataFile:                  "test_data/data_types.ndjson",
 			expectedTableTypeChecking: TypeCheckingDataTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: Columns{
-					"id":          {DataType: types2.INT64},
-					"float_type":  {DataType: types2.FLOAT64},
-					"time_type":   {DataType: types2.TIMESTAMP},
-					"bool_type":   {DataType: types2.BOOL},
-					"string_type": {DataType: types2.STRING},
-				},
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"id", types2.SQLColumn{DataType: types2.INT64}},
+					{"float_type", types2.SQLColumn{DataType: types2.FLOAT64}},
+					{"time_type", types2.SQLColumn{DataType: types2.TIMESTAMP}},
+					{"bool_type", types2.SQLColumn{DataType: types2.BOOL}},
+					{"string_type", types2.SQLColumn{DataType: types2.STRING}},
+				}),
 			},
 			configIds: allBulkerConfigs,
 		},
@@ -165,17 +166,17 @@ func TestSQLTypeHints(t *testing.T) {
 			dataFile:                  "test_data/type_hints.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: Columns{
-					"id":                              {Type: "bigint"},
-					"name":                            {Type: "text"},
-					"time1":                           {Type: "timestamp with time zone"},
-					"int1":                            {Type: "bigint"},
-					"nested_json1":                    {Type: "json"},
-					"nested_json2":                    {Type: "json"},
-					"nested_json3_a":                  {Type: "bigint"},
-					"nested_json3_nested_json_nested": {Type: "json"},
-					"nested_json4":                    {Type: "json"},
-				},
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"id", types2.SQLColumn{Type: "bigint"}},
+					{"time1", types2.SQLColumn{Type: "timestamp with time zone"}},
+					{"name", types2.SQLColumn{Type: "text"}},
+					{"int1", types2.SQLColumn{Type: "bigint"}},
+					{"nested_json1", types2.SQLColumn{Type: "json"}},
+					{"nested_json2", types2.SQLColumn{Type: "json"}},
+					{"nested_json3_a", types2.SQLColumn{Type: "bigint"}},
+					{"nested_json3_nested_json_nested", types2.SQLColumn{Type: "json"}},
+					{"nested_json4", types2.SQLColumn{Type: "json"}},
+				}),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "time1": constantTime, "name": "a", "int1": 27, "nested_json1": "{\"a\":1}", "nested_json2": "{\"a\":\"2\"}", "nested_json3_a": 2, "nested_json3_nested_json_nested": "{\"a\":3}", "nested_json4": "{\"a\":\"4\"}"},
@@ -190,17 +191,17 @@ func TestSQLTypeHints(t *testing.T) {
 			dataFile:                  "test_data/type_hints_bq.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: Columns{
-					"id":                              {Type: string(bigquery.IntegerFieldType)},
-					"name":                            {Type: string(bigquery.StringFieldType)},
-					"time1":                           {Type: string(bigquery.TimestampFieldType)},
-					"int1":                            {Type: string(bigquery.IntegerFieldType)},
-					"nested_json1":                    {Type: string(bigquery.JSONFieldType)},
-					"nested_json2":                    {Type: string(bigquery.JSONFieldType)},
-					"nested_json3_a":                  {Type: string(bigquery.IntegerFieldType)},
-					"nested_json3_nested_json_nested": {Type: string(bigquery.JSONFieldType)},
-					"nested_json4":                    {Type: string(bigquery.JSONFieldType)},
-				},
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"id", types2.SQLColumn{Type: string(bigquery.IntegerFieldType)}},
+					{"time1", types2.SQLColumn{Type: string(bigquery.TimestampFieldType)}},
+					{"name", types2.SQLColumn{Type: string(bigquery.StringFieldType)}},
+					{"int1", types2.SQLColumn{Type: string(bigquery.IntegerFieldType)}},
+					{"nested_json1", types2.SQLColumn{Type: string(bigquery.JSONFieldType)}},
+					{"nested_json2", types2.SQLColumn{Type: string(bigquery.JSONFieldType)}},
+					{"nested_json3_a", types2.SQLColumn{Type: string(bigquery.IntegerFieldType)}},
+					{"nested_json3_nested_json_nested", types2.SQLColumn{Type: string(bigquery.JSONFieldType)}},
+					{"nested_json4", types2.SQLColumn{Type: string(bigquery.JSONFieldType)}},
+				}),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "time1": constantTime, "name": "a", "int1": 27, "nested_json1": "{\"a\":1}", "nested_json2": "{\"a\":\"2\"}", "nested_json3_a": 2, "nested_json3_nested_json_nested": "{\"a\":3}", "nested_json4": "{\"a\":\"4\"}"},
@@ -229,7 +230,7 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
@@ -251,7 +252,7 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
@@ -273,7 +274,7 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
@@ -296,7 +297,7 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
@@ -318,7 +319,7 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
@@ -340,7 +341,7 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "bool1", "bool2", "boolstring", "float1", "floatstring", "int_1", "intstring", "roundfloat", "roundfloatstring", "name", "time1", "time2", "date1"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
@@ -379,14 +380,14 @@ func TestTypeCoalesce(t *testing.T) {
 			expectedTableTypeChecking: TypeCheckingDataTypesOnly,
 			batchSize:                 4,
 			expectedTable: ExpectedTable{
-				Columns: Columns{
-					"id":      {DataType: types2.INT64},
-					"str_1":   {DataType: types2.STRING},
-					"float_1": {DataType: types2.FLOAT64},
-					"int_1":   {DataType: types2.INT64},
-					"bool_1":  {DataType: types2.BOOL},
-					"str_2":   {DataType: types2.STRING},
-				},
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"id", types2.SQLColumn{DataType: types2.INT64}},
+					{"str_1", types2.SQLColumn{DataType: types2.STRING}},
+					{"float_1", types2.SQLColumn{DataType: types2.FLOAT64}},
+					{"int_1", types2.SQLColumn{DataType: types2.INT64}},
+					{"bool_1", types2.SQLColumn{DataType: types2.BOOL}},
+					{"str_2", types2.SQLColumn{DataType: types2.STRING}},
+				}),
 			},
 			expectedRows: []map[string]any{
 				{"id": 1, "str_1": "7", "float_1": 7.0, "int_1": 7, "bool_1": true, "str_2": "str"},

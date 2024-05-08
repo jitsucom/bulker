@@ -14,6 +14,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	jsoniter "github.com/json-iterator/go"
 	"google.golang.org/api/googleapi"
@@ -51,7 +52,7 @@ const (
 
 var (
 	bigqueryReservedWords    = []string{"all", "and", "any", "array", "as", "asc", "assert_rows_modified", "at", "between", "by", "case", "cast", "collate", "contains", "create", "cross", "cube", "current", "default", "define", "desc", "distinct", "else", "end", "enum", "escape", "except", "exclude", "exists", "extract", "false", "fetch", "following", "for", "from", "full", "group", "grouping", "groups", "hash", "having", "if", "ignore", "in", "inner", "intersect", "interval", "into", "is", "join", "lateral", "left", "like", "limit", "lookup", "merge", "natural", "new", "no", "not", "null", "nulls", "of", "on", "or", "order", "outer", "over", "partition", "preceding", "proto", "qualify", "range", "recursive", "respect", "right", "rollup", "rows", "select", "set", "some", "struct", "tablesample", "then", "to", "treat", "true", "unbounded", "union", "unnest", "using", "when", "where", "window", "with", "within"}
-	bigqueryReservedWordsSet = utils.NewSet(bigqueryReservedWords...)
+	bigqueryReservedWordsSet = types.NewSet(bigqueryReservedWords...)
 	bigqueryReservedPrefixes = [...]string{"_table_", "_file_", "_partition", "_row_timestamp", "__root__", "_colidentifier"}
 
 	bigqueryColumnUnsupportedCharacters = regexp.MustCompile(`[^0-9A-Za-z_]`)
@@ -211,11 +212,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 		_, state, err = bq.RunJob(ctx, copier, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
 		if err != nil {
 			// try to insert from select as a fallback
-			columns := sourceTable.SortedColumnNames()
-			quotedColumns := make([]string, len(columns))
-			for i, name := range columns {
-				quotedColumns[i] = bq.quotedColumnName(name)
-			}
+			quotedColumns := sourceTable.MappedColumnNames(bq.quotedColumnName)
 			columnsString := strings.Join(quotedColumns, ",")
 			insertFromSelectStatement := fmt.Sprintf(bigqueryInsertFromSelectTemplate, bq.fullTableName(targetTable.Name), columnsString, columnsString, bq.fullTableName(sourceTable.Name))
 			query := bq.client.Query(insertFromSelectStatement)
@@ -237,15 +234,11 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 					})
 			}
 		}()
-		columns := sourceTable.SortedColumnNames()
-		quotedColumns := make([]string, len(columns))
-		for i, name := range columns {
-			quotedColumns[i] = bq.quotedColumnName(name)
-		}
+		quotedColumns := sourceTable.MappedColumnNames(bq.quotedColumnName)
 		columnsString := strings.Join(quotedColumns, ",")
-		updateSet := make([]string, len(columns))
-		for i, name := range columns {
-			updateSet[i] = fmt.Sprintf("T.%s = S.%s", bq.quotedColumnName(name), bq.quotedColumnName(name))
+		updateSet := make([]string, len(quotedColumns))
+		for i, name := range quotedColumns {
+			updateSet[i] = fmt.Sprintf("T.%s = S.%s", name, name)
 		}
 		var joinConditions []string
 		for pkField := range targetTable.PKFields {
@@ -290,7 +283,7 @@ func (bq *BigQuery) Ping(ctx context.Context) error {
 // GetTableSchema return google BigQuery table (name,columns) representation wrapped in Table struct
 func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
 	tableName = bq.TableName(tableName)
-	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.Set[string]{}}
+	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.Set[string]{}}
 
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
 
@@ -310,7 +303,7 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 	}
 	for _, field := range meta.Schema {
 		dt, _ := bq.GetDataType(string(field.Type))
-		table.Columns[field.Name] = types2.SQLColumn{Type: string(field.Type), DataType: dt}
+		table.Columns.Set(field.Name, types2.SQLColumn{Type: string(field.Type), DataType: dt})
 	}
 	jitsuPKName := meta.Labels[bigqueryPKNameLabel]
 	jitsuPKHash := meta.Labels[bigqueryPKHashLabel]
@@ -363,8 +356,9 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	}
 
 	bqSchema := bigquery.Schema{}
-	for _, columnName := range table.SortedColumnNames() {
-		column := table.Columns[columnName]
+	for el := table.Columns.Front(); el != nil; el = el.Next() {
+		columnName := el.Key
+		column := el.Value
 		bigQueryType := bigquery.FieldType(strings.ToUpper(column.GetDDLType()))
 		bqSchema = append(bqSchema, &bigquery.FieldSchema{Name: bq.ColumnName(columnName), Type: bigQueryType})
 	}
@@ -480,8 +474,9 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 			Columns: patchSchema.GetPKFields(),
 		}
 	}
-	for _, columnName := range patchSchema.SortedColumnNames() {
-		column := patchSchema.Columns[columnName]
+	for el := patchSchema.Columns.Front(); el != nil; el = el.Next() {
+		columnName := el.Key
+		column := el.Value
 		bigQueryType := bigquery.FieldType(strings.ToUpper(column.GetDDLType()))
 		metadata.Schema = append(metadata.Schema, &bigquery.FieldSchema{Name: bq.ColumnName(columnName), Type: bigQueryType})
 	}
@@ -580,7 +575,7 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 			items = make([]*BQItem, 0, bigqueryRowsLimitPerInsertOperation)
 		}
 
-		items = append(items, &BQItem{values: object})
+		items = append(items, &BQItem{values: types2.ObjectToMap(object)})
 	}
 
 	if len(items) > 0 {
@@ -625,16 +620,22 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
 	meta, err := bqTable.Metadata(ctx)
 
-	//sort meta schema field order to match csv file column order
-	mp := make(map[string]*bigquery.FieldSchema, len(meta.Schema))
-	for _, field := range meta.Schema {
-		mp[field.Name] = field
-	}
-	for i, field := range targetTable.SortedColumnNames() {
-		if _, ok := mp[field]; !ok {
-			return state, fmt.Errorf("field %s is not in table schema", field)
+	if loadSource.Format == types2.FileFormatCSV {
+		//sort meta schema field order to match csv file column order
+		mp := make(map[string]*bigquery.FieldSchema, len(meta.Schema))
+		for _, field := range meta.Schema {
+			mp[field.Name] = field
 		}
-		meta.Schema[i] = mp[field]
+		err = targetTable.Columns.ForEachIndexedE(func(i int, field string, _ types2.SQLColumn) error {
+			if _, ok := mp[field]; !ok {
+				return fmt.Errorf("field %s is not in table schema", field)
+			}
+			meta.Schema[i] = mp[field]
+			return nil
+		})
+		if err != nil {
+			return state, err
+		}
 	}
 
 	source := bigquery.NewReaderSource(file)
@@ -818,14 +819,14 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types2.
 	tableName = bq.TableName(tableName)
 	updateCondition, updateValues := bq.toWhenConditions(whenConditions)
 
-	columns := make([]string, len(object), len(object))
-	values := make([]bigquery.QueryParameter, len(object)+len(updateValues), len(object)+len(updateValues))
-	i := 0
-	for name, value := range object {
+	count := object.Len()
+	columns := make([]string, count)
+	values := make([]bigquery.QueryParameter, count+len(updateValues), count+len(updateValues))
+	object.ForEachIndexed(func(i int, name string, value any) {
 		columns[i] = bq.quotedColumnName(name) + "= @" + name
 		values[i] = bigquery.QueryParameter{Name: name, Value: value}
-		i++
-	}
+	})
+	i := len(values)
 	for a := 0; a < len(updateValues); a++ {
 		values[i+a] = updateValues[a]
 	}
@@ -1054,11 +1055,11 @@ func (bq *BigQuery) GetAvroSchema(table *Table) *types2.AvroSchema {
 		Type: "record",
 		Name: "jitsu",
 	}
-	fields := make([]types2.AvroType, 0, len(table.Columns))
-	dataTypes := make(map[string]types2.DataType, len(table.Columns))
-	sortedColumnNames := table.SortedColumnNames()
-	for _, name := range sortedColumnNames {
-		col := table.Columns[name]
+	fields := make([]types2.AvroType, 0, table.ColumnsCount())
+	dataTypes := make(map[string]types2.DataType, table.ColumnsCount())
+	for el := table.Columns.Front(); el != nil; el = el.Next() {
+		name := el.Key
+		col := el.Value
 		dataTypes[name] = col.DataType
 		if col.Override && col.Type != "" {
 			avroType, ok := bq.GetAvroType(col.Type)

@@ -155,7 +155,7 @@ func (cm *CSVMarshaller) Marshal(object ...Object) error {
 	valuesArr := make([]string, len(cm.fields))
 	for _, obj := range object {
 		for i, field := range cm.fields {
-			v, _ := obj[field]
+			v := obj.GetN(field)
 			strValue := ""
 			if v == nil {
 				strValue = "\\N"
@@ -267,12 +267,13 @@ func (a *AvroMarshaller) InitSchema(writer io.Writer, columns []string, table *A
 // Marshal marshals input object as csv values string with delimiter
 func (a *AvroMarshaller) Marshal(object ...Object) error {
 	for _, obj := range object {
-		for k, v := range obj {
+		for el := obj.Front(); el != nil; el = el.Next() {
+			k := el.Key
 			dt := a.schema.DataTypes[k]
 			//fmt.Println("Avro marshaller: ", k, v, dt)
-			cv, ok, _ := Convert(dt, v)
+			cv, ok, _ := Convert(dt, el.Value)
 			if ok {
-				obj[k] = cv
+				el.Value = cv
 			}
 		}
 		err := a.encoder.Encode(obj)

@@ -45,7 +45,7 @@ var (
 type DbConnectFunction[T any] func(config *T) (*sql.DB, error)
 
 // ColumnDDLFunction generate column DDL for CREATE TABLE statement based on type (SQLColumn) and whether it is used for PK
-type ColumnDDLFunction func(quotedName, name string, table *Table) string
+type ColumnDDLFunction func(quotedName, name string, table *Table, column types2.SQLColumn) string
 
 // ValueMappingFunction maps object value to database value. For cases such default value substitution for null or missing values
 type ValueMappingFunction func(value any, valuePresent bool, column types2.SQLColumn) any
@@ -291,15 +291,17 @@ func (b *SQLAdapterBase[T]) Delete(ctx context.Context, tableName string, delete
 func (b *SQLAdapterBase[T]) Update(ctx context.Context, table *Table, object types2.Object, whenConditions *WhenConditions) error {
 	quotedTableName := b.quotedTableName(table.Name)
 
-	updateCondition, updateValues := b.ToWhenConditions(whenConditions, b.parameterPlaceholder, len(object))
+	count := object.Len()
 
-	columns := make([]string, len(object), len(object))
-	values := make([]any, len(object)+len(updateValues), len(object)+len(updateValues))
+	updateCondition, updateValues := b.ToWhenConditions(whenConditions, b.parameterPlaceholder, count)
+	columns := make([]string, count)
+	values := make([]any, count+len(updateValues), count+len(updateValues))
 	i := 0
-	for name, value := range object {
-		column := table.Columns[name]
+	for el := object.Front(); el != nil; el = el.Next() {
+		name := el.Key
+		column := table.Columns.GetN(name)
 		columns[i] = b.quotedColumnName(name) + "= " + b.parameterPlaceholder(i+1, name) //$0 - wrong
-		values[i] = b.valueMappingFunction(value, true, column)
+		values[i] = b.valueMappingFunction(el.Value, true, column)
 		i++
 	}
 	for a := 0; a < len(updateValues); a++ {
@@ -382,20 +384,19 @@ func (b *SQLAdapterBase[T]) insert(ctx context.Context, table *Table, objects []
 // plainInsert inserts provided object into Snowflake
 func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, objects []types2.Object, mergeQuery *template.Template) error {
 	quotedTableName := b.quotedTableName(table.Name)
+	count := table.ColumnsCount()
+	columnNames := make([]string, count)
+	placeholders := make([]string, count)
+	values := make([]any, count)
+	updateColumns := make([]string, count)
 
-	columns := table.SortedColumnNames()
-	columnNames := make([]string, len(columns))
-	placeholders := make([]string, len(columns))
-	values := make([]any, len(columns))
-	updateColumns := make([]string, len(columns))
-
-	for i, name := range columns {
+	table.Columns.ForEachIndexed(func(i int, name string, col types2.SQLColumn) {
 		if mergeQuery != nil {
-			updateColumns[i] = fmt.Sprintf(`%s=%s`, b.quotedColumnName(name), b.typecastFunc(b.parameterPlaceholder(i+1, b.quotedColumnName(name)), table.Columns[name]))
+			updateColumns[i] = fmt.Sprintf(`%s=%s`, b.quotedColumnName(name), b.typecastFunc(b.parameterPlaceholder(i+1, b.quotedColumnName(name)), col))
 		}
 		columnNames[i] = b.quotedColumnName(name)
-		placeholders[i] = b.typecastFunc(b.parameterPlaceholder(i+1, name), table.Columns[name])
-	}
+		placeholders[i] = b.typecastFunc(b.parameterPlaceholder(i+1, name), col)
+	})
 
 	insertPayload := QueryPayload{
 		TableName:      quotedTableName,
@@ -415,11 +416,10 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 	}
 	statement := buf.String()
 	for _, object := range objects {
-		for i, name := range columns {
-			sqlColumn := table.Columns[name]
-			value, valuePresent := object[name]
+		table.Columns.ForEachIndexed(func(i int, name string, sqlColumn types2.SQLColumn) {
+			value, valuePresent := object.Get(name)
 			values[i] = b.valueMappingFunction(value, valuePresent, sqlColumn)
-		}
+		})
 		if mergeQuery != nil && b.parameterPlaceholder(1, "dummy") == "?" {
 			// Without positional parameters we need to duplicate values for placeholders in UPDATE part
 			values = append(values, values...)
@@ -448,19 +448,16 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 	quotedSourceTableName := b.quotedTableName(sourceTable.Name)
 
 	//insert from select
-	columns := sourceTable.SortedColumnNames()
-	columnNames := make([]string, len(columns))
-	for i, name := range columns {
-		columnNames[i] = b.quotedColumnName(name)
-	}
-	updateColumns := make([]string, len(columns))
-	insertColumns := make([]string, len(columns))
+	count := sourceTable.ColumnsCount()
+	columnNames := sourceTable.MappedColumnNames(b.quotedColumnName)
+	updateColumns := make([]string, count)
+	insertColumns := make([]string, count)
 	var joinConditions []string
 	if mergeQuery != nil {
-		for i, name := range columns {
+		sourceTable.Columns.ForEachIndexed(func(i int, name string, col types2.SQLColumn) {
 			updateColumns[i] = fmt.Sprintf(`%s=%s.%s`, b.quotedColumnName(name), sourceAlias, b.quotedColumnName(name))
-			insertColumns[i] = b.typecastFunc(fmt.Sprintf(`%s.%s`, sourceAlias, b.quotedColumnName(name)), targetTable.Columns[name])
-		}
+			insertColumns[i] = b.typecastFunc(fmt.Sprintf(`%s.%s`, sourceAlias, b.quotedColumnName(name)), col)
+		})
 		for pkField := range targetTable.PKFields {
 			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = %s.%s", b.quotedColumnName(pkField), sourceAlias, b.quotedColumnName(pkField)))
 		}
@@ -502,12 +499,9 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 // make fields from Table PkFields - 'not null'
 func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Table) error {
 	quotedTableName := b.quotedTableName(schemaToCreate.Name)
-
-	columns := schemaToCreate.SortedColumnNames()
-	columnsDDL := make([]string, len(columns))
-	for i, columnName := range columns {
-		columnsDDL[i] = b.columnDDL(columnName, schemaToCreate)
-	}
+	columnsDDL := schemaToCreate.MappedColumns(func(columnName string, column types2.SQLColumn) string {
+		return b.columnDDL(columnName, schemaToCreate, column)
+	})
 	temporary := ""
 	if b.temporaryTables && schemaToCreate.Temporary {
 		temporary = "TEMPORARY"
@@ -536,11 +530,9 @@ func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Tab
 func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Table) error {
 	quotedTableName := b.quotedTableName(patchTable.Name)
 
-	columns := patchTable.SortedColumnNames()
-
 	//patch columns
-	for _, columnName := range columns {
-		columnDDL := b.columnDDL(columnName, patchTable)
+	err := patchTable.Columns.ForEachIndexedE(func(_ int, columnName string, column types2.SQLColumn) error {
+		columnDDL := b.columnDDL(columnName, patchTable, column)
 		query := fmt.Sprintf(addColumnTemplate, quotedTableName, columnDDL)
 
 		if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
@@ -551,6 +543,10 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 					Statement:   query,
 				})
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	//patch primary keys - delete old
@@ -655,9 +651,9 @@ func (b *SQLAdapterBase[T]) TableHelper() *TableHelper {
 	return &b.tableHelper
 }
 
-func (b *SQLAdapterBase[T]) columnDDL(name string, table *Table) string {
+func (b *SQLAdapterBase[T]) columnDDL(name string, table *Table, column types2.SQLColumn) string {
 	quoted, unquoted := b.tableHelper.adaptColumnName(name)
-	return b._columnDDLFunc(quoted, unquoted, table)
+	return b._columnDDLFunc(quoted, unquoted, table, column)
 }
 
 // quotedColumnName adapts table name to sql identifier rules of database and quotes accordingly (if needed)

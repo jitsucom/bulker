@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"strings"
 )
@@ -33,7 +34,7 @@ func parseFilter(value any) []string {
 	}
 }
 
-func ApplyFilters(event *AnalyticsServerEvent, opts map[string]any) bool {
+func ApplyFilters(event types.Json, opts map[string]any) bool {
 	eventsArray := parseFilter(opts["events"])
 	hostsArray := parseFilter(opts["hosts"])
 
