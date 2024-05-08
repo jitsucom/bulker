@@ -1,10 +1,9 @@
 package sql
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	_ "github.com/ClickHouse/clickhouse-go/v2"
@@ -15,7 +14,7 @@ import (
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
-	jsoniter "github.com/json-iterator/go"
+	"io"
 	"os"
 	"regexp"
 	"strconv"
@@ -576,14 +575,15 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	defer func() {
 		_ = file.Close()
 	}()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 1024*10), 1024*1024)
-	for scanner.Scan() {
+	decoder := json.NewDecoder(file)
+	decoder.UseNumber()
+	for {
 		object := map[string]any{}
-		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
-		decoder.UseNumber()
 		err = decoder.Decode(&object)
 		if err != nil {
+			if err == io.EOF {
+				break
+			}
 			return state, err
 		}
 		placeholdersBuilder.WriteString(",(")
@@ -603,9 +603,6 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 			return state, err
 		}
 		placeholdersBuilder.WriteString(")")
-	}
-	if err = scanner.Err(); err != nil {
-		return state, fmt.Errorf("LoadTable: failed to read file: %v", err)
 	}
 	if len(args) > 0 {
 		copyStatement = fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
