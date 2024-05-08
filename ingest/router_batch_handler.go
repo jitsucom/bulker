@@ -82,7 +82,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 			if len(stream.AsynchronousDestinations) == 0 {
 				rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), false)
 			} else {
-				asyncDestinations, tagsDestinations, rError = r.sendToBulker(c, ingestMessageBytes, stream, false)
+				asyncDestinations, tagsDestinations, rError = r.sendToRotor(c, ingestMessageBytes, stream, false)
 			}
 		} else {
 			rError = r.ResponseError(c, http.StatusOK, "event error", false, err1, false)
@@ -91,9 +91,9 @@ func (r *Router) BatchHandler(c *gin.Context) {
 			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
 		}
 		if rError != nil && rError.ErrorType != ErrNoDst {
-			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": "FAILED"}
+			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": utils.Ternary(rError.ErrorType == ErrThrottledType, "SKIPPED", "FAILED")}
 			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelError, ActorId: eventsLogId, Event: obj})
-			IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
+			IngestHandlerRequests(domain, utils.Ternary(rError.ErrorType == ErrThrottledType, "throttled", "error"), rError.ErrorType).Inc()
 			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), ingestMessageBytes, map[string]string{"error": rError.Error.Error()}, kafka2.PartitionAny)
 			errors = append(errors, fmt.Sprintf("Message ID: %s: %v", messageId, rError.PublicError))
 		} else {
