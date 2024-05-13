@@ -2,8 +2,8 @@ package types
 
 import (
 	"fmt"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
-	jsoniter "github.com/json-iterator/go"
 	"strconv"
 	"strings"
 	"time"

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"net/http"
@@ -24,7 +25,7 @@ type Router struct {
 	authTokens    []string
 	rawAuthTokens []string
 	tokenSecrets  []string
-	noAuthPaths   utils.Set[string]
+	noAuthPaths   types.Set[string]
 }
 
 func NewRouterBase(config Config, noAuthPaths []string) *Router {
@@ -52,7 +53,7 @@ func NewRouterBase(config Config, noAuthPaths []string) *Router {
 		authTokens:    authTokens,
 		rawAuthTokens: rawAuthTokens,
 		tokenSecrets:  tokenSecrets,
-		noAuthPaths:   utils.NewSet(noAuthPaths...),
+		noAuthPaths:   types.NewSet(noAuthPaths...),
 	}
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()

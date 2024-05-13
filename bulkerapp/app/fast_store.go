@@ -3,8 +3,8 @@ package app
 import (
 	"github.com/gomodule/redigo/redis"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	jsoniter "github.com/json-iterator/go"
 	"strings"
 )
 

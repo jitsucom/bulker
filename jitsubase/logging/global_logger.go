@@ -105,6 +105,10 @@ func Debugf(format string, v ...any) {
 	log.Debugf(format, v...)
 }
 
+func IsDebugEnabled() bool {
+	return log.IsLevelEnabled(log.DebugLevel)
+}
+
 func Debug(v ...any) {
 	log.Debug(v...)
 }

@@ -2,7 +2,7 @@ package sql
 
 import (
 	"bufio"
-	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -10,9 +10,10 @@ import (
 	"github.com/jitsucom/bulker/bulkerlib/implementations"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/utils"
-	jsoniter "github.com/json-iterator/go"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
+	"io"
 	"os"
 	"path"
 	"strings"
@@ -33,7 +34,7 @@ type AbstractTransactionalSQLStream struct {
 	eventsInBatch      int
 	s3                 *implementations.S3
 	batchFileLinesByPK map[string]int
-	batchFileSkipLines utils.Set[int]
+	batchFileSkipLines types2.Set[int]
 }
 
 func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (*AbstractTransactionalSQLStream, error) {
@@ -46,7 +47,7 @@ func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, m
 	ps.AbstractSQLStream = abs
 	if ps.merge {
 		ps.batchFileLinesByPK = make(map[string]int)
-		ps.batchFileSkipLines = utils.NewSet[int]()
+		ps.batchFileSkipLines = types2.NewSet[int]()
 	}
 	return &ps, nil
 }
@@ -132,7 +133,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 	defer func() {
 		if ps.merge {
 			ps.batchFileLinesByPK = make(map[string]int)
-			ps.batchFileSkipLines = utils.NewSet[int]()
+			ps.batchFileSkipLines = types2.NewSet[int]()
 		}
 		_ = ps.batchFile.Close()
 		_ = os.Remove(ps.batchFile.Name())
@@ -156,10 +157,12 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		workingFile := ps.batchFile
 		needToConvert := false
 		convertStart := time.Now()
-		if !ps.targetMarshaller.Equal(ps.marshaller) {
+		if ps.targetMarshaller.Format() != ps.marshaller.Format() {
 			needToConvert = true
 		}
 		if len(ps.batchFileSkipLines) > 0 || needToConvert {
+			var writer io.WriteCloser
+			var gzipWriter io.WriteCloser
 			workingFile, err = os.CreateTemp("", path.Base(ps.batchFile.Name())+"_*"+ps.targetMarshaller.FileExtension())
 			if err != nil {
 				return nil, errorj.Decorate(err, "failed to create tmp file for deduplication")
@@ -168,10 +171,17 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				_ = workingFile.Close()
 				_ = os.Remove(workingFile.Name())
 			}()
+			writer = workingFile
 			if needToConvert {
-				err = ps.targetMarshaller.InitSchema(workingFile, table.SortedColumnNames(), ps.sqlAdapter.GetAvroSchema(table))
+				err = ps.targetMarshaller.InitSchema(workingFile, table.ColumnNames(), ps.sqlAdapter.GetAvroSchema(table))
 				if err != nil {
 					return nil, errorj.Decorate(err, "failed to write header for converted batch file")
+				}
+			} else {
+				if ps.targetMarshaller.Compression() == types.FileCompressionGZIP {
+					gzipWriter = gzip.NewWriter(writer)
+					writer = gzipWriter
+					defer func() { _ = gzipWriter.Close() }()
 				}
 			}
 			file, err := os.Open(ps.batchFile.Name())
@@ -187,12 +197,12 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			for scanner.Scan() {
 				if !ps.batchFileSkipLines.Contains(i) {
 					if needToConvert {
-						dec := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
-						if ps.targetMarshaller.Format() != types.FileFormatAVRO {
-							dec.UseNumber()
+						cfg := jsonorder.ConfigDefault
+						if ps.targetMarshaller.Format() == types.FileFormatAVRO {
+							cfg = jsonorder.ConfigNoNumbers
 						}
-						obj := make(map[string]any)
-						err = dec.Decode(&obj)
+						var obj types.Object
+						err = cfg.Unmarshal(scanner.Bytes(), &obj)
 						if err != nil {
 							return nil, errorj.Decorate(err, "failed to decode json object from batch filer")
 						}
@@ -201,11 +211,11 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 							return nil, errorj.Decorate(err, "failed to marshal object to converted batch file")
 						}
 					} else {
-						_, err = workingFile.Write(scanner.Bytes())
+						_, err = writer.Write(scanner.Bytes())
 						if err != nil {
 							return nil, errorj.Decorate(err, "failed write to deduplication file")
 						}
-						_, _ = workingFile.Write([]byte("\n"))
+						_, _ = writer.Write([]byte("\n"))
 					}
 				}
 				i++
@@ -213,8 +223,11 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			if err = scanner.Err(); err != nil {
 				return nil, errorj.Decorate(err, "failed to read batch file")
 			}
-			ps.targetMarshaller.Flush()
-			workingFile.Sync()
+			_ = ps.targetMarshaller.Flush()
+			if gzipWriter != nil {
+				_ = gzipWriter.Close()
+			}
+			_ = workingFile.Sync()
 		}
 		if needToConvert {
 			stat, _ = workingFile.Stat()
@@ -291,7 +304,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 //			return errorj.Decorate(err, "failed to ensure temporary table")
 //		}
 //		if ps.batchFile != nil {
-//			err = ps.marshaller.WriteHeader((*targetTable).SortedColumnNames(), ps.batchFile)
+//			err = ps.marshaller.WriteHeader((*targetTable).ColumnNames(), ps.batchFile)
 //			if err != nil {
 //				return errorj.Decorate(err, "failed write csv header")
 //			}
@@ -351,6 +364,19 @@ func (ps *AbstractTransactionalSQLStream) adjustTables(ctx context.Context, targ
 	ps.dstTable.Columns = ps.tmpTable.Columns
 }
 
+func (ps *AbstractTransactionalSQLStream) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types.Object, err error) {
+	var obj types.Object
+	err = jsonorder.Unmarshal(json, &obj)
+	if err != nil {
+		return ps.state, nil, fmt.Errorf("Error parsing JSON: %v", err)
+	}
+	return ps.Consume(ctx, obj)
+}
+
+func (ps *AbstractTransactionalSQLStream) ConsumeMap(ctx context.Context, mp map[string]any) (state bulker.State, processedObject types.Object, err error) {
+	return ps.Consume(ctx, types.ObjectFromMap(mp))
+}
+
 func (ps *AbstractTransactionalSQLStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObject types.Object, err error) {
 	defer func() {
 		err = ps.postConsume(err)
@@ -399,12 +425,12 @@ func (ps *AbstractTransactionalSQLStream) getPKValue(object types.Object) (strin
 		return "", fmt.Errorf("primary key is not set")
 	}
 	if l == 1 {
-		pkValue, _ := object[ps.sqlAdapter.ColumnName(pkColumns[0])]
+		pkValue := object.GetN(ps.sqlAdapter.ColumnName(pkColumns[0]))
 		return fmt.Sprint(pkValue), nil
 	}
 	pkArr := make([]string, 0, l)
 	for _, col := range pkColumns {
-		pkValue, _ := object[ps.sqlAdapter.ColumnName(col)]
+		pkValue := object.GetN(ps.sqlAdapter.ColumnName(col))
 		pkArr = append(pkArr, fmt.Sprint(pkValue))
 	}
 	return strings.Join(pkArr, "_###_"), nil

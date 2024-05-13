@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/hamba/avro/v2/ocf"
-	jsoniter "github.com/json-iterator/go"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"io"
 )
 
@@ -51,7 +51,7 @@ type JSONMarshaller struct {
 	AbstractMarshaller
 	writer    io.Writer
 	bufWriter *bufio.Writer
-	encoder   *jsoniter.Encoder
+	encoder   *jsonorder.Encoder
 }
 
 func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
@@ -62,7 +62,7 @@ func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
 			jm.writer = writer
 		}
 		jm.bufWriter = bufio.NewWriterSize(jm.writer, 100*1024)
-		jm.encoder = jsoniter.NewEncoder(jm.bufWriter)
+		jm.encoder = jsonorder.NewEncoder(jm.bufWriter)
 		jm.encoder.SetEscapeHTML(false)
 	}
 	return nil
@@ -155,7 +155,7 @@ func (cm *CSVMarshaller) Marshal(object ...Object) error {
 	valuesArr := make([]string, len(cm.fields))
 	for _, obj := range object {
 		for i, field := range cm.fields {
-			v, _ := obj[field]
+			v := obj.GetN(field)
 			strValue := ""
 			if v == nil {
 				strValue = "\\N"
@@ -171,7 +171,7 @@ func (cm *CSVMarshaller) Marshal(object ...Object) error {
 					}
 				default:
 					//use json marshaller to marshal types like arrays and time in unified way
-					b, err := jsoniter.Marshal(v)
+					b, err := jsonorder.Marshal(v)
 					if err != nil {
 						return err
 					}
@@ -267,12 +267,13 @@ func (a *AvroMarshaller) InitSchema(writer io.Writer, columns []string, table *A
 // Marshal marshals input object as csv values string with delimiter
 func (a *AvroMarshaller) Marshal(object ...Object) error {
 	for _, obj := range object {
-		for k, v := range obj {
+		for el := obj.Front(); el != nil; el = el.Next() {
+			k := el.Key
 			dt := a.schema.DataTypes[k]
 			//fmt.Println("Avro marshaller: ", k, v, dt)
-			cv, ok, _ := Convert(dt, v)
+			cv, ok, _ := Convert(dt, el.Value)
 			if ok {
-				obj[k] = cv
+				el.Value = cv
 			}
 		}
 		err := a.encoder.Encode(obj)

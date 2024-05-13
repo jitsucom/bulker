@@ -2,10 +2,10 @@ package sql
 
 import (
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"sort"
+	"github.com/jitsucom/bulker/jitsubase/types"
 )
 
-type Fields map[string]Field
+type Fields = *types.OrderedMap[string, Field]
 
 // TypesHeader is the schema result of parsing JSON objects
 type TypesHeader struct {
@@ -16,57 +16,7 @@ type TypesHeader struct {
 
 // Exists returns true if there is at least one field
 func (bh *TypesHeader) Exists() bool {
-	return bh != nil && len(bh.Fields) > 0
-}
-
-// Merge adds all fields from other to current instance or merge if exists
-func (f Fields) Merge(other Fields) {
-	for otherName, otherField := range other {
-		f[otherName] = otherField
-	}
-}
-
-// Clone copies fields into a new Fields object
-func (f Fields) Clone() Fields {
-	clone := Fields{}
-
-	for fieldName, fieldPayload := range f {
-
-		clone[fieldName] = Field{
-			dataType: fieldPayload.dataType,
-		}
-	}
-
-	return clone
-}
-
-func (f Fields) OverrideTypes(newTypes types2.SQLTypes) {
-	for column, newType := range newTypes {
-		if currentField, ok := f[column]; ok {
-			//override type occurrences
-			currentField.suggestedType = &newType
-			f[column] = currentField
-		}
-	}
-}
-
-// Add all new fields from other to current instance
-// if field exists - skip it
-func (f Fields) Add(other Fields) {
-	for otherName, otherField := range other {
-		if _, ok := f[otherName]; !ok {
-			f[otherName] = otherField
-		}
-	}
-}
-
-// Header return fields names as a string slice
-func (f Fields) Header() (header []string) {
-	for fieldName := range f {
-		header = append(header, fieldName)
-	}
-	sort.Strings(header)
-	return
+	return bh != nil && bh.Fields.Len() > 0
 }
 
 // Field is a data type holder with sql type suggestion

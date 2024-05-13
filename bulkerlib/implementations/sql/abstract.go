@@ -5,9 +5,9 @@ import (
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/utils"
-	jsoniter "github.com/json-iterator/go"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"time"
 )
 
@@ -130,63 +130,65 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 	columnsAdded := false
 	current := currentTable.Columns
 	unmappedObj := map[string]any{}
-	for name, newCol := range desiredTable.Columns {
+	for el := desiredTable.Columns.Front(); el != nil; el = el.Next() {
+		name := el.Key
+		newCol := el.Value
 		var existingCol types.SQLColumn
 		ok := false
-		if existingTable != nil {
-			existingCol, ok = existingTable.Columns[name]
+		if existingTable != nil && existingTable.Columns != nil {
+			existingCol, ok = existingTable.Columns.Get(name)
 		}
 		if !ok {
 			if ps.schemaFreeze {
 				// when schemaFreeze=true all new columns values go to _unmapped_data
-				v, ok := values[name]
+				v, ok := values.Get(name)
 				if ok {
 					unmappedObj[name] = v
 				}
-				delete(current, name)
-				delete(values, name)
+				current.Delete(name)
+				values.Delete(name)
 			} else {
-				existingCol, ok = current[name]
+				existingCol, ok = current.Get(name)
 				if !ok {
 					// column doesn't exist in database and in current batch - adding as New
 					newCol.New = true
-					current[name] = newCol
+					current.Set(name, newCol)
 					columnsAdded = true
 					continue
 				}
 			}
 		} else {
-			current[name] = existingCol
+			current.Set(name, existingCol)
 		}
 		if existingCol.DataType == newCol.DataType {
 			continue
 		}
 		if newCol.Override {
 			//if column sql type is overridden by user - leave it this way
-			current[name] = newCol
+			current.Set(name, newCol)
 			continue
 		}
 		if existingCol.Type != "" {
 			// if column exists in db (existingTable) or in current batch (currentTable)
 			if !existingCol.New {
 				//column exists in database - check if its DataType is castable to DataType of existing column
-				v, ok := values[name]
+				v, ok := values.Get(name)
 				if ok && v != nil {
 					if types.IsConvertible(newCol.DataType, existingCol.DataType) {
 						newVal, _, err := types.Convert(existingCol.DataType, v)
 						if err != nil {
 							//logging.Warnf("Can't convert '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), err)
 							unmappedObj[name] = v
-							delete(values, name)
+							values.Delete(name)
 							continue
 						} else {
 							//logging.Infof("Converted '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), newVal)
-							values[name] = newVal
+							values.Set(name, newVal)
 						}
 					} else {
 						//logging.Warnf("Can't convert '%s' value '%v' from %s to %s", name, values[name], newCol.DataType.String(), existingCol.DataType.String())
 						unmappedObj[name] = v
-						delete(values, name)
+						values.Delete(name)
 						continue
 					}
 				}
@@ -199,7 +201,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 					if ok {
 						existingCol.DataType = common
 						existingCol.Type = sqlType
-						current[name] = existingCol
+						current.Set(name, existingCol)
 					} else {
 						logging.SystemErrorf("Unknown column type %s mapping for %s", common, ps.sqlAdapter.Type())
 					}
@@ -209,13 +211,13 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 	}
 	if len(unmappedObj) > 0 {
 		jsonSQLType, _ := ps.sqlAdapter.GetSQLType(types.JSON)
-		added := utils.MapPutIfAbsent(current, ps.sqlAdapter.ColumnName(unmappedDataColumn), types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
+		added := current.SetIfAbsent(ps.sqlAdapter.ColumnName(unmappedDataColumn), types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
 		columnsAdded = columnsAdded || added
 		if ps.sqlAdapter.StringifyObjects() {
 			b, _ := jsoniter.Marshal(unmappedObj)
-			values[ps.sqlAdapter.ColumnName(unmappedDataColumn)] = string(b)
+			values.Set(ps.sqlAdapter.ColumnName(unmappedDataColumn), string(b))
 		} else {
-			values[ps.sqlAdapter.ColumnName(unmappedDataColumn)] = unmappedObj
+			values.Set(ps.sqlAdapter.ColumnName(unmappedDataColumn), unmappedObj)
 		}
 	}
 	return columnsAdded
@@ -224,10 +226,10 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 	if ps.state.Representation == nil ||
 		ps.state.Representation.(RepresentationTable).Name != table.Name ||
-		len(ps.state.Representation.(RepresentationTable).Schema) != len(table.Columns) {
+		ps.state.Representation.(RepresentationTable).Schema.Len() != table.ColumnsCount() {
 		ps.state.Representation = RepresentationTable{
 			Name:             table.Name,
-			Schema:           table.Columns.ToSimpleMap(),
+			Schema:           table.ToSimpleMap(),
 			PrimaryKeyFields: table.GetPKFields(),
 			PrimaryKeyName:   table.PrimaryKeyName,
 			Temporary:        table.Temporary,
@@ -236,9 +238,9 @@ func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 }
 
 type RepresentationTable struct {
-	Name             string            `json:"name"`
-	Schema           map[string]string `json:"schema"`
-	PrimaryKeyFields []string          `json:"primaryKeyFields,omitempty"`
-	PrimaryKeyName   string            `json:"primaryKeyName,omitempty"`
-	Temporary        bool              `json:"temporary,omitempty"`
+	Name             string                          `json:"name"`
+	Schema           *types2.OrderedMap[string, any] `json:"schema"`
+	PrimaryKeyFields []string                        `json:"primaryKeyFields,omitempty"`
+	PrimaryKeyName   string                          `json:"primaryKeyName,omitempty"`
+	Temporary        bool                            `json:"temporary,omitempty"`
 }

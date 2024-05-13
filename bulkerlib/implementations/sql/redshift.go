@@ -6,6 +6,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	_ "github.com/lib/pq"
 	"strings"
@@ -143,7 +144,7 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 	for _, object := range objects {
 		pkMatchConditions := &WhenConditions{}
 		for _, pkColumn := range table.GetPKFields() {
-			value := object[pkColumn]
+			value := object.GetN(pkColumn)
 			if value == nil {
 				pkMatchConditions = pkMatchConditions.Add(pkColumn, "IS NULL", nil)
 			} else {
@@ -177,11 +178,7 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if loadSource.Format != p.batchFileFormat {
 		return state, fmt.Errorf("LoadTable: only %s format is supported", p.batchFileFormat)
 	}
-	columns := targetTable.SortedColumnNames()
-	columnNames := make([]string, len(columns))
-	for i, name := range columns {
-		columnNames[i] = p.quotedColumnName(name)
-	}
+	columnNames := targetTable.MappedColumnNames(p.quotedColumnName)
 	s3Config := loadSource.S3Config
 	fileKey := loadSource.Path
 	//add folder prefix if configured
@@ -263,7 +260,7 @@ func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table
 	}
 
 	//don't select primary keys of non-existent table
-	if len(table.Columns) == 0 {
+	if table.ColumnsCount() == 0 {
 		return table, nil
 	}
 
@@ -281,9 +278,9 @@ func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table
 	return table, nil
 }
 
-func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string, utils.Set[string], error) {
+func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string, types.Set[string], error) {
 	tableName = p.TableName(tableName)
-	primaryKeys := utils.NewSet[string]()
+	primaryKeys := types.NewSet[string]()
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftPrimaryKeyFieldsQuery, p.config.Schema, tableName)
 	if err != nil {
 		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
@@ -367,11 +364,10 @@ func (p *Redshift) createSortKey(ctx context.Context, table *Table) error {
 }
 
 // redshiftColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func redshiftColumnDDL(quotedName, name string, table *Table) string {
+func redshiftColumnDDL(quotedName, name string, table *Table, column types2.SQLColumn) string {
 	var columnConstaints string
 	var columnAttributes string
 
-	column := table.Columns[name]
 	sqlType := column.GetDDLType()
 
 	if _, ok := table.PKFields[name]; ok {

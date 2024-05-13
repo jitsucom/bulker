@@ -26,7 +26,7 @@ func TestSchemaFreeze(t *testing.T) {
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("_timestamp", "column1", "column2", "column3", "id", "name"),
+				Columns: justColumns("_timestamp", "id", "name", "column1", "column2", "column3"),
 			},
 			expectedRowsCount: 6,
 			configIds:         utils.ArrayIntersection(allBulkerConfigs, []string{PostgresBulkerTypeId, MySQLBulkerTypeId}),
@@ -38,7 +38,7 @@ func TestSchemaFreeze(t *testing.T) {
 			leaveResultingTable: true,
 			dataFile:            "test_data/columns_added2.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("_timestamp", "column1", "column2", "column3", "_unmapped_data", "id", "name"),
+				Columns: justColumns("_timestamp", "id", "name", "column1", "column2", "column3", "_unmapped_data"),
 			},
 			expectedRows: []map[string]any{
 				{"_timestamp": constantTime, "id": 1, "name": "test", "column1": nil, "column2": nil, "column3": nil, "_unmapped_data": nil},

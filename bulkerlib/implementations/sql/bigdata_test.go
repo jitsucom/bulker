@@ -138,7 +138,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 			}
 			startTime = timestamp.Now()
 		}
-		obj := types.Object{"_timestamp": constantTime, "id": i, "name": "test"}
+		obj := types.ObjectFromMap(map[string]any{"_timestamp": constantTime, "id": i, "name": "test"})
 		_, _, err = stream.Consume(ctx, obj)
 		PostStep(fmt.Sprintf("consume_object_%d", i), testConfig, mode, reqr, err)
 		if err != nil && !testConfig.ignoreConsumeErrors {
@@ -159,7 +159,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 	}
 	PostStep("state_lasterror", testConfig, mode, reqr, state.LastError)
 
-	if len(testConfig.expectedTable.Columns) > 0 {
+	if testConfig.expectedTable.Columns != nil && testConfig.expectedTable.Columns.Len() > 0 {
 		//Check table schema
 		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
 		PostStep("get_table", testConfig, mode, reqr, err)

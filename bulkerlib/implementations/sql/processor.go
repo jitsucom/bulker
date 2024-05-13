@@ -8,8 +8,6 @@ import (
 	"strings"
 )
 
-const SqlTypePrefix = "__sql_type"
-
 // ProcessEvents processes events objects without applying mapping rules
 // returns table headerm array of processed objects
 // or error if at least 1 was occurred
@@ -34,18 +32,21 @@ func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTy
 	return bh, flatObject, nil
 }
 
-func extractSQLTypesHints(object map[string]any) (types.SQLTypes, error) {
+func extractSQLTypesHints(object types.Object) (types.SQLTypes, error) {
 	result := types.SQLTypes{}
 	err := _extractSQLTypesHints("", object, result)
 	return result, err
 }
 
-func _extractSQLTypesHints(key string, object map[string]any, result types.SQLTypes) error {
-	for k, v := range object {
+func _extractSQLTypesHints(key string, object types.Object, result types.SQLTypes) error {
+	var toDelete []string
+	for el := object.Front(); el != nil; el = el.Next() {
+		k := el.Key
+		v := el.Value
 		//if column has __sql_type_ prefix
-		if strings.HasPrefix(k, SqlTypePrefix) {
-			delete(object, k)
-			columnName := strings.TrimPrefix(k[len(SqlTypePrefix):], "_")
+		if strings.HasPrefix(k, implementations.SqlTypePrefix) {
+			toDelete = append(toDelete, k)
+			columnName := strings.TrimPrefix(k[len(implementations.SqlTypePrefix):], "_")
 			//when columnName is empty it means that provided sql type is meant for the whole object
 			//e.g. to map nested object to sql JSON type you can add the following property to nested object: "__sql_type_": "JSON" )
 			mappedColumnName := utils.JoinNonEmptyStrings("_", key, columnName)
@@ -61,12 +62,15 @@ func _extractSQLTypesHints(key string, object map[string]any, result types.SQLTy
 			default:
 				return fmt.Errorf("incorrect type of value for '__sql_type_' hint: %T", v)
 			}
-		} else if val, ok := v.(map[string]any); ok {
+		} else if val, ok := v.(types.Object); ok {
 			err := _extractSQLTypesHints(utils.JoinNonEmptyStrings("_", key, k), val, result)
 			if err != nil {
 				return err
 			}
 		}
+	}
+	for _, k := range toDelete {
+		object.Delete(k)
 	}
 
 	return nil

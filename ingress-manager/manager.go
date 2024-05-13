@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -26,14 +27,14 @@ type Manager struct {
 	appbase.Service
 	certMgr  *certificatemanager.Client
 	config   *Config
-	cnames   utils.Set[string]
+	cnames   types.Set[string]
 	cmParent string
 }
 
 func NewManager(appContext *Context) *Manager {
 	base := appbase.NewServiceBase("ingress-manager")
 	cnames := strings.Split(appContext.config.JitsuCnames, ",")
-	m := &Manager{Service: base, certMgr: appContext.certMgr, config: appContext.config, cnames: utils.NewSet(cnames...),
+	m := &Manager{Service: base, certMgr: appContext.certMgr, config: appContext.config, cnames: types.NewSet(cnames...),
 		cmParent: fmt.Sprintf("projects/%s/locations/global", appContext.config.GoogleCloudProject)}
 	err := m.Init()
 	if err != nil {
@@ -112,7 +113,7 @@ func (m *Manager) MigrateCaddyCerts() error {
 		return m.NewError("error listing secrets: %v", err)
 	}
 	pattern := regexp.MustCompile(`caddy\.ingress--ocsp\.(.+)-(.+)`)
-	domains := utils.NewSet[string]()
+	domains := types.NewSet[string]()
 	for _, secret := range secrets.Items {
 		if pattern.MatchString(secret.Name) {
 			domain := pattern.FindStringSubmatch(secret.Name)[1]

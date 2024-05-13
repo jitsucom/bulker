@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/coordination"
 	"github.com/jitsucom/bulker/jitsubase/locks"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"regexp"
 	"sync"
@@ -60,13 +61,13 @@ func NewTableHelper(maxIdentifierLength int, identifierQuoteChar rune) TableHelp
 // applies column types mapping
 // adjusts object properties names to column names
 func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesHeader, object types2.Object, pkFields []string, timestampColumn string) (*Table, types2.Object) {
-	adaptedPKFields := utils.NewSet[string]()
+	adaptedPKFields := types.NewSet[string]()
 	for _, pkField := range pkFields {
 		adaptedPKFields.Put(th.ColumnName(pkField))
 	}
 	table := &Table{
 		Name:      sqlAdapter.TableName(batchHeader.TableName),
-		Columns:   Columns{},
+		Columns:   NewColumns(),
 		Partition: batchHeader.Partition,
 		PKFields:  adaptedPKFields,
 	}
@@ -81,7 +82,9 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 
 	//need to adapt object properties to column names
 	needAdapt := false
-	for fieldName, field := range batchHeader.Fields {
+	for el := batchHeader.Fields.Front(); el != nil; el = el.Next() {
+		fieldName := el.Key
+		field := el.Value
 		colName := th.ColumnName(fieldName)
 		if !needAdapt && colName != fieldName {
 			needAdapt = true
@@ -92,22 +95,22 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 			if ok {
 				suggestedSQLType.DataType = dt
 			}
-			table.Columns[colName] = suggestedSQLType
+			table.Columns.Set(colName, suggestedSQLType)
 			continue
 		}
 
 		//map Jitsu type -> SQL type
 		sqlType, ok := sqlAdapter.GetSQLType(field.GetType())
 		if ok {
-			table.Columns[colName] = types2.SQLColumn{DataType: field.GetType(), Type: sqlType, New: true}
+			table.Columns.Set(colName, types2.SQLColumn{DataType: field.GetType(), Type: sqlType, New: true})
 		} else {
 			logging.SystemErrorf("Unknown column type %s mapping for %s", field.GetType(), sqlAdapter.Type())
 		}
 	}
 	if needAdapt {
-		adaptedObject := make(types2.Object, len(object))
-		for fieldName, field := range object {
-			adaptedObject[th.ColumnName(fieldName)] = field
+		adaptedObject := types2.NewObject()
+		for el := object.Front(); el != nil; el = el.Next() {
+			adaptedObject.Set(th.ColumnName(el.Key), el.Value)
 		}
 		return table, adaptedObject
 	} else {
@@ -119,7 +122,7 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 func (th *TableHelper) MapSchema(sqlAdapter SQLAdapter, schema types2.Schema) *Table {
 	table := &Table{
 		Name:    sqlAdapter.TableName(schema.Name),
-		Columns: Columns{},
+		Columns: NewColumns(),
 	}
 
 	for _, field := range schema.Fields {
@@ -127,7 +130,7 @@ func (th *TableHelper) MapSchema(sqlAdapter SQLAdapter, schema types2.Schema) *T
 		//map Jitsu type -> SQL type
 		sqlType, ok := sqlAdapter.GetSQLType(field.Type)
 		if ok {
-			table.Columns[colName] = types2.SQLColumn{DataType: field.Type, Type: sqlType, New: true}
+			table.Columns.Set(colName, types2.SQLColumn{DataType: field.Type, Type: sqlType, New: true})
 		} else {
 			logging.SystemErrorf("Unknown column type %s mapping for %s", field.Type, sqlAdapter.Type())
 		}
@@ -189,7 +192,7 @@ func (th *TableHelper) patchTableIfNeeded(ctx context.Context, sqlAdapter SQLAda
 
 	//check if max columns error
 	if th.maxColumns > 0 {
-		columnsCount := len(currentSchema.Columns) + len(diff.Columns)
+		columnsCount := currentSchema.ColumnsCount() + diff.ColumnsCount()
 		if columnsCount > th.maxColumns {
 			//return nil, fmt.Errorf("Count of columns %d should be less or equal 'server.max_columns' (or destination.data_layout.max_columns) setting %d", columnsCount, th.maxColumns)
 			logging.Warnf("[%s] Count of columns %d should be less or equal 'server.max_columns' (or destination.data_layout.max_columns) setting %d", destinationID, columnsCount, th.maxColumns)
@@ -216,16 +219,16 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAda
 
 	//** Save **
 	//columns
-	for k, v := range diff.Columns {
-		currentSchema.Columns[k] = v
-	}
+	diff.Columns.ForEach(func(k string, v types2.SQLColumn) {
+		currentSchema.Columns.Set(k, v)
+	})
 	//pk fields
 	if len(diff.PKFields) > 0 {
 		currentSchema.PKFields = diff.PKFields
 	}
 	//remove pk fields if a deletion was
 	if diff.DeletePkFields {
-		currentSchema.PKFields = utils.Set[string]{}
+		currentSchema.PKFields = types.Set[string]{}
 	}
 
 	th.updateCached(diff.Name, currentSchema)

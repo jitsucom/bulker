@@ -3,11 +3,11 @@ package eventslog
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"slices"
@@ -100,7 +100,7 @@ func (r *ClickhouseEventsLog) flush() {
 		return
 	}
 	for _, event := range bufferCopy {
-		bytes, _ := json.Marshal(event.Event)
+		bytes, _ := jsonorder.Marshal(event.Event)
 		err = batch.Append(
 			event.Timestamp,
 			event.ActorId,

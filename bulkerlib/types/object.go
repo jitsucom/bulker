@@ -1,10 +1,19 @@
 package types
 
-import "github.com/jitsucom/bulker/jitsubase/utils"
+import (
+	"github.com/jitsucom/bulker/jitsubase/types"
+)
 
-// TODO: move type conversion here
-type Object map[string]any
+type Object = types.Json
 
-func (o Object) Id() any {
-	return utils.MapNVLKeys(o, "message_id", "messageId", "id")
+func NewObject() Object {
+	return types.NewJson()
+}
+
+func ObjectFromMap(mp map[string]any) Object {
+	return types.JsonFromMap(mp)
+}
+
+func ObjectToMap(o Object) map[string]any {
+	return types.JsonToMap(o)
 }

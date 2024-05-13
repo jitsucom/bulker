@@ -18,43 +18,38 @@ func NewServiceBase(id string) Service {
 }
 
 func (sb *Service) NewError(format string, a ...any) error {
-	args := []interface{}{sb.ID}
-	args = append(args, a...)
-	return fmt.Errorf("[%s] "+format, args...)
+	return fmt.Errorf("[%s] "+format, sb.args(a)...)
 }
 
 func (sb *Service) Infof(format string, a ...any) {
-	args := []interface{}{sb.ID}
-	args = append(args, a...)
-	logging.Infof("[%s] "+format, args...)
+	logging.Infof("[%s] "+format, sb.args(a)...)
 }
 
 func (sb *Service) Errorf(format string, a ...any) {
-	args := []interface{}{sb.ID}
-	args = append(args, a...)
-	logging.Errorf("[%s] "+format, args...)
+	logging.Errorf("[%s] "+format, sb.args(a)...)
 }
 
 func (sb *Service) Warnf(format string, a ...any) {
-	args := []interface{}{sb.ID}
-	args = append(args, a...)
-	logging.Warnf("[%s] "+format, args...)
+	logging.Warnf("[%s] "+format, sb.args(a)...)
 }
 
 func (sb *Service) Debugf(format string, a ...any) {
-	args := []interface{}{sb.ID}
-	args = append(args, a...)
-	logging.Debugf("[%s] "+format, args...)
+	if logging.IsDebugEnabled() {
+		logging.Debugf("[%s] "+format, sb.args(a)...)
+	}
 }
 
 func (sb *Service) Fatalf(format string, a ...any) {
-	args := []interface{}{sb.ID}
-	args = append(args, a...)
-	logging.Fatalf("[%s] "+format, args...)
+	logging.Fatalf("[%s] "+format, sb.args(a)...)
 }
 
 func (sb *Service) SystemErrorf(format string, a ...any) {
-	args := []interface{}{sb.ID}
-	args = append(args, a...)
-	logging.SystemErrorf("[%s] "+format, args...)
+	logging.SystemErrorf("[%s] "+format, sb.args(a)...)
+}
+
+func (sb *Service) args(a []any) []any {
+	b := make([]any, len(a)+1)
+	copy(b[1:], a)
+	b[0] = sb.ID
+	return b
 }

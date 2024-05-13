@@ -2,9 +2,11 @@ package sql
 
 import (
 	"context"
+	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 )
 
 type AutoCommitStream struct {
@@ -20,6 +22,19 @@ func newAutoCommitStream(id string, p SQLAdapter, tableName string, streamOption
 	}
 
 	return &ps, nil
+}
+
+func (ps *AutoCommitStream) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types.Object, err error) {
+	var obj types.Object
+	err = jsonorder.Unmarshal(json, &obj)
+	if err != nil {
+		return ps.state, nil, fmt.Errorf("Error parsing JSON: %v", err)
+	}
+	return ps.Consume(ctx, obj)
+}
+
+func (ps *AutoCommitStream) ConsumeMap(ctx context.Context, mp map[string]any) (state bulker.State, processedObject types.Object, err error) {
+	return ps.Consume(ctx, types.ObjectFromMap(mp))
 }
 
 func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObject types.Object, err error) {

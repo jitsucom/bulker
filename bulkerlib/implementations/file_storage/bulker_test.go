@@ -11,11 +11,12 @@ import (
 	"github.com/jitsucom/bulker/bulkerlib/implementations"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/file_storage/testcontainers"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/require"
 	"io"
 	"os"
@@ -296,10 +297,8 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				return
 			}
 		}
-		obj := types.Object{}
-		decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
-		decoder.UseNumber()
-		err = decoder.Decode(&obj)
+		var obj types.Object
+		err = jsonorder.Unmarshal(scanner.Bytes(), &obj)
 		PostStep("decode_json", testConfig, mode, reqr, err)
 		_, _, err = stream.Consume(ctx, obj)
 		PostStep(fmt.Sprintf("consume_object_%d", i), testConfig, mode, reqr, err)

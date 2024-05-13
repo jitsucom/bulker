@@ -1,8 +1,6 @@
 package sql
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -11,9 +9,11 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	jsoniter "github.com/json-iterator/go"
+	"io"
 	"os"
 	"strings"
 	"text/template"
@@ -31,7 +31,7 @@ const (
 									column_name AS name,
 									column_type AS column_type
 								FROM information_schema.columns
-								WHERE table_schema = ? AND table_name = ?`
+								WHERE table_schema = ? AND table_name = ? order by ORDINAL_POSITION`
 	mySQLPrimaryKeyFieldsQuery = `SELECT
 									column_name AS name
 								FROM information_schema.columns
@@ -215,15 +215,12 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		}
 		return state, fmt.Errorf("LoadTable: only %s format is supported in %s mode", m.batchFileFormat, mode)
 	}
+	count := targetTable.ColumnsCount()
 	if m.infileEnabled {
 		mysql.RegisterLocalFile(loadSource.Path)
 		defer mysql.DeregisterLocalFile(loadSource.Path)
 
-		columns := targetTable.SortedColumnNames()
-		header := make([]string, len(columns))
-		for i, name := range columns {
-			header[i] = m.quotedColumnName(name)
-		}
+		header := targetTable.MappedColumnNames(m.quotedColumnName)
 		loadStatement := fmt.Sprintf(mySQLLoadTemplate, loadSource.Path, quotedTableName, strings.Join(header, ", "))
 		if _, err := m.txOrDb(ctx).ExecContext(ctx, loadStatement); err != nil {
 			return state, errorj.LoadError.Wrap(err, "failed to load data from local file system").
@@ -235,13 +232,12 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		}
 		return state, nil
 	} else {
-		columns := targetTable.SortedColumnNames()
-		columnNames := make([]string, len(columns))
-		placeholders := make([]string, len(columns))
-		for i, name := range columns {
+		columnNames := make([]string, count)
+		placeholders := make([]string, count)
+		targetTable.Columns.ForEachIndexed(func(i int, name string, col types2.SQLColumn) {
 			columnNames[i] = m.quotedColumnName(name)
-			placeholders[i] = m.typecastFunc(m.parameterPlaceholder(i+1, name), targetTable.Columns[name])
-		}
+			placeholders[i] = m.typecastFunc(m.parameterPlaceholder(i+1, name), col)
+		})
 		insertPayload := QueryPayload{
 			TableName:      quotedTableName,
 			Columns:        strings.Join(columnNames, ", "),
@@ -282,27 +278,25 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		defer func() {
 			_ = file.Close()
 		}()
-		scanner := bufio.NewScanner(file)
-		scanner.Buffer(make([]byte, 1024*10), 1024*1024)
-		for scanner.Scan() {
+		decoder := jsoniter.NewDecoder(file)
+		decoder.UseNumber()
+		for {
 			object := map[string]any{}
-			decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
-			decoder.UseNumber()
 			err = decoder.Decode(&object)
 			if err != nil {
+				if err == io.EOF {
+					break
+				}
 				return state, err
 			}
-			args := make([]any, len(columns))
-			for i, v := range columns {
-				l := types2.ReformatValue(object[v])
+			args := make([]any, count)
+			targetTable.Columns.ForEachIndexed(func(i int, name string, _ types2.SQLColumn) {
+				l := types2.ReformatValue(object[name])
 				args[i] = l
-			}
+			})
 			if _, err := stmt.ExecContext(ctx, args...); err != nil {
 				return state, checkErr(err)
 			}
-		}
-		if err = scanner.Err(); err != nil {
-			return state, fmt.Errorf("LoadTable: failed to read file: %v", err)
 		}
 		return state, nil
 	}
@@ -316,7 +310,7 @@ func (m *MySQL) GetTableSchema(ctx context.Context, tableName string) (*Table, e
 	}
 
 	//don't select primary keys of non-existent table
-	if len(table.Columns) == 0 {
+	if table.ColumnsCount() == 0 {
 		return table, nil
 	}
 
@@ -335,7 +329,7 @@ func (m *MySQL) GetTableSchema(ctx context.Context, tableName string) (*Table, e
 
 func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) {
 	tableName = m.TableName(tableName)
-	table := &Table{Name: tableName, Columns: Columns{}, PKFields: utils.NewSet[string]()}
+	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewSet[string]()}
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 	rows, err := m.dataSource.QueryContext(ctx, mySQLTableSchemaQuery, m.config.Db, tableName)
@@ -368,7 +362,7 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 			continue
 		}
 		dt, _ := m.GetDataType(columnType)
-		table.Columns[columnName] = types2.SQLColumn{Type: columnType, DataType: dt}
+		table.Columns.Set(columnName, types2.SQLColumn{Type: columnType, DataType: dt})
 	}
 
 	if err := rows.Err(); err != nil {
@@ -385,7 +379,7 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 	return table, nil
 }
 
-func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (utils.Set[string], error) {
+func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (types.Set[string], error) {
 	tableName = m.TableName(tableName)
 	pkFieldsRows, err := m.dataSource.QueryContext(ctx, mySQLPrimaryKeyFieldsQuery, m.config.Db, tableName)
 	if err != nil {
@@ -400,7 +394,7 @@ func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (utils.Set
 
 	defer pkFieldsRows.Close()
 
-	pkFields := utils.NewSet[string]()
+	pkFields := types.NewSet[string]()
 	for pkFieldsRows.Next() {
 		var fieldName string
 		if err := pkFieldsRows.Scan(&fieldName); err != nil {
@@ -470,8 +464,7 @@ func mySQLDriverConnectionString(config *DataSourceConfig) string {
 }
 
 // mySQLColumnDDL returns column DDL (quoted column name, mapped sql type and 'not null' if pk field)
-func mySQLColumnDDL(quotedName, name string, table *Table) string {
-	column := table.Columns[name]
+func mySQLColumnDDL(quotedName, name string, table *Table, column types2.SQLColumn) string {
 	sqlType := column.GetDDLType()
 
 	//map special types for primary keys (text -> varchar)

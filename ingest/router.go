@@ -4,20 +4,21 @@ import (
 	"bytes"
 	"crypto/sha512"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/jitsucom/bulker/kafkabase"
 	"github.com/penglongli/gin-metrics/ginmetrics"
 	timeout "github.com/vearne/gin-timeout"
 	"io"
-	"maps"
 	"math/rand"
 	"net/http"
 	"net/http/pprof"
@@ -37,7 +38,7 @@ var eventTypesDict = map[string]string{
 	"s": "screen",
 	"e": "event"}
 
-var eventTypesSet = utils.NewSet("page", "identify", "track", "group", "alias", "screen")
+var eventTypesSet = types.NewSet("page", "identify", "track", "group", "alias", "screen")
 
 var messageIdUnsupportedChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
@@ -177,9 +178,9 @@ func (r *Router) CorsMiddleware(c *gin.Context) {
 }
 
 type BatchPayload struct {
-	Batch    []AnalyticsServerEvent `json:"batch"`
-	Context  map[string]any         `json:"context"`
-	WriteKey string                 `json:"writeKey"`
+	Batch    []types.Json `json:"batch"`
+	Context  types.Json   `json:"context"`
+	WriteKey string       `json:"writeKey"`
 }
 
 func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *StreamWithDestinations, sendResponse bool) (asyncDestinations []string, tagsDestinations []string, rError *appbase.RouterError) {
@@ -219,13 +220,12 @@ func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *
 	return
 }
 
-func patchEvent(c *gin.Context, messageId string, event *AnalyticsServerEvent, tp string, ingestType IngestType, analyticContext map[string]any) error {
+func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, ingestType IngestType, analyticContext types.Json) error {
 	typeFixed := utils.MapNVL(eventTypesDict, tp, tp)
-	ev := *event
+	ev := event
 	if typeFixed == "event" {
-		var ok bool
-		typeFixed, ok = ev["type"].(string)
-		if !ok {
+		typeFixed = event.GetS("type")
+		if typeFixed == "" {
 			return fmt.Errorf("type property of event is required")
 		}
 	}
@@ -234,8 +234,8 @@ func patchEvent(c *gin.Context, messageId string, event *AnalyticsServerEvent, t
 	}
 	if typeFixed == "track" {
 		//check event name
-		eventName, ok := ev["event"].(string)
-		if !ok || eventName == "" {
+		eventName := event.GetS("event")
+		if eventName == "" {
 			return fmt.Errorf("'event' property is required for 'track' event")
 		}
 		if strings.Contains(eventName, "--") || strings.Contains(eventName, ";") || strings.Contains(eventName, "=") || strings.Contains(eventName, "/*") {
@@ -246,39 +246,35 @@ func patchEvent(c *gin.Context, messageId string, event *AnalyticsServerEvent, t
 		}
 	}
 	ip := strings.TrimSpace(strings.Split(utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), ",")[0])
-	ev["requestIp"] = ip
+	ev.Set("requestIp", ip)
 
-	ctx, ok := ev["context"].(map[string]any)
-	if !ok {
-		ctx = map[string]any{}
+	ctx, ok := ev.GetN("context").(types.Json)
+	if !ok || ctx == nil {
+		ctx = types.NewOrderedMap[string, any]()
+		ev.Set("context", ctx)
 	}
 
-	if analyticContext != nil {
-		mergedCtx := map[string]any{}
-		maps.Copy(mergedCtx, analyticContext)
-		maps.Copy(mergedCtx, ctx)
+	if analyticContext != nil && analyticContext.Len() > 0 {
+		mergedCtx := analyticContext.Copy()
+		mergedCtx.SetAll(ctx)
 		ctx = mergedCtx
+		ev.Set("context", ctx)
 	}
 	if ingestType == IngestTypeBrowser {
 		//if ip comes from browser, don't trust it!
-		ctx["ip"] = ip
-		if _, ok = ctx["userAgent"]; !ok {
-			ctx["userAgent"] = c.GetHeader("User-Agent")
-		}
-		if _, ok = ctx["locale"]; !ok {
-			ctx["locale"] = strings.TrimSpace(strings.Split(c.GetHeader("Accept-Language"), ",")[0])
-		}
+		ctx.Set("ip", ip)
+		ctx.SetIfAbsentFunc("userAgent", func() any {
+			return c.GetHeader("User-Agent")
+		})
+		ctx.SetIfAbsentFunc("locale", func() any {
+			return strings.TrimSpace(strings.Split(c.GetHeader("Accept-Language"), ",")[0])
+		})
 	}
-	ev["context"] = ctx
 	nowIsoDate := time.Now().UTC().Format(timestamp.JsonISO)
-	ev["receivedAt"] = nowIsoDate
-	ev["type"] = typeFixed
-	if _, ok = ev["timestamp"]; !ok {
-		ev["timestamp"] = nowIsoDate
-	}
-	if _, ok = ev["messageId"]; !ok {
-		ev["messageId"] = messageId
-	}
+	ev.Set("receivedAt", nowIsoDate)
+	ev.Set("type", typeFixed)
+	ev.SetIfAbsent("timestamp", nowIsoDate)
+	ev.SetIfAbsent("messageId", messageId)
 	return nil
 }
 
@@ -376,7 +372,7 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 				if res.StatusCode != 200 || err != nil {
 					r.Errorf("Failed to send rotor request for device functions for connections: %s: status: %v body: %s", ids, res.StatusCode, string(body))
 				} else {
-					err = json.Unmarshal(body, &functionsResults)
+					err = jsoniter.Unmarshal(body, &functionsResults)
 					if err != nil {
 						r.Errorf("Failed to unmarshal rotor response for connections: %s: %v", ids, err)
 					}
@@ -398,7 +394,7 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 	return &SyncDestinationsResponse{Destinations: data, OK: true}
 }
 
-func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event *AnalyticsServerEvent, analyticContext map[string]any, tp string, loc StreamCredentials, stream *StreamWithDestinations) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
+func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event types.Json, analyticContext types.Json, tp string, loc StreamCredentials, stream *StreamWithDestinations) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
 	err = patchEvent(c, messageId, event, tp, loc.IngestType, analyticContext)
 	headers := utils.MapMap(utils.MapFilter(c.Request.Header, func(k string, v []string) bool {
 		return len(v) > 0 && !isInternalHeader(k)
@@ -408,7 +404,7 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event *Ana
 		}
 		return strings.Join(v, ",")
 	})
-	bodyType, _ := (*event)["type"].(string)
+	bodyType := event.GetS("type")
 	ingestMessage = &IngestMessage{
 		IngestType:     loc.IngestType,
 		MessageCreated: time.Now(),
@@ -424,7 +420,7 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event *Ana
 		HttpHeaders: headers,
 		HttpPayload: event,
 	}
-	ingestMessageBytes, err1 := json.Marshal(ingestMessage)
+	ingestMessageBytes, err1 := jsonorder.Marshal(ingestMessage)
 	if err1 != nil {
 		err = utils.Nvl(err, err1)
 	} else {
@@ -462,14 +458,14 @@ type IngestMessageOrigin struct {
 }
 
 type IngestMessage struct {
-	IngestType     IngestType            `json:"ingestType"`
-	MessageCreated time.Time             `json:"messageCreated"`
-	WriteKey       string                `json:"writeKey,omitempty"`
-	MessageId      string                `json:"messageId"`
-	Type           string                `json:"type"`
-	Origin         IngestMessageOrigin   `json:"origin"`
-	HttpHeaders    map[string]string     `json:"httpHeaders"`
-	HttpPayload    *AnalyticsServerEvent `json:"httpPayload"`
+	IngestType     IngestType          `json:"ingestType"`
+	MessageCreated time.Time           `json:"messageCreated"`
+	WriteKey       string              `json:"writeKey,omitempty"`
+	MessageId      string              `json:"messageId"`
+	Type           string              `json:"type"`
+	Origin         IngestMessageOrigin `json:"origin"`
+	HttpHeaders    map[string]string   `json:"httpHeaders"`
+	HttpPayload    types.Json          `json:"httpPayload"`
 }
 
 type StreamLocator func(loc *StreamCredentials) *StreamWithDestinations

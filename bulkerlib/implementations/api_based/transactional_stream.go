@@ -8,6 +8,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
@@ -175,6 +176,19 @@ func (ps *ApiBasedStream) writeToBatch(ctx context.Context, processedObject type
 	}
 	ps.eventsInBatch++
 	return nil
+}
+
+func (ps *ApiBasedStream) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types2.Object, err error) {
+	var obj types2.Object
+	err = jsonorder.Unmarshal(json, &obj)
+	if err != nil {
+		return ps.state, nil, fmt.Errorf("Error parsing JSON: %v", err)
+	}
+	return ps.Consume(ctx, obj)
+}
+
+func (ps *ApiBasedStream) ConsumeMap(ctx context.Context, mp map[string]any) (state bulker.State, processedObject types2.Object, err error) {
+	return ps.Consume(ctx, types2.ObjectFromMap(mp))
 }
 
 func (ps *ApiBasedStream) Consume(ctx context.Context, object types2.Object) (state bulker.State, processedObject types2.Object, err error) {
