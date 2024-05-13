@@ -197,9 +197,9 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			for scanner.Scan() {
 				if !ps.batchFileSkipLines.Contains(i) {
 					if needToConvert {
-						cfg := jsonorder.ConfigNoNumbers
-						if ps.targetMarshaller.Format() != types.FileFormatAVRO {
-							cfg = jsonorder.ConfigDefault
+						cfg := jsonorder.ConfigDefault
+						if ps.targetMarshaller.Format() == types.FileFormatAVRO {
+							cfg = jsonorder.ConfigNoNumbers
 						}
 						var obj types.Object
 						err = cfg.Unmarshal(scanner.Bytes(), &obj)

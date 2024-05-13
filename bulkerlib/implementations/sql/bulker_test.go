@@ -56,7 +56,7 @@ var clickhouseClusterContainerNoShards *clickhouse_noshards.ClickHouseClusterCon
 
 func init() {
 	//uncomment to run tests locally with just one bulker type
-	//allBulkerConfigs = []string{RedshiftBulkerTypeId + "_serverless"}
+	//allBulkerConfigs = []string{PostgresBulkerTypeId}
 
 	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {
 		bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
@@ -309,11 +309,10 @@ func TestBasics(t *testing.T) {
 			configIds:      allBulkerConfigs,
 		},
 		{
-			name:                "repeated_ids_pk",
-			modes:               []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
-			expectPartitionId:   true,
-			dataFile:            "test_data/repeated_ids.ndjson",
-			leaveResultingTable: true,
+			name:              "repeated_ids_pk",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/repeated_ids.ndjson",
 			expectedTable: ExpectedTable{
 				PKFields: types.NewSet("id"),
 				Columns:  justColumns("_timestamp", "id", "name"),

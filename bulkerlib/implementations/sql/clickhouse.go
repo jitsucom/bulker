@@ -38,7 +38,7 @@ const (
 	chDatabaseQuery = "SELECT name FROM system.databases where name = ?"
 	chClusterQuery  = "SELECT max(shard_num) > 1 FROM system.clusters where cluster = ?"
 
-	chTableSchemaQuery       = `SELECT name, type, is_in_primary_key FROM system.columns WHERE database = ? and table = ? and default_kind not in ('MATERIALIZED', 'ALIAS', 'EPHEMERAL')`
+	chTableSchemaQuery       = `SELECT name, type, is_in_primary_key FROM system.columns WHERE database = ? and table = ? and default_kind not in ('MATERIALIZED', 'ALIAS', 'EPHEMERAL') order by position`
 	chCreateDatabaseTemplate = `CREATE DATABASE IF NOT EXISTS "%s" %s`
 
 	chOnClusterClauseTemplate = " ON CLUSTER `%s` "

@@ -85,7 +85,7 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 				}
 				destination.Set(key, string(b))
 			case reflect.Map:
-				return fmt.Errorf("flatter doesn't support map. Object is required")
+				return fmt.Errorf("flattener doesn't support map. Object is required")
 			default:
 				obj, ok := elv.(types.Object)
 				if ok {

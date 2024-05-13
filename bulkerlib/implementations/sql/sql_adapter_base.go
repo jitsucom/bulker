@@ -388,13 +388,16 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 	columnNames := make([]string, count)
 	placeholders := make([]string, count)
 	values := make([]any, count)
-	updateColumns := make([]string, count)
-
+	var updateColumns []string
+	if mergeQuery != nil {
+		updateColumns = make([]string, count)
+	}
 	table.Columns.ForEachIndexed(func(i int, name string, col types2.SQLColumn) {
+		columnName := b.quotedColumnName(name)
+		columnNames[i] = columnName
 		if mergeQuery != nil {
-			updateColumns[i] = fmt.Sprintf(`%s=%s`, b.quotedColumnName(name), b.typecastFunc(b.parameterPlaceholder(i+1, b.quotedColumnName(name)), col))
+			updateColumns[i] = fmt.Sprintf(`%s=%s`, columnName, b.typecastFunc(b.parameterPlaceholder(i+1, columnName), col))
 		}
-		columnNames[i] = b.quotedColumnName(name)
 		placeholders[i] = b.typecastFunc(b.parameterPlaceholder(i+1, name), col)
 	})
 
@@ -450,16 +453,20 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 	//insert from select
 	count := sourceTable.ColumnsCount()
 	columnNames := sourceTable.MappedColumnNames(b.quotedColumnName)
-	updateColumns := make([]string, count)
-	insertColumns := make([]string, count)
+	var updateColumns []string
+	var insertColumns []string
 	var joinConditions []string
 	if mergeQuery != nil {
-		sourceTable.Columns.ForEachIndexed(func(i int, name string, col types2.SQLColumn) {
-			updateColumns[i] = fmt.Sprintf(`%s=%s.%s`, b.quotedColumnName(name), sourceAlias, b.quotedColumnName(name))
-			insertColumns[i] = b.typecastFunc(fmt.Sprintf(`%s.%s`, sourceAlias, b.quotedColumnName(name)), col)
+		updateColumns = make([]string, count)
+		insertColumns = make([]string, count)
+		sourceTable.Columns.ForEachIndexed(func(i int, _ string, col types2.SQLColumn) {
+			colName := columnNames[i]
+			updateColumns[i] = fmt.Sprintf(`%s=%s.%s`, colName, sourceAlias, colName)
+			insertColumns[i] = b.typecastFunc(fmt.Sprintf(`%s.%s`, sourceAlias, colName), col)
 		})
 		for pkField := range targetTable.PKFields {
-			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = %s.%s", b.quotedColumnName(pkField), sourceAlias, b.quotedColumnName(pkField)))
+			pkName := b.quotedColumnName(pkField)
+			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = %s.%s", pkName, sourceAlias, pkName))
 		}
 	}
 	insertPayload := QueryPayload{
