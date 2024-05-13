@@ -83,7 +83,7 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 				if err != nil {
 					return fmt.Errorf("error marshaling array with key %s: %v", key, err)
 				}
-				destination.Set(key, string(b))
+				destination.Set(newKey, string(b))
 			case reflect.Map:
 				return fmt.Errorf("flattener doesn't support map. Object is required")
 			default:
