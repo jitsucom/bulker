@@ -176,6 +176,7 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 		}
 		if len(ps.batchFileSkipLines) > 0 || needToConvert {
 			var writer io.WriteCloser
+			var gzipWriter io.WriteCloser
 			workingFile, err = os.CreateTemp("", path.Base(ps.batchFile.Name())+"_2")
 			if err != nil {
 				return errorj.Decorate(err, "failed to create tmp file for deduplication")
@@ -194,8 +195,9 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 				}
 			} else {
 				if ps.targetMarshaller.Compression() == types2.FileCompressionGZIP {
-					writer = gzip.NewWriter(writer)
-					defer func() { _ = writer.Close() }()
+					gzipWriter = gzip.NewWriter(writer)
+					writer = gzipWriter
+					defer func() { _ = gzipWriter.Close() }()
 				}
 			}
 			file, err := os.Open(ps.batchFile.Name())
@@ -234,7 +236,9 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 				return errorj.Decorate(err, "failed to read batch file")
 			}
 			_ = ps.targetMarshaller.Flush()
-			_ = writer.Close()
+			if gzipWriter != nil {
+				_ = gzipWriter.Close()
+			}
 			_ = workingFile.Sync()
 		}
 		if needToConvert {
