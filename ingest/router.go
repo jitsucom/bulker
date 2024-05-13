@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"crypto/sha512"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
@@ -361,7 +362,7 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 				if res.StatusCode != 200 || err != nil {
 					r.Errorf("Failed to send rotor request for device functions for connections: %s: status: %v body: %s", ids, res.StatusCode, string(body))
 				} else {
-					err = json.Unmarshal(body, &functionsResults)
+					err = jsoniter.Unmarshal(body, &functionsResults)
 					if err != nil {
 						r.Errorf("Failed to unmarshal rotor response for connections: %s: %v", ids, err)
 					}
@@ -409,7 +410,7 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event type
 		HttpHeaders: headers,
 		HttpPayload: event,
 	}
-	ingestMessageBytes, err1 := json.Marshal(ingestMessage)
+	ingestMessageBytes, err1 := jsonorder.Marshal(ingestMessage)
 	if err1 != nil {
 		err = utils.Nvl(err, err1)
 	} else {

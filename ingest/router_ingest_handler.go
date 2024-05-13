@@ -2,12 +2,13 @@ package main
 
 import (
 	"compress/gzip"
-	"encoding/json"
 	"fmt"
 	kafka2 "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
@@ -73,7 +74,8 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusOK, "error reading HTTP body", false, err, true)
 		return
 	}
-	message, err := types.JsonFromBytes(body)
+	var message types.Json
+	err = jsonorder.Unmarshal(body, &message)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
 		return
@@ -121,7 +123,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			c.Header("Content-Type", "application/json")
 			c.Header("Vary", "Accept-Encoding")
 			gz := gzip.NewWriter(c.Writer)
-			_ = json.NewEncoder(gz).Encode(resp)
+			_ = jsoniter.NewEncoder(gz).Encode(resp)
 			_ = gz.Close()
 		} else {
 			c.JSON(http.StatusOK, resp)

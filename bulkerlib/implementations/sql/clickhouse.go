@@ -3,13 +3,13 @@ package sql
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
@@ -575,7 +575,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	defer func() {
 		_ = file.Close()
 	}()
-	decoder := json.NewDecoder(file)
+	decoder := jsoniter.NewDecoder(file)
 	decoder.UseNumber()
 	for {
 		object := map[string]any{}

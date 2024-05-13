@@ -185,10 +185,10 @@ func BuildConstraintName(tableName string) string {
 	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers())
 }
 
-func (t *Table) ToSimpleMap() map[string]string {
-	simple := make(map[string]string, t.Columns.Len())
+func (t *Table) ToSimpleMap() *types2.OrderedMap[string, any] {
+	simple := types2.NewOrderedMap[string, any]()
 	for el := t.Columns.Front(); el != nil; el = el.Next() {
-		simple[el.Key] = el.Value.Type
+		simple.Set(el.Key, el.Value.Type)
 	}
 	return simple
 }

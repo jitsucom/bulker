@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/hamba/avro/v2/ocf"
-	jsoniter "github.com/json-iterator/go"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"io"
 )
 
@@ -51,7 +51,7 @@ type JSONMarshaller struct {
 	AbstractMarshaller
 	writer    io.Writer
 	bufWriter *bufio.Writer
-	encoder   *jsoniter.Encoder
+	encoder   *jsonorder.Encoder
 }
 
 func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
@@ -62,7 +62,7 @@ func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
 			jm.writer = writer
 		}
 		jm.bufWriter = bufio.NewWriterSize(jm.writer, 100*1024)
-		jm.encoder = jsoniter.NewEncoder(jm.bufWriter)
+		jm.encoder = jsonorder.NewEncoder(jm.bufWriter)
 		jm.encoder.SetEscapeHTML(false)
 	}
 	return nil
@@ -171,7 +171,7 @@ func (cm *CSVMarshaller) Marshal(object ...Object) error {
 					}
 				default:
 					//use json marshaller to marshal types like arrays and time in unified way
-					b, err := jsoniter.Marshal(v)
+					b, err := jsonorder.Marshal(v)
 					if err != nil {
 						return err
 					}

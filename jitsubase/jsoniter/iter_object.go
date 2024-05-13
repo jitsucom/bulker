@@ -214,7 +214,7 @@ func (iter *Iterator) ReadMapCB(callback func(*Iterator, string) bool) bool {
 		iter.skipThreeBytes('u', 'l', 'l')
 		return true // null
 	}
-	iter.ReportError("ReadMapCB", `expect { or n, but found `+string([]byte{c}))
+	iter.ReportError("ReadMapCB", `expect { or n, but found `+fmt.Sprintf("%d", c))
 	return false
 }
 

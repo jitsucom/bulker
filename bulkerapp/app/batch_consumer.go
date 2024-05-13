@@ -1,15 +1,14 @@
 package app
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/eventslog"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
@@ -114,9 +113,8 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			firstPosition = &message.TopicPartition
 			counters.firstOffset = int64(message.TopicPartition.Offset)
 		}
-		dec := json.NewDecoder(bytes.NewReader(message.Value))
-		dec.UseNumber()
-		obj, err := types.ObjectFromDecoder(dec)
+		var obj types.Object
+		err = jsonorder.Unmarshal(message.Value, &obj)
 		if err == nil {
 			if bulkerStream == nil {
 				destination.InitBulkerInstance()

@@ -45,6 +45,16 @@ func MapPutIfAbsent[K comparable, V any](mp map[K]V, key K, value V) bool {
 	return false
 }
 
+func MapGetOrCreate[K comparable, V any](mp map[K]V, key K, value V) V {
+	var res V
+	var ok bool
+	if res, ok = mp[key]; !ok {
+		mp[key] = value
+		return value
+	}
+	return res
+}
+
 func MapNVL[K comparable, V any](mp map[K]V, key K, defaultValue V) V {
 	if value, ok := mp[key]; ok {
 		return value

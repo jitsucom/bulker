@@ -1,15 +1,14 @@
 package app
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/eventslog"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
@@ -103,7 +102,8 @@ type StreamWrapper struct {
 }
 
 func (ps *StreamWrapper) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types.Object, err error) {
-	obj, err := types.ObjectFromBytes(json)
+	var obj types.Object
+	err = jsonorder.Unmarshal(json, &obj)
 	if err != nil {
 		return bulker.State{}, nil, fmt.Errorf("Error parsing JSON: %v", err)
 	}
@@ -215,9 +215,8 @@ func (sc *StreamConsumerImpl) start() {
 				}
 				metricsMeta := kafkabase.GetKafkaHeader(message, MetricsMetaHeader)
 				metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "consumed").Inc()
-				dec := json.NewDecoder(bytes.NewReader(message.Value))
-				dec.UseNumber()
-				obj, err := types.ObjectFromDecoder(dec)
+				var obj types.Object
+				err = jsonorder.Unmarshal(message.Value, &obj)
 				if err != nil {
 					metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "parse_event_error").Inc()
 					sc.postEventsLog(message.Value, nil, nil, err)

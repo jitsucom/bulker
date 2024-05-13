@@ -3,20 +3,16 @@ module github.com/jitsucom/bulker/bulkerapp
 go 1.22
 
 require (
-	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.4.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-co-op/gocron/v2 v2.2.4
 	github.com/gomodule/redigo v1.8.9
-	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hjson/hjson-go/v4 v4.3.1
-	github.com/json-iterator/go v1.1.12
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/prometheus/client_golang v1.17.0
-	github.com/prometheus/client_model v0.5.0
 	github.com/spf13/viper v1.17.0
 	github.com/stretchr/testify v1.8.4
 	github.com/vearne/gin-timeout v0.1.7
-	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 

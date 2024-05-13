@@ -17,7 +17,7 @@ import (
 )
 
 // Test streams in autocommit and bath mode. Both with good batches and batches with primary key violation error
-func _TestLoadTest(t *testing.T) {
+func TestLoadTest(t *testing.T) {
 	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "0",
 		"BULKER_TOPIC_MANAGER_REFRESH_PERIOD_SEC": "1",
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC":  "20"})

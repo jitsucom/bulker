@@ -2,12 +2,12 @@ package main
 
 import (
 	"compress/gzip"
-	"encoding/json"
 	"fmt"
 	kafka2 "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"net/http"
@@ -39,7 +39,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 		bodyReader, err = gzip.NewReader(bodyReader)
 	}
 	if err == nil {
-		err = json.NewDecoder(bodyReader).Decode(&payload)
+		err = jsonorder.NewDecoder(bodyReader).Decode(&payload)
 	}
 	if err != nil {
 		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)

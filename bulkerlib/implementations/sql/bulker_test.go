@@ -2,15 +2,14 @@ package sql
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	testcontainers2 "github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers/clickhouse"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers/clickhouse_noshards"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
@@ -57,7 +56,7 @@ var clickhouseClusterContainerNoShards *clickhouse_noshards.ClickHouseClusterCon
 
 func init() {
 	//uncomment to run tests locally with just one bulker type
-	allBulkerConfigs = []string{MySQLBulkerTypeId}
+	//allBulkerConfigs = []string{RedshiftBulkerTypeId + "_serverless"}
 
 	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {
 		bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
@@ -518,9 +517,8 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				return
 			}
 		}
-		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
-		decoder.UseNumber()
-		obj, err := types2.ObjectFromDecoder(decoder)
+		var obj types2.Object
+		err = jsonorder.Unmarshal(scanner.Bytes(), &obj)
 		PostStep("decode_json", testConfig, mode, reqr, err)
 		_, _, err = stream.Consume(ctx, obj)
 		PostStep(fmt.Sprintf("consume_object_%d", i), testConfig, mode, reqr, err)

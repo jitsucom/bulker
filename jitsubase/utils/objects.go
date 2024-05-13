@@ -2,7 +2,7 @@ package utils
 
 import (
 	"fmt"
-	jsoniter "github.com/json-iterator/go"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
 )

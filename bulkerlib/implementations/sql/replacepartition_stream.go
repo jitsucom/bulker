@@ -7,6 +7,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"time"
 )
@@ -50,7 +51,8 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 }
 
 func (ps *ReplacePartitionStream) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types.Object, err error) {
-	obj, err := types.ObjectFromBytes(json)
+	var obj types.Object
+	err = jsonorder.Unmarshal(json, &obj)
 	if err != nil {
 		return ps.state, nil, fmt.Errorf("Error parsing JSON: %v", err)
 	}

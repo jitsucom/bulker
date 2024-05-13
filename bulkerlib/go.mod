@@ -15,7 +15,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/jitsucom/bulker/jitsubase v0.0.0-20231016145435-0e7fb35d18e4
 	github.com/joomcode/errorx v1.1.1
-	github.com/json-iterator/go v1.1.12
 	github.com/lib/pq v1.10.9
 	github.com/snowflakedb/gosnowflake v1.6.25
 	github.com/stretchr/testify v1.8.4

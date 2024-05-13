@@ -2,9 +2,7 @@ package app
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/sha512"
-	"encoding/json"
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
@@ -14,11 +12,12 @@ import (
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
-	jsoniter "github.com/json-iterator/go"
 	timeout "github.com/vearne/gin-timeout"
 	"io"
 	"net/http"
@@ -199,7 +198,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	}
 	if schemaHeader != "" {
 		schema := types.Schema{}
-		err = json.Unmarshal([]byte(schemaHeader), &schema)
+		err = jsoniter.Unmarshal([]byte(schemaHeader), &schema)
 		if err != nil {
 			rError = r.ResponseError(c, http.StatusBadRequest, "schema unmarshal error", false, err, true)
 			return
@@ -228,9 +227,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 		}
 		bytesRead += len(eventBytes)
 		var obj types.Object
-		dec := json.NewDecoder(bytes.NewReader(eventBytes))
-		dec.UseNumber()
-		if obj, err = types.ObjectFromDecoder(dec); err != nil {
+		if err = jsonorder.Unmarshal(eventBytes, &obj); err != nil {
 			state, _ = bulkerStream.Abort(c)
 			rError = r.ResponseError(c, http.StatusBadRequest, "unmarhsal error", false, err, true)
 			return

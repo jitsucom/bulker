@@ -1,7 +1,8 @@
-package types
+package jsonorder
 
 import (
 	"encoding/json"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -46,29 +47,18 @@ const j = `{
 const expectedJson = `{"type":"track","event":"test","properties":{"title":"Jitsu : ABC","url":"https://jitsu.com/abc?utm_source=campaign","path":"/start?utm_source=campaign","hash":"","search":"","currency":"USD","width":1458,"height":1186,"newCol1":1,"newCol2":2},"anonymousId":"anon_6","context":{"library":{"name":"@jitsu/js","version":"2.0.1","nested":{"zzz":999,"yyy":888,"xxx":777,"kkk":555,"aaa":111},"arr1":[1,2,3,4,6],"arr2":[{"a":1,"b":2,"c":3},{"x":1,"y":2,"z":3}]}}}`
 
 func TestOrderedJSON(t *testing.T) {
-	obj, err := FromBytes[string, any]([]byte(j))
-	if err != nil {
-		t.Error(err)
-	}
-	ja, err := obj.ToJSON()
+	//var m map[string]any
+	//iter1 := ConfigWithNumbers.BorrowIterator([]byte(j))
+	//defer ConfigWithNumbers.ReturnIterator(iter1)
+	//iter1.ReadVal(&m)
+	var obj *types.OrderedMap[string, any]
+	_ = Unmarshal([]byte(j), &obj)
+	t.Logf(obj.GetS("type"))
+	ja, err := Marshal(obj)
 	require.NoError(t, err)
 	t.Logf("JSON: %s", ja)
-	require.Equal(t, expectedJson, ja)
-	require.JSONEq(t, j, ja)
-
-	b, err := json.Marshal(obj)
-	require.NoError(t, err)
-	require.Equal(t, expectedJson, string(b))
-	require.JSONEq(t, j, string(b))
-
-	om := NewOrderedMap[string, any]()
-	err = json.Unmarshal([]byte(j), &om)
-	require.NoError(t, err)
-	ja, err = obj.ToJSON()
-	require.NoError(t, err)
-	t.Logf("JSON: %s", ja)
-	require.Equal(t, expectedJson, ja)
-	require.JSONEq(t, j, ja)
+	require.Equal(t, expectedJson, string(ja))
+	require.JSONEq(t, j, string(ja))
 
 	mExpected := map[string]any{}
 	err = json.Unmarshal([]byte(j), &mExpected)
@@ -87,7 +77,7 @@ func TestOrderedJSON(t *testing.T) {
 	require.Equal(t, "event", token.Key)
 	require.Equal(t, "test", token.Value)
 	token = token.Next()
-	mp, ok := token.Value.(*OrderedMap[string, any])
+	mp, ok := token.Value.(*types.OrderedMap[string, any])
 	require.True(t, ok)
 	token = mp.Front()
 	require.Equal(t, "title", token.Key)

@@ -138,22 +138,34 @@ func (bc *AbstractBatchConsumer) initTransactionalProducer() (*kafka.Producer, e
 	}
 	// Delivery reports channel for 'failed' producer messages
 	safego.RunWithRestart(func() {
+		ticker := time.NewTicker(time.Second)
+		errors := map[string]*int{}
+		defer ticker.Stop()
 		for {
 			select {
 			case <-bc.closed:
 				bc.Infof("Closing producer.")
 				producer.Close()
 				return
+			case <-ticker.C:
+				if len(errors) > 0 {
+					for k, v := range errors {
+						bc.Errorf("%s COUNT: %d", k, v)
+					}
+				}
+				clear(errors)
 			case e := <-producer.Events():
 				switch ev := e.(type) {
 				case *kafka.Message:
-					messageId := kafkabase.GetKafkaHeader(ev, kafkabase.MessageIdHeader)
 					if ev.TopicPartition.Error != nil {
 						kafkabase.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "error", metrics.KafkaErrorCode(ev.TopicPartition.Error))).Inc()
-						bc.Errorf("Error sending message (ID: %s) to kafka topic %s: %s", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
+						errtext := fmt.Sprintf("Error sending message to kafka topic %s: %s", *ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
+						zero := 0
+						cnt := utils.MapGetOrCreate(errors, errtext, &zero)
+						*cnt = *cnt + 1
 					} else {
 						kafkabase.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "delivered", "")).Inc()
-						bc.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
+						//bc.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 					}
 				case *kafka.Error, kafka.Error:
 					bc.Errorf("Producer error: %v", ev)

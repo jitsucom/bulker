@@ -5,8 +5,9 @@ import (
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	jsoniter "github.com/json-iterator/go"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"time"
 )
 
@@ -225,7 +226,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 	if ps.state.Representation == nil ||
 		ps.state.Representation.(RepresentationTable).Name != table.Name ||
-		len(ps.state.Representation.(RepresentationTable).Schema) != table.ColumnsCount() {
+		ps.state.Representation.(RepresentationTable).Schema.Len() != table.ColumnsCount() {
 		ps.state.Representation = RepresentationTable{
 			Name:             table.Name,
 			Schema:           table.ToSimpleMap(),
@@ -237,9 +238,9 @@ func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 }
 
 type RepresentationTable struct {
-	Name             string            `json:"name"`
-	Schema           map[string]string `json:"schema"`
-	PrimaryKeyFields []string          `json:"primaryKeyFields,omitempty"`
-	PrimaryKeyName   string            `json:"primaryKeyName,omitempty"`
-	Temporary        bool              `json:"temporary,omitempty"`
+	Name             string                          `json:"name"`
+	Schema           *types2.OrderedMap[string, any] `json:"schema"`
+	PrimaryKeyFields []string                        `json:"primaryKeyFields,omitempty"`
+	PrimaryKeyName   string                          `json:"primaryKeyName,omitempty"`
+	Temporary        bool                            `json:"temporary,omitempty"`
 }

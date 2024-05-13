@@ -3,11 +3,11 @@ package sql
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
@@ -340,10 +340,10 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	defer func() {
 		_ = file.Close()
 	}()
-	decoder := json.NewDecoder(file)
+	decoder := jsoniter.NewDecoder(file)
 	decoder.UseNumber()
 	for {
-		object := map[string]any{}
+		var object map[string]any
 		err = decoder.Decode(&object)
 		if err != nil {
 			if err == io.EOF {

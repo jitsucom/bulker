@@ -166,6 +166,19 @@ func (iter *Iterator) skipWhitespacesWithoutLoadMore() bool {
 	return true
 }
 
+func (iter *Iterator) jitsuSkipWhitespacesWithoutLoadMore() {
+	i := iter.head
+	for ; i < iter.tail; i++ {
+		c := iter.buf[i]
+		switch c {
+		case ' ', '\n', '\t', '\r':
+			continue
+		}
+		break
+	}
+	iter.head = i
+}
+
 func (iter *Iterator) isObjectEnd() bool {
 	c := iter.nextToken()
 	if c == ',' {

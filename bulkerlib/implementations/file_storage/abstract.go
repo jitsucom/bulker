@@ -2,18 +2,19 @@ package file_storage
 
 import (
 	"bufio"
-	"bytes"
+	"compress/gzip"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	implementations2 "github.com/jitsucom/bulker/bulkerlib/implementations"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"io"
 	"os"
 	"path"
 	"sort"
@@ -170,10 +171,11 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 		workingFile := ps.batchFile
 		needToConvert := false
 		convertStart := time.Now()
-		if !ps.targetMarshaller.Equal(ps.marshaller) {
+		if ps.targetMarshaller.Format() != ps.marshaller.Format() {
 			needToConvert = true
 		}
 		if len(ps.batchFileSkipLines) > 0 || needToConvert {
+			var writer io.WriteCloser
 			workingFile, err = os.CreateTemp("", path.Base(ps.batchFile.Name())+"_2")
 			if err != nil {
 				return errorj.Decorate(err, "failed to create tmp file for deduplication")
@@ -182,12 +184,18 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 				_ = workingFile.Close()
 				_ = os.Remove(workingFile.Name())
 			}()
+			writer = workingFile
 			if needToConvert {
 				header := ps.csvHeader.ToSlice()
 				sort.Strings(header)
 				err = ps.targetMarshaller.Init(workingFile, header)
 				if err != nil {
 					return errorj.Decorate(err, "failed to write header for converted batch file")
+				}
+			} else {
+				if ps.targetMarshaller.Compression() == types2.FileCompressionGZIP {
+					writer = gzip.NewWriter(writer)
+					defer func() { _ = writer.Close() }()
 				}
 			}
 			file, err := os.Open(ps.batchFile.Name())
@@ -203,9 +211,8 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 			for scanner.Scan() {
 				if !ps.batchFileSkipLines.Contains(i) {
 					if needToConvert {
-						dec := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
-						dec.UseNumber()
-						obj, err := types2.ObjectFromDecoder(dec)
+						var obj types2.Object
+						err := jsonorder.Unmarshal(scanner.Bytes(), &obj)
 						if err != nil {
 							return errorj.Decorate(err, "failed to decode json object from batch filer")
 						}
@@ -214,11 +221,11 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 							return errorj.Decorate(err, "failed to marshall object to target format")
 						}
 					} else {
-						_, err = workingFile.Write(scanner.Bytes())
+						_, err = writer.Write(scanner.Bytes())
 						if err != nil {
 							return errorj.Decorate(err, "failed write to deduplication file")
 						}
-						_, _ = workingFile.Write([]byte("\n"))
+						_, _ = writer.Write([]byte("\n"))
 					}
 				}
 				i++
@@ -226,8 +233,9 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 			if err = scanner.Err(); err != nil {
 				return errorj.Decorate(err, "failed to read batch file")
 			}
-			ps.targetMarshaller.Flush()
-			workingFile.Sync()
+			_ = ps.targetMarshaller.Flush()
+			_ = writer.Close()
+			_ = workingFile.Sync()
 		}
 		if needToConvert {
 			stat, _ = workingFile.Stat()
@@ -302,7 +310,8 @@ func (ps *AbstractFileStorageStream) writeToBatchFile(ctx context.Context, proce
 }
 
 func (ps *AbstractFileStorageStream) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types2.Object, err error) {
-	obj, err := types2.ObjectFromBytes(json)
+	var obj types2.Object
+	err = jsonorder.Unmarshal(json, &obj)
 	if err != nil {
 		return ps.state, nil, fmt.Errorf("Error parsing JSON: %v", err)
 	}

@@ -1,9 +1,9 @@
 package bulkerlib
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 )
@@ -100,7 +100,7 @@ var (
 				return v, nil
 			case string:
 				schema := types.Schema{}
-				err := json.Unmarshal([]byte(v), &schema)
+				err := jsoniter.Unmarshal([]byte(v), &schema)
 				if err != nil {
 					return types.Schema{}, fmt.Errorf("failed to parse schema: %v", err)
 				}

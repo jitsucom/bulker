@@ -2,10 +2,10 @@ package app
 
 import (
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	kafka2 "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"math"
 	"time"
@@ -60,7 +60,7 @@ func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, event
 		return
 	}
 	meta := make(map[string]any)
-	err = json.Unmarshal([]byte(metricsMeta), &meta)
+	err = jsoniter.Unmarshal([]byte(metricsMeta), &meta)
 	if err != nil {
 		ac.Errorf("Failed to unmarshal metrics meta: %v", err)
 		return
@@ -68,7 +68,7 @@ func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, event
 	meta["status"] = status
 	meta["events"] = events
 	meta["timestamp"] = timestamp.ToISOFormat(time.Now().Truncate(time.Minute))
-	payload, _ := json.Marshal(meta)
+	payload, _ := jsoniter.Marshal(meta)
 	//ac.Infof("Sending metrics to topic %s: %+v", topicId, meta)
 	err = ac.bulkerProducer.ProduceAsync(topicId, "", payload, nil, kafka2.PartitionAny)
 	if err != nil {

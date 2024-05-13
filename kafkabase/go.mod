@@ -3,7 +3,7 @@ module github.com/jitsucom/bulker/kafkabase
 go 1.22
 
 require (
-	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.4.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hjson/hjson-go/v4 v4.3.1
 	github.com/prometheus/client_golang v1.17.0

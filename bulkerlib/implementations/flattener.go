@@ -1,18 +1,14 @@
 package implementations
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"reflect"
-	"strings"
 )
 
 const SqlTypePrefix = "__sql_type"
-
-var filterFunc = func(s string) bool {
-	return !strings.HasPrefix(s, SqlTypePrefix)
-}
 
 type Flattener interface {
 	FlattenObject(object types.Object, sqlTypeHints types.SQLTypes) (types.Object, error)
@@ -57,21 +53,18 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 
 			// if there is sql type hint for nested object - we don't flatten it.
 			// Instead, we marshal it to json string hoping that database cast function will do the job
-			b, err := value.ToJSONFilter(filterFunc)
+			b, err := jsonorder.MarshalToString(value)
 			if err != nil {
 				return fmt.Errorf("error marshaling json object with key %s: %v", key, err)
 			}
 			destination.Set(key, b)
 		} else {
-			destination.Set(key, types.ObjectToMapFilter(value, filterFunc))
+			destination.Set(key, types.ObjectToMap(value))
 		}
 		return nil
 	}
 	for el := value.Front(); el != nil; el = el.Next() {
 		newKey := el.Key
-		if strings.HasPrefix(newKey, SqlTypePrefix) {
-			continue
-		}
 		if key != "" {
 			newKey = key + "_" + newKey
 		}
@@ -86,7 +79,7 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 			k := reflect.TypeOf(elv).Kind()
 			switch k {
 			case reflect.Slice, reflect.Array:
-				b, err := json.Marshal(elv)
+				b, err := jsoniter.Marshal(elv)
 				if err != nil {
 					return fmt.Errorf("error marshaling array with key %s: %v", key, err)
 				}

@@ -160,11 +160,12 @@ func (decoder *mapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 		mapType.UnsafeSet(ptr, mapType.UnsafeMakeMap(0))
 	}
 	if c != '{' {
-		iter.ReportError("ReadMapCB", `expect { or n, but found `+string([]byte{c}))
+		iter.ReportError("ReadMapCB", `expect { or n, but found `+fmt.Sprintf("%d", c))
 		return
 	}
 	c = iter.nextToken()
 	if c == '}' {
+		iter.jitsuSkipWhitespacesWithoutLoadMore()
 		return
 	}
 	iter.unreadByte()
@@ -192,6 +193,8 @@ func (decoder *mapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 	}
 	if c != '}' {
 		iter.ReportError("ReadMapCB", `expect }, but found `+string([]byte{c}))
+	} else {
+		iter.jitsuSkipWhitespacesWithoutLoadMore()
 	}
 }
 

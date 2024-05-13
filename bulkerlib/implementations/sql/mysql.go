@@ -1,8 +1,6 @@
 package sql
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -11,10 +9,11 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	jsoniter "github.com/json-iterator/go"
+	"io"
 	"os"
 	"strings"
 	"text/template"
@@ -279,14 +278,15 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		defer func() {
 			_ = file.Close()
 		}()
-		scanner := bufio.NewScanner(file)
-		scanner.Buffer(make([]byte, 1024*10), 1024*1024)
-		for scanner.Scan() {
+		decoder := jsoniter.NewDecoder(file)
+		decoder.UseNumber()
+		for {
 			object := map[string]any{}
-			decoder := jsoniter.NewDecoder(bytes.NewReader(scanner.Bytes()))
-			decoder.UseNumber()
 			err = decoder.Decode(&object)
 			if err != nil {
+				if err == io.EOF {
+					break
+				}
 				return state, err
 			}
 			args := make([]any, count)
@@ -297,9 +297,6 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 			if _, err := stmt.ExecContext(ctx, args...); err != nil {
 				return state, checkErr(err)
 			}
-		}
-		if err = scanner.Err(); err != nil {
-			return state, fmt.Errorf("LoadTable: failed to read file: %v", err)
 		}
 		return state, nil
 	}

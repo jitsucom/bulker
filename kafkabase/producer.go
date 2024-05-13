@@ -64,14 +64,14 @@ func (p *Producer) Start() {
 		for e := range p.producer.Events() {
 			switch ev := e.(type) {
 			case *kafka.Message:
-				messageId := GetKafkaHeader(ev, MessageIdHeader)
+				//messageId := GetKafkaHeader(ev, MessageIdHeader)
 				if ev.TopicPartition.Error != nil {
 					//TODO: check for retrieable errors
 					ProducerMessages(p.metricsLabelFunc(*ev.TopicPartition.Topic, "error", KafkaErrorCode(ev.TopicPartition.Error))).Inc()
-					p.Errorf("Error sending message (ID: %s) to kafka topic %s: %s", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
+					p.Errorf("Error sending message to kafka topic %s: %s", *ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
 				} else {
 					ProducerMessages(p.metricsLabelFunc(*ev.TopicPartition.Topic, "delivered", "")).Inc()
-					p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
+					//p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 				}
 			case *kafka.Error, kafka.Error:
 				p.Errorf("Producer error: %v", ev)
@@ -116,14 +116,14 @@ func (p *Producer) ProduceSync(topic string, event kafka.Message) error {
 	select {
 	case e := <-deliveryChan:
 		m := e.(*kafka.Message)
-		messageId := GetKafkaHeader(m, MessageIdHeader)
+		//messageId := GetKafkaHeader(m, MessageIdHeader)
 		if m.TopicPartition.Error != nil {
 			ProducerMessages(p.metricsLabelFunc(topic, "error", KafkaErrorCode(m.TopicPartition.Error))).Inc()
-			p.Errorf("Error sending message (ID: %s) to kafka topic %s: %v", messageId, *m.TopicPartition.Topic, m.TopicPartition.Error)
+			p.Errorf("Error sending message to kafka topic %s: %v", *m.TopicPartition.Topic, m.TopicPartition.Error)
 			return m.TopicPartition.Error
 		} else {
 			ProducerMessages(p.metricsLabelFunc(topic, "delivered", "")).Inc()
-			p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
+			//p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
 		}
 	case <-until:
 		ProducerMessages(p.metricsLabelFunc(topic, "error", "sync_delivery_timeout")).Inc()

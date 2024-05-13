@@ -48,7 +48,8 @@ type API interface {
 
 // ConfigDefault the default API
 var ConfigDefault = Config{
-	EscapeHTML: true,
+	EscapeHTML:                    false,
+	ObjectFieldMustBeSimpleString: true, // do not unescape object field
 }.Froze()
 
 // ConfigCompatibleWithStandardLibrary tries to be 100% compatible with standard library behavior
@@ -61,8 +62,8 @@ var ConfigCompatibleWithStandardLibrary = Config{
 // ConfigFastest marshals float with only 6 digits precision
 var ConfigFastest = Config{
 	EscapeHTML:                    false,
-	MarshalFloatWith6Digits:       true, // will lose precession
-	ObjectFieldMustBeSimpleString: true, // do not unescape object field
+	MarshalFloatWith6Digits:       false, // will lose precession
+	ObjectFieldMustBeSimpleString: true,  // do not unescape object field
 }.Froze()
 
 type frozenConfig struct {
