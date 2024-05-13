@@ -20,12 +20,12 @@ func TestTypesMappingAndCollision(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring", "arr1", "arr2", "arr3"),
 			},
 			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18"},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18"},
-				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18"},
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18", "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18", "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18", "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
@@ -36,12 +36,12 @@ func TestTypesMappingAndCollision(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring", "arr1", "arr2", "arr3"),
 			},
 			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18"},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18"},
-				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18"},
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18", "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": "1.0", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18", "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": "1.1", "int_1": 1.0, "intstring": "1", "roundfloat": 1.0, "roundfloatstring": "1.0", "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": "2022-08-18", "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
 			},
 			configIds: allBulkerConfigs,
 		},
@@ -230,12 +230,12 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring", "arr1", "arr2", "arr3"),
 			},
 			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
 			},
 			streamOptions: []bulker.StreamOption{WithColumnTypes(types2.SQLTypes{}.
 				With("floatstring", "double precision").
@@ -252,12 +252,12 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring", "arr1", "arr2", "arr3"),
 			},
 			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
 			},
 			streamOptions: []bulker.StreamOption{WithColumnTypes(types2.SQLTypes{}.
 				With("floatstring", "double precision").
@@ -274,12 +274,12 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring", "arr1", "arr2", "arr3"),
 			},
 			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
 			},
 			streamOptions: []bulker.StreamOption{WithColumnTypes(types2.SQLTypes{}.
 				With("floatstring", "FLOAT").
@@ -297,12 +297,12 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring", "arr1", "arr2", "arr3"),
 			},
 			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
 			},
 			streamOptions: []bulker.StreamOption{WithColumnTypes(types2.SQLTypes{}.
 				With("floatstring", "double precision").
@@ -319,12 +319,12 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring", "arr1", "arr2", "arr3"),
 			},
 			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": "false", "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": "true", "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
 			},
 			streamOptions: []bulker.StreamOption{WithColumnTypes(types2.SQLTypes{}.
 				With("floatstring", "DOUBLE").
@@ -341,12 +341,12 @@ func TestTypeOverrideOption(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/types.ndjson",
 			expectedTable: ExpectedTable{
-				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring"),
+				Columns: justColumns("id", "time1", "time2", "date1", "int_1", "roundfloat", "float1", "intstring", "roundfloatstring", "floatstring", "name", "bool1", "bool2", "boolstring", "arr1", "arr2", "arr3"),
 			},
 			expectedRows: []map[string]any{
-				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
-				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18")},
+				{"id": 1, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 2, "bool1": false, "bool2": true, "boolstring": false, "float1": 1.0, "floatstring": 1.0, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
+				{"id": 3, "bool1": false, "bool2": true, "boolstring": true, "float1": 1.2, "floatstring": 1.1, "int_1": 1, "intstring": 1, "roundfloat": 1.0, "roundfloatstring": 1.0, "name": "test", "time1": constantTime, "time2": timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z"), "date1": timestamp.MustParseTime("2006-01-02", "2022-08-18"), "arr1": "[]", "arr2": "[1,2,3]", "arr3": "[\"a\",\"b\",\"c\"]"},
 			},
 			streamOptions: []bulker.StreamOption{WithColumnTypes(types2.SQLTypes{}.
 				With("floatstring", "Float64").
