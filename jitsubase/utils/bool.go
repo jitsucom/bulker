@@ -20,6 +20,14 @@ func ParseBool(value any) (bool, error) {
 	}
 }
 
+func Ternary[T any](condition bool, yes T, no T) T {
+	if condition {
+		return yes
+	} else {
+		return no
+	}
+}
+
 func IsTruish(value any) bool {
 	switch v := value.(type) {
 	case string:

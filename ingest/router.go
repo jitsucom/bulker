@@ -19,6 +19,7 @@ import (
 	"github.com/penglongli/gin-metrics/ginmetrics"
 	timeout "github.com/vearne/gin-timeout"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/pprof"
 	"net/url"
@@ -65,7 +66,9 @@ const (
 
 	ConnectionIdsHeader = "connection_ids"
 
-	ErrNoDst = "no destinations found for stream"
+	ErrNoDst                = "no destinations found for stream"
+	ErrThrottledType        = "quota exceeded"
+	ErrThrottledDescription = "billing quota exceeded, event throttled"
 )
 
 type StreamCredentials struct {
@@ -180,11 +183,8 @@ type BatchPayload struct {
 	WriteKey string       `json:"writeKey"`
 }
 
-func (r *Router) sendToBulker(c *gin.Context, ingestMessageBytes []byte, stream *StreamWithDestinations, sendResponse bool) (asyncDestinations []string, tagsDestinations []string, rError *appbase.RouterError) {
+func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *StreamWithDestinations, sendResponse bool) (asyncDestinations []string, tagsDestinations []string, rError *appbase.RouterError) {
 	var err error
-	asyncDestinations = utils.ArrayMap(stream.AsynchronousDestinations, func(d *ShortDestinationConfig) string { return d.ConnectionId })
-	tagsDestinations = utils.ArrayMap(stream.SynchronousDestinations, func(d *ShortDestinationConfig) string { return d.ConnectionId })
-
 	if stream.BackupEnabled {
 		backupTopic := fmt.Sprintf("in.id.%s_backup.m.batch.t.backup", stream.Stream.WorkspaceId)
 		err2 := r.producer.ProduceAsync(backupTopic, uuid.New(), ingestMessageBytes, nil, kafka.PartitionAny)
@@ -192,6 +192,16 @@ func (r *Router) sendToBulker(c *gin.Context, ingestMessageBytes []byte, stream 
 			r.Errorf("Error producing to backup topic %s: %v", backupTopic, err2)
 		}
 	}
+
+	if stream.Throttle > 0 {
+		if stream.Throttle >= 100 || rand.Int31n(100) < int32(stream.Throttle) {
+			rError = r.ResponseError(c, http.StatusPaymentRequired, ErrThrottledType, false, fmt.Errorf(ErrThrottledDescription), sendResponse)
+			return
+		}
+	}
+
+	asyncDestinations = utils.ArrayMap(stream.AsynchronousDestinations, func(d *ShortDestinationConfig) string { return d.ConnectionId })
+	tagsDestinations = utils.ArrayMap(stream.SynchronousDestinations, func(d *ShortDestinationConfig) string { return d.ConnectionId })
 
 	if len(asyncDestinations) > 0 {
 		topic := r.config.KafkaDestinationsTopicName
