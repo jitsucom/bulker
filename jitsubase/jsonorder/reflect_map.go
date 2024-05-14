@@ -160,12 +160,12 @@ func (decoder *mapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 		mapType.UnsafeSet(ptr, mapType.UnsafeMakeMap(0))
 	}
 	if c != '{' {
-		iter.ReportError("ReadMapCB", `expect { or n, but found `+fmt.Sprintf("%d", c))
+		iter.ReportError("mapDecoder", `expect { or n, but found `+fmt.Sprintf("%d", c))
 		return
 	}
 	c = iter.nextToken()
 	if c == '}' {
-		iter.jitsuSkipWhitespacesWithoutLoadMore()
+		iter.jitsuSkipWhitespaces()
 		return
 	}
 	iter.unreadByte()
@@ -173,7 +173,7 @@ func (decoder *mapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 	decoder.keyDecoder.Decode(key, iter)
 	c = iter.nextToken()
 	if c != ':' {
-		iter.ReportError("ReadMapCB", "expect : after object field, but found "+string([]byte{c}))
+		iter.ReportError("mapDecoder", "expect : after object field, but found "+string([]byte{c}))
 		return
 	}
 	elem := decoder.elemType.UnsafeNew()
@@ -184,7 +184,7 @@ func (decoder *mapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 		decoder.keyDecoder.Decode(key, iter)
 		c = iter.nextToken()
 		if c != ':' {
-			iter.ReportError("ReadMapCB", "expect : after object field, but found "+string([]byte{c}))
+			iter.ReportError("mapDecoder", "expect : after object field, but found "+string([]byte{c}))
 			return
 		}
 		elem := decoder.elemType.UnsafeNew()
@@ -192,9 +192,9 @@ func (decoder *mapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 		decoder.mapType.UnsafeSetIndex(ptr, key, elem)
 	}
 	if c != '}' {
-		iter.ReportError("ReadMapCB", `expect }, but found `+string([]byte{c}))
+		iter.ReportError("mapDecoder", `expect }, but found `+string([]byte{c}))
 	} else {
-		iter.jitsuSkipWhitespacesWithoutLoadMore()
+		iter.jitsuSkipWhitespaces()
 	}
 }
 
@@ -205,13 +205,13 @@ type numericMapKeyDecoder struct {
 func (decoder *numericMapKeyDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 	c := iter.nextToken()
 	if c != '"' {
-		iter.ReportError("ReadMapCB", `expect ", but found `+string([]byte{c}))
+		iter.ReportError("mapDecoder", `expect ", but found `+string([]byte{c}))
 		return
 	}
 	decoder.decoder.Decode(ptr, iter)
 	c = iter.nextToken()
 	if c != '"' {
-		iter.ReportError("ReadMapCB", `expect ", but found `+string([]byte{c}))
+		iter.ReportError("mapDecoder", `expect ", but found `+string([]byte{c}))
 		return
 	}
 }

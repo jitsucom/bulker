@@ -7,6 +7,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"math"
 	"time"
 )
@@ -70,7 +71,7 @@ func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, event
 	meta["timestamp"] = timestamp.ToISOFormat(time.Now().Truncate(time.Minute))
 	payload, _ := jsoniter.Marshal(meta)
 	//ac.Infof("Sending metrics to topic %s: %+v", topicId, meta)
-	err = ac.bulkerProducer.ProduceAsync(topicId, "", payload, nil, kafka2.PartitionAny)
+	err = ac.bulkerProducer.ProduceAsync(topicId, uuid.New(), payload, nil, kafka2.PartitionAny)
 	if err != nil {
 		ac.Errorf("Error producing metrics to metrics destination: %v", err)
 		return

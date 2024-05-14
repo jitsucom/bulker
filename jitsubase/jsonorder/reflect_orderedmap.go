@@ -64,7 +64,7 @@ func (decoder *orderedMapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 	}
 	c = iter.nextToken()
 	if c == '}' {
-		iter.jitsuSkipWhitespacesWithoutLoadMore()
+		iter.jitsuSkipWhitespaces()
 		return
 	}
 	iter.unreadByte()
@@ -94,7 +94,7 @@ func (decoder *orderedMapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 	if c != '}' {
 		iter.ReportError("ReadOrderedMapCB", `expect }, but found `+string([]byte{c}))
 	} else {
-		iter.jitsuSkipWhitespacesWithoutLoadMore()
+		iter.jitsuSkipWhitespaces()
 	}
 }
 
