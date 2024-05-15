@@ -107,7 +107,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusOK, "event error", false, err, true)
 		return
 	}
-	if len(stream.AsynchronousDestinations) == 0 && len(stream.SynchronousDestinations) == 0 {
+	if len(stream.AsynchronousDestinations) == 0 && (len(stream.SynchronousDestinations) == 0 || ingestType == IngestTypeS2S) {
 		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true)
 		return
 	}
@@ -115,7 +115,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	if rError != nil {
 		return
 	}
-	if len(tagsDestinations) == 0 {
+	if len(tagsDestinations) == 0 || ingestType == IngestTypeS2S {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
