@@ -136,7 +136,7 @@ func (ps *AbstractFileStorageStream) postComplete(err error) (bulker.State, erro
 		ps.state.Status = bulker.Failed
 	} else {
 		sec := time.Since(ps.startTime).Seconds()
-		logging.Infof("[%s] Stream completed successfully in %.2f s. Avg Speed: %.2f events/sec.", ps.id, sec, float64(ps.state.SuccessfulRows)/sec)
+		logging.Debugf("[%s] Stream completed successfully in %.2f s. Avg Speed: %.2f events/sec.", ps.id, sec, float64(ps.state.SuccessfulRows)/sec)
 		ps.state.Status = bulker.Completed
 	}
 	return ps.state, err
@@ -166,7 +166,7 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 		if stat != nil {
 			batchSizeMb = float64(stat.Size()) / 1024 / 1024
 			sec := time.Since(ps.startTime).Seconds()
-			logging.Infof("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
+			logging.Debugf("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
 		}
 		workingFile := ps.batchFile
 		needToConvert := false
@@ -264,7 +264,7 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 		if err != nil {
 			return errorj.Decorate(err, "failed to flush tmp file to the warehouse")
 		} else {
-			logging.Infof("[%s] Batch file loaded to %s in %.2f s.", ps.id, ps.fileAdapter.Type(), time.Since(loadTime).Seconds())
+			logging.Debugf("[%s] Batch file loaded to %s in %.2f s.", ps.id, ps.fileAdapter.Type(), time.Since(loadTime).Seconds())
 		}
 	}
 	return nil

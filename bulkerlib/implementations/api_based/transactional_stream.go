@@ -135,7 +135,7 @@ func (ps *ApiBasedStream) flushBatchFile(ctx context.Context) (err error) {
 			if stat != nil {
 				batchSizeMb = float64(stat.Size()) / 1024 / 1024
 				sec := time.Since(ps.startTime).Seconds()
-				logging.Infof("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
+				logging.Debugf("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
 			}
 			_, err = ps.batchFile.Seek(0, 0)
 			if err != nil {
