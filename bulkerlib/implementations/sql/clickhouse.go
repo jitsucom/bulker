@@ -350,9 +350,9 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 		}
 		ch.distributed.Store(distributed)
 		if distributed {
-			ch.Infof("cluster `%s` is distributed", ch.config.Cluster)
+			ch.Debugf("cluster `%s` is distributed", ch.config.Cluster)
 		} else {
-			ch.Infof("cluster `%s` is not distributed", ch.config.Cluster)
+			ch.Debugf("cluster `%s` is not distributed", ch.config.Cluster)
 		}
 	}
 	return nil
