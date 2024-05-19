@@ -1116,7 +1116,7 @@ func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription
 		}
 		return job, state, fmt.Errorf("Failed to %s.%s Completed with error: %v%s", jobDescription, jobID, err, bytesProcessed)
 	} else {
-		bq.Infof("Successfully %s.%s%s in %.2f s.", jobDescription, jobID, bytesProcessed, time.Since(startTime).Seconds())
+		bq.Debugf("Successfully %s.%s%s in %.2f s.", jobDescription, jobID, bytesProcessed, time.Since(startTime).Seconds())
 		return job, state, nil
 	}
 }
