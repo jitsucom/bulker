@@ -80,14 +80,12 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 		table.PrimaryKeyName = BuildConstraintName(table.Name)
 	}
 
-	//need to adapt object properties to column names
-	needAdapt := false
 	for el := batchHeader.Fields.Front(); el != nil; el = el.Next() {
 		fieldName := el.Key
 		field := el.Value
 		colName := th.ColumnName(fieldName)
-		if !needAdapt && colName != fieldName {
-			needAdapt = true
+		if colName != fieldName {
+			object.Rename(fieldName, colName)
 		}
 		suggestedSQLType, ok := field.GetSuggestedSQLType()
 		if ok {
@@ -107,15 +105,7 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 			logging.SystemErrorf("Unknown column type %s mapping for %s", field.GetType(), sqlAdapter.Type())
 		}
 	}
-	if needAdapt {
-		adaptedObject := types2.NewObject()
-		for el := object.Front(); el != nil; el = el.Next() {
-			adaptedObject.Set(th.ColumnName(el.Key), el.Value)
-		}
-		return table, adaptedObject
-	} else {
-		return table, object
-	}
+	return table, object
 }
 
 // MapSchema maps types.Schema into types.Table (structure with SQL types)

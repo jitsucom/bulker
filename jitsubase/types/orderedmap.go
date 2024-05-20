@@ -200,6 +200,16 @@ func (m *OrderedMap[K, V]) Delete(key K) (didDelete bool) {
 	return ok
 }
 
+func (m *OrderedMap[K, V]) Rename(key K, newkey K) {
+	el, ok := m.kv[key]
+	if !ok {
+		return
+	}
+	el.Key = newkey
+	m.kv[newkey] = el
+	delete(m.kv, key)
+}
+
 // Front will return the element that is the first (oldest Set element). If
 // there are no elements this will return nil.
 func (m *OrderedMap[K, V]) Front() *Element[K, V] {
