@@ -34,7 +34,7 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 	ps.partitionId = partitionId
 	ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.tableName)
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
-		dstTable := tableForObject
+		dstTable := utils.Ternary(ps.existingTable.Exists(), ps.existingTable, tableForObject).Clone()
 		ps.adjustTableColumnTypes(dstTable, ps.existingTable, tableForObject, object)
 		if ps.schemaFromOptions != nil {
 			ps.adjustTableColumnTypes(dstTable, ps.existingTable, ps.schemaFromOptions, object)

@@ -345,14 +345,14 @@ func (th *TableHelper) GetCached(tableName string) (*Table, bool) {
 	th.RUnlock()
 
 	if ok {
-		return dbSchema.Clone(), true
+		return dbSchema.CleanClone(), true
 	}
 	return nil, false
 }
 
 func (th *TableHelper) updateCached(tableName string, dbSchema *Table) {
 	th.Lock()
-	cloned := dbSchema.Clone()
+	cloned := dbSchema.CleanClone()
 	cloned.Cached = true
 	th.tablesCache[tableName] = cloned
 	th.Unlock()

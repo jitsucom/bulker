@@ -92,6 +92,33 @@ func (t *Table) MappedColumnNames(f func(string) string) []string {
 	return columns
 }
 
+// CleanClone returns clone of current table w/o 'New' or 'Override' flags
+func (t *Table) CleanClone() *Table {
+	clonedColumns := NewColumns()
+	for el := t.Columns.Front(); el != nil; el = el.Next() {
+		v := el.Value
+		clonedColumns.Set(el.Key, types.SQLColumn{
+			Type:     v.Type,
+			DdlType:  v.DdlType,
+			DataType: v.DataType,
+		})
+	}
+
+	clonedPkFields := t.PKFields.Clone()
+
+	return &Table{
+		Name:            t.Name,
+		Columns:         clonedColumns,
+		PKFields:        clonedPkFields,
+		PrimaryKeyName:  t.PrimaryKeyName,
+		Temporary:       t.Temporary,
+		TimestampColumn: t.TimestampColumn,
+		Partition:       t.Partition,
+		Cached:          t.Cached,
+		DeletePkFields:  t.DeletePkFields,
+	}
+}
+
 // Clone returns clone of current table
 func (t *Table) Clone() *Table {
 	clonedColumns := NewColumns()
@@ -101,6 +128,8 @@ func (t *Table) Clone() *Table {
 			Type:     v.Type,
 			DdlType:  v.DdlType,
 			DataType: v.DataType,
+			New:      v.New,
+			Override: v.Override,
 		})
 	}
 
