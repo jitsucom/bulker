@@ -48,13 +48,13 @@ const (
 
 var (
 	redshiftTypes = map[types2.DataType][]string{
-		types2.STRING:    {"character varying(65535)"},
+		types2.STRING:    {"character varying(65535)", "character varying"},
 		types2.INT64:     {"bigint"},
 		types2.FLOAT64:   {"double precision"},
 		types2.TIMESTAMP: {"timestamp with time zone", "timestamp", "timestamp without time zone"},
 		types2.BOOL:      {"boolean"},
-		types2.JSON:      {"character varying(65535)"},
-		types2.UNKNOWN:   {"character varying(65535)"},
+		types2.JSON:      {"character varying(65535)", "character varying"},
+		types2.UNKNOWN:   {"character varying(65535)", "character varying"},
 	}
 )
 

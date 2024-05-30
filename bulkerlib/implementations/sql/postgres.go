@@ -28,18 +28,8 @@ func init() {
 const (
 	PostgresBulkerTypeId = "postgres"
 
-	pgTableSchemaQuery = `SELECT 
- 							pg_attribute.attname AS name,
-    						pg_catalog.format_type(pg_attribute.atttypid,pg_attribute.atttypmod) AS column_type
-						FROM pg_attribute
-         					JOIN pg_class ON pg_class.oid = pg_attribute.attrelid
-         					LEFT JOIN pg_attrdef pg_attrdef ON pg_attrdef.adrelid = pg_class.oid AND pg_attrdef.adnum = pg_attribute.attnum
-         					LEFT JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
-         					LEFT JOIN pg_constraint ON pg_constraint.conrelid = pg_class.oid AND pg_attribute.attnum = ANY (pg_constraint.conkey)
-						WHERE pg_class.relkind = 'r'::char
-  							AND  pg_namespace.nspname ilike $1
-  							AND pg_class.relname = $2
-  							AND pg_attribute.attnum > 0 order by pg_attribute.attnum`
+	pgTableSchemaQuery = `select column_name, data_type from information_schema.columns
+where table_schema ilike $1 and table_name = $2 order by ordinal_position`
 	pgPrimaryKeyFieldsQuery = `SELECT tco.constraint_name as constraint_name,
        kcu.column_name as key_column
 FROM information_schema.table_constraints tco
