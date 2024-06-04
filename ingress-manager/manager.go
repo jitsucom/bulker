@@ -502,16 +502,24 @@ const (
 )
 
 func (m *Manager) checkCname(domain string) (ok bool, err error) {
-	cname, err := net.LookupCNAME(domain)
-	if err != nil {
-		m.Warnf("[%s] error looking up domain: %v", domain, err)
-		return false, err
+	currentDomain := domain
+	for i := 0; i < 10; i++ {
+		lookupName := currentDomain
+		currentDomain, err = net.LookupCNAME(lookupName)
+		if err != nil {
+			m.Warnf("[%s] error looking up domain: %v", domain, err)
+			return false, err
+		}
+		currentDomain = strings.TrimSuffix(currentDomain, ".")
+		if m.cnames.Contains(currentDomain) {
+			return true, nil
+		} else if currentDomain == lookupName {
+			// no more cnames
+			break
+		}
 	}
-	if !m.cnames.Contains(strings.TrimSuffix(cname, ".")) {
-		m.Warnf("[%s] incorrect CNAME record: %s", domain, cname)
-		return false, nil
-	}
-	return true, nil
+	m.Warnf("[%s] incorrect CNAME record: %s", domain, currentDomain)
+	return false, nil
 }
 
 func (m *Manager) checkCertificate(domain string) (status CertificateStatus, err error) {
