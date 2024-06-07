@@ -494,7 +494,7 @@ func (r *Router) checkOrigin(c *gin.Context, loc *StreamCredentials, stream *Str
 		if domainsString != "" && domainsString != "*" {
 			originString := c.GetHeader("Origin")
 			if originString == "" {
-				return fmt.Errorf("Stream: %s Workspace: %s Origin header is required for Authorized JavaScript Domains check", stream.Stream.Id, stream.Stream.WorkspaceId)
+				return nil
 			}
 			origin, trimmed := strings.CutPrefix(originString, "https://")
 			if !trimmed {
