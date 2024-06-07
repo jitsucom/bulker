@@ -46,3 +46,10 @@ func ApplyFilters(event types.Json, opts map[string]any) bool {
 		return SatisfyFilter(f, event.GetS("event"))
 	}))
 }
+
+func ApplyAuthorizedJavaScriptDomainsFilter(domains string, origin string) bool {
+	domainRules := utils.ArrayMap(strings.Split(domains, ","), strings.TrimSpace)
+	return utils.ArrayContainsF(domainRules, func(rule string) bool {
+		return SatisfyDomainFilter(rule, origin)
+	})
+}

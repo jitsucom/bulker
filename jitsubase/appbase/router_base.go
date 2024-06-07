@@ -59,6 +59,7 @@ func NewRouterBase(config Config, noAuthPaths []string) *Router {
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	engine.Use(router.authMiddleware)
+	engine.RemoveExtraSlash = true
 	router.engine = engine
 	return router
 }

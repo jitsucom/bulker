@@ -488,6 +488,27 @@ func (r *Router) getStream(loc *StreamCredentials) *StreamWithDestinations {
 	return nil
 }
 
+func (r *Router) checkOrigin(c *gin.Context, loc *StreamCredentials, stream *StreamWithDestinations) error {
+	if loc.IngestType == IngestTypeBrowser {
+		domainsString := strings.TrimSpace(stream.Stream.AuthorizedJavaScriptDomains)
+		if domainsString != "" && domainsString != "*" {
+			originString := c.GetHeader("Origin")
+			if originString == "" {
+				return fmt.Errorf("Stream: %s Workspace: %s Origin header is required for Authorized JavaScript Domains check", stream.Stream.Id, stream.Stream.WorkspaceId)
+			}
+			origin, trimmed := strings.CutPrefix(originString, "https://")
+			if !trimmed {
+				origin = strings.TrimPrefix(originString, "http://")
+			}
+			origin = strings.Split(origin, ":")[0]
+			if !ApplyAuthorizedJavaScriptDomainsFilter(domainsString, origin) {
+				return fmt.Errorf("Stream: %s Workspace: %s Origin %s is not authorized by: %s", stream.Stream.Id, stream.Stream.WorkspaceId, origin, domainsString)
+			}
+		}
+	}
+	return nil
+}
+
 func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials) *StreamWithDestinations {
 	if loc.WriteKey != "" {
 		parts := strings.Split(loc.WriteKey, ":")
