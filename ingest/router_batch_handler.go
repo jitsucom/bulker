@@ -66,6 +66,9 @@ func (r *Router) BatchHandler(c *gin.Context) {
 		return
 	}
 	eventsLogId := stream.Stream.Id
+	if err = r.checkOrigin(c, &loc, stream); err != nil {
+		r.Warnf("[batch] %v", err)
+	}
 	okEvents := 0
 	errors := make([]string, 0)
 	for _, event := range payload.Batch {
