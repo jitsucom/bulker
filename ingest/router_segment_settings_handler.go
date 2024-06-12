@@ -8,6 +8,7 @@ import (
 
 func (r *Router) SettingsHandler(c *gin.Context) {
 	writeKey := c.Param("writeKey")
+	c.Header("Cache-Control", "public, max-age=86400")
 	c.Data(http.StatusOK, "application/json", []byte(fmt.Sprintf(`{
   "integrations": {
     "Actions Google Analytic 4": {
