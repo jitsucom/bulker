@@ -43,7 +43,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	}
 	if err != nil {
 		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
-		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, err, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing message", false, err, true)
 		return
 	}
 	var ingestType IngestType
@@ -54,7 +54,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	}
 	loc, err := r.getDataLocator(c, ingestType, func() string { return payload.WriteKey })
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, err, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "error processing message", false, err, true)
 		return
 	}
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
@@ -62,7 +62,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 
 	stream := r.getStream(&loc)
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %+v", loc), true)
+		rError = r.ResponseError(c, http.StatusUnauthorized, "stream not found", false, fmt.Errorf("for: %+v", loc), true)
 		return
 	}
 	eventsLogId := stream.Stream.Id

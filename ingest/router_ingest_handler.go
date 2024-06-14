@@ -71,13 +71,13 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
-		rError = r.ResponseError(c, http.StatusOK, "error reading HTTP body", false, err, true)
+		rError = r.ResponseError(c, utils.Ternary(ingestType == IngestTypeS2S, http.StatusBadRequest, http.StatusOK), "error reading HTTP body", false, err, true)
 		return
 	}
 	var message types.Json
 	err = jsonorder.Unmarshal(body, &message)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
+		rError = r.ResponseError(c, utils.Ternary(ingestType == IngestTypeS2S, http.StatusBadRequest, http.StatusOK), "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
 		return
 	}
 	messageId := message.GetS("messageId")
@@ -90,7 +90,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	//func() string { wk, _ := message["writeKey"].(string); return wk }
 	loc, err := r.getDataLocator(c, ingestType, nil)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
+		rError = r.ResponseError(c, utils.Ternary(ingestType == IngestTypeS2S, http.StatusBadRequest, http.StatusOK), "error processing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
 		return
 	}
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
@@ -98,7 +98,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 
 	stream := r.getStream(&loc)
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %+v", loc), true)
+		rError = r.ResponseError(c, utils.Ternary(ingestType == IngestTypeS2S, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %+v", loc), true)
 		return
 	}
 	eventsLogId = stream.Stream.Id
@@ -107,7 +107,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	//}
 	ingestMessage, ingestMessageBytes, err := r.buildIngestMessage(c, messageId, message, nil, tp, loc, stream)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "event error", false, err, true)
+		rError = r.ResponseError(c, utils.Ternary(ingestType == IngestTypeS2S, http.StatusBadRequest, http.StatusOK), "event error", false, err, true)
 		return
 	}
 	if len(stream.AsynchronousDestinations) == 0 && (len(stream.SynchronousDestinations) == 0 || ingestType == IngestTypeS2S) {
