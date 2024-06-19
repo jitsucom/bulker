@@ -6,6 +6,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"strings"
 )
 
 type StreamOption func(*StreamOptions)
@@ -68,7 +69,8 @@ var (
 				if v == "" {
 					return func(options *StreamOptions) {}, nil
 				}
-				return withPrimaryKey(o, v), nil
+				keys := utils.ArrayMap(strings.Split(v, ","), strings.TrimSpace)
+				return withPrimaryKey(o, keys...), nil
 			default:
 				return nil, fmt.Errorf("failed to parse 'primaryKey' option: %v incorrect type: %T expected string or []string", v, v)
 			}
