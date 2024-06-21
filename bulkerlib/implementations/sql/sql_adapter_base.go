@@ -99,11 +99,11 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunc
 	s.batchFileCompression = types2.FileCompressionNONE
 	var err error
 	s.dataSource, err = dbConnectFunction(config)
-	s.initTypes(dataTypes)
+	s.typesMapping, s.reverseTypesMapping = InitTypes(dataTypes)
 	return &s, err
 }
 
-func (b *SQLAdapterBase[T]) initTypes(dataTypes map[types2.DataType][]string) {
+func InitTypes(dataTypes map[types2.DataType][]string) (typesMapping map[types2.DataType]string, reverseTypesMapping map[string]types2.DataType) {
 	typeMapping := make(map[types2.DataType]string, len(dataTypes))
 	reverseTypeMapping := make(map[string]types2.DataType, len(dataTypes)+3)
 	for dataType, postgresTypes := range dataTypes {
@@ -116,8 +116,7 @@ func (b *SQLAdapterBase[T]) initTypes(dataTypes map[types2.DataType][]string) {
 			}
 		}
 	}
-	b.typesMapping = typeMapping
-	b.reverseTypesMapping = reverseTypeMapping
+	return typeMapping, reverseTypeMapping
 }
 
 // Type returns Postgres type
@@ -464,10 +463,10 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 			updateColumns[i] = fmt.Sprintf(`%s=%s.%s`, colName, sourceAlias, colName)
 			insertColumns[i] = b.typecastFunc(fmt.Sprintf(`%s.%s`, sourceAlias, colName), col)
 		})
-		for pkField := range targetTable.PKFields {
+		targetTable.PKFields.ForEach(func(pkField string) {
 			pkName := b.quotedColumnName(pkField)
 			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = %s.%s", pkName, sourceAlias, pkName))
-		}
+		})
 	}
 	insertPayload := QueryPayload{
 		TableTo:        quotedTargetTableName,
@@ -565,7 +564,7 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 	}
 
 	//patch primary keys - create new
-	if len(patchTable.PKFields) > 0 {
+	if patchTable.PKFields.Size() > 0 {
 		err := b.createPrimaryKey(ctx, patchTable)
 		if err != nil {
 			return err
@@ -577,13 +576,13 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 
 // createPrimaryKey create primary key constraint
 func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) error {
-	if len(table.PKFields) == 0 {
+	if table.PKFields.Empty() {
 		return nil
 	}
 
 	quotedTableName := b.quotedTableName(table.Name)
 
-	columnNames := make([]string, len(table.PKFields))
+	columnNames := make([]string, table.PKFields.Size())
 	for i, column := range table.GetPKFields() {
 		columnNames[i] = b.quotedColumnName(column)
 	}

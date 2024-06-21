@@ -2,7 +2,6 @@ package sql
 
 import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
-	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"testing"
 )
@@ -63,7 +62,7 @@ func TestNaming(t *testing.T) {
 			expectedTableCaseChecking: true,
 			expectedRowsCount:         1,
 			expectedTable: ExpectedTable{
-				PKFields: types.NewSet("id"),
+				PKFields: []string{"id"},
 				Columns:  justColumns("id", "name", "_timestamp", "column_c16da609b86c01f16a2c609eac4ccb0c", "column_12b241e808ae6c964a5bb9f1c012e63d", "column_b4de5a5c8f92f77af9904705b3f08253", "Universit_Franais", "column_c41d0d6c9ff6db34c6df393bdd283e19", "Test_Name__DROP_DATABASE_public__SELECT_1_from_DUAL_", "Test_Name", "_1test_name", "_2", "lorem_ipsum_dolor_sit_amet_consectetur_adipiscing_elit_sed_do_eiusmod_tempor_incididunt_ut_labore_et_dolore_magna_aliqua_ut_enim_ad_minim_veniam_quis_nostrud_exercitation_ullamco_laboris_nisi_ut_aliquip_ex_ea_commodo_consequat", "camelCase", "int", "user", "select", "___ROOT__", "hash", "_unnamed"),
 			},
 			configIds:     []string{BigqueryBulkerTypeId},

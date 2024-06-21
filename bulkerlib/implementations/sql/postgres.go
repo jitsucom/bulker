@@ -49,7 +49,7 @@ FROM information_schema.table_constraints tco
                   AND kcu.constraint_name = tco.constraint_name
 WHERE tco.constraint_type = 'PRIMARY KEY' AND 
       kcu.table_schema ilike $1 AND
-      kcu.table_name = $2`
+      kcu.table_name = $2 order by kcu.ordinal_position`
 	pgSetSearchPath                     = `SET search_path TO "%s";`
 	pgCreateDbSchemaIfNotExistsTemplate = `CREATE SCHEMA IF NOT EXISTS "%s"; SET search_path TO "%s";`
 	pgCreateIndexTemplate               = `CREATE INDEX ON %s (%s);`
@@ -237,7 +237,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, tableName string) (*Table
 
 func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
-	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.Set[string]{}}
+	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, p.config.Schema, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -374,7 +374,7 @@ func pgColumnDDL(quotedName, name string, table *Table, column types2.SQLColumn)
 	sqlType := column.GetDDLType()
 
 	//not null
-	if _, ok := table.PKFields[name]; ok {
+	if table.PKFields.Contains(name) {
 		notNullClause = " not null " + getDefaultValueStatement(sqlType)
 	}
 
@@ -398,12 +398,12 @@ func getDefaultValueStatement(sqlType string) string {
 }
 
 // getPrimaryKey returns primary key name and fields
-func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string, types.Set[string], error) {
+func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string, types.OrderedSet[string], error) {
 	tableName = p.TableName(tableName)
-	primaryKeys := types.Set[string]{}
+	primaryKeys := types.NewOrderedSet[string]()
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, pgPrimaryKeyFieldsQuery, p.config.Schema, tableName)
 	if err != nil {
-		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
@@ -418,7 +418,7 @@ func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string,
 	for pkFieldsRows.Next() {
 		var constraintName, keyColumn string
 		if err := pkFieldsRows.Scan(&constraintName, &keyColumn); err != nil {
-			return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
+			return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Schema:    p.config.Schema,
 					Table:     tableName,
@@ -434,7 +434,7 @@ func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string,
 	}
 
 	if err := pkFieldsRows.Err(); err != nil {
-		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
+		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
@@ -443,9 +443,7 @@ func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string,
 			})
 	}
 
-	for _, field := range pkFields {
-		primaryKeys[field] = struct{}{}
-	}
+	primaryKeys.PutAll(pkFields)
 
 	return primaryKeyName, primaryKeys, nil
 }

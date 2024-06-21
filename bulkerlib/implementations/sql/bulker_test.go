@@ -17,6 +17,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/stretchr/testify/require"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -44,7 +45,7 @@ var configRegistry = map[string]any{}
 
 type ExpectedTable struct {
 	Name     string
-	PKFields types.Set[string]
+	PKFields []string
 	Columns  Columns
 }
 
@@ -291,7 +292,7 @@ func TestBasics(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/repeated_ids.ndjson",
 			expectedTable: ExpectedTable{
-				PKFields: types.Set[string]{},
+				PKFields: []string{},
 				Columns:  justColumns("_timestamp", "id", "name"),
 			},
 			expectedRows: []map[string]any{
@@ -314,7 +315,7 @@ func TestBasics(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/repeated_ids.ndjson",
 			expectedTable: ExpectedTable{
-				PKFields: types.NewSet("id"),
+				PKFields: []string{"id"},
 				Columns:  justColumns("_timestamp", "id", "name"),
 			},
 			expectedRows: []map[string]any{
@@ -333,7 +334,7 @@ func TestBasics(t *testing.T) {
 			expectPartitionId: true,
 			dataFile:          "test_data/repeated_ids_multi.ndjson",
 			expectedTable: ExpectedTable{
-				PKFields: types.NewSet("id", "id2"),
+				PKFields: []string{"id", "id2"},
 				Columns:  justColumns("_timestamp", "id", "id2", "name"),
 			},
 			expectedRows: []map[string]any{
@@ -576,15 +577,15 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			}
 			table.Columns = newColumns
 
-			newPKFields := types.NewSet[string]()
-			for k := range testConfig.expectedTable.PKFields {
+			newPKFields := types.NewOrderedSet[string]()
+			for _, k := range testConfig.expectedTable.PKFields {
 				newPKFields.Put(strings.ToLower(k))
 			}
-			testConfig.expectedTable.PKFields = newPKFields
-			newPKFields = types.NewSet[string]()
-			for k := range table.PKFields {
+			testConfig.expectedTable.PKFields = newPKFields.ToSlice()
+			newPKFields = types.NewOrderedSet[string]()
+			table.PKFields.ForEach(func(k string) {
 				newPKFields.Put(strings.ToLower(k))
-			}
+			})
 			table.PKFields = newPKFields
 
 			testConfig.expectedTable.Name = strings.ToLower(testConfig.expectedTable.Name)
@@ -592,9 +593,9 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 
 			table.PrimaryKeyName = strings.ToLower(table.PrimaryKeyName)
 		}
-		expectedPKFields := types.NewSet[string]()
+		expectedPKFields := types.NewOrderedSet[string]()
 		if len(testConfig.expectedTable.PKFields) > 0 {
-			expectedPKFields = testConfig.expectedTable.PKFields
+			expectedPKFields.PutAll(testConfig.expectedTable.PKFields)
 		}
 		// don't check table name if not explicitly set
 		if testConfig.expectedTable.Name == "" {
@@ -667,7 +668,7 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 						t.Fatalf("test config error: expected table must have a 'name' column of string type to guess what type to expect for %s column", PartitonIdKeyword)
 					}
 				}
-				newExpectedTable := ExpectedTable{Columns: NewColumns(), PKFields: testConfig.expectedTable.PKFields.Clone()}
+				newExpectedTable := ExpectedTable{Columns: NewColumns(), PKFields: slices.Clone(testConfig.expectedTable.PKFields)}
 				newExpectedTable.Columns.Set(PartitonIdKeyword, textColumn)
 				newExpectedTable.Columns.SetAll(testConfig.expectedTable.Columns)
 				testConfig.expectedTable = newExpectedTable

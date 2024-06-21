@@ -241,9 +241,9 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 			updateSet[i] = fmt.Sprintf("T.%s = S.%s", name, name)
 		}
 		var joinConditions []string
-		for pkField := range targetTable.PKFields {
+		targetTable.PKFields.ForEach(func(pkField string) {
 			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = S.%s", bq.quotedColumnName(pkField), bq.quotedColumnName(pkField)))
-		}
+		})
 		if targetTable.TimestampColumn != "" {
 			//month before
 			monthBefore := timestamp.Now().Add(time.Duration(mergeWindow) * -24 * time.Hour).Format("2006-01-02")
@@ -283,7 +283,7 @@ func (bq *BigQuery) Ping(ctx context.Context) error {
 // GetTableSchema return google BigQuery table (name,columns) representation wrapped in Table struct
 func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
 	tableName = bq.TableName(tableName)
-	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.Set[string]{}}
+	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
 
 	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
 
@@ -364,7 +364,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	}
 	var tableConstraints *bigquery.TableConstraints
 	var labels map[string]string
-	if len(table.PKFields) > 0 && table.PrimaryKeyName != "" {
+	if table.PKFields.Size() > 0 && table.PrimaryKeyName != "" {
 		tableConstraints = &bigquery.TableConstraints{
 			PrimaryKey: &bigquery.PrimaryKey{
 				Columns: table.GetPKFields(),
@@ -461,7 +461,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 	}
 
 	//patch primary keys - create new
-	if len(patchSchema.PKFields) > 0 && patchSchema.PrimaryKeyName != "" {
+	if patchSchema.PKFields.Size() > 0 && patchSchema.PrimaryKeyName != "" {
 		if metadata.Labels == nil {
 			metadata.Labels = map[string]string{}
 		}

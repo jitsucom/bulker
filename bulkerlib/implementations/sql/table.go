@@ -45,7 +45,7 @@ type Table struct {
 	Cached    bool
 
 	Columns         Columns
-	PKFields        types2.Set[string]
+	PKFields        types2.OrderedSet[string]
 	PrimaryKeyName  string
 	TimestampColumn string
 
@@ -60,7 +60,7 @@ func (t *Table) Exists() bool {
 		return false
 	}
 
-	return (t.Columns != nil && t.Columns.Len() > 0) || len(t.PKFields) > 0 || t.DeletePkFields
+	return (t.Columns != nil && t.Columns.Len() > 0) || t.PKFields.Size() > 0 || t.DeletePkFields
 }
 
 // ColumnNames return column names as array
@@ -150,20 +150,11 @@ func (t *Table) Clone() *Table {
 
 // GetPKFields returns primary keys list
 func (t *Table) GetPKFields() []string {
-	if t.PKFields != nil {
-		return t.PKFields.ToSlice()
-	} else {
-		return []string{}
-	}
+	return t.PKFields.ToSlice()
 }
 
-// GetPKFieldsSet returns primary keys set
-func (t *Table) GetPKFieldsSet() types2.Set[string] {
-	if t.PKFields != nil {
-		return t.PKFields
-	} else {
-		return types2.Set[string]{}
-	}
+func (t *Table) GetPKFieldsSet() types2.OrderedSet[string] {
+	return t.PKFields
 }
 
 // Diff calculates diff between current schema and another one.
@@ -172,7 +163,7 @@ func (t *Table) GetPKFieldsSet() types2.Set[string] {
 // 2) all fields from another schema exist in current schema
 // NOTE: Diff method doesn't take types into account
 func (t *Table) Diff(another *Table) *Table {
-	diff := &Table{Name: t.Name, Columns: NewColumns(), PKFields: types2.Set[string]{}}
+	diff := &Table{Name: t.Name, Columns: NewColumns(), PKFields: types2.NewOrderedSet[string]()}
 
 	if !another.Exists() {
 		return diff
@@ -194,14 +185,14 @@ func (t *Table) Diff(another *Table) *Table {
 	}
 
 	//primary keys logic
-	if len(t.PKFields) > 0 {
+	if t.PKFields.Size() > 0 {
 		if !t.PKFields.Equals(another.PKFields) {
 			//re-create or delete if another.PKFields is empty
 			diff.DeletePkFields = true
 			diff.PKFields = another.PKFields
 			diff.PrimaryKeyName = jitsuPrimaryKeyName
 		}
-	} else if len(another.PKFields) > 0 {
+	} else if another.PKFields.Size() > 0 {
 		//create
 		diff.PKFields = another.PKFields
 		diff.PrimaryKeyName = jitsuPrimaryKeyName

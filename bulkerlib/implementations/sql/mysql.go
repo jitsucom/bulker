@@ -34,8 +34,8 @@ const (
 								WHERE table_schema = ? AND table_name = ? order by ORDINAL_POSITION`
 	mySQLPrimaryKeyFieldsQuery = `SELECT
 									column_name AS name
-								FROM information_schema.columns
-								WHERE table_schema = ? AND table_name = ? AND column_key = 'PRI'`
+								FROM information_schema.KEY_COLUMN_USAGE
+								WHERE table_schema = ? AND table_name = ? AND CONSTRAINT_NAME = 'PRIMARY' order by ORDINAL_POSITION`
 	mySQLCreateDBIfNotExistsTemplate = "CREATE DATABASE IF NOT EXISTS %s"
 	mySQLAllowLocalFile              = "SET GLOBAL local_infile = 1"
 	mySQLIndexTemplate               = `CREATE INDEX %s ON %s (%s);`
@@ -320,7 +320,7 @@ func (m *MySQL) GetTableSchema(ctx context.Context, tableName string) (*Table, e
 	}
 
 	table.PKFields = pkFields
-	if len(pkFields) > 0 {
+	if pkFields.Size() > 0 {
 		//in MySQL primary key has always name: "PRIMARY"
 		table.PrimaryKeyName = BuildConstraintName(table.Name)
 	}
@@ -329,7 +329,7 @@ func (m *MySQL) GetTableSchema(ctx context.Context, tableName string) (*Table, e
 
 func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) {
 	tableName = m.TableName(tableName)
-	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewSet[string]()}
+	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 	rows, err := m.dataSource.QueryContext(ctx, mySQLTableSchemaQuery, m.config.Db, tableName)
@@ -379,11 +379,11 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 	return table, nil
 }
 
-func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (types.Set[string], error) {
+func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (types.OrderedSet[string], error) {
 	tableName = m.TableName(tableName)
 	pkFieldsRows, err := m.dataSource.QueryContext(ctx, mySQLPrimaryKeyFieldsQuery, m.config.Db, tableName)
 	if err != nil {
-		return nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+		return types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Database:  m.config.Db,
 				Table:     tableName,
@@ -394,11 +394,11 @@ func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (types.Set
 
 	defer pkFieldsRows.Close()
 
-	pkFields := types.NewSet[string]()
+	pkFields := types.NewOrderedSet[string]()
 	for pkFieldsRows.Next() {
 		var fieldName string
 		if err := pkFieldsRows.Scan(&fieldName); err != nil {
-			return nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
+			return types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Database:  m.config.Db,
 					Table:     tableName,
@@ -409,7 +409,7 @@ func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (types.Set
 		pkFields.Put(fieldName)
 	}
 	if err := pkFieldsRows.Err(); err != nil {
-		return nil, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
+		return types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Database:  m.config.Db,
 				Table:     tableName,
@@ -469,7 +469,7 @@ func mySQLColumnDDL(quotedName, name string, table *Table, column types2.SQLColu
 
 	//map special types for primary keys (text -> varchar)
 	//because old versions of MYSQL requires non null and default value on TEXT types
-	if _, ok := table.PKFields[name]; ok {
+	if table.PKFields.Contains(name) {
 		if typeForPKField, ok := mySQLPrimaryKeyTypesMapping[sqlType]; ok {
 			sqlType = typeForPKField
 		}

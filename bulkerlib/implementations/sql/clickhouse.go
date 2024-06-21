@@ -25,7 +25,6 @@ import (
 
 // TODO: second test for http
 // TODO: option Optimize table on Complete ?
-// TODO: add flag &mutations_sync=2
 func init() {
 	bulkerlib.RegisterBulker(ClickHouseBulkerTypeId, NewClickHouse)
 }
@@ -35,12 +34,12 @@ const (
 
 	chLocalPrefix = "local_"
 
-	chDatabaseQuery = "SELECT name FROM system.databases where name = ?"
-	chClusterQuery  = "SELECT max(shard_num) > 1 FROM system.clusters where cluster = ?"
+	chDatabaseQuery          = "SELECT name FROM system.databases where name = ?"
+	chClusterQuery           = "SELECT max(shard_num) > 1 FROM system.clusters where cluster = ?"
+	chCreateDatabaseTemplate = `CREATE DATABASE IF NOT EXISTS ? %s`
 
-	chTableSchemaQuery       = `SELECT name, type, is_in_primary_key FROM system.columns WHERE database = ? and table = ? and default_kind not in ('MATERIALIZED', 'ALIAS', 'EPHEMERAL') order by position`
-	chCreateDatabaseTemplate = `CREATE DATABASE IF NOT EXISTS "%s" %s`
-
+	chTableSchemaQuery        = `SELECT name, type FROM system.columns WHERE database = ? and table = ? and default_kind not in ('MATERIALIZED', 'ALIAS', 'EPHEMERAL') order by position`
+	chPrimaryKeyFieldsQuery   = `SELECT primary_key FROM system.tables WHERE database = ? and table = ?`
 	chOnClusterClauseTemplate = " ON CLUSTER `%s` "
 	chNullableColumnTemplate  = ` Nullable(%s) `
 
@@ -328,9 +327,9 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 		_ = row.Scan(&dbname)
 	}
 	if dbname == "" {
-		query := fmt.Sprintf(chCreateDatabaseTemplate, ch.config.Database, ch.getOnClusterClause())
+		query := fmt.Sprintf(chCreateDatabaseTemplate, ch.getOnClusterClause())
 
-		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
+		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query, ch.config.Database); err != nil {
 			return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Database:  ch.config.Database,
@@ -363,7 +362,7 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 	if table.Temporary {
 		table := table.Clone()
-		table.PKFields = types2.NewSet[string]()
+		table.PKFields = types2.NewOrderedSet[string]()
 		columnsDDL := table.MappedColumns(func(name string, column types.SQLColumn) string {
 			return ch.columnDDL(name, table, column)
 		})
@@ -409,7 +408,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 	//local table name since schema of distributed table lacks primary keys
 	queryTableName := ch.TableName(ch.localTableName(tableName))
 	tableName = ch.TableName(tableName)
-	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types2.NewSet[string]()}
+	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types2.NewOrderedSet[string]()}
 	rows, err := ch.txOrDb(ctx).QueryContext(ctx, chTableSchemaQuery, ch.config.Database, queryTableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -426,8 +425,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 	defer rows.Close()
 	for rows.Next() {
 		var columnName, columnClickhouseType string
-		var isPk bool
-		if err := rows.Scan(&columnName, &columnClickhouseType, &isPk); err != nil {
+		if err := rows.Scan(&columnName, &columnClickhouseType); err != nil {
 			return nil, errorj.GetTableError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Database:    ch.config.Database,
@@ -440,10 +438,6 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 		}
 		dt, _ := ch.GetDataType(columnClickhouseType)
 		table.Columns.Set(columnName, types.SQLColumn{Type: columnClickhouseType, DataType: dt})
-		if isPk {
-			table.PKFields.Put(columnName)
-			table.PrimaryKeyName = BuildConstraintName(tableName)
-		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
@@ -456,8 +450,53 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 				Values:      []interface{}{ch.config.Database, tableName},
 			})
 	}
+	primaryKeyName, pkFields, err := ch.getPrimaryKey(ctx, tableName)
+	if err != nil {
+		return nil, err
+	}
+	if !pkFields.Empty() {
+		table.PKFields = pkFields
+		table.PrimaryKeyName = primaryKeyName
+	}
 
 	return table, nil
+}
+
+// getPrimaryKey returns primary key name and fields
+func (ch *ClickHouse) getPrimaryKey(ctx context.Context, tableName string) (string, types2.OrderedSet[string], error) {
+	tableName = ch.TableName(tableName)
+	pkFieldsRows, err := ch.txOrDb(ctx).QueryContext(ctx, chPrimaryKeyFieldsQuery, ch.config.Database, tableName)
+	if err != nil {
+		return "", types2.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+			WithProperty(errorj.DBInfo, &types.ErrorPayload{
+				Database:  ch.config.Database,
+				Cluster:   ch.config.Cluster,
+				Table:     tableName,
+				Statement: chPrimaryKeyFieldsQuery,
+				Values:    []interface{}{ch.config.Database, tableName},
+			})
+	}
+	defer pkFieldsRows.Close()
+	var pkString string
+	if pkFieldsRows.Next() {
+		if err = pkFieldsRows.Scan(&pkString); err != nil {
+			return "", types2.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
+				WithProperty(errorj.DBInfo, &types.ErrorPayload{
+					Database:  ch.config.Database,
+					Cluster:   ch.config.Cluster,
+					Table:     tableName,
+					Statement: chPrimaryKeyFieldsQuery,
+					Values:    []interface{}{ch.config.Database, tableName},
+				})
+		}
+	}
+
+	if pkString == "" {
+		return "", types2.OrderedSet[string]{}, nil
+	}
+	primaryKeys := types2.NewOrderedSet[string]()
+	primaryKeys.PutAll(utils.ArrayMap(strings.Split(pkString, ","), strings.TrimSpace))
+	return BuildConstraintName(tableName), primaryKeys, nil
 }
 
 // PatchTableSchema add new columns(from provided Table) to existing table
@@ -506,7 +545,7 @@ func (ch *ClickHouse) Select(ctx context.Context, tableName string, whenConditio
 		return nil, err
 	}
 
-	if len(table.PKFields) > 0 {
+	if table.PKFields.Size() > 0 {
 		return ch.selectFrom(ctx, chSelectFinalStatement, tableName, "*", whenConditions, orderBy)
 	} else {
 		return ch.selectFrom(ctx, selectQueryTemplate, tableName, "*", whenConditions, orderBy)
@@ -521,7 +560,7 @@ func (ch *ClickHouse) Count(ctx context.Context, tableName string, whenCondition
 	}
 
 	var res []map[string]any
-	if len(table.PKFields) > 0 {
+	if table.PKFields.Size() > 0 {
 		res, err = ch.selectFrom(ctx, chSelectFinalStatement, tableName, "count(*) as jitsu_count", whenConditions, nil)
 	} else {
 		res, err = ch.selectFrom(ctx, selectQueryTemplate, tableName, "count(*) as jitsu_count", whenConditions, nil)
@@ -746,7 +785,7 @@ func (ch *ClickHouse) getOnClusterClause() string {
 func (ch *ClickHouse) createDistributedTableInTransaction(ctx context.Context, originTable *Table) error {
 	originTableName := originTable.Name
 	shardingKey := "rand()"
-	if len(originTable.PKFields) > 0 {
+	if originTable.PKFields.Size() > 0 {
 		shardingKey = "halfMD5(" + strings.Join(originTable.GetPKFields(), ",") + ")"
 	}
 	statement := fmt.Sprintf(chCreateDistributedTableTemplate,
@@ -946,17 +985,29 @@ func (chc *ClickHouseConfig) Validate() error {
 	return nil
 }
 
+func (ch *ClickHouse) Config() *ClickHouseConfig {
+	return ch.config
+}
+
+func (ch *ClickHouse) IsDistributed() bool {
+	return ch.distributed.Load()
+}
+
+type ClickHouseCluster interface {
+	IsDistributed() bool
+	Config() *ClickHouseConfig
+}
+
 // TableStatementFactory is used for creating CREATE TABLE statements depends on config
 type TableStatementFactory struct {
-	ch *ClickHouse
-
+	ch              ClickHouseCluster
 	onClusterClause string
 }
 
-func NewTableStatementFactory(ch *ClickHouse) *TableStatementFactory {
+func NewTableStatementFactory(ch ClickHouseCluster) *TableStatementFactory {
 	var onClusterClause string
-	if ch.config.Cluster != "" {
-		onClusterClause = fmt.Sprintf(chOnClusterClauseTemplate, ch.config.Cluster)
+	if ch.Config().Cluster != "" {
+		onClusterClause = fmt.Sprintf(chOnClusterClauseTemplate, ch.Config().Cluster)
 	}
 
 	return &TableStatementFactory{
@@ -967,7 +1018,7 @@ func NewTableStatementFactory(ch *ClickHouse) *TableStatementFactory {
 
 // CreateTableStatement return clickhouse DDL for creating table statement
 func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName, columnsClause string, table *Table) string {
-	config := tsf.ch.config
+	config := tsf.ch.Config()
 	if config.Engine != nil && len(config.Engine.RawStatement) > 0 {
 		return fmt.Sprintf(chCreateTableTemplate, quotedTableName, tsf.onClusterClause, columnsClause, config.Engine.RawStatement,
 			"", "", "")
@@ -983,13 +1034,13 @@ func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName
 	pkFields := table.PKFields
 	if config.Engine != nil && len(config.Engine.OrderFields) > 0 {
 		orderByClause = "ORDER BY (" + extractStatement(config.Engine.OrderFields) + ")"
-	} else if len(pkFields) > 0 {
+	} else if pkFields.Size() > 0 {
 		orderByClause = "ORDER BY (" + strings.Join(pkFields.ToSlice(), ", ") + ")"
 	} else {
 		orderByClause = "ORDER BY tuple()"
 		baseEngine = "MergeTree"
 	}
-	if len(pkFields) > 0 {
+	if pkFields.Size() > 0 {
 		primaryKeyClause = "PRIMARY KEY (" + strings.Join(pkFields.ToSlice(), ", ") + ")"
 	}
 	if config.Engine != nil && len(config.Engine.PartitionFields) > 0 {
@@ -1000,7 +1051,7 @@ func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName
 
 	if config.Cluster != "" {
 		shardsMacros := "{shard}/"
-		if !tsf.ch.distributed.Load() {
+		if !tsf.ch.IsDistributed() {
 			shardsMacros = "1/"
 		}
 		//create engine statement with ReplicatedReplacingMergeTree() engine. We need to replace %s with tableName on creating statement

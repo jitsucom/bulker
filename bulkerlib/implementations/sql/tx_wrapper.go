@@ -15,9 +15,11 @@ type TxWrapper struct {
 	dbType       string
 	db           DB
 	tx           *sql.Tx
+	custom       io.Closer
 	queryLogger  *logging.QueryLogger
 	errorAdapter ErrorAdapter
 	closeDb      bool
+	error        error
 }
 
 type TxOrDB interface {
@@ -42,6 +44,10 @@ func NewDbWrapper(dbType string, db DB, queryLogger *logging.QueryLogger, errorA
 
 func NewDummyTxWrapper(dbType string) *TxWrapper {
 	return &TxWrapper{dbType: dbType}
+}
+
+func NewCustomWrapper(dbType string, custom io.Closer, err error) *TxWrapper {
+	return &TxWrapper{dbType: dbType, custom: custom, error: err, closeDb: true}
 }
 
 func wrap[R any](ctx context.Context,
@@ -95,6 +101,10 @@ func (t *TxWrapper) QueryRowContext(ctx context.Context, query string, args ...a
 	return row
 }
 
+func (t *TxWrapper) GetCustom() (io.Closer, error) {
+	return t.custom, t.error
+}
+
 // PrepareContext creates a prepared statement for use within a transaction.
 //
 // The returned statement operates within the transaction and will be closed
@@ -135,11 +145,20 @@ func (t *TxWrapper) Commit() error {
 // Rollback cancels underlying transaction and logs system err if occurred
 func (t *TxWrapper) Rollback() error {
 	if t.closeDb {
-		defer func() {
-			if err := t.db.Close(); err != nil {
-				logging.Errorf("failed to close db: %v", err)
-			}
-		}()
+		if t.db != nil {
+			defer func() {
+				if err := t.db.Close(); err != nil {
+					logging.Errorf("failed to close db: %v", err)
+				}
+			}()
+		}
+		if t.custom != nil {
+			defer func() {
+				if err := t.custom.Close(); err != nil {
+					logging.Errorf("failed to close db: %v", err)
+				}
+			}()
+		}
 	}
 	if t.tx != nil {
 		if err := t.tx.Rollback(); err != nil {

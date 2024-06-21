@@ -61,7 +61,7 @@ func NewTableHelper(maxIdentifierLength int, identifierQuoteChar rune) TableHelp
 // applies column types mapping
 // adjusts object properties names to column names
 func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesHeader, object types2.Object, pkFields []string, timestampColumn string) (*Table, types2.Object) {
-	adaptedPKFields := types.NewSet[string]()
+	adaptedPKFields := types.NewOrderedSet[string]()
 	for _, pkField := range pkFields {
 		adaptedPKFields.Put(th.ColumnName(pkField))
 	}
@@ -76,7 +76,7 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 	}
 
 	//pk fields from the configuration
-	if len(adaptedPKFields) > 0 {
+	if !adaptedPKFields.Empty() {
 		table.PrimaryKeyName = BuildConstraintName(table.Name)
 	}
 
@@ -213,12 +213,12 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAda
 		currentSchema.Columns.Set(k, v)
 	})
 	//pk fields
-	if len(diff.PKFields) > 0 {
+	if !diff.PKFields.Empty() {
 		currentSchema.PKFields = diff.PKFields
 	}
 	//remove pk fields if a deletion was
 	if diff.DeletePkFields {
-		currentSchema.PKFields = types.Set[string]{}
+		currentSchema.PKFields = types.OrderedSet[string]{}
 	}
 
 	th.updateCached(diff.Name, currentSchema)

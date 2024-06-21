@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -234,7 +235,7 @@ func (s *Snowflake) InitDatabase(ctx context.Context) error {
 // GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
 func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
 	quotedTableName, tableName := s.tableHelper.adaptTableName(tableName)
-	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewSet[string]()}
+	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
 
 	query := fmt.Sprintf(sfDescTableQuery, quotedTableName)
 	rows, err := s.txOrDb(ctx).QueryContext(ctx, query)
@@ -294,14 +295,14 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 }
 
 // getPrimaryKey returns primary key name and fields
-func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string, types.Set[string], error) {
+func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string, types.OrderedSet[string], error) {
 	quotedTableName := s.quotedTableName(tableName)
 
-	primaryKeys := types.Set[string]{}
+	primaryKeys := types.NewOrderedSet[string]()
 	statement := fmt.Sprintf(sfPrimaryKeyFieldsQuery, quotedTableName)
 	pkFieldsRows, err := s.txOrDb(ctx).QueryContext(ctx, statement)
 	if err != nil {
-		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    s.config.Schema,
 				Table:     quotedTableName,
@@ -310,13 +311,13 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 	}
 
 	defer pkFieldsRows.Close()
-	var pkFields []string
+	pkFields := map[int]string{}
 	var primaryKeyName string
 	for pkFieldsRows.Next() {
 		var row map[string]any
 		row, err = rowToMap(pkFieldsRows)
 		if err != nil {
-			return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+			return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Schema:    s.config.Schema,
 					Table:     quotedTableName,
@@ -329,12 +330,20 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 		}
 		keyColumn, ok := row["column_name"].(string)
 		if ok && keyColumn != "" {
-			pkFields = append(pkFields, keyColumn)
+			seqColumn, ok := row["key_sequence"].(string)
+			if ok && seqColumn != "" {
+				atoi, err := strconv.Atoi(seqColumn)
+				if err != nil {
+					s.Errorf("failed to parse primary key sequence: %v", seqColumn)
+				} else if atoi > 0 {
+					pkFields[atoi-1] = keyColumn
+				}
+			}
 		}
 	}
 
 	if err := pkFieldsRows.Err(); err != nil {
-		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
+		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    s.config.Schema,
 				Table:     quotedTableName,
@@ -342,8 +351,9 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 			})
 	}
 
-	for _, field := range pkFields {
-		primaryKeys.Put(field)
+	l := len(pkFields)
+	for i := 0; i < l; i++ {
+		primaryKeys.Put(pkFields[i])
 	}
 
 	return primaryKeyName, primaryKeys, nil

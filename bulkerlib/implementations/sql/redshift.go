@@ -89,7 +89,7 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	r.batchFileFormat = types2.FileFormatCSV
 	r.batchFileCompression = types2.FileCompressionGZIP
 	r._columnDDLFunc = redshiftColumnDDL
-	r.initTypes(redshiftTypes)
+	r.typesMapping, r.reverseTypesMapping = InitTypes(redshiftTypes)
 	r.tableHelper = NewTableHelper(127, '"')
 	r.temporaryTables = true
 	//// Redshift is case insensitive by default
@@ -202,7 +202,7 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 	quotedTargetTableName := p.quotedTableName(targetTable.Name)
 	quotedSourceTableName := p.quotedTableName(sourceTable.Name)
 
-	if mergeWindow > 0 && len(targetTable.PKFields) > 0 {
+	if mergeWindow > 0 && targetTable.PKFields.Size() > 0 {
 		//delete duplicates from table
 		var pkMatchConditions string
 		for i, pkColumn := range targetTable.GetPKFields() {
@@ -278,12 +278,12 @@ func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table
 	return table, nil
 }
 
-func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string, types.Set[string], error) {
+func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string, types.OrderedSet[string], error) {
 	tableName = p.TableName(tableName)
-	primaryKeys := types.NewSet[string]()
+	primaryKeys := types.NewOrderedSet[string]()
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftPrimaryKeyFieldsQuery, p.config.Schema, tableName)
 	if err != nil {
-		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
@@ -298,7 +298,7 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 	for pkFieldsRows.Next() {
 		var constraintName, fieldName string
 		if err := pkFieldsRows.Scan(&constraintName, &fieldName); err != nil {
-			return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
+			return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Schema:    p.config.Schema,
 					Table:     tableName,
@@ -312,7 +312,7 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 		pkFields = append(pkFields, fieldName)
 	}
 	if err := pkFieldsRows.Err(); err != nil {
-		return "", nil, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
+		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     tableName,
@@ -370,9 +370,9 @@ func redshiftColumnDDL(quotedName, name string, table *Table, column types2.SQLC
 
 	sqlType := column.GetDDLType()
 
-	if _, ok := table.PKFields[name]; ok {
+	if table.PKFields.Contains(name) {
 		columnConstaints = " not null " + getDefaultValueStatement(sqlType)
-		if len(table.PKFields) == 1 {
+		if table.PKFields.Size() == 1 {
 			columnAttributes = " DISTKEY "
 		}
 	}
