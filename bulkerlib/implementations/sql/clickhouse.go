@@ -418,7 +418,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   chTableSchemaQuery,
-				Values:      []interface{}{ch.config.Database, tableName},
+				Values:      []interface{}{ch.config.Database, queryTableName},
 			})
 	}
 
@@ -433,7 +433,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 					Table:       tableName,
 					PrimaryKeys: table.GetPKFields(),
 					Statement:   chTableSchemaQuery,
-					Values:      []interface{}{ch.config.Database, tableName},
+					Values:      []interface{}{ch.config.Database, queryTableName},
 				})
 		}
 		dt, _ := ch.GetDataType(columnClickhouseType)
@@ -447,7 +447,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   chTableSchemaQuery,
-				Values:      []interface{}{ch.config.Database, tableName},
+				Values:      []interface{}{ch.config.Database, queryTableName},
 			})
 	}
 	primaryKeyName, pkFields, err := ch.getPrimaryKey(ctx, tableName)
@@ -465,7 +465,8 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 // getPrimaryKey returns primary key name and fields
 func (ch *ClickHouse) getPrimaryKey(ctx context.Context, tableName string) (string, types2.OrderedSet[string], error) {
 	tableName = ch.TableName(tableName)
-	pkFieldsRows, err := ch.txOrDb(ctx).QueryContext(ctx, chPrimaryKeyFieldsQuery, ch.config.Database, tableName)
+	queryTableName := ch.TableName(ch.localTableName(tableName))
+	pkFieldsRows, err := ch.txOrDb(ctx).QueryContext(ctx, chPrimaryKeyFieldsQuery, ch.config.Database, queryTableName)
 	if err != nil {
 		return "", types2.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
@@ -473,7 +474,7 @@ func (ch *ClickHouse) getPrimaryKey(ctx context.Context, tableName string) (stri
 				Cluster:   ch.config.Cluster,
 				Table:     tableName,
 				Statement: chPrimaryKeyFieldsQuery,
-				Values:    []interface{}{ch.config.Database, tableName},
+				Values:    []interface{}{ch.config.Database, queryTableName},
 			})
 	}
 	defer pkFieldsRows.Close()
@@ -486,7 +487,7 @@ func (ch *ClickHouse) getPrimaryKey(ctx context.Context, tableName string) (stri
 					Cluster:   ch.config.Cluster,
 					Table:     tableName,
 					Statement: chPrimaryKeyFieldsQuery,
-					Values:    []interface{}{ch.config.Database, tableName},
+					Values:    []interface{}{ch.config.Database, queryTableName},
 				})
 		}
 	}
