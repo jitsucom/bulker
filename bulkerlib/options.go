@@ -58,10 +58,10 @@ var (
 	},
 	}
 
-	PrimaryKeyOption = ImplementationOption[types2.Set[string]]{
+	PrimaryKeyOption = ImplementationOption[types2.OrderedSet[string]]{
 		Key:          "primaryKey",
-		DefaultValue: types2.Set[string]{},
-		AdvancedParseFunc: func(o *ImplementationOption[types2.Set[string]], serializedValue any) (StreamOption, error) {
+		DefaultValue: types2.OrderedSet[string]{},
+		AdvancedParseFunc: func(o *ImplementationOption[types2.OrderedSet[string]], serializedValue any) (StreamOption, error) {
 			switch v := serializedValue.(type) {
 			case []string:
 				return withPrimaryKey(o, v...), nil
@@ -206,11 +206,11 @@ func WithOption[T any](o *ImplementationOption[T], value T) StreamOption {
 	}
 }
 
-func withPrimaryKey(o *ImplementationOption[types2.Set[string]], pkFields ...string) StreamOption {
+func withPrimaryKey(o *ImplementationOption[types2.OrderedSet[string]], pkFields ...string) StreamOption {
 	return func(options *StreamOptions) {
 		set := o.Get(options)
-		if len(set) == 0 {
-			o.Set(options, types2.NewSet(pkFields...))
+		if set.Empty() {
+			o.Set(options, types2.NewOrderedSet(pkFields...))
 		} else {
 			set.PutAll(pkFields)
 		}

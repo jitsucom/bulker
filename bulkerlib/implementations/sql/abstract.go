@@ -46,7 +46,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	}
 	ps.merge = bulker.DeduplicateOption.Get(&ps.options)
 	pkColumns := bulker.PrimaryKeyOption.Get(&ps.options)
-	if ps.merge && len(pkColumns) == 0 {
+	if ps.merge && pkColumns.Empty() {
 		return nil, fmt.Errorf("MergeRows option requires primary key in the destination table. Please provide WithPrimaryKey option")
 	}
 	if ps.merge {

@@ -59,7 +59,7 @@ func newAbstractFileStorageStream(id string, p implementations2.FileAdapter, fil
 	}
 	ps.merge = bulker.DeduplicateOption.Get(&ps.options)
 	pkColumns := bulker.PrimaryKeyOption.Get(&ps.options)
-	if ps.merge && len(pkColumns) == 0 {
+	if ps.merge && pkColumns.Empty() {
 		return AbstractFileStorageStream{}, fmt.Errorf("MergeRows option requires primary key option. Please provide WithPrimaryKey option")
 	}
 	ps.pkColumns = pkColumns.ToSlice()
