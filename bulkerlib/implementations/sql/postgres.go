@@ -467,7 +467,7 @@ func (p *Postgres) ReplaceTable(ctx context.Context, targetTableName string, rep
 	targetTable := replacementTable.Clone()
 	targetTable.Name = targetTableName
 	if targetTable.PrimaryKeyName != "" {
-		targetTable.PrimaryKeyName = BuildConstraintName(targetTableName)
+		targetTable.PrimaryKeyName = p.BuildConstraintName(targetTableName)
 	}
 	_, err = p.tableHelper.EnsureTableWithoutCaching(ctx, p, p.ID, targetTable)
 	if err != nil {

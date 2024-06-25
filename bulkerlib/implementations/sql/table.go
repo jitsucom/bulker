@@ -1,10 +1,8 @@
 package sql
 
 import (
-	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
-	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"strings"
 )
 
@@ -51,7 +49,7 @@ type Table struct {
 
 	Partition DatePartition
 
-	DeletePkFields bool
+	DeletePrimaryKeyNamed string
 }
 
 // Exists returns true if there is at least one column
@@ -60,7 +58,7 @@ func (t *Table) Exists() bool {
 		return false
 	}
 
-	return (t.Columns != nil && t.Columns.Len() > 0) || t.PKFields.Size() > 0 || t.DeletePkFields
+	return (t.Columns != nil && t.Columns.Len() > 0) || t.PKFields.Size() > 0 || t.DeletePrimaryKeyNamed != ""
 }
 
 // ColumnNames return column names as array
@@ -107,15 +105,15 @@ func (t *Table) CleanClone() *Table {
 	clonedPkFields := t.PKFields.Clone()
 
 	return &Table{
-		Name:            t.Name,
-		Columns:         clonedColumns,
-		PKFields:        clonedPkFields,
-		PrimaryKeyName:  t.PrimaryKeyName,
-		Temporary:       t.Temporary,
-		TimestampColumn: t.TimestampColumn,
-		Partition:       t.Partition,
-		Cached:          t.Cached,
-		DeletePkFields:  t.DeletePkFields,
+		Name:                  t.Name,
+		Columns:               clonedColumns,
+		PKFields:              clonedPkFields,
+		PrimaryKeyName:        t.PrimaryKeyName,
+		Temporary:             t.Temporary,
+		TimestampColumn:       t.TimestampColumn,
+		Partition:             t.Partition,
+		Cached:                t.Cached,
+		DeletePrimaryKeyNamed: t.DeletePrimaryKeyNamed,
 	}
 }
 
@@ -136,15 +134,15 @@ func (t *Table) Clone() *Table {
 	clonedPkFields := t.PKFields.Clone()
 
 	return &Table{
-		Name:            t.Name,
-		Columns:         clonedColumns,
-		PKFields:        clonedPkFields,
-		PrimaryKeyName:  t.PrimaryKeyName,
-		Temporary:       t.Temporary,
-		TimestampColumn: t.TimestampColumn,
-		Partition:       t.Partition,
-		Cached:          t.Cached,
-		DeletePkFields:  t.DeletePkFields,
+		Name:                  t.Name,
+		Columns:               clonedColumns,
+		PKFields:              clonedPkFields,
+		PrimaryKeyName:        t.PrimaryKeyName,
+		Temporary:             t.Temporary,
+		TimestampColumn:       t.TimestampColumn,
+		Partition:             t.Partition,
+		Cached:                t.Cached,
+		DeletePrimaryKeyNamed: t.DeletePrimaryKeyNamed,
 	}
 }
 
@@ -162,7 +160,7 @@ func (t *Table) GetPKFieldsSet() types2.OrderedSet[string] {
 // 1) another one is empty
 // 2) all fields from another schema exist in current schema
 // NOTE: Diff method doesn't take types into account
-func (t *Table) Diff(another *Table) *Table {
+func (t *Table) Diff(sqlAdapter SQLAdapter, another *Table) *Table {
 	diff := &Table{Name: t.Name, Columns: NewColumns(), PKFields: types2.NewOrderedSet[string]()}
 
 	if !another.Exists() {
@@ -177,7 +175,7 @@ func (t *Table) Diff(another *Table) *Table {
 		}
 	}
 
-	jitsuPrimaryKeyName := BuildConstraintName(t.Name)
+	jitsuPrimaryKeyName := sqlAdapter.BuildConstraintName(t.Name)
 	//check if primary key is maintained by Jitsu (for Postgres and Redshift)
 	if t.PrimaryKeyName != "" && !strings.HasPrefix(strings.ToLower(t.PrimaryKeyName), BulkerManagedPkConstraintPrefix) {
 		//primary key isn't maintained by Jitsu: do nothing
@@ -188,9 +186,11 @@ func (t *Table) Diff(another *Table) *Table {
 	if t.PKFields.Size() > 0 {
 		if !t.PKFields.Equals(another.PKFields) {
 			//re-create or delete if another.PKFields is empty
-			diff.DeletePkFields = true
+			diff.DeletePrimaryKeyNamed = t.PrimaryKeyName
 			diff.PKFields = another.PKFields
-			diff.PrimaryKeyName = jitsuPrimaryKeyName
+			if another.PKFields.Size() > 0 {
+				diff.PrimaryKeyName = jitsuPrimaryKeyName
+			}
 		}
 	} else if another.PKFields.Size() > 0 {
 		//create
@@ -199,10 +199,6 @@ func (t *Table) Diff(another *Table) *Table {
 	}
 
 	return diff
-}
-
-func BuildConstraintName(tableName string) string {
-	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers())
 }
 
 func (t *Table) ToSimpleMap() *types2.OrderedMap[string, any] {

@@ -60,8 +60,9 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	}
 	if existingTable.Exists() {
 		currentTable := existingTable.Clone()
+		currentTable.PKFields = table.PKFields
 		columnsAdded := ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
-		if columnsAdded {
+		if columnsAdded || !currentTable.PKFields.Equals(existingTable.PKFields) {
 			ps.updateRepresentationTable(currentTable)
 			// if new columns were added - update table. (for _unmapped_data column)
 			existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, currentTable)
@@ -73,7 +74,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 					err = errorj.Decorate(err, "failed to ensure table")
 					return
 				}
-				currentTable = existingTable.Clone()
+				currentTable = existingTable
 				// here this method only tries to convert values to existing column types
 				columnsAdded = ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
 				if columnsAdded {
@@ -86,6 +87,8 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 					}
 					currentTable = existingTable
 				}
+			} else {
+				currentTable = existingTable
 			}
 		}
 		ps.updateRepresentationTable(currentTable)

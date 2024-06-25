@@ -56,6 +56,7 @@ type SQLAdapter interface {
 	ColumnName(rawColumn string) string
 	// TableName adapts table name to sql identifier rules of database
 	TableName(rawTableName string) string
+	BuildConstraintName(tableName string) string
 }
 
 type LoadSourceType string
@@ -199,4 +200,8 @@ func (tx *TxSQLAdapter) ColumnName(identifier string) string {
 
 func (tx *TxSQLAdapter) TableName(identifier string) string {
 	return tx.sqlAdapter.TableName(identifier)
+}
+
+func (tx *TxSQLAdapter) BuildConstraintName(tableName string) string {
+	return tx.sqlAdapter.BuildConstraintName(tableName)
 }

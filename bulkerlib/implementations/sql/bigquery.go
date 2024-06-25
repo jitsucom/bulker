@@ -17,6 +17,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"math"
@@ -452,7 +453,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 			})
 	}
 	//patch primary keys - delete old
-	if patchSchema.DeletePkFields {
+	if patchSchema.DeletePrimaryKeyNamed != "" {
 		delete(metadata.Labels, bigqueryPKHashLabel)
 		delete(metadata.Labels, bigqueryPKNameLabel)
 		if metadata.TableConstraints != nil {
@@ -983,6 +984,10 @@ func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditio
 }
 func (bq *BigQuery) Type() string {
 	return BigqueryBulkerTypeId
+}
+
+func (bq *BigQuery) BuildConstraintName(tableName string) string {
+	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers())
 }
 
 func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {

@@ -77,7 +77,7 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 
 	//pk fields from the configuration
 	if !adaptedPKFields.Empty() {
-		table.PrimaryKeyName = BuildConstraintName(table.Name)
+		table.PrimaryKeyName = sqlAdapter.BuildConstraintName(table.Name)
 	}
 
 	for el := batchHeader.Fields.Front(); el != nil; el = el.Next() {
@@ -175,7 +175,7 @@ func (th *TableHelper) ensureTable(ctx context.Context, sqlAdapter SQLAdapter, d
 
 func (th *TableHelper) patchTableIfNeeded(ctx context.Context, sqlAdapter SQLAdapter, destinationID string, currentSchema, desiredSchema *Table) (*Table, error) {
 	//if diff doesn't exist - do nothing
-	diff := currentSchema.Diff(desiredSchema)
+	diff := currentSchema.Diff(sqlAdapter, desiredSchema)
 	if !diff.Exists() {
 		return currentSchema, nil
 	}
@@ -215,10 +215,10 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAda
 	//pk fields
 	if !diff.PKFields.Empty() {
 		currentSchema.PKFields = diff.PKFields
-	}
-	//remove pk fields if a deletion was
-	if diff.DeletePkFields {
+		currentSchema.PrimaryKeyName = diff.PrimaryKeyName
+	} else if diff.DeletePrimaryKeyNamed != "" {
 		currentSchema.PKFields = types.OrderedSet[string]{}
+		currentSchema.PrimaryKeyName = ""
 	}
 
 	th.updateCached(diff.Name, currentSchema)

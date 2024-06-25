@@ -497,7 +497,7 @@ func (ch *ClickHouse) getPrimaryKey(ctx context.Context, tableName string) (stri
 	}
 	primaryKeys := types2.NewOrderedSet[string]()
 	primaryKeys.PutAll(utils.ArrayMap(strings.Split(pkString, ","), strings.TrimSpace))
-	return BuildConstraintName(tableName), primaryKeys, nil
+	return ch.BuildConstraintName(tableName), primaryKeys, nil
 }
 
 // PatchTableSchema add new columns(from provided Table) to existing table

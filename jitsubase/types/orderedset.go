@@ -87,6 +87,9 @@ func (s OrderedSet[K]) Equals(other OrderedSet[K]) bool {
 	if s.Size() != other.Size() {
 		return false
 	}
+	if s.Empty() {
+		return true
+	}
 	if s.Size() == 1 {
 		if s.mp.ll.root.Key != other.mp.ll.root.Key {
 			return false

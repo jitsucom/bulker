@@ -322,9 +322,13 @@ func (m *MySQL) GetTableSchema(ctx context.Context, tableName string) (*Table, e
 	table.PKFields = pkFields
 	if pkFields.Size() > 0 {
 		//in MySQL primary key has always name: "PRIMARY"
-		table.PrimaryKeyName = BuildConstraintName(table.Name)
+		table.PrimaryKeyName = m.BuildConstraintName(table.Name)
 	}
 	return table, nil
+}
+
+func (m *MySQL) BuildConstraintName(tableName string) string {
+	return "PRIMARY"
 }
 
 func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) {

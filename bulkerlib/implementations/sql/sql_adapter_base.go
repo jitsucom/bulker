@@ -9,6 +9,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"strconv"
 	"strings"
 	"text/template"
@@ -532,7 +533,7 @@ func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Tab
 }
 
 // PatchTableSchema alter table with columns (if not empty)
-// recreate primary key (if not empty) or delete primary key if Table.DeletePkFields is true
+// recreate primary key (if not empty) or delete primary key if Table.DeletePrimaryKeyNamed is true
 func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Table) error {
 	quotedTableName := b.quotedTableName(patchTable.Name)
 
@@ -556,8 +557,8 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 	}
 
 	//patch primary keys - delete old
-	if patchTable.DeletePkFields {
-		err := b.deletePrimaryKey(ctx, patchTable)
+	if patchTable.DeletePrimaryKeyNamed != "" {
+		err := b.deletePrimaryKey(ctx, patchTable, patchTable.DeletePrimaryKeyNamed)
 		if err != nil {
 			return err
 		}
@@ -588,7 +589,7 @@ func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) 
 	}
 
 	statement := fmt.Sprintf(alterPrimaryKeyTemplate,
-		quotedTableName, table.PrimaryKeyName, strings.Join(columnNames, ","))
+		quotedTableName, b.quotedTableName(table.PrimaryKeyName), strings.Join(columnNames, ","))
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.CreatePrimaryKeysError.Wrap(err, "failed to set primary key").
@@ -603,10 +604,10 @@ func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) 
 }
 
 // delete primary key
-func (b *SQLAdapterBase[T]) deletePrimaryKey(ctx context.Context, table *Table) error {
+func (b *SQLAdapterBase[T]) deletePrimaryKey(ctx context.Context, table *Table, pkName string) error {
 	quotedTableName := b.quotedTableName(table.Name)
 
-	query := fmt.Sprintf(dropPrimaryKeyTemplate, quotedTableName, table.PrimaryKeyName)
+	query := fmt.Sprintf(dropPrimaryKeyTemplate, quotedTableName, b.quotedTableName(pkName))
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		return errorj.DeletePrimaryKeysError.Wrap(err, "failed to delete primary key").
@@ -732,6 +733,10 @@ func (b *SQLAdapterBase[T]) GetAvroType(sqlType string) (any, bool) {
 func (b *SQLAdapterBase[T]) GetAvroSchema(table *Table) *types2.AvroSchema {
 	// not really an avro schema in a base driver
 	return nil
+}
+
+func (b *SQLAdapterBase[T]) BuildConstraintName(tableName string) string {
+	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers())
 }
 
 func match(target, pattern string) bool {
