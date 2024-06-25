@@ -117,6 +117,13 @@ func (t *Table) CleanClone() *Table {
 	}
 }
 
+func (t *Table) CloneIfNeeded() *Table {
+	if t.Cached {
+		return t
+	}
+	return t.Clone()
+}
+
 // Clone returns clone of current table
 func (t *Table) Clone() *Table {
 	clonedColumns := NewColumns()

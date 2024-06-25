@@ -59,7 +59,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		return
 	}
 	if existingTable.Exists() {
-		currentTable := existingTable.Clone()
+		currentTable := existingTable.CloneIfNeeded()
 		currentTable.PKFields = table.PKFields
 		columnsAdded := ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
 		if columnsAdded || !currentTable.PKFields.Equals(existingTable.PKFields) {
@@ -74,7 +74,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 					err = errorj.Decorate(err, "failed to ensure table")
 					return
 				}
-				currentTable = existingTable
+				currentTable = existingTable.CloneIfNeeded()
 				// here this method only tries to convert values to existing column types
 				columnsAdded = ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
 				if columnsAdded {
@@ -85,10 +85,10 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 						err = errorj.Decorate(err, "failed to ensure table")
 						return
 					}
-					currentTable = existingTable
+					currentTable = existingTable.CloneIfNeeded()
 				}
 			} else {
-				currentTable = existingTable
+				currentTable = existingTable.CloneIfNeeded()
 			}
 		}
 		ps.updateRepresentationTable(currentTable)
