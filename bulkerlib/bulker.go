@@ -160,7 +160,7 @@ type WarehouseState struct {
 var warehouseStateMergeF = func(curr, new any) any {
 	c := curr.(WarehouseState)
 	(&c).merge(new.(WarehouseState))
-	return curr
+	return c
 }
 
 func (s *State) Merge(second State) {
