@@ -374,6 +374,7 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	if loadSource.Format != s.batchFileFormat {
 		return state, fmt.Errorf("LoadTable: only %s format is supported", s.batchFileFormat)
 	}
+	startTime := time.Now()
 	putStatement := fmt.Sprintf("PUT file://%s @~", loadSource.Path)
 	if _, err = s.txOrDb(ctx).ExecContext(ctx, putStatement); err != nil {
 		return state, errorj.LoadError.Wrap(err, "failed to put file to stage").
@@ -393,6 +394,10 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 					Statement: putStatement,
 				})
 			err = multierror.Append(err, err2)
+		}
+		state = bulker.WarehouseState{
+			Name:            "copy_from_csv",
+			TimeProcessedMs: time.Since(startTime).Milliseconds(),
 		}
 	}()
 	columnNames := targetTable.MappedColumnNames(s.quotedColumnName)
