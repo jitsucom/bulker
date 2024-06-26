@@ -365,7 +365,7 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 }
 
 // LoadTable transfer data from local file to Snowflake by passing COPY request to Snowflake
-func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state *bulker.WarehouseState, err error) {
+func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := s.quotedTableName(targetTable.Name)
 
 	if loadSource.Type != LocalFile {
@@ -443,11 +443,11 @@ func (s *Snowflake) Insert(ctx context.Context, table *Table, merge bool, object
 	return nil
 }
 
-func (s *Snowflake) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (*bulker.WarehouseState, error) {
+func (s *Snowflake) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (bulker.WarehouseState, error) {
 	if mergeWindow <= 0 {
-		return nil, s.copy(ctx, targetTable, sourceTable)
+		return s.copy(ctx, targetTable, sourceTable)
 	} else {
-		return nil, s.copyOrMerge(ctx, targetTable, sourceTable, sfMergeQueryTemplate, "S")
+		return s.copyOrMerge(ctx, targetTable, sourceTable, sfMergeQueryTemplate, "S")
 	}
 }
 

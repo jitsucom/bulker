@@ -126,6 +126,22 @@ func (m *OrderedMap[K, V]) SetIfAbsentFunc(key K, f func() V) bool {
 	return true
 }
 
+func (m *OrderedMap[K, V]) Merge(key K, value V, f func(existing V, value V) V) {
+	existing, alreadyExist := m.kv[key]
+	if !alreadyExist {
+		element := m.ll.PushBack(key, value)
+		m.kv[key] = element
+		return
+	}
+	existing.Value = f(existing.Value, value)
+}
+
+func (m *OrderedMap[K, V]) MergeAll(s *OrderedMap[K, V], f func(existing V, value V) V) {
+	for el := s.Front(); el != nil; el = el.Next() {
+		m.Merge(el.Key, el.Value, f)
+	}
+}
+
 // GetOrDefault returns the value for a key. If the key does not exist, returns
 // the default value instead.
 func (m *OrderedMap[K, V]) GetOrDefault(key K, defaultValue V) V {

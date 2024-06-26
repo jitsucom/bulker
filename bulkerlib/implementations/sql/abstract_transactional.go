@@ -124,12 +124,8 @@ func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err 
 	return ps.AbstractSQLStream.postComplete(err)
 }
 
-func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (state *bulker.WarehouseState, err error) {
+func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (state bulker.WarehouseState, err error) {
 	table := ps.tmpTable
-	err = ps.tx.CreateTable(ctx, table)
-	if err != nil {
-		return nil, errorj.Decorate(err, "failed to create table")
-	}
 	defer func() {
 		if ps.merge {
 			ps.batchFileLinesByPK = make(map[string]int)
@@ -139,21 +135,28 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		_ = os.Remove(ps.batchFile.Name())
 	}()
 	if ps.eventsInBatch > 0 {
+		err = ps.tx.CreateTable(ctx, table)
+		if err != nil {
+			return state, errorj.Decorate(err, "failed to create table")
+		}
 		err = ps.marshaller.Flush()
 		if err != nil {
-			return nil, errorj.Decorate(err, "failed to flush marshaller")
+			return state, errorj.Decorate(err, "failed to flush marshaller")
 		}
 		err = ps.batchFile.Sync()
 		if err != nil {
-			return nil, errorj.Decorate(err, "failed to sync batch file")
+			return state, errorj.Decorate(err, "failed to sync batch file")
 		}
-		stat, _ := ps.batchFile.Stat()
-		var batchSizeMb float64
-		if stat != nil {
-			batchSizeMb = float64(stat.Size()) / 1024 / 1024
-			sec := time.Since(ps.startTime).Seconds()
-			logging.Debugf("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
+		stat, err := ps.batchFile.Stat()
+		if err != nil {
+			return state, errorj.Decorate(err, "failed to stat batch file")
 		}
+
+		batchSize := stat.Size()
+		batchSizeMb := float64(batchSize) / 1024 / 1024
+		sec := time.Since(ps.startTime).Seconds()
+		logging.Debugf("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
+
 		workingFile := ps.batchFile
 		needToConvert := false
 		convertStart := time.Now()
@@ -165,7 +168,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			var gzipWriter io.WriteCloser
 			workingFile, err = os.CreateTemp("", path.Base(ps.batchFile.Name())+"_*"+ps.targetMarshaller.FileExtension())
 			if err != nil {
-				return nil, errorj.Decorate(err, "failed to create tmp file for deduplication")
+				return state, errorj.Decorate(err, "failed to create tmp file for deduplication")
 			}
 			defer func() {
 				_ = workingFile.Close()
@@ -175,7 +178,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			if needToConvert {
 				err = ps.targetMarshaller.InitSchema(workingFile, table.ColumnNames(), ps.sqlAdapter.GetAvroSchema(table))
 				if err != nil {
-					return nil, errorj.Decorate(err, "failed to write header for converted batch file")
+					return state, errorj.Decorate(err, "failed to write header for converted batch file")
 				}
 			} else {
 				if ps.targetMarshaller.Compression() == types.FileCompressionGZIP {
@@ -186,7 +189,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			}
 			file, err := os.Open(ps.batchFile.Name())
 			if err != nil {
-				return nil, errorj.Decorate(err, "failed to open tmp file")
+				return state, errorj.Decorate(err, "failed to open tmp file")
 			}
 			defer func() {
 				_ = file.Close()
@@ -204,16 +207,16 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 						var obj types.Object
 						err = cfg.Unmarshal(scanner.Bytes(), &obj)
 						if err != nil {
-							return nil, errorj.Decorate(err, "failed to decode json object from batch filer")
+							return state, errorj.Decorate(err, "failed to decode json object from batch filer")
 						}
 						err = ps.targetMarshaller.Marshal(obj)
 						if err != nil {
-							return nil, errorj.Decorate(err, "failed to marshal object to converted batch file")
+							return state, errorj.Decorate(err, "failed to marshal object to converted batch file")
 						}
 					} else {
 						_, err = writer.Write(scanner.Bytes())
 						if err != nil {
-							return nil, errorj.Decorate(err, "failed write to deduplication file")
+							return state, errorj.Decorate(err, "failed write to deduplication file")
 						}
 						_, _ = writer.Write([]byte("\n"))
 					}
@@ -221,28 +224,35 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				i++
 			}
 			if err = scanner.Err(); err != nil {
-				return nil, errorj.Decorate(err, "failed to read batch file")
+				return state, errorj.Decorate(err, "failed to read batch file")
 			}
 			_ = ps.targetMarshaller.Flush()
 			if gzipWriter != nil {
 				_ = gzipWriter.Close()
 			}
 			_ = workingFile.Sync()
-		}
-		if needToConvert {
-			stat, _ = workingFile.Stat()
-			var convertedSizeMb float64
-			if stat != nil {
-				convertedSizeMb = float64(stat.Size()) / 1024 / 1024
+			if needToConvert {
+				stat, _ = workingFile.Stat()
+				var convertedSizeMb float64
+				if stat != nil {
+					batchSize = stat.Size()
+					convertedSizeMb = float64(batchSize) / 1024 / 1024
+				}
+				logging.Infof("[%s] Converted batch file from %s (%.2f mb) to %s (%.2f mb) in %.2f s.", ps.id, ps.marshaller.FileExtension(), batchSizeMb, ps.targetMarshaller.FileExtension(), convertedSizeMb, time.Since(convertStart).Seconds())
 			}
-			logging.Infof("[%s] Converted batch file from %s (%.2f mb) to %s (%.2f mb) in %.2f s.", ps.id, ps.marshaller.FileExtension(), batchSizeMb, ps.targetMarshaller.FileExtension(), convertedSizeMb, time.Since(convertStart).Seconds())
+			state = bulker.WarehouseState{
+				Name:            "convert",
+				BytesProcessed:  int(stat.Size()),
+				TimeProcessedMs: time.Since(convertStart).Milliseconds(),
+			}
 		}
+
 		loadTime := time.Now()
 		if ps.s3 != nil {
 			s3Config := s3BatchFileOption.Get(&ps.options)
 			rFile, err := os.Open(workingFile.Name())
 			if err != nil {
-				return nil, errorj.Decorate(err, "failed to open tmp file")
+				return state, errorj.Decorate(err, "failed to open tmp file")
 			}
 			defer func() {
 				_ = rFile.Close()
@@ -251,21 +261,29 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			if s3Config.Folder != "" {
 				s3FileName = s3Config.Folder + "/" + s3FileName
 			}
+			uploadStart := time.Now()
 			err = ps.s3.Upload(s3FileName, rFile)
 			if err != nil {
-				return nil, errorj.Decorate(err, "failed to upload file to s3")
+				return state, errorj.Decorate(err, "failed to upload file to s3")
 			}
 			defer ps.s3.DeleteObject(s3FileName)
+			state.Merge(bulker.WarehouseState{
+				Name:            "upload_to_s3",
+				BytesProcessed:  int(batchSize),
+				TimeProcessedMs: time.Since(uploadStart).Milliseconds(),
+			})
 			logging.Infof("[%s] Batch file uploaded to s3 in %.2f s.", ps.id, time.Since(loadTime).Seconds())
 			loadTime = time.Now()
-			state, err = ps.tx.LoadTable(ctx, table, &LoadSource{Type: AmazonS3, Path: s3FileName, Format: ps.sqlAdapter.GetBatchFileFormat(), S3Config: s3Config})
+			loadState, err := ps.tx.LoadTable(ctx, table, &LoadSource{Type: AmazonS3, Path: s3FileName, Format: ps.sqlAdapter.GetBatchFileFormat(), S3Config: s3Config})
+			state.Merge(loadState)
 			if err != nil {
 				return state, errorj.Decorate(err, "failed to flush tmp file to the warehouse")
 			} else {
 				logging.Debugf("[%s] Batch file loaded to %s in %.2f s.", ps.id, ps.sqlAdapter.Type(), time.Since(loadTime).Seconds())
 			}
 		} else {
-			state, err = ps.tx.LoadTable(ctx, table, &LoadSource{Type: LocalFile, Path: workingFile.Name(), Format: ps.sqlAdapter.GetBatchFileFormat()})
+			loadState, err := ps.tx.LoadTable(ctx, table, &LoadSource{Type: LocalFile, Path: workingFile.Name(), Format: ps.sqlAdapter.GetBatchFileFormat()})
+			state.Merge(loadState)
 			if err != nil {
 				return state, errorj.Decorate(err, "failed to flush tmp file to the warehouse")
 			} else {

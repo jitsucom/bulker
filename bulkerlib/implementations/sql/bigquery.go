@@ -193,7 +193,7 @@ func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
 	return nil
 }
 
-func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state *bulker.WarehouseState, err error) {
+func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
 	if mergeWindow <= 0 {
 		defer func() {
 			if err != nil {
@@ -211,6 +211,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 		copier.WriteDisposition = bigquery.WriteAppend
 		copier.CreateDisposition = bigquery.CreateIfNeeded
 		_, state, err = bq.RunJob(ctx, copier, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
+		state.Name = "copy"
 		if err != nil {
 			// try to insert from select as a fallback
 			quotedColumns := sourceTable.MappedColumnNames(bq.quotedColumnName)
@@ -218,6 +219,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 			insertFromSelectStatement := fmt.Sprintf(bigqueryInsertFromSelectTemplate, bq.fullTableName(targetTable.Name), columnsString, columnsString, bq.fullTableName(sourceTable.Name))
 			query := bq.client.Query(insertFromSelectStatement)
 			_, state2, err := bq.RunJob(ctx, query, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
+			state2.Name = "insert from select"
 			state.Merge(state2)
 			return state, err
 		} else {
@@ -255,6 +257,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 
 		query := bq.client.Query(insertFromSelectStatement)
 		_, state, err = bq.RunJob(ctx, query, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
+		state.Name = "insert from select"
 		return state, err
 	}
 }
@@ -595,7 +598,7 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 	return nil
 }
 
-func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state *bulker.WarehouseState, err error) {
+func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	tableName := bq.TableName(targetTable.Name)
 	defer func() {
 		if err != nil {
@@ -661,6 +664,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	loader.CreateDisposition = bigquery.CreateIfNeeded
 	loader.WriteDisposition = bigquery.WriteAppend
 	_, state, err = bq.RunJob(ctx, loader, fmt.Sprintf("load into table '%s'", tableName))
+	state.Name = "load"
 	return state, err
 }
 
@@ -1089,12 +1093,12 @@ type JobRunner interface {
 	Run(ctx context.Context) (*bigquery.Job, error)
 }
 
-func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription string) (job *bigquery.Job, state *bulker.WarehouseState, err error) {
+func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription string) (job *bigquery.Job, state bulker.WarehouseState, err error) {
 	defer func() {
 		bq.logQuery(jobDescription, runner, err)
 	}()
 	startTime := time.Now()
-	state = &bulker.WarehouseState{}
+	state = bulker.WarehouseState{}
 	var status *bigquery.JobStatus
 	var jobID string
 	job, err = runner.Run(ctx)
@@ -1106,6 +1110,7 @@ func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription
 		}
 	}
 	bytesProcessed := ""
+	state.TimeProcessedMs = time.Since(startTime).Milliseconds()
 	if status != nil && status.Statistics != nil {
 		state.BytesProcessed = int(status.Statistics.TotalBytesProcessed)
 		state.EstimatedCost = float64(status.Statistics.TotalBytesProcessed) * 6.25 / 1_000_000_000_000

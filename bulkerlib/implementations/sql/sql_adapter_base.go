@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/hashicorp/go-multierror"
+	"github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"strconv"
 	"strings"
@@ -442,11 +444,12 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 	return nil
 }
 
-func (b *SQLAdapterBase[T]) copy(ctx context.Context, targetTable *Table, sourceTable *Table) error {
+func (b *SQLAdapterBase[T]) copy(ctx context.Context, targetTable *Table, sourceTable *Table) (state bulkerlib.WarehouseState, err error) {
 	return b.copyOrMerge(ctx, targetTable, sourceTable, nil, "")
 }
 
-func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table, sourceTable *Table, mergeQuery *template.Template, sourceAlias string) error {
+func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table, sourceTable *Table, mergeQuery *template.Template, sourceAlias string) (state bulkerlib.WarehouseState, err error) {
+	startTime := time.Now()
 	quotedTargetTableName := b.quotedTableName(targetTable.Name)
 	quotedSourceTableName := b.quotedTableName(sourceTable.Name)
 
@@ -483,22 +486,25 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 	if mergeQuery != nil {
 		queryTemplate = mergeQuery
 	}
-	err := queryTemplate.Execute(&buf, insertPayload)
+	err = queryTemplate.Execute(&buf, insertPayload)
 	if err != nil {
-		return errorj.ExecuteInsertError.Wrap(err, "failed to build query from template")
+		return state, errorj.ExecuteInsertError.Wrap(err, "failed to build query from template")
 	}
 	statement := buf.String()
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 
-		return errorj.BulkMergeError.Wrap(err, "failed to bulk insert").
+		return state, errorj.BulkMergeError.Wrap(err, "failed to bulk insert").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Table:       quotedTargetTableName,
 				PrimaryKeys: targetTable.GetPKFields(),
 				Statement:   statement,
 			})
 	}
-	return nil
+	return bulkerlib.WarehouseState{
+		Name:            utils.Ternary(mergeQuery != nil, "merge", "copy"),
+		TimeProcessedMs: time.Since(startTime).Milliseconds(),
+	}, nil
 }
 
 // CreateTable create table columns and pk key

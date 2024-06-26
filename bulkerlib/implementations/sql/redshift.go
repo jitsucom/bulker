@@ -170,7 +170,7 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 }
 
 // LoadTable copy transfer data from s3 to redshift by passing COPY request to redshift
-func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state *bulker.WarehouseState, err error) {
+func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := p.quotedTableName(targetTable.Name)
 	if loadSource.Type != AmazonS3 {
 		return state, fmt.Errorf("LoadTable: only Amazon S3 file is supported")
@@ -198,7 +198,7 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	return state, nil
 }
 
-func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state *bulker.WarehouseState, err error) {
+func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
 	quotedTargetTableName := p.quotedTableName(targetTable.Name)
 	quotedSourceTableName := p.quotedTableName(sourceTable.Name)
 
@@ -224,7 +224,7 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 				})
 		}
 	}
-	return state, p.copy(ctx, targetTable, sourceTable)
+	return p.copy(ctx, targetTable, sourceTable)
 }
 
 func (p *Redshift) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {

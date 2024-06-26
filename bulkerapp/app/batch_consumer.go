@@ -36,7 +36,7 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 	return &bc, nil
 }
 
-func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error) {
+func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
 	bc.Debugf("Starting batch #%d", batchNum)
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 	startTime := time.Now()
@@ -99,7 +99,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			if bulkerStream != nil {
 				_, _ = bulkerStream.Abort(ctx)
 			}
-			return counters, false, bc.NewError("Failed to consume event from topic. Retryable: %t: %v", kafkaErr.IsRetriable(), kafkaErr)
+			return counters, state, false, bc.NewError("Failed to consume event from topic. Retryable: %t: %v", kafkaErr.IsRetriable(), kafkaErr)
 		}
 		counters.consumed++
 		retriesHeader := kafkabase.GetKafkaHeader(message, retriesCountHeader)
@@ -136,7 +136,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		}
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition
-			state := bulker.State{}
+			state = bulker.State{}
 			if bulkerStream != nil {
 				state, _ = bulkerStream.Abort(ctx)
 			}
@@ -144,7 +144,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			state.ProcessedRows++
 			state.ProcessingTimeSec = time.Since(startTime).Seconds()
 			bc.postEventsLog(state, processedObjectSample, err)
-			return counters, false, bc.NewError("Failed to process event to bulker stream: %v", err)
+			return counters, state, false, bc.NewError("Failed to process event to bulker stream: %v", err)
 		} else {
 			processed++
 		}
@@ -160,7 +160,6 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		})
 
 		bc.Infof("Batch #%d Committing %d events to %s", batchNum, processed, destination.config.BulkerType)
-		var state bulker.State
 		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(ctx)
 		pauseTimer.Stop()
@@ -168,7 +167,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		bc.postEventsLog(state, processedObjectSample, err)
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition
-			return counters, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.config.BulkerType, err)
+			return counters, state, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.config.BulkerType, err)
 		}
 		counters.processed = processed
 		_, err = bc.consumer.Load().CommitMessage(latestMessage)

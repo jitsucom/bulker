@@ -581,13 +581,14 @@ func (ch *ClickHouse) Insert(ctx context.Context, table *Table, _ bool, objects 
 }
 
 // LoadTable transfer data from local file to ClickHouse table
-func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state *bulkerlib.WarehouseState, err error) {
+func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulkerlib.WarehouseState, err error) {
 	if loadSource.Type != LocalFile {
 		return state, fmt.Errorf("LoadTable: only local file is supported")
 	}
 	if loadSource.Format != ch.batchFileFormat {
 		return state, fmt.Errorf("LoadTable: only %s format is supported", ch.batchFileFormat)
 	}
+	startTime := time.Now()
 	tableName := ch.quotedTableName(targetTable.Name)
 
 	count := targetTable.ColumnsCount()
@@ -645,16 +646,25 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		placeholdersBuilder.WriteString(")")
 	}
 	if len(args) > 0 {
+		loadTime := time.Now()
+		state = bulkerlib.WarehouseState{
+			Name:            "clickhouse_prepare_data",
+			TimeProcessedMs: loadTime.Sub(startTime).Milliseconds(),
+		}
 		copyStatement = fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
 			return state, checkErr(err)
 		}
+		state.Merge(bulkerlib.WarehouseState{
+			Name:            "clickhouse_load_data",
+			TimeProcessedMs: time.Since(loadTime).Milliseconds(),
+		})
 	}
 	return state, nil
 }
 
-func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state *bulkerlib.WarehouseState, err error) {
-	return state, ch.copy(ctx, targetTable, sourceTable)
+func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulkerlib.WarehouseState, err error) {
+	return ch.copy(ctx, targetTable, sourceTable)
 }
 
 func (ch *ClickHouse) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {

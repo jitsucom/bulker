@@ -57,6 +57,10 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 	}()
 	//if at least one object was inserted
 	if ps.state.SuccessfulRows > 0 {
+		ps.state.AddWarehouseState(bulker.WarehouseState{
+			Name:            "consume",
+			TimeProcessedMs: time.Since(ps.startTime).Milliseconds(),
+		})
 		if ps.batchFile != nil {
 			ws, err := ps.flushBatchFile(ctx)
 			ps.state.AddWarehouseState(ws)

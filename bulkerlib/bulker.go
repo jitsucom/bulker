@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"io"
 	"reflect"
 	"strings"
@@ -136,39 +137,107 @@ const (
 // State is used as a Batch storing result
 type State struct {
 	//Representation of message processing. For SQL warehouses it is table schema
-	Representation    any     `json:"representation"`
-	Status            Status  `json:"status"`
-	LastError         error   `json:"-"`
-	LastErrorText     string  `json:"error,omitempty"`
-	ProcessedRows     int     `json:"processedRows"`
-	SuccessfulRows    int     `json:"successfulRows"`
-	ErrorRowIndex     int     `json:"errorRowIndex,omitempty"`
-	ProcessingTimeSec float64 `json:"processingTimeSec"`
-	*WarehouseState   `json:",inline,omitempty"`
+	Representation    any            `json:"representation"`
+	Status            Status         `json:"status"`
+	LastError         error          `json:"-"`
+	LastErrorText     string         `json:"error,omitempty"`
+	ProcessedRows     int            `json:"processedRows"`
+	SuccessfulRows    int            `json:"successfulRows"`
+	ErrorRowIndex     int            `json:"errorRowIndex,omitempty"`
+	ProcessingTimeSec float64        `json:"processingTimeSec"`
+	WarehouseState    WarehouseState `json:"statistics,omitempty"`
 }
 
 type WarehouseState struct {
-	BytesProcessed int            `json:"bytesProcessed"`
-	EstimatedCost  float64        `json:"estimatedCost"`
-	AdditionalInfo map[string]any `json:",inline,omitempty"`
+	Name            string                          `json:"name"`
+	BytesProcessed  int                             `json:"bytesProcessed,omitempty"`
+	TimeProcessedMs int64                           `json:"timeProcessedMs"`
+	EstimatedCost   float64                         `json:"estimatedCost"`
+	AdditionalInfo  map[string]any                  `json:",inline,omitempty"`
+	States          *types2.OrderedMap[string, any] `json:"states,omitempty"`
 }
 
-func (s *State) AddWarehouseState(ws *WarehouseState) {
-	if s.WarehouseState == nil {
+var warehouseStateMergeF = func(curr, new any) any {
+	c := curr.(WarehouseState)
+	(&c).merge(new.(WarehouseState))
+	return curr
+}
+
+func (s *State) Merge(second State) {
+	s.ProcessedRows += second.ProcessedRows
+	s.SuccessfulRows += second.SuccessfulRows
+	s.ProcessingTimeSec += second.ProcessingTimeSec
+	if second.WarehouseState.Name != "" {
+		second.WarehouseState.States.ForEach(func(key string, value any) {
+			s.AddWarehouseState(value.(WarehouseState))
+		})
+	}
+}
+
+func (s *State) PrintWarehouseState() string {
+	// print non-zero values
+	if s.WarehouseState.Name == "" {
+		return ""
+	}
+	if s.WarehouseState.Name != "total" {
+		return s.WarehouseState.String()
+	}
+	var sb strings.Builder
+	sb.WriteString(s.WarehouseState.String())
+	s.WarehouseState.States.ForEach(func(key string, value any) {
+		sb.WriteRune(' ')
+		c := value.(WarehouseState)
+		sb.WriteString((&c).String())
+	})
+	return sb.String()
+}
+
+func (s *State) AddWarehouseState(ws WarehouseState) {
+	if s.WarehouseState.Name == "" {
 		s.WarehouseState = ws
 	} else {
 		s.WarehouseState.Merge(ws)
 	}
-
 }
-func (ws *WarehouseState) Merge(second *WarehouseState) {
-	if ws == nil || second == nil {
-		return
-	}
+
+func (ws *WarehouseState) String() string {
+	return fmt.Sprintf("%s:%d,%db,$%.3f", ws.Name, ws.TimeProcessedMs, ws.BytesProcessed, ws.EstimatedCost)
+}
+
+func (ws *WarehouseState) merge(second WarehouseState) {
+	ws.Name = second.Name
 	ws.BytesProcessed += second.BytesProcessed
+	ws.TimeProcessedMs += second.TimeProcessedMs
 	ws.EstimatedCost += second.EstimatedCost
 	for k, v := range second.AdditionalInfo {
 		ws.AdditionalInfo[k] = v
+	}
+}
+
+func (ws *WarehouseState) Merge(second WarehouseState) {
+	if second.Name == "" {
+		return
+	}
+	if ws.Name == "" {
+		*ws = second
+		return
+	}
+	if ws.States == nil {
+		st := *ws
+		ws.States = types2.NewOrderedMap[string, any]()
+		ws.States.Set(ws.Name, st)
+	}
+	ws.Name = "total"
+	ws.BytesProcessed += second.BytesProcessed
+	ws.TimeProcessedMs += second.TimeProcessedMs
+	ws.EstimatedCost += second.EstimatedCost
+	for k, v := range second.AdditionalInfo {
+		ws.AdditionalInfo[k] = v
+	}
+	if second.Name == "total" {
+		ws.States.MergeAll(second.States, warehouseStateMergeF)
+	} else {
+		ws.States.Merge(second.Name, second, warehouseStateMergeF)
 	}
 }
 

@@ -23,7 +23,7 @@ const errorHeader = "error"
 
 const pauseHeartBeatInterval = 120 * time.Second
 
-type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBatch bool, err error)
+type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, state bulker.State, nextBatch bool, err error)
 type ShouldConsumeFunction func(committedOffset, highOffset int64) bool
 
 type BatchConsumer interface {
@@ -211,6 +211,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		return BatchCounters{}, bc.NewError("Consumer is retired")
 	}
 	startedAt := time.Now()
+	var totalState bulker.State
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 	bc.Debugf("Starting consuming messages from topic")
 	bc.idle.Store(false)
@@ -227,7 +228,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		} else {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "success").Inc()
 			if counters.processed > 0 {
-				bc.Infof("Successfully %s offsets: %d-%d time: %.2f s. Avg Speed: %.2f events/sec", counters.String(), lowOffset, highOffset, sec, float64(counters.processed)/sec)
+				bc.Infof("Successfully %s offsets: %d-%d time: %.2f s. AvgSpd: %.2f e/s. States: %s", counters.String(), lowOffset, highOffset, sec, float64(counters.processed)/sec, totalState.PrintWarehouseState())
 			} else {
 				countersString := counters.String()
 				if countersString != "" {
@@ -284,12 +285,13 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		if bc.retired.Load() {
 			return
 		}
-		batchStats, nextBatch, err2 := bc.processBatch(destination, batchNumber, maxBatchSize, retryBatchSize, highOffset)
+		batchStats, batchState, nextBatch, err2 := bc.processBatch(destination, batchNumber, maxBatchSize, retryBatchSize, highOffset)
 		if err2 != nil {
 			if nextBatch {
 				bc.Errorf("Batch finished with error: %v stats: %s nextBatch: %t", err2, batchStats, nextBatch)
 			}
 		}
+		totalState.Merge(batchState)
 		counters.accumulate(batchStats)
 		if !nextBatch {
 			err = err2
@@ -308,7 +310,7 @@ func (bc *AbstractBatchConsumer) close() error {
 	return bc.consumer.Load().Close()
 }
 
-func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, nextBath bool, err error) {
+func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, state bulker.State, nextBath bool, err error) {
 	bc.resume()
 	return bc.batchFunc(destination, batchNum, batchSize, retryBatchSize, highOffset)
 }

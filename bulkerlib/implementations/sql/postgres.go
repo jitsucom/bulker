@@ -293,15 +293,15 @@ func (p *Postgres) Insert(ctx context.Context, table *Table, merge bool, objects
 	}
 }
 
-func (p *Postgres) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (*bulker.WarehouseState, error) {
+func (p *Postgres) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (bulker.WarehouseState, error) {
 	if mergeWindow <= 0 {
-		return nil, p.copy(ctx, targetTable, sourceTable)
+		return p.copy(ctx, targetTable, sourceTable)
 	} else {
-		return nil, p.copyOrMerge(ctx, targetTable, sourceTable, pgBulkMergeQueryTemplate, pgBulkMergeSourceAlias)
+		return p.copyOrMerge(ctx, targetTable, sourceTable, pgBulkMergeQueryTemplate, pgBulkMergeSourceAlias)
 	}
 }
 
-func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state *bulker.WarehouseState, err error) {
+func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := p.quotedTableName(targetTable.Name)
 	if loadSource.Type != LocalFile {
 		return state, fmt.Errorf("LoadTable: only local file is supported")
