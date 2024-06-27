@@ -80,8 +80,9 @@ type Config struct {
 	MetricsRelayDestination string `mapstructure:"METRICS_RELAY_DESTINATION"`
 	MetricsRelayPeriodSec   int    `mapstructure:"METRICS_RELAY_PERIOD_SEC" default:"60"`
 
-	InstanceIndex int `mapstructure:"INSTANCE_INDEX" default:"0"`
-	ShardsCount   int `mapstructure:"SHARDS" default:"1"`
+	InstanceIndex   int  `mapstructure:"INSTANCE_INDEX" default:"0"`
+	ShardsCount     int  `mapstructure:"SHARDS" default:"1"`
+	EnableConsumers bool `mapstructure:"ENABLE_CONSUMERS" default:"true"`
 
 	// # GRACEFUL SHUTDOWN
 	//Timeout that give running batch tasks time to finish during shutdown.

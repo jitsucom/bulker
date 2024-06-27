@@ -36,6 +36,7 @@ type TopicManager struct {
 	config                    *Config
 	kafkaConfig               *kafka.ConfigMap
 	shardNumber               int
+	enableConsumers           bool
 	requiredDestinationTopics map[string]map[string]string
 
 	kafkaBootstrapServer string
@@ -76,6 +77,7 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		config:               appContext.config,
 		kafkaConfig:          appContext.kafkaConfig,
 		shardNumber:          appContext.shardNumber,
+		enableConsumers:      appContext.config.EnableConsumers,
 		repository:           appContext.repository,
 		cron:                 appContext.cron,
 		kaftaAdminClient:     admin,
@@ -208,7 +210,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 		if !dstTopics.Contains(topic) {
 			hash := utils.HashStringInt(topic)
 			topicShardNum := hash % uint32(tm.config.ShardsCount)
-			startConsumer := int(topicShardNum) == tm.shardNumber
+			startConsumer := tm.enableConsumers && int(topicShardNum) == tm.shardNumber
 			if startConsumer {
 				tm.Debugf("Found topic %s for destination %s and table %s", topic, destinationId, tableName)
 				destination := tm.repository.GetDestination(destinationId)
