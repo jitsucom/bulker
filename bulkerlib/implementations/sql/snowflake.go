@@ -384,6 +384,11 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 				Statement: putStatement,
 			})
 	}
+	state = bulker.WarehouseState{
+		Name:            "stage_put",
+		TimeProcessedMs: time.Since(startTime).Milliseconds(),
+	}
+	startTime = time.Now()
 	defer func() {
 		removeStatement := fmt.Sprintf("REMOVE @~/%s", path.Base(loadSource.Path))
 		if _, err2 := s.txOrDb(ctx).ExecContext(ctx, removeStatement); err2 != nil {
@@ -395,10 +400,10 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 				})
 			err = multierror.Append(err, err2)
 		}
-		state = bulker.WarehouseState{
-			Name:            "copy_from_csv",
+		state.Merge(bulker.WarehouseState{
+			Name:            "copy_from_stage",
 			TimeProcessedMs: time.Since(startTime).Milliseconds(),
-		}
+		})
 	}()
 	columnNames := targetTable.MappedColumnNames(s.quotedColumnName)
 	statement := fmt.Sprintf(sfCopyStatement, quotedTableName, strings.Join(columnNames, ","), path.Base(loadSource.Path))

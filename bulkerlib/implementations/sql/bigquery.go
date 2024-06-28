@@ -219,7 +219,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 			insertFromSelectStatement := fmt.Sprintf(bigqueryInsertFromSelectTemplate, bq.fullTableName(targetTable.Name), columnsString, columnsString, bq.fullTableName(sourceTable.Name))
 			query := bq.client.Query(insertFromSelectStatement)
 			_, state2, err := bq.RunJob(ctx, query, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
-			state2.Name = "insert from select"
+			state2.Name = "insert_from_select"
 			state.Merge(state2)
 			return state, err
 		} else {
@@ -257,7 +257,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 
 		query := bq.client.Query(insertFromSelectStatement)
 		_, state, err = bq.RunJob(ctx, query, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
-		state.Name = "insert from select"
+		state.Name = "merge"
 		return state, err
 	}
 }
