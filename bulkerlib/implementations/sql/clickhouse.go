@@ -628,14 +628,13 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		if err != nil {
 			return state, err
 		}
-		fmt.Printf("Buf cap: %d %d\n", builder.Cap(), stat.Size())
 
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, builder.String()); err != nil {
 			return state, checkErr(err)
 		}
 		state = bulkerlib.WarehouseState{
 			Name:            "clickhouse_load_data",
-			TimeProcessedMs: startTime.Sub(startTime).Milliseconds(),
+			TimeProcessedMs: time.Since(startTime).Milliseconds(),
 		}
 		return state, nil
 	} else {
