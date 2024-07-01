@@ -58,6 +58,7 @@ const (
 
 	chSelectFinalStatement = `SELECT %s FROM %s FINAL %s%s`
 	chLoadStatement        = `INSERT INTO %s (%s) VALUES %s`
+	chLoadJSONStatement    = `INSERT INTO %s format JSONEachRow`
 
 	chDateFormat = `2006-01-02 15:04:05.000000`
 )
@@ -135,6 +136,7 @@ type ClickHouseConfig struct {
 	Cluster    string             `mapstructure:"cluster,omitempty" json:"cluster,omitempty" yaml:"cluster,omitempty"`
 	TLS        map[string]string  `mapstructure:"tls,omitempty" json:"tls,omitempty" yaml:"tls,omitempty"`
 	Engine     *EngineConfig      `mapstructure:"engine,omitempty" json:"engine,omitempty" yaml:"engine,omitempty"`
+	LoadAsJSON bool               `mapstructure:"loadAsJson,omitempty" json:"loadAsJson,omitempty" yaml:"loadAsJson,omitempty"`
 }
 
 // EngineConfig dto for deserialized clickhouse engine config
@@ -185,6 +187,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	utils.MapPutIfAbsent(config.Parameters, "mutations_sync", "2")
 	utils.MapPutIfAbsent(config.Parameters, "dial_timeout", "60s")
 	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "60s")
+	utils.MapPutIfAbsent(config.Parameters, "date_time_input_format", "best_effort")
 
 	dbConnectFunction := func(config *ClickHouseConfig) (*sql.DB, error) {
 		dsn := clickhouseDriverConnectionString(config)
@@ -591,10 +594,6 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	startTime := time.Now()
 	tableName := ch.quotedTableName(targetTable.Name)
 
-	count := targetTable.ColumnsCount()
-	columnNames := targetTable.MappedColumnNames(ch.quotedColumnName)
-	var placeholdersBuilder strings.Builder
-	args := make([]any, 0, count)
 	var copyStatement string
 	defer func() {
 		if err != nil {
@@ -616,51 +615,80 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	defer func() {
 		_ = file.Close()
 	}()
-	decoder := jsoniter.NewDecoder(file)
-	decoder.UseNumber()
-	for {
-		object := map[string]any{}
-		err = decoder.Decode(&object)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return state, err
-		}
-		placeholdersBuilder.WriteString(",(")
-		err = targetTable.Columns.ForEachIndexedE(func(i int, name string, column types.SQLColumn) error {
-			l, err2 := convertType(object[name], column)
-			if err2 != nil {
-				return err2
-			}
-			if i > 0 {
-				placeholdersBuilder.WriteString(",")
-			}
-			placeholdersBuilder.WriteString(ch.typecastFunc(ch.parameterPlaceholder(i, columnNames[i]), column))
-			args = append(args, l)
-			return nil
-		})
+	if ch.config.LoadAsJSON {
+		stat, err := file.Stat()
 		if err != nil {
 			return state, err
 		}
-		placeholdersBuilder.WriteString(")")
-	}
-	if len(args) > 0 {
-		loadTime := time.Now()
-		state = bulkerlib.WarehouseState{
-			Name:            "clickhouse_prepare_data",
-			TimeProcessedMs: loadTime.Sub(startTime).Milliseconds(),
+		copyStatement = fmt.Sprintf(chLoadJSONStatement+"\n", tableName)
+		builder := strings.Builder{}
+		builder.Grow(int(stat.Size()) + len(copyStatement))
+		builder.WriteString(copyStatement)
+		_, err = io.Copy(&builder, file)
+		if err != nil {
+			return state, err
 		}
-		copyStatement = fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
-		if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
+		fmt.Printf("Buf cap: %d %d\n", builder.Cap(), stat.Size())
+
+		if _, err := ch.txOrDb(ctx).ExecContext(ctx, builder.String()); err != nil {
 			return state, checkErr(err)
 		}
-		state.Merge(bulkerlib.WarehouseState{
+		state = bulkerlib.WarehouseState{
 			Name:            "clickhouse_load_data",
-			TimeProcessedMs: time.Since(loadTime).Milliseconds(),
-		})
+			TimeProcessedMs: startTime.Sub(startTime).Milliseconds(),
+		}
+		return state, nil
+	} else {
+		columnNames := targetTable.MappedColumnNames(ch.quotedColumnName)
+		var placeholdersBuilder strings.Builder
+		args := make([]any, 0, targetTable.ColumnsCount())
+
+		decoder := jsoniter.NewDecoder(file)
+		decoder.UseNumber()
+		for {
+			object := map[string]any{}
+			err = decoder.Decode(&object)
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return state, err
+			}
+			placeholdersBuilder.WriteString(",(")
+			err = targetTable.Columns.ForEachIndexedE(func(i int, name string, column types.SQLColumn) error {
+				l, err2 := convertType(object[name], column)
+				if err2 != nil {
+					return err2
+				}
+				if i > 0 {
+					placeholdersBuilder.WriteString(",")
+				}
+				placeholdersBuilder.WriteString(ch.typecastFunc(ch.parameterPlaceholder(i, columnNames[i]), column))
+				args = append(args, l)
+				return nil
+			})
+			if err != nil {
+				return state, err
+			}
+			placeholdersBuilder.WriteString(")")
+		}
+		if len(args) > 0 {
+			loadTime := time.Now()
+			state = bulkerlib.WarehouseState{
+				Name:            "clickhouse_prepare_data",
+				TimeProcessedMs: loadTime.Sub(startTime).Milliseconds(),
+			}
+			copyStatement = fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
+			if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
+				return state, checkErr(err)
+			}
+			state.Merge(bulkerlib.WarehouseState{
+				Name:            "clickhouse_load_data",
+				TimeProcessedMs: time.Since(loadTime).Milliseconds(),
+			})
+		}
+		return state, nil
 	}
-	return state, nil
 }
 
 func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulkerlib.WarehouseState, err error) {

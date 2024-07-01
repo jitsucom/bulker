@@ -8,7 +8,7 @@ services:
       clickhouse-network:
         ipv4_address: 172.23.0.10
   clickhouse01:
-    image: clickhouse/clickhouse-server:22.8-alpine
+    image: clickhouse/clickhouse-server:24.6-alpine
     container_name: clickhouse01
     hostname: clickhouse01
     networks:
@@ -27,7 +27,7 @@ services:
     depends_on:
       - zookeeper
   clickhouse02:
-    image: clickhouse/clickhouse-server:22.8-alpine
+    image: clickhouse/clickhouse-server:24.6-alpine
     container_name: clickhouse02
     hostname: clickhouse02
     networks:
@@ -46,7 +46,7 @@ services:
     depends_on:
       - zookeeper
   clickhouse03:
-    image: clickhouse/clickhouse-server:22.8-alpine
+    image: clickhouse/clickhouse-server:24.6-alpine
     container_name: clickhouse03
     hostname: clickhouse03
     networks:
@@ -65,7 +65,7 @@ services:
     depends_on:
       - zookeeper
   clickhouse04:
-    image: clickhouse/clickhouse-server:22.8-alpine
+    image: clickhouse/clickhouse-server:24.6-alpine
     container_name: clickhouse04
     hostname: clickhouse04
     networks:

@@ -27,7 +27,7 @@ type ClickHouseContainer struct {
 // NewClickhouseContainer creates new Clickhouse test container if CH_TEST_PORT is not defined. Otherwise uses db at defined port.
 // This logic is required for running test at CI environment
 func NewClickhouseContainer(ctx context.Context) (*ClickHouseContainer, error) {
-	image := "clickhouse/clickhouse-server:22.8-alpine"
+	image := "clickhouse/clickhouse-server:24.6-alpine"
 	exposedPortHttp := fmt.Sprintf("%d:%d", utils.GetPort(), 8123)
 	exposedPortNative := fmt.Sprintf("%d:%d", utils.GetPort(), 9000)
 
