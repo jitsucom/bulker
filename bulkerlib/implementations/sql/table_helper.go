@@ -390,6 +390,10 @@ func (th *TableHelper) adaptSqlIdentifier(identifier string, kind string, idFunc
 		}
 	}
 	result := utils.ShortenString(cleanIdentifier, th.maxIdentifierLength)
+	if !alphanumeric {
+		// shortening or cleaning might remove all non-alphanumeric characters
+		alphanumeric = utils.IsAlphanumeric(result)
+	}
 	if idFunc != nil {
 		result, useQuoting = idFunc(result, alphanumeric)
 	}
