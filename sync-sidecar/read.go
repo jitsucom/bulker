@@ -46,16 +46,12 @@ type ActiveStream struct {
 	name string
 	mode string
 
-	// wait group to wait for stream to finish HTTP request to bulker fully completed after closing writer
-	waitGroup    sync.WaitGroup
 	bulkerStream bulker.BulkerStream
 	*StreamStat
 }
 
 func NewActiveStream(name, mode string, bulkerStream bulker.BulkerStream) *ActiveStream {
-	as := &ActiveStream{name: name, mode: mode, bulkerStream: bulkerStream, StreamStat: &StreamStat{Status: "SUCCESS"}}
-
-	return as
+	return &ActiveStream{name: name, mode: mode, bulkerStream: bulkerStream, StreamStat: &StreamStat{Status: "SUCCESS"}}
 }
 
 func (s *ActiveStream) Close() (state bulker.State, err error) {
@@ -73,10 +69,6 @@ func (s *ActiveStream) Close() (state bulker.State, err error) {
 func (s *ActiveStream) Consume(p *types2.OrderedMap[string, any]) error {
 	_, _, err := s.bulkerStream.Consume(context.Background(), p)
 	return err
-}
-
-func (s *ActiveStream) Done() {
-	s.waitGroup.Done()
 }
 
 func (s *ActiveStream) RegisterError(err error) {
@@ -226,7 +218,7 @@ func (s *ReadSideCar) Run() {
 			case StateType:
 				s.processState(row.State)
 			case RecordType:
-				s.processRecord(row.Record)
+				s.processRecord(row.Record, len(line))
 			case TraceType:
 				s.processTrace(row.Trace)
 			case ControlType:
@@ -367,7 +359,7 @@ func (s *ReadSideCar) processTrace(rec *TraceRow) {
 	}
 }
 
-func (s *ReadSideCar) processRecord(rec *RecordRow) {
+func (s *ReadSideCar) processRecord(rec *RecordRow, size int) {
 	streamName := joinStrings(rec.Namespace, rec.Stream, ".")
 	processed, ok := s.processedStreams[streamName]
 	if ok && processed.Error != "" {
@@ -386,6 +378,7 @@ func (s *ReadSideCar) processRecord(rec *RecordRow) {
 		return
 	}
 	s.currentStream.EventsCount++
+	s.currentStream.BytesProcessed += size
 }
 
 func (s *ReadSideCar) sourceLog(level, message string, args ...any) {
