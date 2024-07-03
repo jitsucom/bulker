@@ -1,7 +1,8 @@
 package main
 
 import (
-	"encoding/json"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/mitchellh/mapstructure"
 	"time"
 )
@@ -61,9 +62,10 @@ const (
 )
 
 type TaskConfiguration struct {
-	Config  map[string]any `json:"config"`
-	Catalog map[string]any `json:"catalog"`
-	State   any            `json:"state"`
+	Config            map[string]any                  `json:"config"`
+	Catalog           *types2.OrderedMap[string, any] `json:"catalog"`
+	State             any                             `json:"state"`
+	DestinationConfig map[string]any                  `json:"destinationConfig"`
 }
 
 func (t *TaskConfiguration) IsEmpty() bool {
@@ -76,16 +78,20 @@ func (t *TaskConfiguration) ToMap() map[string]string {
 	}
 	m := map[string]string{}
 	if t.Config != nil {
-		config, _ := json.Marshal(t.Config)
+		config, _ := jsonorder.Marshal(t.Config)
 		m["config"] = string(config)
 	}
 	if t.Catalog != nil {
-		catalog, _ := json.Marshal(t.Catalog)
+		catalog, _ := jsonorder.Marshal(t.Catalog)
 		m["catalog"] = string(catalog)
 	}
 	if t.State != nil {
-		state, _ := json.Marshal(t.State)
+		state, _ := jsonorder.Marshal(t.State)
 		m["state"] = string(state)
+	}
+	if t.DestinationConfig != nil {
+		destinationConfig, _ := jsonorder.Marshal(t.DestinationConfig)
+		m["destinationConfig"] = string(destinationConfig)
 	}
 	return m
 }

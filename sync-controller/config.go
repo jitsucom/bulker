@@ -15,11 +15,6 @@ type Config struct {
 	// in case of different visibility of database side car may require different db hostname
 	SidecarDatabaseURL string `mapstructure:"SIDECAR_DATABASE_URL"`
 
-	// # Bulker
-
-	BulkerURL       string `mapstructure:"BULKER_URL" default:"http://localhost:3042"`
-	BulkerAuthToken string `mapstructure:"BULKER_AUTH_TOKEN"`
-
 	// # Kubernetes
 
 	// KubernetesNamespace namespace of bulker app. Default: `default`

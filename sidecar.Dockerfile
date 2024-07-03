@@ -1,5 +1,6 @@
-FROM golang:1.22.2-alpine as build
+FROM golang:1.22.5-bookworm as build
 
+RUN apt-get install gcc libc6-dev
 
 RUN mkdir /app
 WORKDIR /app
@@ -24,7 +25,10 @@ RUN go build -o sidecar ./sync-sidecar
 
 #######################################
 # FINAL STAGE
-FROM alpine as final
+FROM debian:bookworm-slim as final
+
+RUN apt-get update -y
+RUN apt-get install -y ca-certificates curl
 
 ENV TZ=UTC
 

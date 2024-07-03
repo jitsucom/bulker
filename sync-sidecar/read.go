@@ -2,15 +2,17 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
+	"context"
 	"fmt"
+	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/pg"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
-	"io"
-	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,7 +23,7 @@ type StreamStat struct {
 	Error          string `json:"error,omitempty"`
 }
 
-func (s *StreamStat) Merge(chunk *StreamStat) {
+func (s *StreamStat) Merge(chunk *StreamStat) error {
 	switch chunk.Status {
 	case "FAILED":
 		if s.Status != "FAILED" {
@@ -30,63 +32,47 @@ func (s *StreamStat) Merge(chunk *StreamStat) {
 		}
 	case "SUCCESS":
 		if s.Status != "SUCCESS" {
-			panic("unexpected status. cannot merge success status with non-success")
+			return fmt.Errorf("unexpected status. cannot merge success status with non-success")
 		}
 		s.EventsCount += chunk.EventsCount
 		s.BytesProcessed += chunk.BytesProcessed
 	default:
-		panic("unexpected stream status: " + chunk.Status + ". ")
+		return fmt.Errorf("unexpected stream status: " + chunk.Status + ". ")
 	}
+	return nil
 }
 
 type ActiveStream struct {
 	name string
 	mode string
-	// write stream of io.Pipe. Bulker reads from the read stream of this pipe
-	writer *io.PipeWriter
+
 	// wait group to wait for stream to finish HTTP request to bulker fully completed after closing writer
-	waitGroup        sync.WaitGroup
-	bulkerConnFunc   func()
-	bulkerConnOpened bool
+	waitGroup    sync.WaitGroup
+	bulkerStream bulker.BulkerStream
 	*StreamStat
 }
 
-func NewActiveStream(name, mode string, bulkerConnFunc func(streamReader *io.PipeReader)) *ActiveStream {
-	streamReader, streamWriter := io.Pipe()
-	as := &ActiveStream{name: name, mode: mode, writer: streamWriter, StreamStat: &StreamStat{Status: "SUCCESS"}}
-	as.bulkerConnFunc = func() {
-		defer as.Done()
-		defer streamReader.Close()
-		bulkerConnFunc(streamReader)
-	}
+func NewActiveStream(name, mode string, bulkerStream bulker.BulkerStream) *ActiveStream {
+	as := &ActiveStream{name: name, mode: mode, bulkerStream: bulkerStream, StreamStat: &StreamStat{Status: "SUCCESS"}}
+
 	return as
 }
 
-func (s *ActiveStream) Close() {
-	if s.Error != "" {
-		// intentionally break ndjson stream with that error. Bulker will abort this stream
-		_ = s.writer.CloseWithError(fmt.Errorf(s.Error))
-	} else {
-		if !s.bulkerConnOpened && s.mode != "batch" {
-			// if bulker connection was not opened yet, then we need to open it to send empty ndjson stream
-			// it is important for replace table stream to replace previous table with empty one.
-			s.bulkerConnOpened = true
-			s.waitGroup.Add(1)
-			go s.bulkerConnFunc()
-		}
-		_ = s.writer.Close()
+func (s *ActiveStream) Close() (state bulker.State, err error) {
+	if s == nil {
+		return
 	}
-	s.waitGroup.Wait()
+	if s.Error != "" {
+		state, err = s.bulkerStream.Abort(context.Background())
+	} else {
+		state, err = s.bulkerStream.Complete(context.Background())
+	}
+	return
 }
 
-func (s *ActiveStream) Write(p []byte) (n int, err error) {
-	if !s.bulkerConnOpened {
-		// lazily open bulker connection on first event
-		s.bulkerConnOpened = true
-		s.waitGroup.Add(1)
-		go s.bulkerConnFunc()
-	}
-	return s.writer.Write(p)
+func (s *ActiveStream) Consume(p *types2.OrderedMap[string, any]) error {
+	_, _, err := s.bulkerStream.Consume(context.Background(), p)
+	return err
 }
 
 func (s *ActiveStream) Done() {
@@ -106,16 +92,29 @@ type ReadSideCar struct {
 	*AbstractSideCar
 	tableNamePrefix string
 
-	currentStream    *ActiveStream
-	processedStreams map[string]*StreamStat
-	catalog          map[string]*Stream
-	initialState     string
-	eventsCounter    int
-	bytesCounter     int
+	lastMessageTime   atomic.Int64
+	blk               bulker.Bulker
+	currentStream     *ActiveStream
+	processedStreams  map[string]*StreamStat
+	catalog           map[string]*Stream
+	destinationConfig map[string]any
+	initialState      string
+	eventsCounter     int
+	bytesCounter      int
 }
 
 func (s *ReadSideCar) Run() {
 	var err error
+	s.lastMessageTime.Store(time.Now().Unix())
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	go func() {
+		for range ticker.C {
+			if time.Now().Unix()-s.lastMessageTime.Load() > 3600 {
+				s.panic("No messages from %s for 1 hour. Exiting", s.packageName)
+			}
+		}
+	}()
 	s.dbpool, err = pg.NewPGPool(s.databaseURL)
 	if err != nil {
 		s.panic("Unable to create postgres connection pool: %v", err)
@@ -148,7 +147,7 @@ func (s *ReadSideCar) Run() {
 			} else if allFailed {
 				status = "FAILED"
 			}
-			processedStreamsJson, _ := json.Marshal(s.processedStreams)
+			processedStreamsJson, _ := jsonorder.Marshal(s.processedStreams)
 			s.sendStatus(status, string(processedStreamsJson))
 		} else if s.isErr() {
 			s.sendStatus("FAILED", "ERROR: "+s.firstErr.Error())
@@ -158,7 +157,19 @@ func (s *ReadSideCar) Run() {
 		}
 	}()
 	s.log("Sidecar. command: read. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
-	//load file from /config/catalog.json and parse it
+	err = s.loadDestinationConfig()
+	if err != nil {
+		s.panic("Error loading destination config: %v", err)
+	}
+	blk, err := bulker.CreateBulker(bulker.Config{
+		Id:                fmt.Sprintf("%s_%s", s.syncId, s.taskId),
+		BulkerType:        s.destinationConfig["destinationType"].(string),
+		DestinationConfig: s.destinationConfig,
+	})
+	if err != nil {
+		s.panic("Error creating bulker: %v", err)
+	}
+	s.blk = blk
 	err = s.loadCatalog()
 	if err != nil {
 		s.panic("Error loading catalog: %v", err)
@@ -198,13 +209,14 @@ func (s *ReadSideCar) Run() {
 		scanner := bufio.NewScanner(outPipe)
 		scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
 		for scanner.Scan() {
+			s.lastMessageTime.Store(time.Now().Unix())
 			line := scanner.Bytes()
 			ok = s.checkJsonRow(string(line))
 			if !ok {
 				continue
 			}
 			row := &Row{}
-			err := json.Unmarshal(line, row)
+			err := jsonorder.Unmarshal(line, row)
 			if err != nil {
 				s.panic("error parsing airbyte line %s: %v", string(line), err)
 			}
@@ -261,7 +273,7 @@ func (s *ReadSideCar) saveState(stream string, data any) {
 			return
 		}
 	}
-	stateJson, err := json.Marshal(data)
+	stateJson, err := jsonorder.Marshal(data)
 	if err != nil {
 		s.panic("error marshalling state %+v: %v", data, err)
 	}
@@ -271,15 +283,18 @@ func (s *ReadSideCar) saveState(stream string, data any) {
 
 func (s *ReadSideCar) closeStream(streamName string) {
 	if s.currentStream != nil && s.currentStream.name == streamName {
-		s.currentStream.Close()
+		state, _ := s.currentStream.Close()
 		stat, exists := s.processedStreams[s.currentStream.name]
 		if exists {
-			stat.Merge(s.currentStream.StreamStat)
+			err := stat.Merge(s.currentStream.StreamStat)
+			if err != nil {
+				s.panic("error merging stream stats: %v", err)
+			}
 		} else {
 			stat = s.currentStream.StreamStat
 			s.processedStreams[s.currentStream.name] = stat
 		}
-		s.log("Stream %s closed: status: %s rows: %d bytes: %d ", streamName, stat.Status, stat.EventsCount, stat.BytesProcessed)
+		s.log("Stream %s closed: status: %s bulker: %s rows: %d successful: %d", streamName, stat.Status, state.Status, state.ProcessedRows, state.SuccessfulRows)
 		s.currentStream = nil
 	}
 }
@@ -293,44 +308,49 @@ func (s *ReadSideCar) closeCurrentStream() {
 func (s *ReadSideCar) changeStreamIfNeeded(streamName string, previousStats *StreamStat) {
 	if s.currentStream == nil || s.currentStream.name != streamName {
 		s.closeCurrentStream()
-		s.currentStream = s.openStream(streamName, previousStats)
+		var err error
+		s.currentStream, err = s.openStream(streamName, previousStats)
+		if err != nil {
+			s.err("error opening stream: %v", err)
+		}
 	}
 }
 
-func (s *ReadSideCar) openStream(streamName string, previousStats *StreamStat) *ActiveStream {
+func (s *ReadSideCar) openStream(streamName string, previousStats *StreamStat) (*ActiveStream, error) {
 	// we create pipe. everything that is written to 'streamWriter' will be sent to bulker via 'streamReader' as reader payload
 	str, ok := s.catalog[streamName]
 	if !ok {
-		s.err("stream '%s' is not in catalog", streamName)
-		return nil
+		return &ActiveStream{name: streamName}, fmt.Errorf("stream '%s' is not in catalog", streamName)
 	}
-	mode := "replace_table"
+	mode := bulker.ReplaceTable
 	// if there is no initial sync state, we assume that this is first sync and we need to do full sync
 	if str.SyncMode == "incremental" && len(s.initialState) > 0 {
-		mode = "batch"
+		mode = bulker.Batch
 	} else if previousStats != nil && previousStats.EventsCount > 0 {
 		// checkpointing: if there is previous stats that means that we have committed data because and saved state
 		// switch from replace_table to batch mode, to continue adding data to the table
-		mode = "batch"
+		mode = bulker.Batch
 	}
-	bulkerConnFunc := func(streamReader *io.PipeReader) {
-		tableName := utils.NvlString(str.TableName, s.tableNamePrefix+streamName)
-		s.log("Creating bulker stream: %s table: %s mode: %s primary keys: %s", streamName, tableName, mode, str.GetPrimaryKeys())
-		bulkerUrl := fmt.Sprintf("%s/bulk/%s?tableName=%s&mode=%s&taskId=%s", s.bulkerURL, s.syncId, url.QueryEscape(tableName), mode, s.taskId)
-		for _, v := range str.GetPrimaryKeys() {
-			bulkerUrl += fmt.Sprintf("&pk=%s", url.QueryEscape(v))
-		}
-		_, err := s.bulkerRequest(bulkerUrl, streamReader, str.ToSchema())
-		if err != nil {
-			s.err("error sending bulk: %v", err)
-			return
-		} else {
-			s.log("Bulker stream %s finished", streamName)
-		}
-	}
-	newStream := NewActiveStream(streamName, mode, bulkerConnFunc)
 
-	return newStream
+	tableName := utils.NvlString(str.TableName, s.tableNamePrefix+streamName)
+	jobId := fmt.Sprintf("%s_%s_%s", s.syncId, s.taskId, tableName)
+
+	var streamOptions []bulker.StreamOption
+	if len(str.GetPrimaryKeys()) > 0 {
+		streamOptions = append(streamOptions, bulker.WithPrimaryKey(str.GetPrimaryKeys()...))
+	}
+	s.log("Creating bulker stream: %s table: %s mode: %s primary keys: %s", streamName, tableName, mode, str.GetPrimaryKeys())
+	schema := str.ToSchema()
+	//s.log("Schema: %+v", schema)
+	if len(schema.Fields) > 0 {
+		streamOptions = append(streamOptions, bulker.WithSchema(schema))
+	}
+	bulkerStream, err := s.blk.CreateStream(jobId, tableName, mode, streamOptions...)
+	if err != nil {
+		s.err("error creating bulker stream: %v", err)
+		return &ActiveStream{name: streamName}, fmt.Errorf("error creating bulker stream: %v", err)
+	}
+	return NewActiveStream(streamName, string(mode), bulkerStream), nil
 }
 
 func (s *ReadSideCar) processTrace(rec *TraceRow) {
@@ -360,20 +380,12 @@ func (s *ReadSideCar) processRecord(rec *RecordRow) {
 		// ignore all messages after stream received error
 		return
 	}
-
-	data, err := json.Marshal(rec.Data)
-	if err != nil {
-		s.err("error marshalling record: %v", err)
-		return
-	}
-	_, err = s.currentStream.Write(data)
+	err := s.currentStream.Consume(rec.Data)
 	if err != nil {
 		s.err("error writing to bulk pipe: %v", err)
 		return
 	}
-	_, _ = s.currentStream.Write([]byte("\n"))
 	s.currentStream.EventsCount++
-	s.currentStream.BytesProcessed += len(data)
 }
 
 func (s *ReadSideCar) sourceLog(level, message string, args ...any) {
@@ -390,6 +402,7 @@ func (s *ReadSideCar) err(message string, args ...any) {
 
 func (s *ReadSideCar) panic(message string, args ...any) {
 	s.currentStream.RegisterError(fmt.Errorf(message, args...))
+	_, _ = s.currentStream.Close()
 	s.AbstractSideCar.panic(message, args...)
 }
 
@@ -440,8 +453,9 @@ func (s *ReadSideCar) loadCatalog() error {
 	if err != nil {
 		return fmt.Errorf("error opening catalog file: %v", err)
 	}
+	//s.log("Catalog: %s", string(catalogFile))
 	catalog := Catalog{}
-	err = json.Unmarshal(catalogFile, &catalog)
+	err = jsonorder.Unmarshal(catalogFile, &catalog)
 	if err != nil {
 		return fmt.Errorf("error parsing catalog file: %v", err)
 	}
@@ -450,5 +464,25 @@ func (s *ReadSideCar) loadCatalog() error {
 		mp[joinStrings(stream.Namespace, stream.Name, ".")] = stream
 	}
 	s.catalog = mp
+	return nil
+}
+
+func (s *ReadSideCar) loadDestinationConfig() error {
+	//load catalog from file /config/catalog.json and parse it
+	destinationConfigPath := "/config/destinationConfig.json"
+	if _, err := os.Stat(destinationConfigPath); os.IsNotExist(err) {
+		return fmt.Errorf("destination config file %s doesn't exist", destinationConfigPath)
+	}
+	destinationConfigFile, err := os.ReadFile(destinationConfigPath)
+	if err != nil {
+		return fmt.Errorf("error opening destination config file: %v", err)
+	}
+	//s.log("Destination config: %s", string(destinationConfigFile))
+	destinationConfig := map[string]any{}
+	err = jsonorder.Unmarshal(destinationConfigFile, &destinationConfig)
+	if err != nil {
+		return fmt.Errorf("error parsing destination config file: %v", err)
+	}
+	s.destinationConfig = destinationConfig
 	return nil
 }

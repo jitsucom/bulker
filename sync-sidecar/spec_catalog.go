@@ -2,9 +2,10 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/pg"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"os"
 	"strings"
@@ -66,12 +67,13 @@ func (s *SpecCatalogSideCar) Run() {
 		scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
 		for scanner.Scan() {
 			line := scanner.Bytes()
+			//s.log("line: %s", string(line))
 			ok := s.checkJsonRow(string(line))
 			if !ok {
 				continue
 			}
 			row := &Row{}
-			err := json.Unmarshal(line, row)
+			err := jsonorder.Unmarshal(line, row)
 			if err != nil {
 				s.panic("error parsing airbyte line %s: %v", string(line), err)
 			}
@@ -98,10 +100,10 @@ func (s *SpecCatalogSideCar) Run() {
 	stdOutErrWaitGroup.Wait()
 }
 
-func (s *SpecCatalogSideCar) processSpec(spec map[string]any) {
+func (s *SpecCatalogSideCar) processSpec(spec *types2.OrderedMap[string, any]) {
 	// ignore previous error messages since we got result
 	s.firstErr = nil
-	specJson, _ := json.Marshal(spec)
+	specJson, _ := jsonorder.Marshal(spec)
 	err := db.UpsertSpec(s.dbpool, s.packageName, s.packageVersion, string(specJson), s.startedAt, "")
 	if err != nil {
 		s.panic("error updating spec for %s:%s: %v", s.packageName, s.packageVersion, err)
@@ -120,10 +122,10 @@ func (s *SpecCatalogSideCar) processConnectionStatus(status *StatusRow) {
 	}
 }
 
-func (s *SpecCatalogSideCar) processCatalog(catalog map[string]any) {
+func (s *SpecCatalogSideCar) processCatalog(catalog *types2.OrderedMap[string, any]) {
 	// ignore previous error messages since we got result
 	s.firstErr = nil
-	catalogJson, _ := json.Marshal(catalog)
+	catalogJson, _ := jsonorder.Marshal(catalog)
 	s.log("CATALOG: %s", catalogJson)
 	err := db.UpsertCatalogSuccess(s.dbpool, s.packageName, s.packageVersion, s.storageKey, string(catalogJson), s.startedAt, "SUCCESS", "")
 	if err != nil {

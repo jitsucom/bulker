@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
@@ -19,14 +20,14 @@ const (
 
 // Row is a dto for airbyte output row representation
 type Row struct {
-	Type             string         `json:"type"`
-	Log              *LogRow        `json:"log,omitempty"`
-	ConnectionStatus *StatusRow     `json:"connectionStatus,omitempty"`
-	State            *StateRow      `json:"state,omitempty"`
-	Record           *RecordRow     `json:"record,omitempty"`
-	Trace            *TraceRow      `json:"trace,omitempty"`
-	Catalog          map[string]any `json:"catalog,omitempty"`
-	Spec             map[string]any `json:"spec,omitempty"`
+	Type             string                          `json:"type"`
+	Log              *LogRow                         `json:"log,omitempty"`
+	ConnectionStatus *StatusRow                      `json:"connectionStatus,omitempty"`
+	State            *StateRow                       `json:"state,omitempty"`
+	Record           *RecordRow                      `json:"record,omitempty"`
+	Trace            *TraceRow                       `json:"trace,omitempty"`
+	Catalog          *types2.OrderedMap[string, any] `json:"catalog,omitempty"`
+	Spec             *types2.OrderedMap[string, any] `json:"spec,omitempty"`
 }
 
 // LogRow is a dto for airbyte logs serialization
@@ -69,17 +70,17 @@ type GlobalState struct {
 
 // StateRow is a dto for airbyte state serialization
 type StateRow struct {
-	Type        string         `json:"type,omitempty"`
-	StreamState *StreamState   `json:"stream,omitempty"`
-	GlobalState *GlobalState   `json:"global,omitempty"`
-	Data        map[string]any `json:"data,omitempty"`
+	Type        string                          `json:"type,omitempty"`
+	StreamState *StreamState                    `json:"stream,omitempty"`
+	GlobalState *GlobalState                    `json:"global,omitempty"`
+	Data        *types2.OrderedMap[string, any] `json:"data,omitempty"`
 }
 
 // RecordRow is a dto for airbyte record serialization
 type RecordRow struct {
-	Stream    string                 `json:"stream,omitempty"`
-	Namespace string                 `json:"namespace,omitempty"`
-	Data      map[string]interface{} `json:"data,omitempty"`
+	Stream    string                          `json:"stream,omitempty"`
+	Namespace string                          `json:"namespace,omitempty"`
+	Data      *types2.OrderedMap[string, any] `json:"data,omitempty"`
 }
 
 type Catalog struct {
@@ -95,15 +96,15 @@ type StreamMeta struct {
 }
 
 type StreamJsonSchema struct {
-	Properties map[string]StreamSchemaProperty `json:"properties"`
+	Properties *types2.OrderedMap[string, any] `json:"properties"`
 }
 
 func (s *StreamMeta) ToSchema() types.Schema {
-	fields := make([]types.SchemaField, 0, len(s.JSONSchema.Properties))
-	for name, prop := range s.JSONSchema.Properties {
+	fields := make([]types.SchemaField, 0, s.JSONSchema.Properties.Len())
+	for el := s.JSONSchema.Properties.Front(); el != nil; el = el.Next() {
 		fields = append(fields, types.SchemaField{
-			Name: name,
-			Type: prop.ToDataType(),
+			Name: el.Key,
+			Type: StreamSchemaPropertyToDataType(el.Value.(*types2.OrderedMap[string, any])),
 		})
 	}
 	return types.Schema{
@@ -119,12 +120,12 @@ type StreamSchemaProperty struct {
 	OneOf       []any  `json:"oneOf"`
 }
 
-func (ssp *StreamSchemaProperty) ToDataType() types.DataType {
-	if len(ssp.OneOf) > 0 {
+func StreamSchemaPropertyToDataType(ssp *types2.OrderedMap[string, any]) types.DataType {
+	if len(ssp.GetS("oneOf")) > 0 {
 		return types.STRING
 	}
 	var tp string
-	switch v := ssp.Type.(type) {
+	switch v := ssp.GetN("type").(type) {
 	case string:
 		tp = v
 	case []string:
@@ -140,7 +141,7 @@ func (ssp *StreamSchemaProperty) ToDataType() types.DataType {
 	}
 	switch tp {
 	case "string":
-		if ssp.Format == "date-time" {
+		if ssp.GetS("format") == "date-time" {
 			return types.TIMESTAMP
 		}
 		return types.STRING
@@ -149,7 +150,7 @@ func (ssp *StreamSchemaProperty) ToDataType() types.DataType {
 	case "integer":
 		return types.INT64
 	case "number":
-		if ssp.AirbyteType == "integer" {
+		if ssp.GetS("airbyte_type") == "integer" {
 			return types.INT64
 		}
 		return types.FLOAT64

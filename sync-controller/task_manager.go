@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"strings"
@@ -96,7 +97,8 @@ func (t *TaskManager) DiscoverHandler(c *gin.Context) {
 
 func (t *TaskManager) ReadHandler(c *gin.Context) {
 	taskConfig := TaskConfiguration{}
-	err := c.BindJSON(&taskConfig)
+	err := jsonorder.NewDecoder(c.Request.Body).Decode(&taskConfig)
+	defer c.Request.Body.Close()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
 		return

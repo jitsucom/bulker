@@ -91,7 +91,7 @@ Result table: `source_catalog`
 Run task to pull data from Source connector.
 
 - Pulled data is sent to Bulker instance to `syncId` connection.
-- Task logs are sent to Bulker instance to `SYNCCTL_BULKER_LOGS_CONNECTION_ID` connection.
+- Task logs are inserted into `task_log` database table.
 - Task status is kept updated in `source_task` database table.
 - Saved state of task if any is stored in `source_state` database table.
 
@@ -114,6 +114,9 @@ Request body:
   },
   "state": {
     // json object with state from previous task run
+  },
+  "destinationConfig": {
+    // bulker destination credentials
   }
 }
 ```
@@ -126,10 +129,7 @@ Request body:
 | `SYNCCTL_HTTP_PORT`                      | no       | HTTP port                                                                                                                                                                                                                                                                                                                                                               | `3043`                  |
 | `SYNCCTL_AUTH_TOKENS`                    | no       | A list of auth tokens that authorizes user in HTTP interface separated by comma.<br/>Each token can be either:<br/>`${token}` un-encrypted token value<br/>`${salt}.${hash}` hashed token.<br/><br/>`salt` should be random string<br/>`hash` = `hex(sha512(token + salt + SYNCCTL_TOKEN_SECRET))`<br/>`token` may consist only of letters, digits, underscore and dash |                         |
 | `SYNCCTL_TOKEN_SECRET`                   | no       | See above. A secret that is used for hashing tokens.                                                                                                                                                                                                                                                                                                                    |                         |
-| `SYNCCTL_SIDECAR_IMAGE`                  | yes      | Sync Sidecar docker image. E.g.: `jitsucom/sidecar:latest`                                                                                                                                                                                                                                                                                                              |                         |
-| `SYNCCTL_BULKER_URL`                     | yes      | Bulker instance URL. Passed to Sync Sidecar and must be reachable from k8s environment                                                                                                                                                                                                                                                                                  |                         |
-| `SYNCCTL_BULKER_AUTH_TOKEN`              | yes      | Bulker instance auth token                                                                                                                                                                                                                                                                                                                                              |                         |
-| `SYNCCTL_BULKER_LOGS_CONNECTION_ID`      | yes      | id of bulker destination where task logs should be sent                                                                                                                                                                                                                                                                                                                 |                         |
+| `SYNCCTL_SIDECAR_IMAGE`                  | yes      | Sync Sidecar docker image. E.g.: `jitsucom/sidecar:latest`                                                                                                                                                                                                                                                                                                              |                         | |                         |
 | `SYNCCTL_KUBERNETES_CLIENT_CONFIG`       | yes      | kubernetes client config in yaml format                                                                                                                                                                                                                                                                                                                                 |                         |
 | `SYNCCTL_KUBERNETES_NAMESPACE`           | no       | kubernetes namespace where tasks pod should be run                                                                                                                                                                                                                                                                                                                      | `default`               |
 | `SYNCCTL_CONTAINER_STATUS_CHECK_SECONDS` | no       | frequency of running Pods status check                                                                                                                                                                                                                                                                                                                                  | `10`                    |
@@ -147,3 +147,4 @@ Request body:
 | `source_catalog` | Result of running `discover` command. Source connector streams catalog.                              |
 | `source_task`    | Status of running `read` command.                                                                    |
 | `source_state`   | State objects obtained while running `read` command.                                                 |
+| `task_log`       | Logs of source tasks                                                                                 |

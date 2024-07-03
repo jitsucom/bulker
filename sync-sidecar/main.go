@@ -1,15 +1,14 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jitsucom/bulker/bulkerlib/types"
+	_ "github.com/jitsucom/bulker/bulkerlib/implementations/api_based"
+	_ "github.com/jitsucom/bulker/bulkerlib/implementations/file_storage"
+	_ "github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
-	"io"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -26,9 +25,6 @@ type AbstractSideCar struct {
 
 	stdOutPipeFile string
 	stdErrPipeFile string
-
-	bulkerURL       string
-	bulkerAuthToken string
 
 	databaseURL string
 	dbpool      *pgxpool.Pool
@@ -48,18 +44,16 @@ func main() {
 
 	command := os.Getenv("COMMAND")
 	abstract := &AbstractSideCar{
-		syncId:          os.Getenv("SYNC_ID"),
-		taskId:          os.Getenv("TASK_ID"),
-		command:         os.Getenv("COMMAND"),
-		storageKey:      os.Getenv("STORAGE_KEY"),
-		packageName:     os.Getenv("PACKAGE"),
-		packageVersion:  os.Getenv("PACKAGE_VERSION"),
-		stdOutPipeFile:  os.Getenv("STDOUT_PIPE_FILE"),
-		stdErrPipeFile:  os.Getenv("STDERR_PIPE_FILE"),
-		bulkerURL:       os.Getenv("BULKER_URL"),
-		bulkerAuthToken: os.Getenv("BULKER_AUTH_TOKEN"),
-		databaseURL:     os.Getenv("DATABASE_URL"),
-		startedAt:       startedAt,
+		syncId:         os.Getenv("SYNC_ID"),
+		taskId:         os.Getenv("TASK_ID"),
+		command:        os.Getenv("COMMAND"),
+		storageKey:     os.Getenv("STORAGE_KEY"),
+		packageName:    os.Getenv("PACKAGE"),
+		packageVersion: os.Getenv("PACKAGE_VERSION"),
+		stdOutPipeFile: os.Getenv("STDOUT_PIPE_FILE"),
+		stdErrPipeFile: os.Getenv("STDERR_PIPE_FILE"),
+		databaseURL:    os.Getenv("DATABASE_URL"),
+		startedAt:      startedAt,
 	}
 	if command == "read" {
 		sidecar := &ReadSideCar{AbstractSideCar: abstract, tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX")}
@@ -142,34 +136,6 @@ func (s *AbstractSideCar) _log(logger, level, message string) {
 
 func (s *AbstractSideCar) sendLog(logger, level string, message string) error {
 	return db.InsertTaskLog(s.dbpool, uuid.New().String(), level, logger, message, s.syncId, s.taskId, time.Now())
-}
-
-func (s *AbstractSideCar) bulkerRequest(url string, payload io.Reader, schema types.Schema) ([]byte, error) {
-	req, err := http.NewRequest("POST", url, payload)
-	if err != nil {
-		return nil, fmt.Errorf("error creating POST %s request: %v", url, err)
-	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.bulkerAuthToken))
-	if !schema.IsEmpty() {
-		schemaBytes, err := json.Marshal(schema)
-		if err != nil {
-			return nil, fmt.Errorf("error marshalling schema: %v", err)
-		}
-		req.Header.Set("X-Jitsu-Schema", string(schemaBytes))
-	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("POST %s error: %v", url, err)
-	}
-	defer res.Body.Close()
-	bd, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("POST %s read response error: %v", url, res.Status)
-	}
-	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("POST %s error %v: %s", url, res.Status, string(bd))
-	}
-	return bd, nil
 }
 
 func joinStrings(str1, str2, sep string) string {

@@ -304,8 +304,6 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	sideCarEnv := map[string]string{
 		"STDOUT_PIPE_FILE":  "/pipes/stdout",
 		"STDERR_PIPE_FILE":  "/pipes/stderr",
-		"BULKER_URL":        j.config.BulkerURL,
-		"BULKER_AUTH_TOKEN": j.config.BulkerAuthToken,
 		"PACKAGE":           task.Package,
 		"PACKAGE_VERSION":   task.PackageVersion,
 		"COMMAND":           task.TaskType,
