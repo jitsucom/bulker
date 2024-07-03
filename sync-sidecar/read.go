@@ -332,7 +332,7 @@ func (s *ReadSideCar) openStream(streamName string, previousStats *StreamStat) (
 
 	var streamOptions []bulker.StreamOption
 	if len(str.GetPrimaryKeys()) > 0 {
-		streamOptions = append(streamOptions, bulker.WithPrimaryKey(str.GetPrimaryKeys()...))
+		streamOptions = append(streamOptions, bulker.WithPrimaryKey(str.GetPrimaryKeys()...), bulker.WithDeduplicate())
 	}
 	s.log("Creating bulker stream: %s table: %s mode: %s primary keys: %s", streamName, tableName, mode, str.GetPrimaryKeys())
 	schema := str.ToSchema()
