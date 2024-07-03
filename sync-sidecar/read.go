@@ -275,7 +275,10 @@ func (s *ReadSideCar) saveState(stream string, data any) {
 
 func (s *ReadSideCar) closeStream(streamName string) {
 	if s.currentStream != nil && s.currentStream.name == streamName {
-		state, _ := s.currentStream.Close()
+		state, err := s.currentStream.Close()
+		if err != nil && s.currentStream.Error == "" {
+			s.err("failed to commit stream: %v", err)
+		}
 		stat, exists := s.processedStreams[s.currentStream.name]
 		if exists {
 			err := stat.Merge(s.currentStream.StreamStat)
