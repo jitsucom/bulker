@@ -102,7 +102,7 @@ func (s *ReadSideCar) Run() {
 	defer ticker.Stop()
 	go func() {
 		for range ticker.C {
-			if time.Now().Unix()-s.lastMessageTime.Load() > 3600 {
+			if time.Now().Unix()-s.lastMessageTime.Load() > 4000 {
 				s.panic("No messages from %s for 1 hour. Exiting", s.packageName)
 			}
 		}
@@ -220,11 +220,11 @@ func (s *ReadSideCar) Run() {
 			case RecordType:
 				s.processRecord(row.Record, len(line))
 			case TraceType:
-				s.processTrace(row.Trace)
+				s.processTrace(row.Trace, string(line))
 			case ControlType:
 				s.sourceLog("WARN", "Control messages are not supported and ignored: %s", string(line))
 			default:
-				s.panic("not supported type: %s", row.Type)
+				s.panic("not supported Airbyte message type: %s", row.Type)
 			}
 		}
 		if err := scanner.Err(); err != nil {
@@ -345,7 +345,7 @@ func (s *ReadSideCar) openStream(streamName string, previousStats *StreamStat) (
 	return NewActiveStream(streamName, string(mode), bulkerStream), nil
 }
 
-func (s *ReadSideCar) processTrace(rec *TraceRow) {
+func (s *ReadSideCar) processTrace(rec *TraceRow, line string) {
 	if rec.Type == "STREAM_STATUS" {
 		streamStatus := rec.StreamStatus
 		streamName := joinStrings(streamStatus.StreamDescriptor.Namespace, streamStatus.StreamDescriptor.Name, ".")
@@ -356,6 +356,8 @@ func (s *ReadSideCar) processTrace(rec *TraceRow) {
 		case "COMPLETE", "INCOMPLETE":
 			s.closeStream(streamName)
 		}
+	} else {
+		s.log("TRACE: %s", line)
 	}
 }
 

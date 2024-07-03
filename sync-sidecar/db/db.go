@@ -40,6 +40,8 @@ ON CONFLICT ON CONSTRAINT source_check_pkey DO UPDATE SET status = $4, descripti
 ON CONFLICT ON CONSTRAINT source_check_pkey DO NOTHING`
 
 	insertIntoTaskLog = `INSERT INTO task_log (id, level, logger, message, sync_id, task_id, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)`
+
+	closeStaleTasksSQL = `UPDATE source_task SET status = 'FAILED', description = 'The sync task was interrupted unexpectedly. Please contact support@jitsu.com' WHERE status = 'RUNNING' AND updated_at < $1`
 )
 
 func UpsertSpec(dbpool *pgxpool.Pool, packageName, packageVersion, specs any, timestamp time.Time, error string) error {
@@ -99,5 +101,10 @@ func InsertCheckError(dbpool *pgxpool.Pool, packageName, packageVersion, storage
 
 func InsertTaskLog(dbpool *pgxpool.Pool, id, level, logger, message, syncId, taskId string, timestamp time.Time) error {
 	_, err := dbpool.Exec(context.Background(), insertIntoTaskLog, id, level, logger, message, syncId, taskId, timestamp)
+	return err
+}
+
+func CloseStaleTasks(dbpool *pgxpool.Pool, timestamp time.Time) error {
+	_, err := dbpool.Exec(context.Background(), closeStaleTasksSQL, timestamp)
 	return err
 }

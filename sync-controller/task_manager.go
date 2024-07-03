@@ -126,10 +126,17 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 }
 
 func (t *TaskManager) listenTaskStatus() {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-t.closeCh:
 			return
+		case <-ticker.C:
+			err := db.CloseStaleTasks(t.dbpool, time.Now().Add(-time.Hour))
+			if err != nil {
+				t.Errorf("Unable to close stale tasks: %v", err)
+			}
 		case st := <-t.jobRunner.TaskStatusChannel():
 			var err error
 			switch st.TaskType {
