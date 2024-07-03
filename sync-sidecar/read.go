@@ -85,6 +85,7 @@ type ReadSideCar struct {
 	tableNamePrefix string
 
 	lastMessageTime   atomic.Int64
+	lastStateMessage  string
 	blk               bulker.Bulker
 	currentStream     *ActiveStream
 	processedStreams  map[string]*StreamStat
@@ -203,26 +204,30 @@ func (s *ReadSideCar) Run() {
 		for scanner.Scan() {
 			s.lastMessageTime.Store(time.Now().Unix())
 			line := scanner.Bytes()
-			ok = s.checkJsonRow(string(line))
+			lineStr := string(line)
+			ok = s.checkJsonRow(lineStr)
 			if !ok {
 				continue
 			}
 			row := &Row{}
 			err := jsonorder.Unmarshal(line, row)
 			if err != nil {
-				s.panic("error parsing airbyte line %s: %v", string(line), err)
+				s.panic("error parsing airbyte line %s: %v", lineStr, err)
 			}
 			switch row.Type {
 			case LogType:
 				s.sourceLog(row.Log.Level, row.Log.Message)
 			case StateType:
-				s.processState(row.State)
+				if s.lastStateMessage != lineStr {
+					s.processState(row.State)
+					s.lastStateMessage = lineStr
+				}
 			case RecordType:
 				s.processRecord(row.Record, len(line))
 			case TraceType:
-				s.processTrace(row.Trace, string(line))
+				s.processTrace(row.Trace, lineStr)
 			case ControlType:
-				s.sourceLog("WARN", "Control messages are not supported and ignored: %s", string(line))
+				s.sourceLog("WARN", "Control messages are not supported and ignored: %s", lineStr)
 			default:
 				s.panic("not supported Airbyte message type: %s", row.Type)
 			}
