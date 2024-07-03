@@ -7,6 +7,7 @@ import (
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"io"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -201,7 +202,11 @@ func (s *State) AddWarehouseState(ws WarehouseState) {
 }
 
 func (ws *WarehouseState) String() string {
-	return fmt.Sprintf("%s:%d,%db,$%.3f", ws.Name, ws.TimeProcessedMs, ws.BytesProcessed, ws.EstimatedCost)
+	str := ws.Name + ":" + strconv.FormatInt(ws.TimeProcessedMs, 10)
+	if ws.EstimatedCost != 0 {
+		str = str + ",$" + strconv.FormatFloat(ws.EstimatedCost, 'f', 3, 64)
+	}
+	return str
 }
 
 func (ws *WarehouseState) merge(second WarehouseState) {
@@ -254,9 +259,9 @@ func (s *State) String() string {
 	countersValue := reflect.ValueOf(*s)
 	countersType := countersValue.Type()
 	for i := 0; i < countersValue.NumField(); i++ {
-		value := countersValue.Field(i).String()
-		if value != "" && value != "0" {
-			sb.WriteString(fmt.Sprintf("%s: %s ", countersType.Field(i).Name, value))
+		field := countersValue.Field(i)
+		if !field.IsZero() {
+			sb.WriteString(fmt.Sprintf("%s: %v ", countersType.Field(i).Name, field.Interface()))
 		}
 	}
 	return sb.String()
