@@ -26,6 +26,7 @@ type AbstractSQLStream struct {
 	mergeWindow       int
 	omitNils          bool
 	schemaFreeze      bool
+	schemaOptions     types.Schema
 	schemaFromOptions *Table
 
 	state  bulker.State
@@ -61,6 +62,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 
 	schema := bulker.SchemaOption.Get(&ps.options)
 	if !schema.IsEmpty() {
+		ps.schemaOptions = schema
 		ps.schemaFromOptions = ps.sqlAdapter.TableHelper().MapSchema(ps.sqlAdapter, schema)
 	}
 
@@ -75,7 +77,16 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Obje
 	if ps.state.Status != bulker.Active {
 		return nil, nil, fmt.Errorf("stream is not active. Status: %s", ps.state.Status)
 	}
-	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.omitNils, ps.sqlAdapter.StringifyObjects())
+	var notFlatteningKeys types2.Set[string]
+	if !ps.schemaOptions.IsEmpty() {
+		notFlatteningKeys = types2.NewSet[string]()
+		for _, field := range ps.schemaOptions.Fields {
+			if field.Type == types.JSON {
+				notFlatteningKeys.Put(field.Name)
+			}
+		}
+	}
+	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.omitNils, ps.sqlAdapter.StringifyObjects(), notFlatteningKeys)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/implementations"
 	"github.com/jitsucom/bulker/bulkerlib/types"
+	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"strings"
 )
@@ -11,7 +12,7 @@ import (
 // ProcessEvents processes events objects without applying mapping rules
 // returns table headerm array of processed objects
 // or error if at least 1 was occurred
-func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTypes, omitNils bool, stringifyObjects bool) (*TypesHeader, types.Object, error) {
+func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTypes, omitNils bool, stringifyObjects bool, notFlatteningKeys types2.Set[string]) (*TypesHeader, types.Object, error) {
 	sqlTypesHints, err := extractSQLTypesHints(event)
 	if err != nil {
 		return nil, nil, err
@@ -19,7 +20,15 @@ func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTy
 	for k, v := range customTypes {
 		sqlTypesHints[k] = v
 	}
-	flatObject, err := implementations.NewFlattener(omitNils, stringifyObjects).FlattenObject(event, sqlTypesHints)
+	if len(sqlTypesHints) > 0 {
+		if notFlatteningKeys == nil {
+			notFlatteningKeys = types2.NewSet[string]()
+		}
+		for key := range sqlTypesHints {
+			notFlatteningKeys.Put(key)
+		}
+	}
+	flatObject, err := implementations.NewFlattener(omitNils, stringifyObjects).FlattenObject(event, notFlatteningKeys)
 	if err != nil {
 		return nil, nil, err
 	}

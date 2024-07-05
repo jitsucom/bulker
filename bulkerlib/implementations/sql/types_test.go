@@ -410,3 +410,232 @@ func TestTypeCoalesce(t *testing.T) {
 		})
 	}
 }
+
+func TestJSONTypes(t *testing.T) {
+	t.Parallel()
+	tests := []bulkerTestConfig{
+		{
+			name:                      "json_test_postgres",
+			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId:         true,
+			dataFile:                  "test_data/types_json.ndjson",
+			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
+			expectedTable: ExpectedTable{
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"_timestamp", types2.SQLColumn{Type: "timestamp with time zone"}},
+					{"id", types2.SQLColumn{Type: "bigint"}},
+					{"name", types2.SQLColumn{Type: "text"}},
+					{"json1_nested", types2.SQLColumn{Type: "bigint"}},
+					{"json2", types2.SQLColumn{Type: "jsonb"}},
+					{"array1", types2.SQLColumn{Type: "jsonb"}},
+					{"json1_nested_nested", types2.SQLColumn{Type: "bigint"}},
+				}),
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "a", "json1_nested": 1, "json2": "{\"nested\": 1}", "array1": "[\"1\", \"2\", \"3\"]", "json1_nested_nested": nil},
+				{"_timestamp": constantTime, "id": 2, "name": "b", "json1_nested": nil, "json2": "{\"nested\": {\"nested\": 2}}", "array1": "[1, 2, 3]", "json1_nested_nested": 2},
+				{"_timestamp": constantTime, "id": 3, "name": "c", "json1_nested": 1, "json2": "{\"nested\": 1}", "array1": "[{\"nested\": 1}, {\"nested\": 2}, {\"nested\": 3}]", "json1_nested_nested": nil},
+			},
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1_nested", Type: types2.INT64},
+					{Name: "json2", Type: types2.JSON},
+					{Name: "array1", Type: types2.JSON},
+					{Name: "json1_nested_nested", Type: types2.INT64},
+				},
+			})},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{PostgresBulkerTypeId}),
+		},
+		{
+			name:                      "json_test_mysql",
+			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId:         true,
+			dataFile:                  "test_data/types_json.ndjson",
+			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
+			expectedTable: ExpectedTable{
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"_timestamp", types2.SQLColumn{Type: "timestamp(6)"}},
+					{"id", types2.SQLColumn{Type: "bigint"}},
+					{"name", types2.SQLColumn{Type: "text"}},
+					{"json1_nested", types2.SQLColumn{Type: "bigint"}},
+					{"json2", types2.SQLColumn{Type: "json"}},
+					{"array1", types2.SQLColumn{Type: "json"}},
+					{"json1_nested_nested", types2.SQLColumn{Type: "bigint"}},
+				}),
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "a", "json1_nested": 1, "json2": "{\"nested\": 1}", "array1": "[\"1\", \"2\", \"3\"]", "json1_nested_nested": nil},
+				{"_timestamp": constantTime, "id": 2, "name": "b", "json1_nested": nil, "json2": "{\"nested\": {\"nested\": 2}}", "array1": "[1, 2, 3]", "json1_nested_nested": 2},
+				{"_timestamp": constantTime, "id": 3, "name": "c", "json1_nested": 1, "json2": "{\"nested\": 1}", "array1": "[{\"nested\": 1}, {\"nested\": 2}, {\"nested\": 3}]", "json1_nested_nested": nil},
+			},
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1_nested", Type: types2.INT64},
+					{Name: "json2", Type: types2.JSON},
+					{Name: "array1", Type: types2.JSON},
+					{Name: "json1_nested_nested", Type: types2.INT64},
+				},
+			})},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{MySQLBulkerTypeId}),
+		},
+		{
+			name:                      "json_test_redshift",
+			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId:         true,
+			dataFile:                  "test_data/types_json.ndjson",
+			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
+			expectedTable: ExpectedTable{
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"_timestamp", types2.SQLColumn{Type: "timestamp with time zone"}},
+					{"id", types2.SQLColumn{Type: "bigint"}},
+					{"name", types2.SQLColumn{Type: "character varying(65535)"}},
+					{"json1_nested", types2.SQLColumn{Type: "bigint"}},
+					{"json2", types2.SQLColumn{Type: "character varying(65535)"}},
+					{"array1", types2.SQLColumn{Type: "character varying(65535)"}},
+					{"json1_nested_nested", types2.SQLColumn{Type: "bigint"}},
+				}),
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "a", "json1_nested": 1, "json2": "{\"nested\":1}", "array1": "[\"1\",\"2\",\"3\"]", "json1_nested_nested": nil},
+				{"_timestamp": constantTime, "id": 2, "name": "b", "json1_nested": nil, "json2": "{\"nested\":{\"nested\":2}}", "array1": "[1,2,3]", "json1_nested_nested": 2},
+				{"_timestamp": constantTime, "id": 3, "name": "c", "json1_nested": 1, "json2": "{\"nested\":1}", "array1": "[{\"nested\":1},{\"nested\":2},{\"nested\":3}]", "json1_nested_nested": nil},
+			},
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1_nested", Type: types2.INT64},
+					{Name: "json2", Type: types2.JSON},
+					{Name: "array1", Type: types2.JSON},
+					{Name: "json1_nested_nested", Type: types2.INT64},
+				},
+			})},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless"}),
+		},
+		{
+			name:                      "json_test_clickhouse",
+			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId:         true,
+			dataFile:                  "test_data/types_json.ndjson",
+			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
+			expectedTable: ExpectedTable{
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"_timestamp", types2.SQLColumn{Type: "DateTime64(6)"}},
+					{"id", types2.SQLColumn{Type: "Int64"}},
+					{"name", types2.SQLColumn{Type: "String"}},
+					{"json1_nested", types2.SQLColumn{Type: "Int64"}},
+					{"json2", types2.SQLColumn{Type: "String"}},
+					{"array1", types2.SQLColumn{Type: "String"}},
+					{"json1_nested_nested", types2.SQLColumn{Type: "Int64"}},
+				}),
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "a", "json1_nested": 1, "json2": "{\"nested\":1}", "array1": "[\"1\",\"2\",\"3\"]", "json1_nested_nested": 0},
+				{"_timestamp": constantTime, "id": 2, "name": "b", "json1_nested": 0, "json2": "{\"nested\":{\"nested\":2}}", "array1": "[1,2,3]", "json1_nested_nested": 2},
+				{"_timestamp": constantTime, "id": 3, "name": "c", "json1_nested": 1, "json2": "{\"nested\":1}", "array1": "[{\"nested\":1},{\"nested\":2},{\"nested\":3}]", "json1_nested_nested": 0},
+			},
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1_nested", Type: types2.INT64},
+					{Name: "json2", Type: types2.JSON},
+					{Name: "array1", Type: types2.JSON},
+					{Name: "json1_nested_nested", Type: types2.INT64},
+				},
+			})},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{ClickHouseBulkerTypeId}),
+		},
+		{
+			name:                      "json_test_snowflake",
+			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId:         true,
+			dataFile:                  "test_data/types_json.ndjson",
+			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
+			expectedTable: ExpectedTable{
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"_timestamp", types2.SQLColumn{Type: "TIMESTAMP_TZ(6)"}},
+					{"id", types2.SQLColumn{Type: "NUMBER(38,0)"}},
+					{"name", types2.SQLColumn{Type: "VARCHAR(16777216)"}},
+					{"json1_nested", types2.SQLColumn{Type: "NUMBER(38,0)"}},
+					{"json2", types2.SQLColumn{Type: "VARCHAR(16777216)"}},
+					{"array1", types2.SQLColumn{Type: "VARCHAR(16777216)"}},
+					{"json1_nested_nested", types2.SQLColumn{Type: "NUMBER(38,0)"}},
+				}),
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "a", "json1_nested": 1, "json2": "{\"nested\":1}", "array1": "[\"1\",\"2\",\"3\"]", "json1_nested_nested": nil},
+				{"_timestamp": constantTime, "id": 2, "name": "b", "json1_nested": nil, "json2": "{\"nested\":{\"nested\":2}}", "array1": "[1,2,3]", "json1_nested_nested": 2},
+				{"_timestamp": constantTime, "id": 3, "name": "c", "json1_nested": 1, "json2": "{\"nested\":1}", "array1": "[{\"nested\":1},{\"nested\":2},{\"nested\":3}]", "json1_nested_nested": nil},
+			},
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1_nested", Type: types2.INT64},
+					{Name: "json2", Type: types2.JSON},
+					{Name: "array1", Type: types2.JSON},
+					{Name: "json1_nested_nested", Type: types2.INT64},
+				},
+			})},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{SnowflakeBulkerTypeId}),
+		},
+		{
+			name:                      "json_test_bigquery",
+			modes:                     []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId:         true,
+			dataFile:                  "test_data/types_json.ndjson",
+			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
+			expectedTable: ExpectedTable{
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"_timestamp", types2.SQLColumn{Type: "TIMESTAMP"}},
+					{"id", types2.SQLColumn{Type: "INTEGER"}},
+					{"name", types2.SQLColumn{Type: "STRING"}},
+					{"json1_nested", types2.SQLColumn{Type: "INTEGER"}},
+					{"json2", types2.SQLColumn{Type: "JSON"}},
+					{"array1", types2.SQLColumn{Type: "JSON"}},
+					{"json1_nested_nested", types2.SQLColumn{Type: "INTEGER"}},
+				}),
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "a", "json1_nested": 1, "json2": "{\"nested\":1}", "array1": "[\"1\",\"2\",\"3\"]", "json1_nested_nested": nil},
+				{"_timestamp": constantTime, "id": 2, "name": "b", "json1_nested": nil, "json2": "{\"nested\":{\"nested\":2}}", "array1": "[1,2,3]", "json1_nested_nested": 2},
+				{"_timestamp": constantTime, "id": 3, "name": "c", "json1_nested": 1, "json2": "{\"nested\":1}", "array1": "[{\"nested\":1},{\"nested\":2},{\"nested\":3}]", "json1_nested_nested": nil},
+			},
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1_nested", Type: types2.INT64},
+					{Name: "json2", Type: types2.JSON},
+					{Name: "array1", Type: types2.JSON},
+					{Name: "json1_nested_nested", Type: types2.INT64},
+				},
+			})},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{BigqueryBulkerTypeId}),
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			runTestConfig(t, tt, testStream)
+		})
+	}
+}

@@ -201,7 +201,7 @@ const (
 	TypeCheckingDisabled TypeCheckingMode = iota
 	//DataTypesOnly - check only data types
 	TypeCheckingDataTypesOnly
-	//SQLTypesOnly - check only data types
+	//SQLTypesOnly - check only sql types
 	TypeCheckingSQLTypesOnly
 	//TypeCheckingFull - strict type checking
 	TypeCheckingFull

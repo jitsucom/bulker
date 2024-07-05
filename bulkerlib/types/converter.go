@@ -2,7 +2,7 @@ package types
 
 import (
 	"fmt"
-	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"strconv"
 	"strings"
@@ -49,6 +49,8 @@ var (
 		rule{from: TIMESTAMP, to: STRING}: timestampToString,
 		rule{from: JSON, to: STRING}:      jsonToString,
 		rule{from: UNKNOWN, to: STRING}:   anyToString,
+
+		rule{from: STRING, to: JSON}: stringToJson,
 
 		rule{from: BOOL, to: INT64}:    boolToNumber,
 		rule{from: FLOAT64, to: INT64}: floatToNumber,
@@ -216,8 +218,8 @@ func timestampToString(v any) (any, error) {
 
 func jsonToString(v any) (any, error) {
 	switch t := v.(type) {
-	case map[string]any, []any:
-		b, err := jsoniter.Marshal(t)
+	case map[string]any, []any, Object, []Object:
+		b, err := jsonorder.Marshal(t)
 		if err != nil {
 			return nil, err
 		}
@@ -229,10 +231,19 @@ func jsonToString(v any) (any, error) {
 	}
 }
 
+func stringToJson(v any) (any, error) {
+	switch t := v.(type) {
+	case string:
+		return t, nil
+	default:
+		return nil, fmt.Errorf("Value: %v with type: %t isn't string", v, v)
+	}
+}
+
 func anyToString(v any) (any, error) {
 	switch t := v.(type) {
-	case map[string]any, []any:
-		b, err := jsoniter.Marshal(t)
+	case map[string]any, []any, Object, []Object:
+		b, err := jsonorder.Marshal(t)
 		if err != nil {
 			return nil, err
 		}
