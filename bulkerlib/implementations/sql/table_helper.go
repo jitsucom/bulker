@@ -120,7 +120,7 @@ func (th *TableHelper) MapSchema(sqlAdapter SQLAdapter, schema types2.Schema) *T
 		//map Jitsu type -> SQL type
 		sqlType, ok := sqlAdapter.GetSQLType(field.Type)
 		if ok {
-			table.Columns.Set(colName, types2.SQLColumn{DataType: field.Type, Type: sqlType, Override: true})
+			table.Columns.Set(colName, types2.SQLColumn{DataType: field.Type, Type: sqlType, Important: true})
 		} else {
 			logging.SystemErrorf("Unknown column type %s mapping for %s", field.Type, sqlAdapter.Type())
 		}

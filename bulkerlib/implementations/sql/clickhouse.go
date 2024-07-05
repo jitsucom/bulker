@@ -656,7 +656,9 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 			placeholdersBuilder.WriteString(",(")
 			err = targetTable.Columns.ForEachIndexedE(func(i int, name string, column types.SQLColumn) error {
 				v, ok := object[name]
-				v = chReformatValue(v, ok, column)
+				if !ok && column.Override {
+					v = chGetDefaultValue(column.Type)
+				}
 				l, err2 := convertType(v, column)
 				if err2 != nil {
 					return err2
