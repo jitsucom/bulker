@@ -6,7 +6,10 @@ type SQLColumn struct {
 	Type     string `json:"type,omitempty"`
 	DdlType  string `json:"ddlType,omitempty"`
 	Override bool   `json:"override,omitempty"`
-	DataType DataType
+	// Important column is provided as part of bulkerlib.SchemaOption option.
+	// It is not literally an Override, but we must give priority to this type
+	Important bool
+	DataType  DataType
 	// New column represents not commited part of a table schema
 	New bool
 }
