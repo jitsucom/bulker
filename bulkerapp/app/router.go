@@ -17,7 +17,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
-	timeout "github.com/vearne/gin-timeout"
 	"io"
 	"net/http"
 	"net/http/pprof"
@@ -56,7 +55,7 @@ func NewRouter(appContext *Context) *Router {
 	}
 	engine := router.Engine()
 	fast := engine.Group("")
-	fast.Use(timeout.Timeout(timeout.WithTimeout(10 * time.Second)))
+	//fast.Use(timeout.Timeout(timeout.WithTimeout(10 * time.Second)))
 	fast.POST("/post/:destinationId", router.EventsHandler)
 	fast.POST("/test", router.TestConnectionHandler)
 	fast.GET("/log/:eventType/:actorId", router.EventsLogHandler)

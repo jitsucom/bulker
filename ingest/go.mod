@@ -9,7 +9,6 @@ require (
 	github.com/penglongli/gin-metrics v0.1.10
 	github.com/prometheus/client_golang v1.17.0
 	github.com/spf13/viper v1.17.0
-	github.com/vearne/gin-timeout v0.1.7
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
