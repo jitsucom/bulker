@@ -10,7 +10,7 @@ import (
 )
 
 const settingsHeader = "{\"integrations\":{\"Segment.io\":{\"apiKey\":\""
-const settingsFooter = "\",\"unbundledIntegrations\":[],\"addBundledMetadata\":true,\"maybeBundledConfigIds\":{},\"versionSettings\":{\"version\":\"4.4.7\",\"componentTypes\":[\"browser\"]}}},\"plan\":{\"track\":{\"__default\":{\"enabled\":true,\"integrations\":{}}},\"identify\":{\"__default\":{\"enabled\":true}},\"group\":{\"__default\":{\"enabled\":true}}},\"edgeFunction\":{},\"analyticsNextEnabled\":true,\"middlewareSettings\":{},\"enabledMiddleware\":{},\"metrics\":{\"sampleRate\":0.1},\"legacyVideoPluginsEnabled\":false,\"remotePlugins\":[]}"
+const settingsFooter = "\",\"versionSettings\":{\"version\":\"4.4.7\",\"componentTypes\":[\"browser\"]}}},\"plan\":{\"track\":{\"__default\":{\"enabled\":true}},\"identify\":{\"__default\":{\"enabled\":true}},\"group\":{\"__default\":{\"enabled\":true}}},\"analyticsNextEnabled\":true}"
 
 var ids = sync.Map{}
 
