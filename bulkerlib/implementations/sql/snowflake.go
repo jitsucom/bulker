@@ -168,6 +168,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	sqlAdapter, err := newSQLAdapterBase(bulkerConfig.Id, SnowflakeBulkerTypeId, config, dbConnectFunction, snowflakeTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr)
 	s := &Snowflake{sqlAdapter}
 	s.batchFileFormat = types2.FileFormatCSV
+	s.batchFileCompression = types2.FileCompressionGZIP
 	s.valueMappingFunction = func(value any, valuePresent bool, column types2.SQLColumn) any {
 		if !valuePresent {
 			return nil
