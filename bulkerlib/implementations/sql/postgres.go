@@ -191,7 +191,14 @@ func (p *Postgres) validateOptions(streamOptions []bulker.StreamOption) error {
 
 // OpenTx opens underline sql transaction and return wrapped instance
 func (p *Postgres) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
-	return p.openTx(ctx, p)
+	t, err := p.openTx(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = t.tx.ExecContext(ctx, fmt.Sprintf(pgSetSearchPath, p.config.Schema)); err != nil {
+		return nil, err
+	}
+	return t, nil
 }
 
 // InitDatabase creates database schema instance if doesn't exist
