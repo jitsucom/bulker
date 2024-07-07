@@ -155,7 +155,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		dataSource.SetMaxIdleConns(10)
 		return dataSource, nil
 	}
-	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr)
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr, true)
 	p := &Postgres{sqlAdapterBase, tmpDir}
 	p.temporaryTables = false
 	p.tableHelper = NewTableHelper(63, '"')

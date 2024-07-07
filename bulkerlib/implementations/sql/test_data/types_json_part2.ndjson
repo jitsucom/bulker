@@ -1,0 +1,2 @@
+{"_timestamp": "2022-08-18T14:17:22.375Z", "id":3, "name": "c", "json1": {"nested": 3}, "array1": ["1","2","3"]}
+{"_timestamp": "2022-08-18T14:17:22.375Z", "id":4, "name": "d", "json1": {"nested": {"nested": 4}}, "array1": [1,2,3]}

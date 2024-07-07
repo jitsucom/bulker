@@ -54,7 +54,7 @@ var (
 		types2.FLOAT64:   {"double"},
 		types2.TIMESTAMP: {"timestamp(6)", "timestamp"},
 		types2.BOOL:      {"boolean", "tinyint(1)"},
-		types2.JSON:      {"JSON"},
+		types2.JSON:      {"JSON", "json"},
 		types2.UNKNOWN:   {"text"},
 	}
 
@@ -126,7 +126,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	// disable infile support for convenience
 	infileEnabled := false
-	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, MySQLBulkerTypeId, config, dbConnectFunction, mysqlTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr)
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, MySQLBulkerTypeId, config, dbConnectFunction, mysqlTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr, true)
 	m := &MySQL{
 		SQLAdapterBase: sqlAdapterBase,
 		infileEnabled:  infileEnabled,

@@ -83,7 +83,7 @@ type SQLAdapterBase[T any] struct {
 	checkErrFunc         ErrorAdapter
 }
 
-func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter) (*SQLAdapterBase[T], error) {
+func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter, supportsJSON bool) (*SQLAdapterBase[T], error) {
 	s := SQLAdapterBase[T]{
 		Service:              appbase.NewServiceBase(id),
 		typeId:               typeId,
@@ -102,11 +102,11 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunc
 	s.batchFileCompression = types2.FileCompressionNONE
 	var err error
 	s.dataSource, err = dbConnectFunction(config)
-	s.typesMapping, s.reverseTypesMapping = InitTypes(dataTypes)
+	s.typesMapping, s.reverseTypesMapping = InitTypes(dataTypes, supportsJSON)
 	return &s, err
 }
 
-func InitTypes(dataTypes map[types2.DataType][]string) (typesMapping map[types2.DataType]string, reverseTypesMapping map[string]types2.DataType) {
+func InitTypes(dataTypes map[types2.DataType][]string, supportsJSON bool) (typesMapping map[types2.DataType]string, reverseTypesMapping map[string]types2.DataType) {
 	typeMapping := make(map[types2.DataType]string, len(dataTypes))
 	reverseTypeMapping := make(map[string]types2.DataType, len(dataTypes)+3)
 	for dataType, postgresTypes := range dataTypes {
@@ -114,7 +114,7 @@ func InitTypes(dataTypes map[types2.DataType][]string) (typesMapping map[types2.
 			if i == 0 {
 				typeMapping[dataType] = postgresType
 			}
-			if dataType != types2.UNKNOWN && dataType != types2.JSON {
+			if dataType != types2.UNKNOWN && (dataType != types2.JSON || supportsJSON) {
 				reverseTypeMapping[postgresType] = dataType
 			}
 		}

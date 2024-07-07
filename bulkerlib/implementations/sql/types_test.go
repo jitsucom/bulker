@@ -7,6 +7,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"sync"
 	"testing"
 	"time"
 )
@@ -637,5 +638,80 @@ func TestJSONTypes(t *testing.T) {
 			t.Parallel()
 			runTestConfig(t, tt, testStream)
 		})
+	}
+}
+
+func TestTransactionalJSON(t *testing.T) {
+	t.Parallel()
+	tests := []bulkerTestConfig{
+		{
+			//deletes any table leftovers from previous tests
+			name:      "dummy_test_table_cleanup",
+			tableName: "transactional_json_test",
+			modes:     []bulker.BulkMode{bulker.Batch},
+			dataFile:  "test_data/empty.ndjson",
+			configIds: allBulkerConfigs,
+		},
+		{
+			name:                "added_columns_first_run",
+			tableName:           "transactional_json_test",
+			modes:               []bulker.BulkMode{bulker.Batch},
+			leaveResultingTable: true,
+			dataFile:            "test_data/types_json_part1.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("_timestamp", "id", "name", "json1", "array1"),
+			},
+			expectedRowsCount: 2,
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1", Type: types2.JSON},
+					{Name: "array1", Type: types2.JSON},
+				},
+			})},
+			configIds: allBulkerConfigs,
+		},
+		{
+			name:                "added_columns_second_run",
+			tableName:           "transactional_json_test",
+			modes:               []bulker.BulkMode{bulker.Batch},
+			leaveResultingTable: true,
+			dataFile:            "test_data/types_json_part2.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("_timestamp", "id", "name", "json1", "array1"),
+			},
+			expectedRowsCount: 4,
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1", Type: types2.JSON},
+					{Name: "array1", Type: types2.JSON},
+				},
+			})},
+			configIds: allBulkerConfigs,
+		},
+		{
+			name:      "dummy_test_table_cleanup",
+			tableName: "transactional_json_test",
+			modes:     []bulker.BulkMode{bulker.Batch},
+			dataFile:  "test_data/empty.ndjson",
+			configIds: allBulkerConfigs,
+		},
+	}
+	sequentialGroup := sync.WaitGroup{}
+	sequentialGroup.Add(1)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runTestConfig(t, tt, testStream)
+			sequentialGroup.Done()
+		})
+		sequentialGroup.Wait()
+		sequentialGroup.Add(1)
 	}
 }

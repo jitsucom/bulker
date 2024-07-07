@@ -89,7 +89,7 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	r.batchFileFormat = types2.FileFormatCSV
 	r.batchFileCompression = types2.FileCompressionGZIP
 	r._columnDDLFunc = redshiftColumnDDL
-	r.typesMapping, r.reverseTypesMapping = InitTypes(redshiftTypes)
+	r.typesMapping, r.reverseTypesMapping = InitTypes(redshiftTypes, false)
 	r.tableHelper = NewTableHelper(127, '"')
 	r.temporaryTables = true
 	//// Redshift is case insensitive by default

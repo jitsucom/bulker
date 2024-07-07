@@ -85,7 +85,7 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 			//when no objects were consumed. we need to replace table with empty one.
 			//truncation seems like a more straightforward approach.
 			err = ps.init(ctx)
-			if err != nil {
+			if err == nil {
 				var table *Table
 				table, err = ps.tx.GetTableSchema(ctx, ps.tableName)
 				if table.Exists() {
