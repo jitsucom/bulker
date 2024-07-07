@@ -165,14 +165,21 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 }
 
 func (r *Router) CorsMiddleware(c *gin.Context) {
-	c.Header("Access-Control-Allow-Origin", utils.NvlString(c.GetHeader("Origin"), "*"))
-	c.Header("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS")
-	c.Header("Access-Control-Allow-Headers", "x-enable-debug, x-write-key, authorization, content-type")
-	c.Header("Access-Control-Allow-Credentials", "true")
-	c.Header("Access-Control-Max-Age", "86400")
+	origin := c.GetHeader("Origin")
 	if c.Request.Method == "OPTIONS" {
+		c.Header("Access-Control-Allow-Origin", utils.NvlString(origin, "*"))
+		c.Header("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "x-enable-debug, x-write-key, authorization, content-type")
+		c.Header("Access-Control-Allow-Credentials", "true")
+		c.Header("Access-Control-Max-Age", "86400")
 		c.AbortWithStatus(http.StatusOK)
 		return
+	} else if origin != "" {
+		c.Header("Access-Control-Allow-Origin", origin)
+		c.Header("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "x-enable-debug, x-write-key, authorization, content-type")
+		c.Header("Access-Control-Allow-Credentials", "true")
+		c.Header("Access-Control-Max-Age", "86400")
 	}
 	c.Next()
 }
