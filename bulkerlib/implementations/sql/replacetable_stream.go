@@ -84,12 +84,22 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 		} else {
 			//when no objects were consumed. we need to replace table with empty one.
 			//truncation seems like a more straightforward approach.
-			err = ps.init(ctx)
-			if err == nil {
+			if ps.sqlAdapter.Type() == PostgresBulkerTypeId {
+				// workaround for neon search_path issue
+				err = ps.init(ctx)
+				if err == nil {
+					var table *Table
+					table, err = ps.tx.GetTableSchema(ctx, ps.tableName)
+					if table.Exists() {
+						err = ps.tx.TruncateTable(ctx, ps.tableName)
+					}
+				}
+			} else {
+				//no transaction was opened yet and not needed that is why we use ps.sqlAdapter instead of tx
 				var table *Table
-				table, err = ps.tx.GetTableSchema(ctx, ps.tableName)
+				table, err = ps.sqlAdapter.GetTableSchema(ctx, ps.tableName)
 				if table.Exists() {
-					err = ps.tx.TruncateTable(ctx, ps.tableName)
+					err = ps.sqlAdapter.TruncateTable(ctx, ps.tableName)
 				}
 			}
 		}
