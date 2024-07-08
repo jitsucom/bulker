@@ -391,11 +391,13 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 	for _, d := range filteredDestinations {
 		IngestedMessages(d.ConnectionId, "success", "").Inc()
 		dOptions := DeviceOptions[d.DestinationType]
-		newEvents, ok := functionsResults[d.ConnectionId]
+		newEvents, ok := functionsResults[d.ConnectionId].([]any)
 		if ok {
-			data = append(data, &SyncDestinationsData{ShortDestinationConfig: d, NewEvents: newEvents, DeviceOptions: dOptions})
+			if len(newEvents) > 0 {
+				data = append(data, &SyncDestinationsData{ShortDestinationConfig: d.CloneForJsLib(), NewEvents: newEvents, DeviceOptions: dOptions})
+			}
 		} else {
-			data = append(data, &SyncDestinationsData{ShortDestinationConfig: d, DeviceOptions: dOptions})
+			data = append(data, &SyncDestinationsData{ShortDestinationConfig: d.CloneForJsLib(), DeviceOptions: dOptions})
 		}
 	}
 	return &SyncDestinationsResponse{Destinations: data, OK: true}

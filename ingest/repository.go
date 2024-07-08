@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"sync/atomic"
 	"time"
@@ -163,10 +164,22 @@ type StreamConfig struct {
 type ShortDestinationConfig struct {
 	TagDestinationConfig
 	Id              string         `json:"id"`
-	ConnectionId    string         `json:"connectionId"`
+	ConnectionId    string         `json:"connectionId,omitempty"`
 	DestinationType string         `json:"destinationType"`
 	Options         map[string]any `json:"options,omitempty"`
 	Credentials     map[string]any `json:"credentials,omitempty"`
+}
+
+func (s *ShortDestinationConfig) CloneForJsLib() *ShortDestinationConfig {
+	return &ShortDestinationConfig{
+		TagDestinationConfig: s.TagDestinationConfig,
+		Id:                   s.Id,
+		DestinationType:      s.DestinationType,
+		Options: utils.MapFilter(s.Options, func(s string, _ any) bool {
+			return s != "functions"
+		}),
+		Credentials: s.Credentials,
+	}
 }
 
 type TagDestinationConfig struct {
