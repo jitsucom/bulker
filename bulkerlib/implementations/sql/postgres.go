@@ -122,9 +122,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		//replace zero byte character for text fields
 		if sqlColumn.Type == "text" {
 			if v, ok := value.(string); ok {
-				if strings.ContainsRune(v, '\u0000') {
-					value = strings.ReplaceAll(v, "\u0000", "")
-				}
+				value = strings.ReplaceAll(v, "\u0000", "")
 			}
 		}
 		return value
@@ -342,6 +340,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	}()
 	decoder := jsoniter.NewDecoder(file)
 	decoder.UseNumber()
+	args := make([]any, len(columnNames))
 	for {
 		var object map[string]any
 		err = decoder.Decode(&object)
@@ -351,10 +350,12 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 			}
 			return state, err
 		}
-		args := make([]any, len(columnNames))
-		targetTable.Columns.ForEachIndexed(func(i int, v string, _ types2.SQLColumn) {
-			l := types2.ReformatValue(object[v])
-			args[i] = l
+		targetTable.Columns.ForEachIndexed(func(i int, v string, col types2.SQLColumn) {
+			val, ok := object[v]
+			if ok {
+				val = types2.ReformatValue(val)
+			}
+			args[i] = p.valueMappingFunction(val, ok, col)
 		})
 		if _, err := stmt.ExecContext(ctx, args...); err != nil {
 			return state, checkErr(err)

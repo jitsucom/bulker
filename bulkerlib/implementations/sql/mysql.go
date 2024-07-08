@@ -280,6 +280,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		}()
 		decoder := jsoniter.NewDecoder(file)
 		decoder.UseNumber()
+		args := make([]any, count)
 		for {
 			object := map[string]any{}
 			err = decoder.Decode(&object)
@@ -289,10 +290,12 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 				}
 				return state, err
 			}
-			args := make([]any, count)
-			targetTable.Columns.ForEachIndexed(func(i int, name string, _ types2.SQLColumn) {
-				l := types2.ReformatValue(object[name])
-				args[i] = l
+			targetTable.Columns.ForEachIndexed(func(i int, name string, col types2.SQLColumn) {
+				val, ok := object[name]
+				if ok {
+					val = types2.ReformatValue(val)
+				}
+				args[i] = m.valueMappingFunction(val, ok, col)
 			})
 			if _, err := stmt.ExecContext(ctx, args...); err != nil {
 				return state, checkErr(err)
