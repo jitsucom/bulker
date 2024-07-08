@@ -162,7 +162,9 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 				existingCol, ok = current.Get(name)
 				if !ok {
 					// column doesn't exist in database and in current batch - adding as New
-					newCol.New = true
+					if !newCol.Override && !newCol.Important {
+						newCol.New = true
+					}
 					current.Set(name, newCol)
 					columnsAdded = true
 					continue

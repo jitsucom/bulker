@@ -43,7 +43,7 @@ func NewFieldWithSQLType(t types2.DataType, suggestedType *types2.SQLColumn) Fie
 // GetSuggestedSQLType returns suggested SQL type if configured
 func (f Field) GetSuggestedSQLType() (types2.SQLColumn, bool) {
 	if f.suggestedType != nil {
-		return types2.SQLColumn{Type: f.suggestedType.Type, DdlType: f.suggestedType.DdlType, Override: true, New: true}, true
+		return types2.SQLColumn{Type: f.suggestedType.Type, DdlType: f.suggestedType.DdlType, Override: true}, true
 	}
 
 	return types2.SQLColumn{}, false

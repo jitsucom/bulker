@@ -27,7 +27,11 @@ func (s *StreamStat) Merge(chunk *StreamStat) error {
 	switch chunk.Status {
 	case "FAILED":
 		if s.Status != "FAILED" {
-			s.Status = "PARTIAL"
+			if s.EventsCount == 0 {
+				s.Status = "FAILED"
+			} else {
+				s.Status = "PARTIAL"
+			}
 			s.Error = chunk.Error
 		}
 	case "SUCCESS":
