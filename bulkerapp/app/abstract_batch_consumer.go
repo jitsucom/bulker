@@ -152,8 +152,8 @@ func (bc *AbstractBatchConsumer) initTransactionalProducer() (*kafka.Producer, e
 					for k, v := range errors {
 						bc.Errorf("%s COUNT: %d", k, v)
 					}
+					clear(errors)
 				}
-				clear(errors)
 			case e := <-producer.Events():
 				switch ev := e.(type) {
 				case *kafka.Message:
@@ -163,6 +163,7 @@ func (bc *AbstractBatchConsumer) initTransactionalProducer() (*kafka.Producer, e
 						zero := 0
 						cnt := utils.MapGetOrCreate(errors, errtext, &zero)
 						*cnt = *cnt + 1
+						bc.Errorf("%s %d", errtext, len(errors))
 					} else {
 						kafkabase.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "delivered", "")).Inc()
 						//bc.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)

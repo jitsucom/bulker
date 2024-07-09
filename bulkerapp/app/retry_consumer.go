@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
 	"strconv"
 	"time"
@@ -167,6 +168,8 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			retries++
 			singleCount.retryScheduled++
 		}
+		originalError := kafkabase.GetKafkaHeader(message, errorHeader)
+		kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenString(originalError, 1024))
 		kafkabase.PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
 		err = producer.Produce(&kafka.Message{
 			Key:            message.Key,
