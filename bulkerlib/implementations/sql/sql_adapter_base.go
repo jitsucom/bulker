@@ -33,6 +33,7 @@ const (
 	updateStatementTemplate = `UPDATE %s SET %s WHERE %s`
 	dropTableTemplate       = `DROP TABLE %s%s`
 	truncateTableTemplate   = `TRUNCATE TABLE %s`
+	deleteAllQueryTemplate  = `DELETE FROM %s`
 )
 
 var (
@@ -350,13 +351,28 @@ func (b *SQLAdapterBase[T]) Drop(ctx context.Context, table *Table, ifExists boo
 	return b.DropTable(ctx, table.Name, ifExists)
 }
 
-// TruncateTable deletes all records in tableName table
 func (b *SQLAdapterBase[T]) TruncateTable(ctx context.Context, tableName string) error {
 	quotedTableName := b.quotedTableName(tableName)
 
 	statement := fmt.Sprintf(truncateTableTemplate, quotedTableName)
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.TruncateError.Wrap(err, "failed to truncate table").
+			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
+				Table:     quotedTableName,
+				Statement: statement,
+			})
+	}
+
+	return nil
+}
+
+// DeleteAll deletes all records in tableName table
+func (b *SQLAdapterBase[T]) DeleteAll(ctx context.Context, tableName string) error {
+	quotedTableName := b.quotedTableName(tableName)
+
+	statement := fmt.Sprintf(deleteAllQueryTemplate, quotedTableName)
+	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
+		return errorj.TruncateError.Wrap(err, "failed to delete all from table").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Table:     quotedTableName,
 				Statement: statement,
