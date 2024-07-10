@@ -84,7 +84,7 @@ type BulkerStream interface {
 	ConsumeMap(ctx context.Context, mp map[string]any) (state State, processedObject types.Object, err error)
 	//Abort - abort stream and rollback all uncommitted objects. For stream in Stream mode does nothing.
 	//Returns stream statistics. BulkerStream cannot be used after Abort call.
-	Abort(ctx context.Context) (State, error)
+	Abort(ctx context.Context) State
 	//Complete - commit all uncommitted objects to the database. For stream in Stream mode does nothing.
 	//Returns stream statistics. BulkerStream cannot be used after Complete call.
 	Complete(ctx context.Context) (State, error)

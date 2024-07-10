@@ -272,7 +272,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	//Abort stream if error occurred
 	defer func() {
 		if err != nil {
-			_, _ = stream.Abort(ctx)
+			_ = stream.Abort(ctx)
 			//CheckError("stream_abort", testConfig.config.BulkerType, reqr, testConfig.expectedErrors, err)
 		}
 	}()

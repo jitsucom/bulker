@@ -106,7 +106,7 @@ func (ps *AutoCommitStream) Complete(ctx context.Context) (state bulker.State, e
 	return ps.state, nil
 }
 
-func (ps *AutoCommitStream) Abort(ctx context.Context) (state bulker.State, err error) {
+func (ps *AutoCommitStream) Abort(ctx context.Context) (state bulker.State) {
 	ps.state.Status = bulker.Aborted
-	return ps.state, nil
+	return ps.state
 }

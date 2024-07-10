@@ -113,6 +113,7 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 		SyncID:          c.Query("syncId"),
 		TaskID:          c.Query("taskId"),
 		TableNamePrefix: c.Query("tableNamePrefix"),
+		FullSync:        c.Query("fullSync"),
 		StartedBy:       c.Query("startedBy"),
 		StartedAt:       time.Now().Format(time.RFC3339),
 	}

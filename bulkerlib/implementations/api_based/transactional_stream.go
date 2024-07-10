@@ -211,16 +211,16 @@ func (ps *ApiBasedStream) Consume(ctx context.Context, object types2.Object) (st
 	return
 }
 
-func (ps *ApiBasedStream) Abort(ctx context.Context) (state bulker.State, err error) {
+func (ps *ApiBasedStream) Abort(ctx context.Context) (state bulker.State) {
 	if ps.state.Status != bulker.Active {
-		return ps.state, errors.New("stream is not active")
+		return ps.state
 	}
 	if ps.batchFile != nil {
 		_ = ps.batchFile.Close()
 		_ = os.Remove(ps.batchFile.Name())
 	}
 	ps.state.Status = bulker.Aborted
-	return ps.state, err
+	return ps.state
 }
 
 func (ps *ApiBasedStream) Complete(ctx context.Context) (state bulker.State, err error) {

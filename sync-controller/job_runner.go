@@ -81,7 +81,7 @@ func (j *JobRunner) watchPodStatuses() {
 				case v1.PodSucceeded:
 					taskStatus.Status = StatusSuccess
 					j.Infof("Pod %s succeeded. Cleaning up.", pod.Name)
-					//j.cleanupPod(pod.Name)
+					j.cleanupPod(pod.Name)
 				case v1.PodFailed:
 					taskStatus.Status = StatusFailed
 					taskStatus.Description = j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
@@ -516,6 +516,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 		"PACKAGE_VERSION":   task.PackageVersion,
 		"COMMAND":           task.TaskType,
 		"TABLE_NAME_PREFIX": task.TableNamePrefix,
+		"FULL_SYNC":         task.FullSync,
 		"DATABASE_URL":      databaseURL,
 		"STARTED_BY":        task.StartedBy,
 		"STARTED_AT":        task.StartedAt,

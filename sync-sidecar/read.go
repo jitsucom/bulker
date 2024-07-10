@@ -18,15 +18,17 @@ import (
 
 type StreamStat struct {
 	EventsCount    int    `json:"events"`
-	ConsumedEvents int    `json:"consumed_events"`
 	BytesProcessed int    `json:"bytes"`
 	Status         string `json:"status"`
 	Error          string `json:"error,omitempty"`
 }
 
 type ActiveStream struct {
-	name string
-	mode string
+	name                string
+	mode                string
+	bufferedEventsCount int
+	unsavedState        any
+	closed              bool
 
 	bulkerStream bulker.BulkerStream
 	*StreamStat
@@ -45,15 +47,12 @@ func (s *ActiveStream) Begin(bulkerStream bulker.BulkerStream) error {
 	return nil
 }
 
-func (s *ActiveStream) Abort() (state bulker.State, err error) {
+func (s *ActiveStream) Abort() (state bulker.State) {
 	if s == nil {
 		return
 	}
 	if s.bulkerStream != nil {
-		state, err = s.bulkerStream.Abort(context.Background())
-		if err != nil && s.Error == "" {
-			s.Error = err.Error()
-		}
+		state = s.bulkerStream.Abort(context.Background())
 	}
 	s.bulkerStream = nil
 	return
@@ -65,17 +64,17 @@ func (s *ActiveStream) Commit() (state bulker.State, err error) {
 	}
 	if s.bulkerStream != nil {
 		if s.Error != "" {
-			state, err = s.bulkerStream.Abort(context.Background())
+			state = s.bulkerStream.Abort(context.Background())
 		} else {
 			state, err = s.bulkerStream.Complete(context.Background())
 			if err != nil {
 				s.Error = err.Error()
 			} else {
-				s.EventsCount = s.ConsumedEvents
+				s.EventsCount += s.bufferedEventsCount
 			}
 		}
 	}
-
+	s.bufferedEventsCount = 0
 	s.bulkerStream = nil
 	return
 }
@@ -84,7 +83,7 @@ func (s *ActiveStream) Close(complete bool) (state bulker.State, err error) {
 	if complete {
 		state, err = s.Commit()
 	} else {
-		state, err = s.Abort()
+		state = s.Abort()
 	}
 	if s.Error != "" {
 		if s.EventsCount > 0 {
@@ -94,8 +93,8 @@ func (s *ActiveStream) Close(complete bool) (state bulker.State, err error) {
 		}
 	} else if s.Status == "RUNNING" {
 		s.Status = "SUCCESS"
-
 	}
+	s.closed = true
 	return
 }
 
@@ -105,7 +104,7 @@ func (s *ActiveStream) Consume(p *types2.OrderedMap[string, any], originalSize i
 	}
 	_, _, err := s.bulkerStream.Consume(context.Background(), p)
 	if err == nil {
-		s.ConsumedEvents++
+		s.bufferedEventsCount++
 		s.BytesProcessed += originalSize
 	}
 	return err
@@ -135,6 +134,7 @@ type ReadSideCar struct {
 	catalog           *types2.OrderedMap[string, *Stream]
 	destinationConfig map[string]any
 	initialState      string
+	fullSync          bool
 	eventsCounter     int
 	bytesCounter      int
 }
@@ -199,6 +199,10 @@ func (s *ReadSideCar) Run() {
 		}
 	}()
 	s.log("Sidecar. command: read. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
+	s.fullSync = os.Getenv("FULL_SYNC") == "true"
+	if s.fullSync {
+		s.log("Running in Full Sync mode")
+	}
 	err = s.loadDestinationConfig()
 	if err != nil {
 		s.panic("Error loading destination config: %v", err)
@@ -292,25 +296,26 @@ func (s *ReadSideCar) processState(state *StateRow) {
 	//checkpointing. commit to bulker all processed events on saving state
 	switch state.Type {
 	case "GLOBAL":
-		s.commitStream(s.lastStream)
+		s.checkpointIfNecessary(s.lastStream)
 		s.saveState("_GLOBAL_STATE", state.GlobalState)
 	case "STREAM":
 		streamName := joinStrings(state.StreamState.StreamDescriptor.Namespace, state.StreamState.StreamDescriptor.Name, ".")
 		var ok bool
 		stream, ok := s.processedStreams[streamName]
 		if ok && stream != nil {
-			ok := s.commitStream(stream)
-			if ok {
-				s.saveState(streamName, state.StreamState.StreamState)
-			}
+			stream.unsavedState = state.StreamState.StreamState
+			s.checkpointIfNecessary(stream)
 		}
 	case "LEGACY", "":
-		s.commitStream(s.lastStream)
+		s.checkpointIfNecessary(s.lastStream)
 		s.saveState("_LEGACY_STATE", state.Data)
 	}
 }
 
 func (s *ReadSideCar) saveState(stream string, data any) {
+	if data == nil {
+		return
+	}
 	if stream != "_LEGACY_STATE" && stream != "_GLOBAL_STATE" {
 		processed, ok := s.processedStreams[stream]
 		if !ok {
@@ -345,29 +350,44 @@ func (s *ReadSideCar) closeStream(streamName string, complete bool) {
 	s.updateRunningStatus()
 }
 
-func (s *ReadSideCar) commitStream(stream *ActiveStream) bool {
+func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) bool {
 	if stream == nil {
 		return false
+	}
+	if stream.closed {
+		s.saveState(stream.name, stream.unsavedState)
+		stream.unsavedState = nil
 	}
 	if !stream.IsActive() {
 		return true
 	}
-	state, err := stream.Commit()
-	if err != nil && stream.Error == "" {
-		s.err("failed to commit stream: %v", err)
+
+	if stream.bufferedEventsCount >= 500000 || (stream.mode == "incremental" && !s.fullSync) {
+		state, err := stream.Commit()
+		if err != nil {
+			s.err("Stream '%s' bulker commit failed: %v", stream.name, err)
+		} else {
+			if stream.unsavedState != nil {
+				s.saveState(stream.name, stream.unsavedState)
+				stream.unsavedState = nil
+			}
+			s.log("Stream '%s' bulker commit: %s rows: %d successful: %d", stream.name, state.Status, state.ProcessedRows, state.SuccessfulRows)
+		}
+		s.updateRunningStatus()
 	}
-	s.log("Stream '%s' bulker commit: %s rows: %d successful: %d", stream.name, state.Status, state.ProcessedRows, state.SuccessfulRows)
-	s.updateRunningStatus()
 	return stream.Error == ""
 }
 
 func (s *ReadSideCar) _closeStream(stream *ActiveStream, complete bool) {
 	wasActive := stream.IsActive()
 	state, err := stream.Close(complete)
-	if err != nil && stream.Error == "" {
-		s.err("failed to commit stream: %v", err)
-	}
-	if wasActive {
+	if err != nil {
+		s.err("Stream '%s' bulker commit failed: %v", stream.name, err)
+	} else if wasActive {
+		if stream.unsavedState != nil && complete {
+			s.saveState(stream.name, stream.unsavedState)
+			stream.unsavedState = nil
+		}
 		s.log("Stream '%s' bulker commit: %s rows: %d successful: %d", stream.name, state.Status, state.ProcessedRows, state.SuccessfulRows)
 	}
 	s.log("Stream '%s' closed: status: %s rows: %d", stream.name, stream.Status, stream.EventsCount)
@@ -408,10 +428,8 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 		mode = bulker.Batch
 	}
 	if stream == nil {
-		stream = NewActiveStream(streamName, string(mode))
+		stream = NewActiveStream(streamName, str.SyncMode)
 		s.processedStreams[streamName] = stream
-	} else {
-		stream.mode = string(mode)
 	}
 	s.lastStream = stream
 	tableName := utils.NvlString(str.TableName, s.tableNamePrefix+streamName)

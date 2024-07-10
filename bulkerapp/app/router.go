@@ -219,26 +219,26 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	for scanner.Scan() {
 		eventBytes := scanner.Bytes()
 		if len(eventBytes) >= 5 && string(eventBytes[:5]) == "ABORT" {
-			state, _ = bulkerStream.Abort(c)
+			state = bulkerStream.Abort(c)
 			rError = r.ResponseError(c, http.StatusBadRequest, "aborted", false, fmt.Errorf(string(eventBytes)), true)
 			return
 		}
 		bytesRead += len(eventBytes)
 		var obj types.Object
 		if err = jsonorder.Unmarshal(eventBytes, &obj); err != nil {
-			state, _ = bulkerStream.Abort(c)
+			state = bulkerStream.Abort(c)
 			rError = r.ResponseError(c, http.StatusBadRequest, "unmarhsal error", false, err, true)
 			return
 		}
 		if _, processedObjectSample, err = bulkerStream.Consume(c, obj); err != nil {
-			state, _ = bulkerStream.Abort(c)
+			state = bulkerStream.Abort(c)
 			rError = r.ResponseError(c, http.StatusBadRequest, "stream consume error", false, err, true)
 			return
 		}
 		consumed++
 	}
 	if err = scanner.Err(); err != nil {
-		state, _ = bulkerStream.Abort(c)
+		state = bulkerStream.Abort(c)
 		rError = r.ResponseError(c, http.StatusBadRequest, "scanner error", false, err, true)
 		return
 	}
@@ -251,7 +251,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 		r.Infof("Bulk stream for %s mode: %s Completed. Processed: %d in %dms.", jobId, mode, state.SuccessfulRows, time.Since(start).Milliseconds())
 		c.JSON(http.StatusOK, gin.H{"message": "ok", "state": state})
 	} else {
-		state, _ = bulkerStream.Abort(c)
+		state = bulkerStream.Abort(c)
 		c.JSON(http.StatusOK, gin.H{"message": "ok"})
 	}
 }

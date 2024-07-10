@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/implementations"
@@ -418,9 +417,9 @@ func (ps *AbstractTransactionalSQLStream) Consume(ctx context.Context, object ty
 	return
 }
 
-func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulker.State, err error) {
+func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulker.State) {
 	if ps.state.Status != bulker.Active {
-		return ps.state, errors.New("stream is not active")
+		return ps.state
 	}
 	if ps.tx != nil {
 		if ps.tmpTable != nil {
@@ -433,7 +432,7 @@ func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulk
 		_ = os.Remove(ps.batchFile.Name())
 	}
 	ps.state.Status = bulker.Aborted
-	return ps.state, err
+	return ps.state
 }
 
 func (ps *AbstractTransactionalSQLStream) getPKValue(object types.Object) (string, error) {
