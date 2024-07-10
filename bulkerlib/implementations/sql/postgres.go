@@ -120,9 +120,15 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	valueMappingFunc := func(value any, valuePresent bool, sqlColumn types2.SQLColumn) any {
 		//replace zero byte character for text fields
-		if sqlColumn.Type == "text" {
-			if v, ok := value.(string); ok {
-				value = strings.ReplaceAll(v, "\u0000", "")
+		if valuePresent {
+			if sqlColumn.DataType == types2.STRING {
+				if v, ok := value.(string); ok {
+					value = strings.ReplaceAll(v, "\u0000", "")
+				}
+			} else if sqlColumn.DataType == types2.JSON {
+				if v, ok := value.(string); ok {
+					value = strings.ReplaceAll(v, "\\u0000", "")
+				}
 			}
 		}
 		return value
