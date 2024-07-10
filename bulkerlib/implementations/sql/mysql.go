@@ -486,6 +486,9 @@ func mySQLColumnDDL(quotedName, name string, table *Table, column types2.SQLColu
 }
 
 func mySQLMapColumnValue(value any, valuePresent bool, column types2.SQLColumn) any {
+	if !valuePresent {
+		return value
+	}
 	if datetime, ok := value.(time.Time); ok {
 		if datetime.IsZero() {
 			// workaround for time.Time{} default value because of mysql driver internals

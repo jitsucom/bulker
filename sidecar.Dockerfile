@@ -8,9 +8,10 @@ WORKDIR /app
 RUN mkdir jitsubase sync-sidecar
 
 COPY jitsubase/go.* ./jitsubase/
+COPY bulkerlib/go.* ./bulkerlib/
 COPY sync-sidecar/go.* ./sync-sidecar/
 
-RUN go work init jitsubase sync-sidecar
+RUN go work init jitsubase bulkerlib sync-sidecar
 
 WORKDIR /app/sync-sidecar
 

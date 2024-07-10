@@ -32,8 +32,9 @@ type Row struct {
 
 // LogRow is a dto for airbyte logs serialization
 type LogRow struct {
-	Level   string `json:"level,omitempty"`
-	Message string `json:"message,omitempty"`
+	Level      string `json:"level,omitempty"`
+	Message    string `json:"message,omitempty"`
+	StackTrace string `json:"stack_trace,omitempty"`
 }
 
 type StreamDescriptor struct {
@@ -42,14 +43,42 @@ type StreamDescriptor struct {
 }
 
 type StreamStatus struct {
-	StreamDescriptor StreamDescriptor `json:"stream_descriptor"`
-	Status           string           `json:"status"`
+	StreamDescriptor StreamDescriptor     `json:"stream_descriptor"`
+	Status           string               `json:"status"`
+	Reasons          []StreamStatusReason `json:"reasons,omitempty"`
+}
+
+type StreamStatusReason struct {
+	Type        string                        `json:"type"`
+	RateLimited StreamStatusRateLimitedReason `json:"rate_limited,omitempty"`
+}
+
+type StreamStatusRateLimitedReason struct {
+	QuotaReset int64 `json:"quota_reset"`
 }
 
 // TraceRow is a dto for airbyte trace serialization
 type TraceRow struct {
-	Type         string       `json:"type"`
-	StreamStatus StreamStatus `json:"stream_status,omitempty"`
+	Type         string               `json:"type"`
+	StreamStatus StreamStatus         `json:"stream_status,omitempty"`
+	Error        ErrorTraceMessage    `json:"error,omitempty"`
+	Estimate     EstimateTraceMessage `json:"estimate,omitempty"`
+}
+
+type ErrorTraceMessage struct {
+	StreamDescriptor StreamDescriptor `json:"stream_descriptor"`
+	Message          string           `json:"message"`
+	InternalMessage  string           `json:"internal_message"`
+	StackTrace       string           `json:"stack_trace"`
+	FailureType      string           `json:"failure_type"`
+}
+
+type EstimateTraceMessage struct {
+	Name         string `json:"name"`
+	Namespace    string `json:"namespace"`
+	Type         string `json:"type"`
+	RowEstimate  int    `json:"row_estimate"`
+	ByteEstimate int    `json:"byte_estimate"`
 }
 
 // StatusRow is a dto for airbyte result status serialization

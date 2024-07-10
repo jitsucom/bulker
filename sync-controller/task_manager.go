@@ -125,6 +125,36 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (t *TaskManager) ScheduleHandler(c *gin.Context) {
+	taskConfig := TaskConfiguration{}
+	err := jsonorder.NewDecoder(c.Request.Body).Decode(&taskConfig)
+	defer c.Request.Body.Close()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	if taskConfig.State == nil {
+		taskConfig.State = map[string]any{}
+	}
+	taskDescriptor := TaskDescriptor{
+		TaskType:        "read",
+		Package:         c.Query("package"),
+		PackageVersion:  c.Query("version"),
+		SyncID:          c.Query("syncId"),
+		TaskID:          c.Query("taskId"),
+		TableNamePrefix: c.Query("tableNamePrefix"),
+		StartedBy:       c.Query("startedBy"),
+		StartedAt:       time.Now().Format(time.RFC3339),
+	}
+
+	taskStatus := t.jobRunner.CreateCronJob(taskDescriptor, &taskConfig)
+	if taskStatus.Status == StatusCreateFailed {
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Description})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (t *TaskManager) listenTaskStatus() {
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
