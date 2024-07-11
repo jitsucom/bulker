@@ -62,7 +62,7 @@ func (s *ActiveStream) Abort() (state bulker.State) {
 	return
 }
 
-func (s *ActiveStream) Commit() (state bulker.State, err error) {
+func (s *ActiveStream) Commit() (state bulker.State) {
 	if s == nil {
 		return
 	}
@@ -70,6 +70,7 @@ func (s *ActiveStream) Commit() (state bulker.State, err error) {
 		if s.Error != "" {
 			state = s.bulkerStream.Abort(context.Background())
 		} else {
+			var err error
 			state, err = s.bulkerStream.Complete(context.Background())
 			if err != nil {
 				s.Error = err.Error()
@@ -85,9 +86,9 @@ func (s *ActiveStream) Commit() (state bulker.State, err error) {
 	return
 }
 
-func (s *ActiveStream) Close(complete bool) (state bulker.State, err error) {
+func (s *ActiveStream) Close(complete bool) (state bulker.State) {
 	if complete {
-		state, _ = s.Commit()
+		state = s.Commit()
 	} else {
 		state = s.Abort()
 		if s.Error == "" {
@@ -120,7 +121,7 @@ func (s *ActiveStream) Consume(p *types2.OrderedMap[string, any], originalSize i
 }
 
 func (s *ActiveStream) IsActive() bool {
-	return s.bulkerStream != nil
+	return s.bulkerStream != nil && s.Error == ""
 }
 
 func (s *ActiveStream) RegisterError(err error) {
@@ -328,16 +329,16 @@ func (s *ReadSideCar) saveState(stream string, data any) {
 	if stream != "_LEGACY_STATE" && stream != "_GLOBAL_STATE" {
 		processed, ok := s.processedStreams[stream]
 		if !ok {
-			s.err("STATE: cannot save state for stream '%s' because it was not processed", stream)
+			s.errprint("STATE: cannot save state for stream '%s' because it was not processed", stream)
 			return
 		}
 		if processed.Error != "" {
-			s.err("STATE: not saving state for stream '%s' because of previous errors", stream)
+			s.errprint("STATE: not saving state for stream '%s' because of previous errors", stream)
 			return
 		}
 	} else {
 		if s.isErr() {
-			s.err("STATE: not saving '%s' state because of previous errors", stream)
+			s.errprint("STATE: not saving '%s' state because of previous errors", stream)
 			return
 		}
 	}
@@ -352,7 +353,7 @@ func (s *ReadSideCar) saveState(stream string, data any) {
 func (s *ReadSideCar) closeStream(streamName string, complete bool) {
 	stream, ok := s.processedStreams[streamName]
 	if !ok || stream == nil {
-		s.err("Stream '%s' is not in processed streams", streamName)
+		s.errprint("Stream '%s' is not in processed streams", streamName)
 		return
 	}
 	s._closeStream(stream, complete)
@@ -364,7 +365,7 @@ func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 		return
 	}
 	// for successfully closed stream it is safe to save state
-	// otherwise we save state only after commit
+	// otherwise we save state only after commit to warehouse
 	if stream.Status == "SUCCESS" {
 		s.saveState(stream.name, stream.unsavedState)
 		stream.unsavedState = nil
@@ -375,9 +376,9 @@ func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 	}
 
 	if stream.bufferedEventsCount >= 500000 || (stream.mode == "incremental" && !s.fullSync) {
-		state, err := stream.Commit()
-		if err != nil {
-			s.err("Stream '%s' bulker commit failed: %v", stream.name, err)
+		state := stream.Commit()
+		if stream.Error != "" {
+			s.errprint("Stream '%s' bulker commit failed: %v", stream.name, stream.Error)
 		} else {
 			s.saveState(stream.name, stream.unsavedState)
 			stream.unsavedState = nil
@@ -390,9 +391,9 @@ func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 
 func (s *ReadSideCar) _closeStream(stream *ActiveStream, complete bool) {
 	wasActive := stream.IsActive()
-	state, err := stream.Close(complete)
-	if err != nil {
-		s.err("Stream '%s' bulker commit failed: %v", stream.name, err)
+	state := stream.Close(complete)
+	if stream.Error != "" {
+		s.errprint("Stream '%s' bulker commit failed: %v", stream.name, stream.Error)
 	} else if wasActive {
 		s.log("Stream '%s' bulker commit: %s rows: %d successful: %d", stream.name, state.Status, state.ProcessedRows, state.SuccessfulRows)
 	}
@@ -449,7 +450,7 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	if len(str.GetPrimaryKeys()) > 0 {
 		streamOptions = append(streamOptions, bulker.WithPrimaryKey(str.GetPrimaryKeys()...), bulker.WithDeduplicate())
 	}
-	s.log("Creating bulker stream: %s table: %s mode: %s primary keys: %s", streamName, tableName, mode, str.GetPrimaryKeys())
+	s.log("Stream '%s' created bulker. table: %s mode: %s primary keys: %s", streamName, tableName, mode, str.GetPrimaryKeys())
 	schema := str.ToSchema()
 	//s.log("Schema: %+v", schema)
 	if len(schema.Fields) > 0 {
@@ -472,12 +473,12 @@ func (s *ReadSideCar) processTrace(rec *TraceRow, line string) {
 	case "STREAM_STATUS":
 		streamStatus := rec.StreamStatus
 		streamName := joinStrings(streamStatus.StreamDescriptor.Namespace, streamStatus.StreamDescriptor.Name, ".")
-		s.log("Stream '%s' status: %s", streamName, streamStatus.Status)
+		s.log("Stream '%s' received status: %s", streamName, streamStatus.Status)
 		switch streamStatus.Status {
 		case "STARTED":
-			_, err := s.openStream(streamName)
+			stream, err := s.openStream(streamName)
 			if err != nil {
-				s.err("error opening stream: %v", err)
+				s.streamErr(stream, "error opening stream: %v", err)
 			}
 		case "COMPLETE", "INCOMPLETE":
 			s.closeStream(streamName, streamStatus.Status == "COMPLETE")
@@ -502,30 +503,29 @@ func (s *ReadSideCar) processRecord(rec *RecordRow, size int) {
 	streamName := joinStrings(rec.Namespace, rec.Stream, ".")
 	stream, err := s.openStream(streamName)
 	if err != nil {
-		s.err("error opening stream: %v", err)
+		s.streamErr(stream, "error opening stream: %v", err)
 		return
 	}
 	err = stream.Consume(rec.Data, size)
 	if err != nil {
-		s.err("error producing to bulker stream: %v", err)
+		s.streamErr(stream, "error producing to bulker stream: %v", err)
 		return
 	}
 }
 
 func (s *ReadSideCar) sourceLog(level, message string, args ...any) {
-	if level == "ERROR" || level == "FATAL" {
-		s.lastStream.RegisterError(fmt.Errorf(message, args...))
-	}
 	s.AbstractSideCar.sourceLog(level, message, args...)
 }
 
-func (s *ReadSideCar) err(message string, args ...any) {
-	s.lastStream.RegisterError(fmt.Errorf(message, args...))
-	s.AbstractSideCar.err(message, args...)
+func (s *ReadSideCar) streamErr(stream *ActiveStream, message string, args ...any) {
+	err := fmt.Errorf(message, args...)
+	stream.RegisterError(err)
+	s._log("jitsu", "ERROR", err.Error())
 }
 
 func (s *ReadSideCar) errprint(message string, args ...any) {
-	s.AbstractSideCar.err(message, args...)
+	text := fmt.Sprintf(message, args...)
+	s._log("jitsu", "ERROR", text)
 }
 
 func (s *ReadSideCar) panic(message string, args ...any) {
@@ -561,7 +561,7 @@ func (s *ReadSideCar) _sendStatus(status string, description string, log bool) {
 	if log {
 		logFunc := s.log
 		if status == "FAILED" {
-			logFunc = s.err
+			logFunc = s.errprint
 		}
 		logFunc("READ %s", joinStrings(status, description, ": "))
 	}
