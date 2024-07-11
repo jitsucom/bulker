@@ -357,7 +357,6 @@ func (s *ReadSideCar) closeStream(streamName string, complete bool) {
 		return
 	}
 	s._closeStream(stream, complete)
-	s.updateRunningStatus()
 }
 
 func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
@@ -480,8 +479,10 @@ func (s *ReadSideCar) processTrace(rec *TraceRow, line string) {
 			if err != nil {
 				s.streamErr(stream, "error opening stream: %v", err)
 			}
+			s.updateRunningStatus()
 		case "COMPLETE", "INCOMPLETE":
 			s.closeStream(streamName, streamStatus.Status == "COMPLETE")
+			s.updateRunningStatus()
 		}
 	case "ERROR":
 		r := rec.Error
