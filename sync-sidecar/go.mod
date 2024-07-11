@@ -5,8 +5,6 @@ go 1.22
 require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.5.5
-	github.com/jitsucom/bulker/bulkerlib v0.0.0-20240329181058-ba6820a9d32b
-	github.com/jitsucom/bulker/jitsubase v0.0.0-20240331054313-e02b0d970611
 )
 
 require (

@@ -116,7 +116,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 	//Abort stream if error occurred
 	defer func() {
 		if err != nil {
-			_, err = stream.Abort(ctx)
+			_ = stream.Abort(ctx)
 			PostStep("stream_abort", testConfig, mode, reqr, err)
 		}
 	}()

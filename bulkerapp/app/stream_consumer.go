@@ -128,9 +128,9 @@ func (sw *StreamWrapper) Consume(ctx context.Context, object types.Object) (stat
 	return sw.stream.Consume(ctx, object)
 }
 
-func (sw *StreamWrapper) Abort(ctx context.Context) (bulker.State, error) {
+func (sw *StreamWrapper) Abort(ctx context.Context) bulker.State {
 	if sw.stream == nil {
-		return bulker.State{}, nil
+		return bulker.State{}
 	}
 	sw.destination.Release()
 	return sw.stream.Abort(ctx)
@@ -189,7 +189,7 @@ func (sc *StreamConsumerImpl) start() {
 				_ = sc.consumer.Close()
 				var state bulker.State
 				if err != nil {
-					state, _ = (*sc.stream.Load()).Abort(context.Background())
+					state = (*sc.stream.Load()).Abort(context.Background())
 				} else {
 					state, _ = (*sc.stream.Load()).Complete(context.Background())
 				}

@@ -11,6 +11,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/mitchellh/mapstructure"
+	v1batch "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -239,6 +240,32 @@ func (j *JobRunner) getPodErrorLogs(podName, container string) string {
 	}
 }
 
+func (j *JobRunner) CreateCronJob(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {
+	taskStatus := TaskStatus{TaskDescriptor: taskDescriptor}
+	jobId := "sync-" + strings.ToLower(taskStatus.SyncID)
+	if !configuration.IsEmpty() {
+		secret := j.createSecret(jobId, taskDescriptor, configuration)
+		_, err := j.clientset.CoreV1().Secrets(j.namespace).Create(context.Background(), secret, metav1.CreateOptions{})
+		if err != nil {
+			taskStatus.Status = StatusCreateFailed
+			taskStatus.Description = err.Error()
+			j.sendStatus(&taskStatus)
+			return taskStatus
+		}
+	}
+	cronJob := j.createCronJob(jobId, taskDescriptor, configuration)
+	cronJob, err := j.clientset.BatchV1().CronJobs(j.namespace).Create(context.Background(), cronJob, metav1.CreateOptions{})
+	if err != nil {
+		taskStatus.Status = StatusCreateFailed
+		taskStatus.Description = err.Error()
+	} else {
+		taskStatus.Status = StatusCreated
+		taskStatus.PodName = cronJob.Name
+	}
+	j.sendStatus(&taskStatus)
+	return taskStatus
+}
+
 func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {
 	taskStatus := TaskStatus{TaskDescriptor: taskDescriptor}
 	taskId := utils.NvlString(taskDescriptor.TaskID, uuid.NewLettersNumbers())
@@ -288,6 +315,187 @@ func (j *JobRunner) createSecret(podName string, task TaskDescriptor, configurat
 	return cm
 }
 
+func (j *JobRunner) createCronJob(jobId string, task TaskDescriptor, configuration *TaskConfiguration) *v1batch.CronJob {
+	var command string
+	switch task.TaskType {
+	case "check":
+		command = "check --config /config/config.json"
+	case "discover":
+		command = "discover --config /config/config.json"
+	case "read":
+		command = "read --config /config/config.json --catalog /config/catalog.json --state /config/state.json"
+	case "spec":
+		command = "spec"
+	}
+	databaseURL := utils.NvlString(j.config.SidecarDatabaseURL, j.config.DatabaseURL)
+	sideCarEnv := map[string]string{
+		"STDOUT_PIPE_FILE":  "/pipes/stdout",
+		"STDERR_PIPE_FILE":  "/pipes/stderr",
+		"PACKAGE":           task.Package,
+		"PACKAGE_VERSION":   task.PackageVersion,
+		"COMMAND":           task.TaskType,
+		"TABLE_NAME_PREFIX": task.TableNamePrefix,
+		"DATABASE_URL":      databaseURL,
+		"STARTED_BY":        task.StartedBy,
+		"STARTED_AT":        task.StartedAt,
+	}
+	if task.SyncID != "" {
+		sideCarEnv["SYNC_ID"] = task.SyncID
+	}
+	if task.TaskID != "" {
+		sideCarEnv["TASK_ID"] = task.TaskID
+	}
+	if task.StorageKey != "" {
+		sideCarEnv["STORAGE_KEY"] = task.StorageKey
+	}
+	//utils.MapPutAll(sideCarEnv, envMap)
+	sideCarEnvVar := make([]v1.EnvVar, 0, len(sideCarEnv))
+	for k, v := range sideCarEnv {
+		sideCarEnvVar = append(sideCarEnvVar, v1.EnvVar{Name: k, Value: v})
+	}
+	volumes := []v1.Volume{
+		{
+			Name: "pipes",
+			VolumeSource: v1.VolumeSource{
+				EmptyDir: &v1.EmptyDirVolumeSource{},
+			},
+		},
+	}
+	volumeMounts := []v1.VolumeMount{
+		{
+			Name:      "pipes",
+			MountPath: "/pipes",
+		},
+	}
+	var nodeSelector map[string]string
+	if j.config.KubernetesNodeSelector != "" {
+		nodeSelector = map[string]string{}
+		err := hjson.Unmarshal([]byte(j.config.KubernetesNodeSelector), &nodeSelector)
+		if err != nil {
+			j.Errorf("failed to parse node selector from string: %s\nIngoring it. Error: %v", j.config.KubernetesNodeSelector, err)
+		}
+	}
+	initCommand := []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr"}
+	if !configuration.IsEmpty() {
+		initCommand = []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; cp /configmap/* /config/"}
+		items := []v1.KeyToPath{}
+		for k := range configuration.ToMap() {
+			items = append(items, v1.KeyToPath{
+				Key:  k,
+				Path: k + ".json",
+			})
+		}
+		volumes = append(volumes, v1.Volume{
+			Name: "configmap",
+			VolumeSource: v1.VolumeSource{
+				Secret: &v1.SecretVolumeSource{
+					SecretName: jobId + "-config",
+					Items:      items,
+				},
+			},
+		})
+		volumes = append(volumes, v1.Volume{
+			Name: "config",
+			VolumeSource: v1.VolumeSource{
+				EmptyDir: &v1.EmptyDirVolumeSource{},
+			},
+		})
+		volumeMounts = append(volumeMounts, v1.VolumeMount{
+			Name:      "configmap",
+			MountPath: "/configmap",
+		})
+		volumeMounts = append(volumeMounts, v1.VolumeMount{
+			Name:      "config",
+			MountPath: "/config",
+		})
+	}
+	//truevar := true
+	tz := "Etc/UTC"
+	cronJob := &v1batch.CronJob{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "CronJob",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        jobId,
+			Labels:      map[string]string{k8sCreatorLabel: k8sCreatorLabelValue},
+			Annotations: task.ExtractAnnotations(),
+			Namespace:   j.namespace,
+		},
+		Spec: v1batch.CronJobSpec{
+			Schedule: "*/2 * * * *",
+			TimeZone: &tz,
+			//Suspend:           &truevar,
+			ConcurrencyPolicy: v1batch.ForbidConcurrent,
+			JobTemplate: v1batch.JobTemplateSpec{
+				Spec: v1batch.JobSpec{
+					Template: v1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:        jobId,
+							Labels:      map[string]string{k8sCreatorLabel: k8sCreatorLabelValue},
+							Annotations: task.ExtractAnnotations(),
+							Namespace:   j.namespace,
+						},
+						Spec: v1.PodSpec{
+							RestartPolicy: v1.RestartPolicyNever,
+							NodeSelector:  nodeSelector,
+							Containers: []v1.Container{
+								{Name: "source",
+									Image:   fmt.Sprintf("%s:%s", task.Package, task.PackageVersion),
+									Command: []string{"sh", "-c", fmt.Sprintf("eval \"$AIRBYTE_ENTRYPOINT %s\" 2> /pipes/stderr > /pipes/stdout", command)},
+									Env: []v1.EnvVar{{Name: "USE_STREAM_CAPABLE_STATE", Value: "true"},
+										{Name: "AUTO_DETECT_SCHEMA", Value: "true"}},
+									VolumeMounts: volumeMounts,
+									Resources: v1.ResourceRequirements{
+										Limits: v1.ResourceList{
+											v1.ResourceCPU: *resource.NewMilliQuantity(int64(2000), resource.DecimalSI),
+											// 2Gi
+											v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 31)), resource.BinarySI),
+										},
+										Requests: v1.ResourceList{
+											v1.ResourceCPU: *resource.NewMilliQuantity(int64(125), resource.DecimalSI),
+											// 256Mi
+											v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 29)), resource.BinarySI),
+										},
+									},
+								},
+								{
+									Name:            "sidecar",
+									ImagePullPolicy: v1.PullAlways,
+									Image:           j.config.SidecarImage,
+									Env:             sideCarEnvVar,
+									VolumeMounts:    volumeMounts,
+									Resources: v1.ResourceRequirements{
+										Limits: v1.ResourceList{
+											v1.ResourceCPU: *resource.NewMilliQuantity(int64(1000), resource.DecimalSI),
+											// 512Mi
+											v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 29)), resource.BinarySI),
+										},
+										Requests: v1.ResourceList{
+											v1.ResourceCPU: *resource.NewMilliQuantity(int64(0), resource.DecimalSI),
+											// 256
+											v1.ResourceMemory: *resource.NewQuantity(int64(0), resource.BinarySI),
+										},
+									},
+								},
+							},
+							InitContainers: []v1.Container{
+								{
+									Name:         "init",
+									Image:        "alpine",
+									Command:      initCommand,
+									VolumeMounts: volumeMounts,
+								},
+							},
+							Volumes: volumes,
+						},
+					},
+				},
+			},
+		},
+	}
+	return cronJob
+}
+
 func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration *TaskConfiguration) *v1.Pod {
 	var command string
 	switch task.TaskType {
@@ -308,6 +516,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 		"PACKAGE_VERSION":   task.PackageVersion,
 		"COMMAND":           task.TaskType,
 		"TABLE_NAME_PREFIX": task.TableNamePrefix,
+		"FULL_SYNC":         task.FullSync,
 		"DATABASE_URL":      databaseURL,
 		"STARTED_BY":        task.StartedBy,
 		"STARTED_AT":        task.StartedAt,
