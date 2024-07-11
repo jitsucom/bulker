@@ -147,18 +147,18 @@ func ReformatNumberValue(v any) (any, bool) {
 	if strings.ContainsAny(str, ".eE") {
 		floatValue, err := jsonNumber.Float64()
 		if err != nil {
-			logging.Errorf("Error parsing %s into float64: %v", str, err)
-			return str, false
+			logging.Debugf("Error parsing %s into float64: %v", str, err)
+			return str, true
 		}
-		return any(floatValue), true
+		return floatValue, true
 	}
 
 	intValue, err := jsonNumber.Int64()
 	if err != nil {
-		logging.Errorf("Error parsing %s into int64: %v", str, err)
-		return str, false
+		logging.Debugf("Error parsing %s into int64: %v", str, err)
+		return str, true
 	}
-	return any(intValue), true
+	return intValue, true
 }
 
 // ReformatTimeValue processes string with ISO DateTime or Golang layout into time.Time
