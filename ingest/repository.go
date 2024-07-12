@@ -192,6 +192,7 @@ type StreamWithDestinations struct {
 	UpdateAt                 time.Time                `json:"updatedAt"`
 	BackupEnabled            bool                     `json:"backupEnabled"`
 	Throttle                 int                      `json:"throttle"`
+	Shard                    int                      `json:"shard"`
 	Destinations             []ShortDestinationConfig `json:"destinations"`
 	SynchronousDestinations  []*ShortDestinationConfig
 	AsynchronousDestinations []*ShortDestinationConfig

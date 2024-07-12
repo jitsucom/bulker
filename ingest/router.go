@@ -212,8 +212,14 @@ func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *
 
 	if len(asyncDestinations) > 0 {
 		topic := r.config.KafkaDestinationsTopicName
+		partition := kafka.PartitionAny
+		if stream.Shard > 0 {
+			topic = fmt.Sprintf("%s-shard%d", topic, stream.Shard)
+		} else {
+			partition = r.partitionSelector.SelectPartition()
+		}
 		messageKey := uuid.New()
-		err = r.producer.ProduceAsync(topic, messageKey, ingestMessageBytes, map[string]string{ConnectionIdsHeader: strings.Join(asyncDestinations, ",")}, r.partitionSelector.SelectPartition())
+		err = r.producer.ProduceAsync(topic, messageKey, ingestMessageBytes, map[string]string{ConnectionIdsHeader: strings.Join(asyncDestinations, ",")}, partition)
 		if err != nil {
 			for _, id := range asyncDestinations {
 				IngestedMessages(id, "error", "producer error").Inc()
