@@ -31,9 +31,12 @@ type ActiveStream struct {
 	unsavedState        any
 	closed              bool
 
-	bulkerStream bulker.BulkerStream
+	bulkerStream  bulker.BulkerStream
+	errorFromLogs string
 	*StreamStat
 }
+
+const interruptError = "Stream was interrupted. Check logs for errors."
 
 func NewActiveStream(name, mode string) *ActiveStream {
 	return &ActiveStream{name: name, mode: mode, StreamStat: &StreamStat{Status: "RUNNING"}}
@@ -62,12 +65,17 @@ func (s *ActiveStream) Abort() (state bulker.State) {
 	return
 }
 
-func (s *ActiveStream) Commit() (state bulker.State) {
+// Commit strict - if true, we commit only if there are no errors in logs that could be attributed to that stream
+// ( was emitted when only this stream was running )
+func (s *ActiveStream) Commit(strict bool) (state bulker.State) {
 	if s == nil {
 		return
 	}
 	if s.bulkerStream != nil {
 		if s.Error != "" {
+			state = s.bulkerStream.Abort(context.Background())
+		} else if strict && s.errorFromLogs != "" {
+			s.Error = s.errorFromLogs
 			state = s.bulkerStream.Abort(context.Background())
 		} else {
 			var err error
@@ -86,13 +94,13 @@ func (s *ActiveStream) Commit() (state bulker.State) {
 	return
 }
 
-func (s *ActiveStream) Close(complete bool) (state bulker.State) {
+func (s *ActiveStream) Close(complete, strict bool) (state bulker.State) {
 	if complete {
-		state = s.Commit()
+		state = s.Commit(strict)
 	} else {
 		state = s.Abort()
 		if s.Error == "" {
-			s.Error = "Stream was interrupted"
+			s.Error = interruptError
 		}
 	}
 	if s.Error != "" {
@@ -125,7 +133,7 @@ func (s *ActiveStream) IsActive() bool {
 }
 
 func (s *ActiveStream) RegisterError(err error) {
-	if err != nil && s != nil && s.Error == "" {
+	if err != nil && s != nil && (s.Error == "" || s.Error == interruptError) {
 		s.Error = err.Error()
 		s.bufferedEventsCount = 0
 		s.bufferedBytes = 0
@@ -279,6 +287,12 @@ func (s *ReadSideCar) Run() {
 			}
 			switch row.Type {
 			case LogType:
+				if row.Log.Level == "ERROR" || row.Log.Level == "FATAL" {
+					stream, ok := s.getSolelyRunningStream()
+					if ok && stream != nil {
+						stream.errorFromLogs = row.Log.Message
+					}
+				}
 				s.sourceLog(row.Log.Level, row.Log.Message)
 			case StateType:
 				if s.lastStateMessage != lineStr {
@@ -300,6 +314,20 @@ func (s *ReadSideCar) Run() {
 		}
 	}()
 	stdOutErrWaitGroup.Wait()
+}
+
+func (s *ReadSideCar) getSolelyRunningStream() (*ActiveStream, bool) {
+	var first *ActiveStream
+	for _, stream := range s.processedStreams {
+		if stream.Status == "RUNNING" {
+			if first == nil {
+				first = stream
+			} else {
+				return nil, false
+			}
+		}
+	}
+	return first, first != nil
 }
 
 func (s *ReadSideCar) processState(state *StateRow) {
@@ -356,7 +384,7 @@ func (s *ReadSideCar) closeStream(streamName string, complete bool) {
 		s.errprint("Stream '%s' is not in processed streams", streamName)
 		return
 	}
-	s._closeStream(stream, complete)
+	s._closeStream(stream, complete, false)
 }
 
 func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
@@ -375,7 +403,7 @@ func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 	}
 
 	if stream.bufferedEventsCount >= 500000 || (stream.mode == "incremental" && !s.fullSync) {
-		state := stream.Commit()
+		state := stream.Commit(false)
 		if stream.Error != "" {
 			s.errprint("Stream '%s' bulker commit failed: %v", stream.name, stream.Error)
 		} else {
@@ -388,9 +416,9 @@ func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 	return
 }
 
-func (s *ReadSideCar) _closeStream(stream *ActiveStream, complete bool) {
+func (s *ReadSideCar) _closeStream(stream *ActiveStream, complete bool, strict bool) {
 	wasActive := stream.IsActive()
-	state := stream.Close(complete)
+	state := stream.Close(complete, strict)
 	if stream.Error != "" {
 		s.errprint("Stream '%s' bulker commit failed: %v", stream.name, stream.Error)
 	} else if wasActive {
@@ -406,7 +434,7 @@ func (s *ReadSideCar) _closeStream(stream *ActiveStream, complete bool) {
 func (s *ReadSideCar) closeActiveStreams() {
 	for _, stream := range s.processedStreams {
 		if stream.Status == "RUNNING" {
-			s._closeStream(stream, true)
+			s._closeStream(stream, true, true)
 		}
 	}
 }
