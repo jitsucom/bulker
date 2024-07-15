@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"time"
 )
 
@@ -55,8 +56,11 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	}
 
 	var customFields = ColumnTypesOption.Get(&ps.options)
-	ps.pkColumns = pkColumns.ToSlice()
+	ps.pkColumns = utils.ArrayMap(pkColumns.ToSlice(), p.ColumnName)
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
+	if ps.timestampColumn != "" {
+		ps.timestampColumn = p.ColumnName(ps.timestampColumn)
+	}
 	ps.omitNils = OmitNilsOption.Get(&ps.options)
 	ps.schemaFreeze = SchemaFreezeOption.Get(&ps.options)
 

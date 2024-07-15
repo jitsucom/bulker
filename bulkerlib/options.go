@@ -94,6 +94,26 @@ var (
 		ParseFunc: utils.ParseString,
 	}
 
+	// DiscriminatorFieldOption - array represents path to the object property. when deduplicate is true, and multiple rows has the same primary key, row with the highest value of this field will be selected
+	DiscriminatorFieldOption = ImplementationOption[[]string]{
+		Key:          "discriminatorField",
+		DefaultValue: nil,
+		ParseFunc: func(serializedValue any) ([]string, error) {
+			switch v := serializedValue.(type) {
+			case []string:
+				return v, nil
+			case string:
+				if v == "" {
+					return nil, nil
+				}
+				keys := utils.ArrayMap(strings.Split(v, ","), strings.TrimSpace)
+				return keys, nil
+			default:
+				return nil, fmt.Errorf("failed to parse 'discriminatorField' option: %v incorrect type: %T expected string or []string", v, v)
+			}
+		},
+	}
+
 	SchemaOption = ImplementationOption[types.Schema]{
 		Key: "schema",
 		ParseFunc: func(serialized any) (types.Schema, error) {
@@ -235,6 +255,10 @@ func WithPartition(partitionId string) StreamOption {
 
 func WithTimestamp(timestampField string) StreamOption {
 	return WithOption(&TimestampOption, timestampField)
+}
+
+func WithDiscriminatorField(discriminatorField []string) StreamOption {
+	return WithOption(&DiscriminatorFieldOption, discriminatorField)
 }
 
 func WithSchema(schema types.Schema) StreamOption {

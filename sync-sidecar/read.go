@@ -483,6 +483,11 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	if len(schema.Fields) > 0 {
 		streamOptions = append(streamOptions, bulker.WithSchema(schema))
 	}
+	if len(str.CursorField) > 0 {
+		streamOptions = append(streamOptions, bulker.WithDiscriminatorField(str.CursorField))
+	} else if len(str.DefaultCursorField) > 0 {
+		streamOptions = append(streamOptions, bulker.WithDiscriminatorField(str.DefaultCursorField))
+	}
 	bulkerStream, err := s.blk.CreateStream(jobId, tableName, mode, streamOptions...)
 	if err != nil {
 		return stream, fmt.Errorf("error creating bulker stream: %v", err)

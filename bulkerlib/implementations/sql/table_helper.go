@@ -60,10 +60,10 @@ func NewTableHelper(maxIdentifierLength int, identifierQuoteChar rune) TableHelp
 // MapTableSchema maps types.TypesHeader (JSON structure with json data types) into types.Table (structure with SQL types)
 // applies column types mapping
 // adjusts object properties names to column names
-func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesHeader, object types2.Object, pkFields []string, timestampColumn string) (*Table, types2.Object) {
+func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesHeader, object types2.Object, pkColumns []string, timestampColumn string) (*Table, types2.Object) {
 	adaptedPKFields := types.NewOrderedSet[string]()
-	for _, pkField := range pkFields {
-		adaptedPKFields.Put(th.ColumnName(pkField))
+	for _, pkField := range pkColumns {
+		adaptedPKFields.Put(pkField)
 	}
 	table := &Table{
 		Name:      sqlAdapter.TableName(batchHeader.TableName),
@@ -71,9 +71,7 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 		Partition: batchHeader.Partition,
 		PKFields:  adaptedPKFields,
 	}
-	if timestampColumn != "" {
-		table.TimestampColumn = th.ColumnName(timestampColumn)
-	}
+	table.TimestampColumn = timestampColumn
 
 	//pk fields from the configuration
 	if !adaptedPKFields.Empty() {

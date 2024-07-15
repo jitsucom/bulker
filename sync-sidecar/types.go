@@ -117,11 +117,12 @@ type Catalog struct {
 }
 
 type StreamMeta struct {
-	Name        string           `json:"name"`
-	Namespace   string           `json:"namespace"`
-	TableName   string           `json:"table_name,omitempty"`
-	JSONSchema  StreamJsonSchema `json:"json_schema"`
-	PrimaryKeys [][]string       `json:"source_defined_primary_key"`
+	Name               string           `json:"name"`
+	Namespace          string           `json:"namespace"`
+	TableName          string           `json:"table_name,omitempty"`
+	JSONSchema         StreamJsonSchema `json:"json_schema"`
+	PrimaryKeys        [][]string       `json:"source_defined_primary_key"`
+	DefaultCursorField []string         `json:"default_cursor_field"`
 }
 
 type StreamJsonSchema struct {

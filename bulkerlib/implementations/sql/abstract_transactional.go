@@ -12,6 +12,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"os"
 	"path"
@@ -32,8 +33,16 @@ type AbstractTransactionalSQLStream struct {
 	targetMarshaller   types.Marshaller
 	eventsInBatch      int
 	s3                 *implementations.S3
-	batchFileLinesByPK map[string]int
+	batchFileLinesByPK map[string]*DeduplicationLine
 	batchFileSkipLines types2.Set[int]
+	// path to discriminator field in object
+	discriminatorColumn string
+	useDiscriminator    bool
+}
+
+type DeduplicationLine struct {
+	lineNumber    int
+	discriminator any
 }
 
 func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (*AbstractTransactionalSQLStream, error) {
@@ -45,8 +54,13 @@ func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, m
 	ps.existingTable = &Table{}
 	ps.AbstractSQLStream = abs
 	if ps.merge {
-		ps.batchFileLinesByPK = make(map[string]int)
+		ps.batchFileLinesByPK = make(map[string]*DeduplicationLine)
 		ps.batchFileSkipLines = types2.NewSet[int]()
+		discriminatorField := bulker.DiscriminatorFieldOption.Get(&ps.options)
+		if len(discriminatorField) > 0 {
+			ps.discriminatorColumn = p.ColumnName(strings.Join(discriminatorField, "_"))
+			ps.useDiscriminator = true
+		}
 	}
 	return &ps, nil
 }
@@ -127,7 +141,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 	table := ps.tmpTable
 	defer func() {
 		if ps.merge {
-			ps.batchFileLinesByPK = make(map[string]int)
+			ps.batchFileLinesByPK = make(map[string]*DeduplicationLine)
 			ps.batchFileSkipLines = types2.NewSet[int]()
 		}
 		_ = ps.batchFile.Close()
@@ -342,15 +356,28 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 		if err != nil {
 			return err
 		}
-		line, ok := ps.batchFileLinesByPK[pk]
+		var newDiscriminator any
+		if ps.useDiscriminator {
+			newDiscriminator = processedObject.GetN(ps.discriminatorColumn)
+		}
+		lineNumber := ps.eventsInBatch + utils.Ternary(ps.marshaller.NeedHeader(), 1, 0)
+		prevLine, ok := ps.batchFileLinesByPK[pk]
 		if ok {
-			ps.batchFileSkipLines.Put(line)
+			if !ps.useDiscriminator {
+				ps.batchFileSkipLines.Put(prevLine.lineNumber)
+				ps.batchFileLinesByPK[pk] = &DeduplicationLine{lineNumber, newDiscriminator}
+			} else {
+				cmpr := utils.CompareAny(newDiscriminator, prevLine.discriminator)
+				if cmpr >= 0 {
+					ps.batchFileSkipLines.Put(prevLine.lineNumber)
+					ps.batchFileLinesByPK[pk] = &DeduplicationLine{lineNumber, newDiscriminator}
+				} else {
+					ps.batchFileSkipLines.Put(lineNumber)
+				}
+			}
+		} else {
+			ps.batchFileLinesByPK[pk] = &DeduplicationLine{lineNumber, newDiscriminator}
 		}
-		lineNumber := ps.eventsInBatch
-		if ps.marshaller.NeedHeader() {
-			lineNumber++
-		}
-		ps.batchFileLinesByPK[pk] = lineNumber
 	}
 	err = ps.marshaller.Marshal(processedObject)
 	if err != nil {
@@ -442,12 +469,12 @@ func (ps *AbstractTransactionalSQLStream) getPKValue(object types.Object) (strin
 		return "", fmt.Errorf("primary key is not set")
 	}
 	if l == 1 {
-		pkValue := object.GetN(ps.sqlAdapter.ColumnName(pkColumns[0]))
+		pkValue := object.GetN(pkColumns[0])
 		return fmt.Sprint(pkValue), nil
 	}
 	pkArr := make([]string, 0, l)
 	for _, col := range pkColumns {
-		pkValue := object.GetN(ps.sqlAdapter.ColumnName(col))
+		pkValue := object.GetN(col)
 		pkArr = append(pkArr, fmt.Sprint(pkValue))
 	}
 	return strings.Join(pkArr, "_###_"), nil

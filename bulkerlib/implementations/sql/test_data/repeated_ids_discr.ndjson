@@ -1,0 +1,9 @@
+{"_timestamp": "2022-08-18T14:17:22.375Z", "id": 1, "name": "C", "int1": 3, "float1":  3.3}
+{"_timestamp": "2022-08-15T14:17:22.375Z", "id": 1, "name": "B", "int1": 2, "float1":  2.2}
+{"_timestamp": "2022-08-15T14:17:22.375Z", "id": 2, "name": "B", "int1": 2, "float1":  2.2}
+{"_timestamp": "2022-08-10T14:17:22.375Z", "id": 3, "name": "A", "int1": 1, "float1":  1.1}
+{"_timestamp": "2022-08-15T14:17:22.375Z", "id": 3, "name": "B", "int1": 2, "float1":  2.2}
+{"_timestamp": "2022-08-18T14:17:22.375Z", "id": 3, "name": "C", "int1": 3, "float1":  3.3}
+{"_timestamp": "2022-08-10T14:17:22.375Z", "id": 1, "name": "A", "int1": 1, "float1":  1.1}
+{"_timestamp": "2022-08-18T14:17:22.375Z", "id": 2, "name": "C", "int1": 3, "float1":  3.3}
+{"_timestamp": "2022-08-10T14:17:22.375Z", "id": 2, "name": "A", "int1": 1, "float1":  1.1}

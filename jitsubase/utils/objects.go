@@ -5,6 +5,8 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
+	"strings"
+	"time"
 )
 
 // ParseObject parses struct of any type from input object that can be:
@@ -96,4 +98,46 @@ func NvlMap(args ...map[string]any) map[string]any {
 		}
 	}
 	return nil
+}
+
+func CompareAny(a, b any) int {
+	if a == nil {
+		if b == nil {
+			return 0
+		}
+		return -1
+	} else if b == nil {
+		return 1
+	} else {
+		switch va := a.(type) {
+		case string:
+			vb, ok := b.(string)
+			return Ternary(ok, strings.Compare(va, vb), 0)
+		case int:
+			vb, ok := b.(int)
+			return Ternary(ok, va-vb, 0)
+		case int64:
+			vb, ok := b.(int64)
+			return Ternary(ok, int(va-vb), 0)
+		case float64:
+			vb, ok := b.(float64)
+			if ok {
+				if va > vb {
+					return 1
+				} else if va < vb {
+					return -1
+				} else {
+					return 0
+				}
+			} else {
+				return 0
+			}
+		case time.Time:
+			vb, ok := b.(time.Time)
+			return Ternary(ok, va.Compare(vb), 0)
+		default:
+			return 0
+		}
+	}
+
 }
