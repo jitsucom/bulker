@@ -196,13 +196,18 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 			return nil, err
 		}
 
-		if err := chPing(dataSource, httpMode); err != nil {
-			_ = dataSource.Close()
-			return nil, err
+		if httpMode {
+			// in http mode we don't use shared connection pool.
+			// connection pool of 1 connection bound to each session_id
+			dataSource.SetMaxOpenConns(1)
+		} else {
+			if err := chPing(dataSource); err != nil {
+				_ = dataSource.Close()
+				return nil, err
+			}
+			dataSource.SetMaxIdleConns(10)
+			dataSource.SetConnMaxIdleTime(time.Minute * 3)
 		}
-
-		dataSource.SetMaxIdleConns(10)
-		dataSource.SetConnMaxIdleTime(time.Minute * 3)
 		return dataSource, nil
 	}
 
@@ -1118,8 +1123,12 @@ func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName
 }
 
 func (ch *ClickHouse) Ping(_ context.Context) error {
+	if ch.httpMode {
+		//not sure Ping is necessary in httpMode
+		return nil
+	}
 	if ch.dataSource != nil {
-		err := chPing(ch.dataSource, ch.httpMode)
+		err := chPing(ch.dataSource)
 		if err != nil {
 			dataSource, err := ch.dbConnectFunction(ch.config)
 			if err == nil {
@@ -1138,15 +1147,6 @@ func (ch *ClickHouse) Ping(_ context.Context) error {
 	return nil
 }
 
-func chPing(db *sql.DB, httpMode bool) error {
-	if httpMode {
-		//keep select 1 and don't use Ping() because chproxy doesn't support /ping endpoint.
-		//_, err := db.Exec("SELECT 1")
-		//return err
-
-		//not sure Ping is necessary in httpMode
-		return nil
-	} else {
-		return db.Ping()
-	}
+func chPing(db *sql.DB) error {
+	return db.Ping()
 }
