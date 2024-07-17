@@ -301,18 +301,14 @@ func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 		origConfig := *ch.config
 		configCopy := origConfig
 		configCopy.Parameters = utils.MapCopy(ch.config.Parameters)
-		utils.MapPutIfAbsent(configCopy.Parameters, "session_id", uuid.New())
+		configCopy.Parameters["session_id"] = uuid.New()
 		utils.MapPutIfAbsent(configCopy.Parameters, "session_timeout", "3600")
 		// create db pool just for one session because 'session_id' config parameter defines session
 		sessionDb, err := ch.dbConnectFunction(&configCopy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open session: %v", err)
 		}
-		c, err := sessionDb.Conn(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open connection: %v", err)
-		}
-		db = NewConWithDB(sessionDb, c)
+		db = sessionDb
 	} else {
 		var err error
 		db, err = ch.dataSource.Conn(ctx)
