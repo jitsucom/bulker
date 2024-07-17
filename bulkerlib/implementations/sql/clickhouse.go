@@ -318,7 +318,7 @@ func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to open connection: %v", err)
 		}
-		db = NewConWithDB(sessionDb, c, sessionId)
+		db = NewConWithDB(sessionDb, c)
 		time.Sleep(1 * time.Second)
 	} else {
 		var err error

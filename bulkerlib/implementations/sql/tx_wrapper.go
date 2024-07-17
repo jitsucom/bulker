@@ -179,42 +179,28 @@ func (t *TxWrapper) Rollback() error {
 }
 
 type ConWithDB struct {
-	db        *sql.DB
-	con       *sql.Conn
-	sessionId string
+	db  *sql.DB
+	con *sql.Conn
 }
 
-func NewConWithDB(db *sql.DB, con *sql.Conn, sessionId string) *ConWithDB {
-	fmt.Println("OPEN", sessionId)
-	return &ConWithDB{db: db, con: con, sessionId: sessionId}
+func NewConWithDB(db *sql.DB, con *sql.Conn) *ConWithDB {
+	return &ConWithDB{db: db, con: con}
 }
 
-func (c *ConWithDB) ExecContext(ctx context.Context, query string, args ...any) (res sql.Result, err error) {
-	fmt.Println("START", c.sessionId, query)
-	res, err = c.con.ExecContext(ctx, query, args...)
-	fmt.Println("END", c.sessionId, query)
-	return
+func (c *ConWithDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return c.con.ExecContext(ctx, query, args...)
 }
 
-func (c *ConWithDB) QueryContext(ctx context.Context, query string, args ...any) (res *sql.Rows, err error) {
-	fmt.Println("START", c.sessionId, query)
-	res, err = c.con.QueryContext(ctx, query, args...)
-	fmt.Println("END", c.sessionId, query)
-	return
+func (c *ConWithDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return c.con.QueryContext(ctx, query, args...)
 }
 
 func (c *ConWithDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	fmt.Println("START", c.sessionId, query)
-	row := c.con.QueryRowContext(ctx, query, args...)
-	fmt.Println("END", c.sessionId, query)
-	return row
+	return c.con.QueryRowContext(ctx, query, args...)
 }
 
-func (c *ConWithDB) PrepareContext(ctx context.Context, query string) (res *sql.Stmt, err error) {
-	fmt.Println("START", c.sessionId, query)
-	res, err = c.con.PrepareContext(ctx, query)
-	fmt.Println("END", c.sessionId, query)
-	return
+func (c *ConWithDB) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
+	return c.con.PrepareContext(ctx, query)
 }
 
 func (c *ConWithDB) Close() error {
