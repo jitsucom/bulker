@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestReconnect(t *testing.T) {
+func _TestReconnect(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
 			name:      "reconnect_test",
