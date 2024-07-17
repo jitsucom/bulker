@@ -54,7 +54,6 @@ func NewClickhouseClusterContainer(ctx context.Context) (*ClickHouseClusterConta
 	if err != nil {
 		return nil, fmt.Errorf("could not run compose file: %v - %v", composeFilePaths, err)
 	}
-
 	return &ClickHouseClusterContainer{
 		Identifier: identifier,
 		Compose:    compose,

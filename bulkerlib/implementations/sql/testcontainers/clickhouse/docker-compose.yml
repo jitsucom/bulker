@@ -1,9 +1,14 @@
-version: '3.5'
+version: '3.8'
 services:
   zookeeper:
-    image: zookeeper:3.7
+    image: zookeeper:3.9
     container_name: zookeeper
     hostname: zookeeper
+    healthcheck:
+      test: ["CMD-SHELL", "zkCli.sh -server zookeeper:2181 ls /"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
     networks:
       clickhouse-network:
         ipv4_address: 172.23.0.10
@@ -21,11 +26,12 @@ services:
       - ./clickhouse01:/etc/clickhouse-server
     healthcheck:
       test: [ "CMD-SHELL", "clickhouse-client --host clickhouse01 --query 'SELECT 1'" ]
-      interval: 5s
+      interval: 1s
       timeout: 3s
       retries: 30
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
   clickhouse02:
     image: clickhouse/clickhouse-server:24.6-alpine
     container_name: clickhouse02
@@ -40,11 +46,12 @@ services:
       - ./clickhouse02:/etc/clickhouse-server
     healthcheck:
       test: [ "CMD-SHELL", "clickhouse-client --host clickhouse02 --query 'SELECT 1'" ]
-      interval: 5s
+      interval: 1s
       timeout: 3s
       retries: 30
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
   clickhouse03:
     image: clickhouse/clickhouse-server:24.6-alpine
     container_name: clickhouse03
@@ -59,11 +66,12 @@ services:
       - ./clickhouse03:/etc/clickhouse-server
     healthcheck:
       test: [ "CMD-SHELL", "clickhouse-client --host clickhouse03 --query 'SELECT 1'" ]
-      interval: 5s
+      interval: 1s
       timeout: 3s
       retries: 30
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
   clickhouse04:
     image: clickhouse/clickhouse-server:24.6-alpine
     container_name: clickhouse04
@@ -78,11 +86,12 @@ services:
       - ./clickhouse04:/etc/clickhouse-server
     healthcheck:
       test: [ "CMD-SHELL", "clickhouse-client --host clickhouse04 --query 'SELECT 1'" ]
-      interval: 5s
+      interval: 1s
       timeout: 3s
       retries: 30
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
 
 networks:
   clickhouse-network:

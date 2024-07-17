@@ -1,14 +1,19 @@
-version: '3.5'
+version: '3.8'
 services:
   zookeeper2:
-    image: zookeeper:3.7
+    image: zookeeper:3.9
     container_name: zookeeper2
-    hostname: zookeeper
+    hostname: zookeeper2
+    healthcheck:
+      test: ["CMD-SHELL", "zkCli.sh -server zookeeper2:2181 ls /"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
     networks:
       clickhouse-network2:
         ipv4_address: 172.24.0.10
   clickhouse2_01:
-    image: clickhouse/clickhouse-server:22.8-alpine
+    image: clickhouse/clickhouse-server:24.6-alpine
     container_name: clickhouse2_01
     hostname: clickhouse01
     networks:
@@ -21,13 +26,14 @@ services:
       - ./clickhouse01:/etc/clickhouse-server
     healthcheck:
       test: ["CMD-SHELL", "clickhouse-client --host clickhouse01 --query 'SELECT 1'"]
-      interval: 5s
+      interval: 1s
       timeout: 3s
       retries: 30
     depends_on:
-      - zookeeper2
+      zookeeper2:
+        condition: service_healthy
   clickhouse2_02:
-    image: clickhouse/clickhouse-server:22.8-alpine
+    image: clickhouse/clickhouse-server:24.6-alpine
     container_name: clickhouse2_02
     hostname: clickhouse02
     networks:
@@ -40,11 +46,12 @@ services:
       - ./clickhouse02:/etc/clickhouse-server
     healthcheck:
       test: [ "CMD-SHELL", "clickhouse-client --host clickhouse02 --query 'SELECT 1'" ]
-      interval: 5s
+      interval: 1s
       timeout: 3s
       retries: 30
     depends_on:
-      - zookeeper2
+      zookeeper2:
+        condition: service_healthy
 
 networks:
   clickhouse-network2:

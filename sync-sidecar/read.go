@@ -31,8 +31,9 @@ type ActiveStream struct {
 	unsavedState        any
 	closed              bool
 
-	bulkerStream  bulker.BulkerStream
-	errorFromLogs string
+	bulkerStream       bulker.BulkerStream
+	errorFromLogs      string
+	noTrustworthyError bool
 	*StreamStat
 }
 
@@ -100,7 +101,8 @@ func (s *ActiveStream) Close(complete, strict bool) (state bulker.State) {
 	} else {
 		state = s.Abort()
 		if s.Error == "" {
-			s.Error = interruptError
+			s.Error = utils.NvlString(s.errorFromLogs, interruptError)
+			s.noTrustworthyError = true
 		}
 	}
 	if s.Error != "" {
@@ -133,7 +135,7 @@ func (s *ActiveStream) IsActive() bool {
 }
 
 func (s *ActiveStream) RegisterError(err error) {
-	if err != nil && s != nil && (s.Error == "" || s.Error == interruptError) {
+	if err != nil && s != nil && (s.Error == "" || s.noTrustworthyError) {
 		s.Error = err.Error()
 		s.bufferedEventsCount = 0
 		s.bufferedBytes = 0
@@ -519,10 +521,14 @@ func (s *ReadSideCar) processTrace(rec *TraceRow, line string) {
 		}
 	case "ERROR":
 		r := rec.Error
-		s.errprint("TRACE ERROR: %s", r.Message)
+		streamName := joinStrings(r.StreamDescriptor.Namespace, r.StreamDescriptor.Name, ".")
+		if streamName != "" {
+			s.errprint("TRACE ERROR '%s': %s", streamName, r.Message)
+		} else {
+			s.errprint("TRACE ERROR: %s", r.Message)
+		}
 		fmt.Printf("ERROR DETAILS: %s\n%s", r.InternalMessage, r.StackTrace)
-		if r.StreamDescriptor.Name != "" {
-			streamName := joinStrings(r.StreamDescriptor.Namespace, r.StreamDescriptor.Name, ".")
+		if streamName != "" {
 			stream, ok := s.processedStreams[streamName]
 			if ok {
 				stream.RegisterError(fmt.Errorf("%s", r.Message))

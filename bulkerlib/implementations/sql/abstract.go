@@ -37,6 +37,8 @@ type AbstractSQLStream struct {
 	pkColumns       []string
 	timestampColumn string
 
+	unmappedDataColumn string
+
 	startTime time.Time
 }
 
@@ -69,6 +71,8 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 		ps.schemaOptions = schema
 		ps.schemaFromOptions = ps.sqlAdapter.TableHelper().MapSchema(ps.sqlAdapter, schema)
 	}
+
+	ps.unmappedDataColumn = p.ColumnName(unmappedDataColumn)
 
 	//TODO: max column?
 	ps.state = bulker.State{Status: bulker.Active}
@@ -228,13 +232,13 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 	}
 	if len(unmappedObj) > 0 {
 		jsonSQLType, _ := ps.sqlAdapter.GetSQLType(types.JSON)
-		added := current.SetIfAbsent(ps.sqlAdapter.ColumnName(unmappedDataColumn), types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
+		added := current.SetIfAbsent(ps.unmappedDataColumn, types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
 		columnsAdded = columnsAdded || added
 		if ps.sqlAdapter.StringifyObjects() {
 			b, _ := jsoniter.Marshal(unmappedObj)
-			values.Set(ps.sqlAdapter.ColumnName(unmappedDataColumn), string(b))
+			values.Set(ps.unmappedDataColumn, string(b))
 		} else {
-			values.Set(ps.sqlAdapter.ColumnName(unmappedDataColumn), unmappedObj)
+			values.Set(ps.unmappedDataColumn, unmappedObj)
 		}
 	}
 	return columnsAdded

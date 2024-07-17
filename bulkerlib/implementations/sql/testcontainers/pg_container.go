@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/docker/go-connections/nat"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/testcontainers/testcontainers-go"
 	tcWait "github.com/testcontainers/testcontainers-go/wait"
 	"os"
@@ -76,14 +75,14 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", pgUser, pgPassword, host, port.Port(), pgDatabase)
 	}
 
-	exposedPort := fmt.Sprintf("%d:%d", utils.GetPort(), 5432)
+	//exposedPort := fmt.Sprintf("%d:%d", utils.GetPort(), 5432)
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "postgres:12-alpine",
-			ExposedPorts: []string{exposedPort},
-			Env:          dbSettings,
-			WaitingFor:   tcWait.ForSQL("5432", "postgres", dbURL).WithStartupTimeout(time.Second * 60),
+			Image: "postgres:12-alpine",
+			//ExposedPorts: []string{exposedPort},
+			Env:        dbSettings,
+			WaitingFor: tcWait.ForSQL("5432", "postgres", dbURL).WithStartupTimeout(time.Second * 60),
 		},
 		Started: true,
 	})

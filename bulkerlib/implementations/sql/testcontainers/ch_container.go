@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/testcontainers/testcontainers-go"
 	tcWait "github.com/testcontainers/testcontainers-go/wait"
 	"time"
@@ -28,14 +27,14 @@ type ClickHouseContainer struct {
 // This logic is required for running test at CI environment
 func NewClickhouseContainer(ctx context.Context) (*ClickHouseContainer, error) {
 	image := "clickhouse/clickhouse-server:24.6-alpine"
-	exposedPortHttp := fmt.Sprintf("%d:%d", utils.GetPort(), 8123)
-	exposedPortNative := fmt.Sprintf("%d:%d", utils.GetPort(), 9000)
+	//exposedPortHttp := fmt.Sprintf("%d:%d", utils.GetPort(), 8123)
+	//exposedPortNative := fmt.Sprintf("%d:%d", utils.GetPort(), 9000)
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        image,
-			ExposedPorts: []string{exposedPortHttp, exposedPortNative},
-			WaitingFor:   tcWait.ForListeningPort("9000/tcp").WithStartupTimeout(1 * time.Minute),
+			Image: image,
+			//ExposedPorts: []string{exposedPortNative},
+			WaitingFor: tcWait.ForListeningPort("9000/tcp").WithStartupTimeout(1 * time.Minute),
 		},
 		Started: true,
 	})
