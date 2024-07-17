@@ -7,6 +7,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"io"
+	"sync"
 )
 
 // TxWrapper is sql transaction wrapper. Used for handling and log errors with db type (postgres, mySQL, redshift or snowflake)
@@ -179,32 +180,83 @@ func (t *TxWrapper) Rollback() error {
 }
 
 type ConWithDB struct {
-	db *sql.DB
-	//con *sql.Conn
+	sessionId string
+	db        *sql.DB
+	con       *sql.Conn
 }
 
-func NewConWithDB(db *sql.DB) *ConWithDB {
-	return &ConWithDB{db: db}
+var activeSession sync.Map
+
+func NewConWithDB(db *sql.DB, con *sql.Conn, sessionId string) *ConWithDB {
+	return &ConWithDB{db: db, con: con, sessionId: sessionId}
 }
 
-func (c *ConWithDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	return c.db.ExecContext(ctx, query, args...)
+func (c *ConWithDB) ExecContext(ctx context.Context, query string, args ...any) (res sql.Result, err error) {
+	q, ok := activeSession.LoadOrStore(c.sessionId, query)
+	if !ok {
+		defer func() {
+			del := activeSession.CompareAndDelete(c.sessionId, query)
+			if !del {
+				logging.Errorf("session %s was REUSED CONCURRENTLY", c.sessionId)
+			}
+		}()
+		res, err = c.con.ExecContext(ctx, query, args...)
+	} else {
+		err = fmt.Errorf("session %s is CONCURRENTLY USED by: %s", c.sessionId, q.(string))
+	}
+	return
 }
 
-func (c *ConWithDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return c.db.QueryContext(ctx, query, args...)
+func (c *ConWithDB) QueryContext(ctx context.Context, query string, args ...any) (res *sql.Rows, err error) {
+	q, ok := activeSession.LoadOrStore(c.sessionId, query)
+	if !ok {
+		defer func() {
+			del := activeSession.CompareAndDelete(c.sessionId, query)
+			if !del {
+				logging.Fatalf("session %s was REUSED CONCURRENTLY", c.sessionId)
+			}
+		}()
+		res, err = c.con.QueryContext(ctx, query, args...)
+	} else {
+		err = fmt.Errorf("session %s is CONCURRENTLY USED by: %s", c.sessionId, q.(string))
+	}
+	return
 }
 
-func (c *ConWithDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	return c.db.QueryRowContext(ctx, query, args...)
+func (c *ConWithDB) QueryRowContext(ctx context.Context, query string, args ...any) (row *sql.Row) {
+	q, ok := activeSession.LoadOrStore(c.sessionId, query)
+	if !ok {
+		defer func() {
+			del := activeSession.CompareAndDelete(c.sessionId, query)
+			if !del {
+				logging.Fatalf("session %s was REUSED CONCURRENTLY", c.sessionId)
+			}
+		}()
+		row = c.con.QueryRowContext(ctx, query, args...)
+	} else {
+		logging.Fatalf("session %s is CONCURRENTLY USED by: %s", c.sessionId, q.(string))
+	}
+	return
 }
 
-func (c *ConWithDB) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
-	return c.db.PrepareContext(ctx, query)
+func (c *ConWithDB) PrepareContext(ctx context.Context, query string) (res *sql.Stmt, err error) {
+	q, ok := activeSession.LoadOrStore(c.sessionId, query)
+	if !ok {
+		defer func() {
+			del := activeSession.CompareAndDelete(c.sessionId, query)
+			if !del {
+				logging.Fatalf("session %s was REUSED CONCURRENTLY", c.sessionId)
+			}
+		}()
+		res, err = c.con.PrepareContext(ctx, query)
+	} else {
+		err = fmt.Errorf("session %s is CONCURRENTLY USED by: %s", c.sessionId, q.(string))
+	}
+	return
 }
 
 func (c *ConWithDB) Close() error {
-	//_ = c.con.Close()
+	_ = c.con.Close()
 	if c.db != nil {
 		return c.db.Close()
 	}

@@ -301,14 +301,19 @@ func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 		origConfig := *ch.config
 		configCopy := origConfig
 		configCopy.Parameters = utils.MapCopy(ch.config.Parameters)
-		configCopy.Parameters["session_id"] = uuid.New()
+		sessionId := uuid.New()
+		configCopy.Parameters["session_id"] = sessionId
 		utils.MapPutIfAbsent(configCopy.Parameters, "session_timeout", "3600")
 		// create db pool just for one session because 'session_id' config parameter defines session
 		sessionDb, err := ch.dbConnectFunction(&configCopy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open session: %v", err)
 		}
-		db = sessionDb
+		c, err := sessionDb.Conn(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open connection: %v", err)
+		}
+		db = NewConWithDB(sessionDb, c, sessionId)
 	} else {
 		var err error
 		db, err = ch.dataSource.Conn(ctx)
@@ -1136,8 +1141,11 @@ func (ch *ClickHouse) Ping(_ context.Context) error {
 func chPing(db *sql.DB, httpMode bool) error {
 	if httpMode {
 		//keep select 1 and don't use Ping() because chproxy doesn't support /ping endpoint.
-		_, err := db.Exec("SELECT 1")
-		return err
+		//_, err := db.Exec("SELECT 1")
+		//return err
+
+		//not sure Ping is necessary in httpMode
+		return nil
 	} else {
 		return db.Ping()
 	}
