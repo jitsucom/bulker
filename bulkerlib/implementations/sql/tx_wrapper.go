@@ -185,6 +185,7 @@ type ConWithDB struct {
 }
 
 func NewConWithDB(db *sql.DB, con *sql.Conn, sessionId string) *ConWithDB {
+	fmt.Println("OPEN", sessionId)
 	return &ConWithDB{db: db, con: con, sessionId: sessionId}
 }
 

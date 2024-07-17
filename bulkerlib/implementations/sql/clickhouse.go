@@ -319,6 +319,7 @@ func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 			return nil, fmt.Errorf("failed to open connection: %v", err)
 		}
 		db = NewConWithDB(sessionDb, c, sessionId)
+		time.Sleep(1 * time.Second)
 	} else {
 		var err error
 		db, err = ch.dataSource.Conn(ctx)
