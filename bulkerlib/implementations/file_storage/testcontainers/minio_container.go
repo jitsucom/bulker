@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/testcontainers/testcontainers-go"
 	tcWait "github.com/testcontainers/testcontainers-go/wait"
 )
@@ -35,15 +34,16 @@ func NewMinioContainer(ctx context.Context, bucketName string) (*MinioContainer,
 	dbSettings["MINIO_ACCESS_KEY"] = minioAccessKey
 	dbSettings["MINIO_SECRET_KEY"] = minioSecretKey
 
-	exposedPort := fmt.Sprintf("%d:%d", utils.GetPort(), 9000)
+	//exposedPort := fmt.Sprintf("%d:%d", utils.GetPort(), 9000)
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "minio/minio:latest",
-			Cmd:          []string{"server", "/data"},
-			ExposedPorts: []string{exposedPort},
-			Env:          dbSettings,
-			WaitingFor:   tcWait.ForListeningPort("9000"),
+			Image: "minio/minio:latest",
+			Cmd:   []string{"server", "/data"},
+			// TODO: enable back after fixing testcontainers
+			//ExposedPorts: []string{exposedPort},
+			Env:        dbSettings,
+			WaitingFor: tcWait.ForListeningPort("9000"),
 		},
 		Started: true,
 	})
