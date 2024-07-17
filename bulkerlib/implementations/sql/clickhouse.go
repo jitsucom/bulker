@@ -298,7 +298,8 @@ func (ch *ClickHouse) Type() string {
 func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	var db DB
 	if ch.httpMode {
-		configCopy := *ch.config
+		origConfig := *ch.config
+		configCopy := origConfig
 		configCopy.Parameters = utils.MapCopy(ch.config.Parameters)
 		utils.MapPutIfAbsent(configCopy.Parameters, "session_id", uuid.New())
 		utils.MapPutIfAbsent(configCopy.Parameters, "session_timeout", "3600")

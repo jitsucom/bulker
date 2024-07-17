@@ -72,6 +72,7 @@ func NewMySQLContainer(ctx context.Context) (*MySQLContainer, error) {
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: "mysql/mysql-server:8.0",
+			// TODO: enable back after fixing testcontainers
 			//ExposedPorts: []string{exposedPort},
 			Env:        dbSettings,
 			WaitingFor: tcWait.ForLog("port: 3306  MySQL Community Server - GPL").WithStartupTimeout(time.Second * 180),

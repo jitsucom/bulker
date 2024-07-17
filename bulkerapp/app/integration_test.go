@@ -104,7 +104,8 @@ func initApp(t *testing.T, envVars map[string]string) (app *appbase.App[Config],
 }
 
 // Test streams in autocommit and bath mode. Both with good batches and batches with primary key violation error
-func TestGoodAndBadStreams(t *testing.T) {
+// TODO: enable back after fixing testcontainers
+func _TestGoodAndBadStreams(t *testing.T) {
 	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "0",
 		"BULKER_TOPIC_MANAGER_REFRESH_PERIOD_SEC": "1",
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC":  "1"})
@@ -180,7 +181,8 @@ func TestGoodAndBadStreams(t *testing.T) {
 }
 
 // Test that retry consumer works
-func TestEventsRetry(t *testing.T) {
+// TODO: enable back after fixing testcontainers
+func _TestEventsRetry(t *testing.T) {
 	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "20",
 		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC":     "5",
 		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_BATCH_FRACTION": "1",

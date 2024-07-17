@@ -33,6 +33,7 @@ func NewClickhouseContainer(ctx context.Context) (*ClickHouseContainer, error) {
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: image,
+			// TODO: enable back after fixing testcontainers
 			//ExposedPorts: []string{exposedPortNative},
 			WaitingFor: tcWait.ForListeningPort("9000/tcp").WithStartupTimeout(1 * time.Minute),
 		},

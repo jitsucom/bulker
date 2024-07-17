@@ -80,6 +80,7 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: "postgres:12-alpine",
+			// TODO: enable back after fixing testcontainers
 			//ExposedPorts: []string{exposedPort},
 			Env:        dbSettings,
 			WaitingFor: tcWait.ForSQL("5432", "postgres", dbURL).WithStartupTimeout(time.Second * 60),
@@ -216,5 +217,14 @@ func (pgc *PostgresContainer) Stop() error {
 }
 
 func (pgc *PostgresContainer) Start() error {
-	return pgc.Container.Start(context.Background())
+	err := pgc.Container.Start(context.Background())
+	if err != nil {
+		return err
+	}
+	port, err := pgc.Container.MappedPort(context.Background(), "5432")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Postgres container started on port: %d\n", port.Int())
+	return nil
 }

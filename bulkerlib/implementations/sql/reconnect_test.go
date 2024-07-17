@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// TODO: enable back after fixing testcontainers
 func _TestReconnect(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
