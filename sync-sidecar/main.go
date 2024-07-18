@@ -8,11 +8,20 @@ import (
 	_ "github.com/jitsucom/bulker/bulkerlib/implementations/api_based"
 	_ "github.com/jitsucom/bulker/bulkerlib/implementations/file_storage"
 	_ "github.com/jitsucom/bulker/bulkerlib/implementations/sql"
+	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"os"
+	"os/signal"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
 )
+
+type SideCar interface {
+	Run()
+	Close()
+}
 
 type AbstractSideCar struct {
 	syncId     string
@@ -34,6 +43,21 @@ type AbstractSideCar struct {
 
 	//first error occurred during command
 	firstErr error
+
+	errPipe   *os.File
+	outPipe   *os.File
+	cancelled atomic.Bool
+}
+
+func (s *AbstractSideCar) Close() {
+	s._log("jitsu", "WARN", "Cancelling...")
+	s.cancelled.Store(true)
+	if s.outPipe != nil {
+		_ = s.outPipe.Close()
+	}
+	if s.errPipe != nil {
+		_ = s.errPipe.Close()
+	}
 }
 
 func main() {
@@ -43,6 +67,7 @@ func main() {
 	}
 
 	command := os.Getenv("COMMAND")
+	var sidecar SideCar
 	abstract := &AbstractSideCar{
 		syncId:         os.Getenv("SYNC_ID"),
 		taskId:         os.Getenv("TASK_ID"),
@@ -56,12 +81,21 @@ func main() {
 		startedAt:      startedAt,
 	}
 	if command == "read" {
-		sidecar := &ReadSideCar{AbstractSideCar: abstract, tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX")}
-		sidecar.Run()
+		sidecar = &ReadSideCar{AbstractSideCar: abstract, tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX")}
 	} else {
-		sidecar := SpecCatalogSideCar{AbstractSideCar: abstract}
-		sidecar.Run()
+		sidecar = &SpecCatalogSideCar{AbstractSideCar: abstract}
 	}
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigs
+		logging.Infof("Received signal: %s. Shutting down...", sig)
+		sidecar.Close()
+	}()
+
+	sidecar.Run()
 
 }
 

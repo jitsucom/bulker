@@ -32,6 +32,8 @@ func (s *SpecCatalogSideCar) Run() {
 		} else if s.isErr() {
 			s.sendStatus(s.command, "FAILED", s.firstErr.Error())
 			os.Exit(1)
+		} else if s.cancelled.Load() {
+			s.sendStatus(s.command, "CANCELLED", "")
 		} else {
 			s.sendStatus(s.command, "SUCCESS", "")
 		}
@@ -39,31 +41,34 @@ func (s *SpecCatalogSideCar) Run() {
 	s.log("Sidecar. command: %s, taskId: %s, package: %s:%s startedAt: %s", s.command, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
 	var stdOutErrWaitGroup sync.WaitGroup
 
-	errPipe, _ := os.Open(s.stdErrPipeFile)
-	defer errPipe.Close()
+	s.errPipe, _ = os.Open(s.stdErrPipeFile)
+	defer s.errPipe.Close()
 	stdOutErrWaitGroup.Add(1)
 	// read from stderr
 	go func() {
 		defer stdOutErrWaitGroup.Done()
-		scanner := bufio.NewScanner(errPipe)
+		scanner := bufio.NewScanner(s.errPipe)
 		scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
 		for scanner.Scan() {
 			line := scanner.Text()
 			s.sourceLog("ERRSTD", line)
 		}
-		if err := scanner.Err(); err != nil {
+		if err := scanner.Err(); err != nil && !s.cancelled.Load() {
 			s.panic("error reading from err pipe: %v", err)
 		}
 	}()
 
-	outPipe, _ := os.Open(s.stdOutPipeFile)
-	defer outPipe.Close()
+	s.outPipe, _ = os.Open(s.stdOutPipeFile)
+	defer s.outPipe.Close()
+	if s.cancelled.Load() {
+		return
+	}
 	stdOutErrWaitGroup.Add(1)
 	// read from stdout
 	go func() {
 		defer stdOutErrWaitGroup.Done()
 
-		scanner := bufio.NewScanner(outPipe)
+		scanner := bufio.NewScanner(s.outPipe)
 		scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
 		for scanner.Scan() {
 			line := scanner.Bytes()
@@ -93,7 +98,7 @@ func (s *SpecCatalogSideCar) Run() {
 				s.panic("not supported type: %s", row.Type)
 			}
 		}
-		if err := scanner.Err(); err != nil {
+		if err := scanner.Err(); err != nil && !s.cancelled.Load() {
 			s.panic("error reading from pipe: %v", err)
 		}
 	}()

@@ -22,6 +22,9 @@ type TaskDescriptor struct {
 	StartedAt       string `json:"startedAt"`
 }
 
+func (t *TaskDescriptor) PodName() string {
+	return PodName(t.SyncID, t.TaskID, t.Package)
+}
 func (t *TaskDescriptor) StartedAtTime() time.Time {
 	tm, err := time.Parse(time.RFC3339, t.StartedAt)
 	if err != nil {

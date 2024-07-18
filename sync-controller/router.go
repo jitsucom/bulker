@@ -22,6 +22,7 @@ func NewRouter(appContext *Context) *Router {
 	engine.POST("/check", appContext.taskManager.CheckHandler)
 	engine.POST("/discover", appContext.taskManager.DiscoverHandler)
 	engine.POST("/read", appContext.taskManager.ReadHandler)
+	engine.GET("/cancel", appContext.taskManager.CancelHandler)
 
 	engine.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "pass"})

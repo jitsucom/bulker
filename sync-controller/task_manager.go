@@ -95,6 +95,15 @@ func (t *TaskManager) DiscoverHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (t *TaskManager) CancelHandler(c *gin.Context) {
+	pkg := c.Query("package")
+	syncId := c.Query("syncId")
+	taskId := c.Query("taskId")
+	_ = db.UpdateRunningTaskStatus(t.dbpool, taskId, "CANCELLED")
+	t.jobRunner.TerminatePod(PodName(syncId, taskId, pkg))
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (t *TaskManager) ReadHandler(c *gin.Context) {
 	taskConfig := TaskConfiguration{}
 	err := jsonorder.NewDecoder(c.Request.Body).Decode(&taskConfig)
@@ -188,9 +197,9 @@ func (t *TaskManager) listenTaskStatus() {
 			case "read":
 				switch st.Status {
 				case StatusCreateFailed, StatusFailed, StatusInitTimeout:
-					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "))
+					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "), st.StartedBy)
 				case StatusCreated:
-					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "RUNNING", strings.Join([]string{string(st.Status), st.Description}, ": "))
+					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "RUNNING", strings.Join([]string{string(st.Status), st.Description}, ": "), st.StartedBy)
 				case StatusRunning:
 					err = db.UpdateRunningTaskDate(t.dbpool, st.TaskID)
 				default:

@@ -38,6 +38,7 @@ type ActiveStream struct {
 }
 
 const interruptError = "Stream was interrupted. Check logs for errors."
+const cancelledError = "Sync job was cancelled"
 
 func NewActiveStream(name, mode string) *ActiveStream {
 	return &ActiveStream{name: name, mode: mode, StreamStat: &StreamStat{Status: "RUNNING"}}
@@ -95,12 +96,12 @@ func (s *ActiveStream) Commit(strict bool) (state bulker.State) {
 	return
 }
 
-func (s *ActiveStream) Close(complete, strict bool) (state bulker.State) {
+func (s *ActiveStream) Close(complete, cancelled, strict bool) (state bulker.State) {
 	if complete {
 		state = s.Commit(strict)
 	} else {
 		state = s.Abort()
-		if s.Error == "" {
+		if s.Error == "" && !cancelled {
 			s.Error = utils.NvlString(s.errorFromLogs, interruptError)
 			s.noTrustworthyError = true
 		}
@@ -110,6 +111,13 @@ func (s *ActiveStream) Close(complete, strict bool) (state bulker.State) {
 			s.Status = "PARTIAL"
 		} else {
 			s.Status = "FAILED"
+		}
+	} else if cancelled {
+		if s.EventsCount > 0 {
+			s.Status = "PARTIAL"
+			s.Error = cancelledError
+		} else {
+			s.Status = "CANCELLED"
 		}
 	} else if s.Status == "RUNNING" {
 		s.Status = "SUCCESS"
@@ -178,17 +186,24 @@ func (s *ReadSideCar) Run() {
 	defer s.dbpool.Close()
 
 	defer func() {
+		cancelled := s.cancelled.Load()
 		if r := recover(); r != nil {
 			s.registerErr(fmt.Errorf("%v", r))
+			s.closeActiveStreams(false)
+		} else {
+			s.closeActiveStreams(!cancelled)
 		}
-		s.closeActiveStreams()
 		if len(s.processedStreams) > 0 {
 			statusMap := types2.NewOrderedMap[string, any]()
 			s.catalog.ForEach(func(streamName string, _ *Stream) {
 				if stream, ok := s.processedStreams[streamName]; ok {
 					statusMap.Set(streamName, stream.StreamStat)
 				} else {
-					statusMap.Set(streamName, &StreamStat{Status: "FAILED", Error: "Stream was not processed. Check logs for errors."})
+					if cancelled {
+						statusMap.Set(streamName, &StreamStat{Status: "CANCELLED"})
+					} else {
+						statusMap.Set(streamName, &StreamStat{Status: "FAILED", Error: "Stream was not processed. Check logs for errors."})
+					}
 				}
 			})
 			allSuccess := true
@@ -207,6 +222,8 @@ func (s *ReadSideCar) Run() {
 				status = "SUCCESS"
 			} else if allFailed {
 				status = "FAILED"
+			} else if cancelled {
+				status = "CANCELLED"
 			}
 
 			processedStreamsJson, _ := jsonorder.Marshal(statusMap)
@@ -214,6 +231,8 @@ func (s *ReadSideCar) Run() {
 		} else if s.isErr() {
 			s.sendFinalStatus("FAILED", "ERROR: "+s.firstErr.Error())
 			os.Exit(1)
+		} else if cancelled {
+			s.sendFinalStatus("CANCELLED", "")
 		} else {
 			s.sendFinalStatus("SUCCESS", "")
 		}
@@ -247,32 +266,35 @@ func (s *ReadSideCar) Run() {
 	}
 	var stdOutErrWaitGroup sync.WaitGroup
 
-	errPipe, _ := os.Open(s.stdErrPipeFile)
-	defer errPipe.Close()
+	s.errPipe, _ = os.Open(s.stdErrPipeFile)
+	defer s.errPipe.Close()
 	stdOutErrWaitGroup.Add(1)
 	// read from stderr
 	go func() {
 		defer stdOutErrWaitGroup.Done()
-		scanner := bufio.NewScanner(errPipe)
+		scanner := bufio.NewScanner(s.errPipe)
 		scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
 		for scanner.Scan() {
 			line := scanner.Text()
 			s.sourceLog("ERRSTD", line)
 		}
-		if err := scanner.Err(); err != nil {
+		if err := scanner.Err(); err != nil && !s.cancelled.Load() {
 			s.panic("error reading from err pipe: %v", err)
 		}
 	}()
 
 	s.processedStreams = map[string]*ActiveStream{}
-	outPipe, _ := os.Open(s.stdOutPipeFile)
-	defer outPipe.Close()
+	s.outPipe, _ = os.Open(s.stdOutPipeFile)
+	defer s.outPipe.Close()
+	if s.cancelled.Load() {
+		return
+	}
 	stdOutErrWaitGroup.Add(1)
 	// read from stdout
 	go func() {
 		defer stdOutErrWaitGroup.Done()
 
-		scanner := bufio.NewScanner(outPipe)
+		scanner := bufio.NewScanner(s.outPipe)
 		scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
 		for scanner.Scan() {
 			s.lastMessageTime.Store(time.Now().Unix())
@@ -311,7 +333,7 @@ func (s *ReadSideCar) Run() {
 				s.panic("not supported Airbyte message type: %s", row.Type)
 			}
 		}
-		if err := scanner.Err(); err != nil {
+		if err := scanner.Err(); err != nil && !s.cancelled.Load() {
 			s.panic("error reading from pipe: %v", err)
 		}
 	}()
@@ -420,7 +442,7 @@ func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 
 func (s *ReadSideCar) _closeStream(stream *ActiveStream, complete bool, strict bool) {
 	wasActive := stream.IsActive()
-	state := stream.Close(complete, strict)
+	state := stream.Close(complete, s.cancelled.Load(), strict)
 	if stream.Error != "" {
 		s.errprint("Stream '%s' bulker commit failed: %v", stream.name, stream.Error)
 	} else if wasActive {
@@ -433,10 +455,10 @@ func (s *ReadSideCar) _closeStream(stream *ActiveStream, complete bool, strict b
 	s.log("Stream '%s' closed: status: %s rows: %d", stream.name, stream.Status, stream.EventsCount)
 }
 
-func (s *ReadSideCar) closeActiveStreams() {
+func (s *ReadSideCar) closeActiveStreams(complete bool) {
 	for _, stream := range s.processedStreams {
 		if stream.Status == "RUNNING" {
-			s._closeStream(stream, true, true)
+			s._closeStream(stream, complete, true)
 		}
 	}
 }

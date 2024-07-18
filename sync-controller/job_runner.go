@@ -260,17 +260,22 @@ func (j *JobRunner) CreateCronJob(taskDescriptor TaskDescriptor, configuration *
 		taskStatus.Description = err.Error()
 	} else {
 		taskStatus.Status = StatusCreated
+		taskStatus.Description = "Starting sync job..."
 		taskStatus.PodName = cronJob.Name
 	}
 	j.sendStatus(&taskStatus)
 	return taskStatus
 }
 
+func PodName(syncId, taskId, pkg string) string {
+	taskId = utils.NvlString(taskId, uuid.NewLettersNumbers())
+	podId := utils.JoinNonEmptyStrings(".", syncId, taskId)
+	return strings.ToLower(nonAlphaNum.ReplaceAllLiteralString(pkg, "-") + "-" + podId)
+}
+
 func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {
 	taskStatus := TaskStatus{TaskDescriptor: taskDescriptor}
-	taskId := utils.NvlString(taskDescriptor.TaskID, uuid.NewLettersNumbers())
-	podId := utils.JoinNonEmptyStrings(".", taskStatus.SyncID, taskId)
-	podName := strings.ToLower(nonAlphaNum.ReplaceAllLiteralString(taskDescriptor.Package, "-") + "-" + podId)
+	podName := taskDescriptor.PodName()
 	if !configuration.IsEmpty() {
 		secret := j.createSecret(podName, taskDescriptor, configuration)
 		_, err := j.clientset.CoreV1().Secrets(j.namespace).Create(context.Background(), secret, metav1.CreateOptions{})
@@ -288,6 +293,7 @@ func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *Task
 		taskStatus.Description = err.Error()
 	} else {
 		taskStatus.Status = StatusCreated
+		taskStatus.Description = "Starting sync job..."
 		taskStatus.PodName = pod.Name
 	}
 	j.sendStatus(&taskStatus)
@@ -494,6 +500,12 @@ func (j *JobRunner) createCronJob(jobId string, task TaskDescriptor, configurati
 		},
 	}
 	return cronJob
+}
+
+func (j *JobRunner) TerminatePod(podName string) {
+	_ = j.clientset.CoreV1().Pods(j.namespace).Delete(context.Background(), podName, metav1.DeleteOptions{})
+	_ = j.clientset.CoreV1().Secrets(j.namespace).Delete(context.Background(), podName+"-config", metav1.DeleteOptions{})
+	_ = j.clientset.CoreV1().ConfigMaps(j.namespace).Delete(context.Background(), podName+"-config", metav1.DeleteOptions{})
 }
 
 func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration *TaskConfiguration) *v1.Pod {
