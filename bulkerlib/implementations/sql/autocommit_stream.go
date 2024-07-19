@@ -95,6 +95,10 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		err = ps.sqlAdapter.Insert(ctx, currentTable, ps.merge, processedObject)
 	} else {
 		existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
+		if err != nil {
+			err = errorj.Decorate(err, "failed to ensure table")
+			return
+		}
 		err = ps.sqlAdapter.Insert(ctx, existingTable, ps.merge, processedObject)
 	}
 
