@@ -8,6 +8,7 @@ import (
 	_ "github.com/jitsucom/bulker/bulkerlib/implementations/api_based"
 	_ "github.com/jitsucom/bulker/bulkerlib/implementations/file_storage"
 	_ "github.com/jitsucom/bulker/bulkerlib/implementations/sql"
+	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"os"
@@ -82,6 +83,23 @@ func main() {
 	}
 	if command == "read" {
 		sidecar = &ReadSideCar{AbstractSideCar: abstract, tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX")}
+		sidecar.(*ReadSideCar).eventsLogService = &eventslog.DummyEventsLogService{}
+		clickhouseHost := os.Getenv("CLICKHOUSE_HOST")
+		if clickhouseHost != "" {
+			eventsLogConfig := eventslog.EventsLogConfig{
+				ClickhouseHost:     clickhouseHost,
+				ClickhouseDatabase: os.Getenv("CLICKHOUSE_DATABASE"),
+				ClickhouseUsername: os.Getenv("CLICKHOUSE_USERNAME"),
+				ClickhousePassword: os.Getenv("CLICKHOUSE_PASSWORD"),
+				ClickhouseSSL:      os.Getenv("CLICKHOUSE_SSL") == "true",
+			}
+			eventsLogService, err := eventslog.NewClickhouseEventsLog(eventsLogConfig)
+			if err != nil {
+				logging.Errorf("Unable to create clickhouse events log: %v", err)
+			} else {
+				sidecar.(*ReadSideCar).eventsLogService = eventsLogService
+			}
+		}
 	} else {
 		sidecar = &SpecCatalogSideCar{AbstractSideCar: abstract}
 	}

@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/pg"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
@@ -16,143 +18,14 @@ import (
 	"time"
 )
 
-type StreamStat struct {
-	EventsCount    int    `json:"events"`
-	BytesProcessed int    `json:"bytes"`
-	Status         string `json:"status"`
-	Error          string `json:"error,omitempty"`
-}
-
-type ActiveStream struct {
-	name                string
-	mode                string
-	bufferedEventsCount int
-	bufferedBytes       int
-	unsavedState        any
-	closed              bool
-
-	bulkerStream       bulker.BulkerStream
-	errorFromLogs      string
-	noTrustworthyError bool
-	*StreamStat
-}
-
 const interruptError = "Stream was interrupted. Check logs for errors."
 const cancelledError = "Sync job was cancelled"
-
-func NewActiveStream(name, mode string) *ActiveStream {
-	return &ActiveStream{name: name, mode: mode, StreamStat: &StreamStat{Status: "RUNNING"}}
-}
-
-func (s *ActiveStream) Begin(bulkerStream bulker.BulkerStream) error {
-	if s.closed {
-		return fmt.Errorf("Stream '%s' is already closed", s.name)
-	}
-	if s.bulkerStream != nil {
-		return fmt.Errorf("Stream '%s' is already started", s.name)
-	}
-	s.bulkerStream = bulkerStream
-	s.Status = "RUNNING"
-	return nil
-}
-
-func (s *ActiveStream) Abort() (state bulker.State) {
-	if s == nil {
-		return
-	}
-	if s.bulkerStream != nil {
-		state = s.bulkerStream.Abort(context.Background())
-	}
-	s.bulkerStream = nil
-	return
-}
-
-// Commit strict - if true, we commit only if there are no errors in logs that could be attributed to that stream
-// ( was emitted when only this stream was running )
-func (s *ActiveStream) Commit(strict bool) (state bulker.State) {
-	if s == nil {
-		return
-	}
-	if s.bulkerStream != nil {
-		if s.Error != "" {
-			state = s.bulkerStream.Abort(context.Background())
-		} else if strict && s.errorFromLogs != "" {
-			s.Error = s.errorFromLogs
-			state = s.bulkerStream.Abort(context.Background())
-		} else {
-			var err error
-			state, err = s.bulkerStream.Complete(context.Background())
-			if err != nil {
-				s.Error = err.Error()
-			} else {
-				s.EventsCount += s.bufferedEventsCount
-				s.BytesProcessed += s.bufferedBytes
-			}
-		}
-	}
-	s.bufferedEventsCount = 0
-	s.bufferedBytes = 0
-	s.bulkerStream = nil
-	return
-}
-
-func (s *ActiveStream) Close(complete, cancelled, strict bool) (state bulker.State) {
-	if complete {
-		state = s.Commit(strict)
-	} else {
-		state = s.Abort()
-		if s.Error == "" && !cancelled {
-			s.Error = utils.NvlString(s.errorFromLogs, interruptError)
-			s.noTrustworthyError = true
-		}
-	}
-	if s.Error != "" {
-		if s.EventsCount > 0 {
-			s.Status = "PARTIAL"
-		} else {
-			s.Status = "FAILED"
-		}
-	} else if cancelled {
-		if s.EventsCount > 0 {
-			s.Status = "PARTIAL"
-			s.Error = cancelledError
-		} else {
-			s.Status = "CANCELLED"
-		}
-	} else if s.Status == "RUNNING" {
-		s.Status = "SUCCESS"
-	}
-	s.closed = true
-	return
-}
-
-func (s *ActiveStream) Consume(p *types2.OrderedMap[string, any], originalSize int) error {
-	if s.Error != "" {
-		return nil
-	}
-	_, _, err := s.bulkerStream.Consume(context.Background(), p)
-	if err == nil {
-		s.bufferedEventsCount++
-		s.bufferedBytes += originalSize
-	}
-	return err
-}
-
-func (s *ActiveStream) IsActive() bool {
-	return s.bulkerStream != nil && s.Error == ""
-}
-
-func (s *ActiveStream) RegisterError(err error) {
-	if err != nil && s != nil && (s.Error == "" || s.noTrustworthyError) {
-		s.Error = err.Error()
-		s.bufferedEventsCount = 0
-		s.bufferedBytes = 0
-	}
-}
 
 type ReadSideCar struct {
 	*AbstractSideCar
 	tableNamePrefix string
+
+	eventsLogService eventslog.EventsLogService
 
 	lastMessageTime   atomic.Int64
 	lastStateMessage  string
@@ -428,9 +301,14 @@ func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 
 	if stream.bufferedEventsCount >= 500000 || (stream.mode == "incremental" && !s.fullSync) {
 		state := stream.Commit(false)
+		state.ProcessingTimeSec = time.Since(stream.started).Seconds()
 		if stream.Error != "" {
+			s.postEventsLog(s.syncId, state, stream.processedObjectSample, stream.Error)
 			s.errprint("Stream '%s' bulker commit failed: %v", stream.name, stream.Error)
 		} else {
+			if state.ProcessedRows > 0 || stream.bulkerMode == bulker.ReplaceTable {
+				s.postEventsLog(s.syncId, state, stream.processedObjectSample, "")
+			}
 			s.saveState(stream.name, stream.unsavedState)
 			stream.unsavedState = nil
 			s.log("Stream '%s' bulker commit: %s rows: %d successful: %d", stream.name, state.Status, state.ProcessedRows, state.SuccessfulRows)
@@ -440,12 +318,38 @@ func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 	return
 }
 
+type BatchState struct {
+	bulker.State  `json:",inline"`
+	LastMappedRow types2.Json `json:"lastMappedRow"`
+}
+
+func (s *ReadSideCar) postEventsLog(destinationId string, state bulker.State, processedObjectSample types2.Json, batchErr string) {
+	if batchErr != "" && state.LastError == nil {
+		state.SetError(errors.New(batchErr))
+	}
+	batchState := BatchState{State: state, LastMappedRow: processedObjectSample}
+	level := eventslog.LevelInfo
+	if batchErr != "" {
+		level = eventslog.LevelError
+	}
+	_, err := s.eventsLogService.PostEvent(&eventslog.ActorEvent{Timestamp: time.Now(), EventType: eventslog.EventTypeBatch, Level: level, ActorId: destinationId, Event: batchState})
+	if err != nil {
+		s.errprint("Error posting events log: %v", err)
+	}
+
+}
+
 func (s *ReadSideCar) _closeStream(stream *ActiveStream, complete bool, strict bool) {
 	wasActive := stream.IsActive()
 	state := stream.Close(complete, s.cancelled.Load(), strict)
+	state.ProcessingTimeSec = time.Since(stream.started).Seconds()
 	if stream.Error != "" {
+		s.postEventsLog(s.syncId, state, stream.processedObjectSample, stream.Error)
 		s.errprint("Stream '%s' bulker commit failed: %v", stream.name, stream.Error)
 	} else if wasActive {
+		if state.ProcessedRows > 0 || stream.bulkerMode == bulker.ReplaceTable {
+			s.postEventsLog(s.syncId, state, stream.processedObjectSample, "")
+		}
 		s.log("Stream '%s' bulker commit: %s rows: %d successful: %d", stream.name, state.Status, state.ProcessedRows, state.SuccessfulRows)
 	}
 	if complete {
@@ -490,7 +394,7 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 		mode = bulker.Batch
 	}
 	if stream == nil {
-		stream = NewActiveStream(streamName, str.SyncMode)
+		stream = NewActiveStream(streamName, str.SyncMode, mode)
 		s.processedStreams[streamName] = stream
 	}
 	s.lastStream = stream
@@ -693,4 +597,140 @@ func (s *ReadSideCar) loadDestinationConfig() error {
 	}
 	s.destinationConfig = destinationConfig
 	return nil
+}
+
+type StreamStat struct {
+	EventsCount    int    `json:"events"`
+	BytesProcessed int    `json:"bytes"`
+	Status         string `json:"status"`
+	Error          string `json:"error,omitempty"`
+}
+
+type ActiveStream struct {
+	name                string
+	mode                string
+	bulkerMode          bulker.BulkMode
+	bufferedEventsCount int
+	bufferedBytes       int
+	unsavedState        any
+	closed              bool
+
+	bulkerStream          bulker.BulkerStream
+	processedObjectSample types2.Json
+	started               time.Time
+	errorFromLogs         string
+	noTrustworthyError    bool
+	*StreamStat
+}
+
+func NewActiveStream(name, mode string, bulkerMode bulker.BulkMode) *ActiveStream {
+	return &ActiveStream{name: name, mode: mode, bulkerMode: bulkerMode, StreamStat: &StreamStat{Status: "RUNNING"}}
+}
+
+func (s *ActiveStream) Begin(bulkerStream bulker.BulkerStream) error {
+	if s.closed {
+		return fmt.Errorf("Stream '%s' is already closed", s.name)
+	}
+	if s.bulkerStream != nil {
+		return fmt.Errorf("Stream '%s' is already started", s.name)
+	}
+	s.bulkerStream = bulkerStream
+	s.Status = "RUNNING"
+	s.started = time.Now()
+	return nil
+}
+
+func (s *ActiveStream) Abort() (state bulker.State) {
+	if s == nil {
+		return
+	}
+	if s.bulkerStream != nil {
+		state = s.bulkerStream.Abort(context.Background())
+	}
+	s.bulkerStream = nil
+	return
+}
+
+// Commit strict - if true, we commit only if there are no errors in logs that could be attributed to that stream
+// ( was emitted when only this stream was running )
+func (s *ActiveStream) Commit(strict bool) (state bulker.State) {
+	if s == nil {
+		return
+	}
+	if s.bulkerStream != nil {
+		if s.Error != "" {
+			state = s.bulkerStream.Abort(context.Background())
+		} else if strict && s.errorFromLogs != "" {
+			s.Error = s.errorFromLogs
+			state = s.bulkerStream.Abort(context.Background())
+		} else {
+			var err error
+			state, err = s.bulkerStream.Complete(context.Background())
+			if err != nil {
+				s.Error = err.Error()
+			} else {
+				s.EventsCount += s.bufferedEventsCount
+				s.BytesProcessed += s.bufferedBytes
+			}
+		}
+	}
+	s.bufferedEventsCount = 0
+	s.bufferedBytes = 0
+	s.bulkerStream = nil
+	return
+}
+
+func (s *ActiveStream) Close(complete, cancelled, strict bool) (state bulker.State) {
+	if complete {
+		state = s.Commit(strict)
+	} else {
+		state = s.Abort()
+		if s.Error == "" && !cancelled {
+			s.Error = utils.NvlString(s.errorFromLogs, interruptError)
+			s.noTrustworthyError = true
+		}
+	}
+	if s.Error != "" {
+		if s.EventsCount > 0 {
+			s.Status = "PARTIAL"
+		} else {
+			s.Status = "FAILED"
+		}
+	} else if cancelled {
+		if s.EventsCount > 0 {
+			s.Status = "PARTIAL"
+			s.Error = cancelledError
+		} else {
+			s.Status = "CANCELLED"
+		}
+	} else if s.Status == "RUNNING" {
+		s.Status = "SUCCESS"
+	}
+	s.closed = true
+	return
+}
+
+func (s *ActiveStream) Consume(p *types2.OrderedMap[string, any], originalSize int) error {
+	if s.Error != "" {
+		return nil
+	}
+	var err error
+	_, s.processedObjectSample, err = s.bulkerStream.Consume(context.Background(), p)
+	if err == nil {
+		s.bufferedEventsCount++
+		s.bufferedBytes += originalSize
+	}
+	return err
+}
+
+func (s *ActiveStream) IsActive() bool {
+	return s.bulkerStream != nil && s.Error == ""
+}
+
+func (s *ActiveStream) RegisterError(err error) {
+	if err != nil && s != nil && (s.Error == "" || s.noTrustworthyError) {
+		s.Error = err.Error()
+		s.bufferedEventsCount = 0
+		s.bufferedBytes = 0
+	}
 }

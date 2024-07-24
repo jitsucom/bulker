@@ -132,7 +132,9 @@ func (r *ClickhouseEventsLog) PostAsync(event *ActorEvent) {
 }
 
 func (r *ClickhouseEventsLog) PostEvent(event *ActorEvent) (id EventsLogRecordId, err error) {
-	return "", fmt.Errorf("not implemented")
+	bytes, _ := jsonorder.Marshal(event.Event)
+	err = r.conn.AsyncInsert(context.Background(), "INSERT INTO events_log VALUES (?,?,?,?,?)", false, event.Timestamp, event.ActorId, string(event.EventType), string(event.Level), string(bytes))
+	return
 }
 
 func (r *ClickhouseEventsLog) GetEvents(eventType EventType, actorId string, level string, filter *EventsLogFilter, limit int) ([]EventsLogRecord, error) {

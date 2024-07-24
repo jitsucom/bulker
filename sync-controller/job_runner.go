@@ -542,6 +542,13 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	if task.StorageKey != "" {
 		sideCarEnv["STORAGE_KEY"] = task.StorageKey
 	}
+	if j.config.ClickhouseHost != "" {
+		sideCarEnv["CLICKHOUSE_HOST"] = j.config.ClickhouseHost
+		sideCarEnv["CLICKHOUSE_DATABASE"] = j.config.ClickhouseDatabase
+		sideCarEnv["CLICKHOUSE_USERNAME"] = j.config.ClickhouseUsername
+		sideCarEnv["CLICKHOUSE_PASSWORD"] = j.config.ClickhousePassword
+		sideCarEnv["CLICKHOUSE_SSL"] = fmt.Sprintf("%t", j.config.ClickhouseSSL)
+	}
 	//utils.MapPutAll(sideCarEnv, envMap)
 	sideCarEnvVar := make([]v1.EnvVar, 0, len(sideCarEnv))
 	for k, v := range sideCarEnv {

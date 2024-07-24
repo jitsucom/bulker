@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/spf13/viper"
@@ -10,6 +11,8 @@ import (
 
 type Config struct {
 	appbase.Config `mapstructure:",squash"`
+	// # EVENTS LOG CONFIG - settings for events log
+	eventslog.EventsLogConfig `mapstructure:",squash"`
 
 	DatabaseURL string `mapstructure:"DATABASE_URL"`
 	// in case of different visibility of database side car may require different db hostname
