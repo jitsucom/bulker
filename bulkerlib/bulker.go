@@ -140,6 +140,7 @@ type State struct {
 	//Representation of message processing. For SQL warehouses it is table schema
 	Representation    any            `json:"representation"`
 	Status            Status         `json:"status"`
+	Mode              BulkMode       `json:"mode"`
 	LastError         error          `json:"-"`
 	LastErrorText     string         `json:"error,omitempty"`
 	ProcessedRows     int            `json:"processedRows"`

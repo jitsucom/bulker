@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/mitchellh/mapstructure"
@@ -108,6 +109,8 @@ func CompareAny(a, b any) int {
 		return -1
 	} else if b == nil {
 		return 1
+	} else if a == b {
+		return 0
 	} else {
 		switch va := a.(type) {
 		case string:
@@ -119,19 +122,20 @@ func CompareAny(a, b any) int {
 		case int64:
 			vb, ok := b.(int64)
 			return Ternary(ok, int(va-vb), 0)
-		case float64:
-			vb, ok := b.(float64)
-			if ok {
-				if va > vb {
-					return 1
-				} else if va < vb {
-					return -1
-				} else {
-					return 0
-				}
-			} else {
+		case json.Number:
+			vb, ok := b.(json.Number)
+			if !ok {
 				return 0
 			}
+			fa, _ := va.Float64()
+			fb, _ := vb.Float64()
+			return Ternary(fa > fb, 1, -1)
+		case float64:
+			vb, ok := b.(float64)
+			if !ok {
+				return 0
+			}
+			return Ternary(va > vb, 1, -1)
 		case time.Time:
 			vb, ok := b.(time.Time)
 			return Ternary(ok, va.Compare(vb), 0)

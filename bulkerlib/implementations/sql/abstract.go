@@ -75,7 +75,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	ps.unmappedDataColumn = p.ColumnName(unmappedDataColumn)
 
 	//TODO: max column?
-	ps.state = bulker.State{Status: bulker.Active}
+	ps.state = bulker.State{Status: bulker.Active, Mode: mode}
 	ps.customTypes = customFields
 	ps.startTime = time.Now()
 	return &ps, nil
@@ -120,6 +120,11 @@ func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 		ps.state.Status = bulker.Failed
 	} else {
 		ps.state.Status = bulker.Completed
+	}
+	if ps.state.Representation == nil {
+		ps.updateRepresentationTable(&Table{
+			Name: ps.sqlAdapter.TableName(ps.tableName),
+		})
 	}
 	return ps.state, err
 }

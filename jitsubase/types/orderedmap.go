@@ -86,6 +86,26 @@ func (m *OrderedMap[K, V]) GetPathS(path K) string {
 	return ""
 }
 
+func (m *OrderedMap[K, V]) GetPathN(path []K) any {
+	obj := m
+	for i, key := range path {
+		if i == len(path)-1 {
+			v, _ := obj.Get(any(key).(K))
+			return v
+		}
+		var ok bool
+		o, ok := obj.Get(any(key).(K))
+		if !ok {
+			return nil
+		}
+		obj, ok = any(o).(*OrderedMap[K, V])
+		if !ok {
+			return nil
+		}
+	}
+	return nil
+}
+
 // Set will set (or replace) a value for a key. If the key was new, then true
 // will be returned. The returned value will be false if the value was replaced
 // (even if the value was the same).

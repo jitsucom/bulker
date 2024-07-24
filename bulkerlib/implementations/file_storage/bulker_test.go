@@ -27,6 +27,7 @@ import (
 
 var constantTimeStr = "2022-08-18T14:17:22.375Z"
 var constantTime = timestamp.MustParseTime(time.RFC3339Nano, constantTimeStr)
+var constantTimeAStr = "2022-08-10T14:17:22.375Z"
 
 var allBulkerConfigs []string
 
@@ -50,38 +51,49 @@ func init() {
 	}
 	s3Config := os.Getenv("BULKER_TEST_S3")
 	if s3Config != "" {
-		configRegistry[S3BulkerTypeId] = TestConfig{BulkerType: S3BulkerTypeId, Config: s3Config}
-	} else {
-		var err error
-		minioContainer, err = testcontainers.NewMinioContainer(context.Background(), "bulkertests")
-		if err != nil {
-			panic(err)
-		}
-		configRegistry[S3BulkerTypeId+"_gzip"] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
-			FileConfig: implementations.FileConfig{
-				Folder:      "tests",
-				Format:      types.FileFormatNDJSON,
-				Compression: types.FileCompressionGZIP,
-			},
-			Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
-			Region:    "us-east-1",
-			Bucket:    "bulkertests",
-			AccessKey: minioContainer.AccessKey,
-			SecretKey: minioContainer.SecretKey,
-		}}
-		configRegistry[S3BulkerTypeId] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
-			FileConfig: implementations.FileConfig{
-				Folder:      "tests",
-				Format:      types.FileFormatNDJSON,
-				Compression: types.FileCompressionNONE,
-			},
-			Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
-			Region:    "us-east-1",
-			Bucket:    "bulkertests",
-			AccessKey: minioContainer.AccessKey,
-			SecretKey: minioContainer.SecretKey,
-		}}
+		configRegistry[S3BulkerTypeId+"_aws"] = TestConfig{BulkerType: S3BulkerTypeId, Config: s3Config}
 	}
+	var err error
+	minioContainer, err = testcontainers.NewMinioContainer(context.Background(), "bulkertests")
+	if err != nil {
+		panic(err)
+	}
+	configRegistry[S3BulkerTypeId+"_gzip"] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
+		FileConfig: implementations.FileConfig{
+			Folder:      "tests",
+			Format:      types.FileFormatNDJSON,
+			Compression: types.FileCompressionGZIP,
+		},
+		Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+		Region:    "us-east-1",
+		Bucket:    "bulkertests",
+		AccessKey: minioContainer.AccessKey,
+		SecretKey: minioContainer.SecretKey,
+	}}
+	configRegistry[S3BulkerTypeId+"_flat"] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
+		FileConfig: implementations.FileConfig{
+			Folder:      "tests",
+			Format:      types.FileFormatNDJSONFLAT,
+			Compression: types.FileCompressionNONE,
+		},
+		Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+		Region:    "us-east-1",
+		Bucket:    "bulkertests",
+		AccessKey: minioContainer.AccessKey,
+		SecretKey: minioContainer.SecretKey,
+	}}
+	configRegistry[S3BulkerTypeId] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
+		FileConfig: implementations.FileConfig{
+			Folder:      "tests",
+			Format:      types.FileFormatNDJSON,
+			Compression: types.FileCompressionNONE,
+		},
+		Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+		Region:    "us-east-1",
+		Bucket:    "bulkertests",
+		AccessKey: minioContainer.AccessKey,
+		SecretKey: minioContainer.SecretKey,
+	}}
 
 	allBulkerConfigs = make([]string, 0, len(configRegistry))
 	for k := range configRegistry {
@@ -199,6 +211,54 @@ func TestBasics(t *testing.T) {
 			},
 			configIds:     allBulkerConfigs,
 			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
+		},
+		{
+			name:     "dedup_with_no_discr",
+			modes:    []bulker.BulkMode{bulker.Batch},
+			dataFile: "test_data/repeated_ids_discr.ndjson",
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTimeStr, "id": 3, "name": "C", "int1": 3, "nested": map[string]any{"int1": 3}},
+				{"_timestamp": constantTimeAStr, "id": 1, "name": "A", "int1": 1, "nested": map[string]any{"int1": 1}},
+				{"_timestamp": constantTimeAStr, "id": 2, "name": "A", "int1": 1, "nested": map[string]any{"int1": 1}},
+			},
+			configIds:     utils.ArrayExcluding(allBulkerConfigs, S3BulkerTypeId+"_flat"),
+			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
+		},
+		{
+			name:     "dedup_with_no_discr_flat",
+			modes:    []bulker.BulkMode{bulker.Batch},
+			dataFile: "test_data/repeated_ids_discr.ndjson",
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTimeStr, "id": 3, "name": "C", "int1": 3, "nested_int1": 3},
+				{"_timestamp": constantTimeAStr, "id": 1, "name": "A", "int1": 1, "nested_int1": 1},
+				{"_timestamp": constantTimeAStr, "id": 2, "name": "A", "int1": 1, "nested_int1": 1},
+			},
+			configIds:     []string{S3BulkerTypeId + "_flat"},
+			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
+		},
+		{
+			name:     "dedup_with_discr",
+			modes:    []bulker.BulkMode{bulker.Batch},
+			dataFile: "test_data/repeated_ids_discr.ndjson",
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTimeStr, "id": 1, "name": "C", "int1": 3, "nested": map[string]any{"int1": 3}},
+				{"_timestamp": constantTimeStr, "id": 3, "name": "C", "int1": 3, "nested": map[string]any{"int1": 3}},
+				{"_timestamp": constantTimeStr, "id": 2, "name": "C", "int1": 3, "nested": map[string]any{"int1": 3}},
+			},
+			configIds:     utils.ArrayExcluding(allBulkerConfigs, S3BulkerTypeId+"_flat"),
+			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate(), bulker.WithDiscriminatorField([]string{"nested", "int1"})},
+		},
+		{
+			name:     "dedup_with_discr_flat",
+			modes:    []bulker.BulkMode{bulker.Batch},
+			dataFile: "test_data/repeated_ids_discr.ndjson",
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTimeStr, "id": 1, "name": "C", "int1": 3, "nested_int1": 3},
+				{"_timestamp": constantTimeStr, "id": 3, "name": "C", "int1": 3, "nested_int1": 3},
+				{"_timestamp": constantTimeStr, "id": 2, "name": "C", "int1": 3, "nested_int1": 3},
+			},
+			configIds:     []string{S3BulkerTypeId + "_flat"},
+			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate(), bulker.WithDiscriminatorField([]string{"nested", "int1"})},
 		},
 	}
 	for _, tt := range tests {
@@ -338,20 +398,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			decoder.UseNumber()
 			err = decoder.Decode(&row)
 			PostStep("decode_result_json", testConfig, mode, reqr, err)
-			for k, v := range row {
-				num, ok := v.(json.Number)
-				if ok {
-					i, err := num.Int64()
-					if err != nil {
-						row[k], err = num.Float64()
-					} else {
-						row[k] = int(i)
-					}
-					if err != nil {
-						row[k] = v
-					}
-				}
-			}
+			convertJsonNumbers(row)
 			rows = append(rows, row)
 		}
 		PostStep("select_result", testConfig, mode, reqr, err)
@@ -359,6 +406,30 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			reqr.Equal(testConfig.expectedRowsCount, len(rows))
 		} else {
 			reqr.Equal(testConfig.expectedRows, rows)
+		}
+	}
+}
+
+func convertJsonNumbers(row map[string]any) {
+	for k, v := range row {
+		switch v := v.(type) {
+		case map[string]any:
+			convertJsonNumbers(v)
+		case []map[string]any:
+			for _, m := range v {
+				convertJsonNumbers(m)
+			}
+		case json.Number:
+			i, err := v.Int64()
+			if err != nil {
+				row[k], err = v.Float64()
+				if err != nil {
+					row[k] = v.String()
+				}
+			} else {
+				row[k] = int(i)
+			}
+
 		}
 	}
 }

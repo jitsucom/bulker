@@ -38,7 +38,7 @@ type AbstractFileStorageStream struct {
 	marshaller         types2.Marshaller
 	targetMarshaller   types2.Marshaller
 	eventsInBatch      int
-	batchFileLinesByPK map[string]int
+	batchFileLinesByPK map[string]*DeduplicationLine
 	batchFileSkipLines types.Set[int]
 	csvHeader          types.Set[string]
 
@@ -49,6 +49,15 @@ type AbstractFileStorageStream struct {
 	inited bool
 
 	startTime time.Time
+
+	// path to discriminator field in object
+	discriminatorColumn []string
+	useDiscriminator    bool
+}
+
+type DeduplicationLine struct {
+	lineNumber    int
+	discriminator any
 }
 
 func newAbstractFileStorageStream(id string, p implementations2.FileAdapter, filenameFunc func(ctx context.Context) string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (AbstractFileStorageStream, error) {
@@ -64,9 +73,21 @@ func newAbstractFileStorageStream(id string, p implementations2.FileAdapter, fil
 	}
 	ps.pkColumns = pkColumns.ToSlice()
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
+	if ps.fileAdapter.Format() == types2.FileFormatCSV || ps.fileAdapter.Format() == types2.FileFormatNDJSONFLAT {
+		ps.flatten = true
+	}
 	if ps.merge {
-		ps.batchFileLinesByPK = make(map[string]int)
+		ps.batchFileLinesByPK = make(map[string]*DeduplicationLine)
 		ps.batchFileSkipLines = types.NewSet[int]()
+		discriminatorField := bulker.DiscriminatorFieldOption.Get(&ps.options)
+		if len(discriminatorField) > 0 {
+			if ps.flatten {
+				ps.discriminatorColumn = []string{strings.Join(discriminatorField, "_")}
+			} else {
+				ps.discriminatorColumn = discriminatorField
+			}
+			ps.useDiscriminator = true
+		}
 	}
 	ps.csvHeader = types.NewSet[string]()
 	ps.state = bulker.State{Status: bulker.Active}
@@ -93,9 +114,6 @@ func (ps *AbstractFileStorageStream) init(ctx context.Context) error {
 		if !ps.merge && ps.fileAdapter.Format() == types2.FileFormatNDJSON {
 			//without merge we can write file with compression - no need to convert
 			ps.marshaller, _ = types2.NewMarshaller(ps.fileAdapter.Format(), ps.fileAdapter.Compression())
-		}
-		if ps.fileAdapter.Format() == types2.FileFormatCSV || ps.fileAdapter.Format() == types2.FileFormatNDJSONFLAT {
-			ps.flatten = true
 		}
 	}
 	ps.inited = true
@@ -145,7 +163,7 @@ func (ps *AbstractFileStorageStream) postComplete(err error) (bulker.State, erro
 func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err error) {
 	defer func() {
 		if ps.merge {
-			ps.batchFileLinesByPK = make(map[string]int)
+			ps.batchFileLinesByPK = make(map[string]*DeduplicationLine)
 			ps.batchFileSkipLines = types.NewSet[int]()
 		}
 		_ = ps.batchFile.Close()
@@ -295,15 +313,28 @@ func (ps *AbstractFileStorageStream) writeToBatchFile(ctx context.Context, proce
 		if err != nil {
 			return err
 		}
-		line, ok := ps.batchFileLinesByPK[pk]
+		var newDiscriminator any
+		if ps.useDiscriminator {
+			newDiscriminator = processedObject.GetPathN(ps.discriminatorColumn)
+		}
+		lineNumber := ps.eventsInBatch + utils.Ternary(ps.marshaller.NeedHeader(), 1, 0)
+		prevLine, ok := ps.batchFileLinesByPK[pk]
 		if ok {
-			ps.batchFileSkipLines.Put(line)
+			if !ps.useDiscriminator {
+				ps.batchFileSkipLines.Put(prevLine.lineNumber)
+				ps.batchFileLinesByPK[pk] = &DeduplicationLine{lineNumber, newDiscriminator}
+			} else {
+				cmpr := utils.CompareAny(newDiscriminator, prevLine.discriminator)
+				if cmpr >= 0 {
+					ps.batchFileSkipLines.Put(prevLine.lineNumber)
+					ps.batchFileLinesByPK[pk] = &DeduplicationLine{lineNumber, newDiscriminator}
+				} else {
+					ps.batchFileSkipLines.Put(lineNumber)
+				}
+			}
+		} else {
+			ps.batchFileLinesByPK[pk] = &DeduplicationLine{lineNumber, newDiscriminator}
 		}
-		lineNumber := ps.eventsInBatch
-		if ps.marshaller.NeedHeader() {
-			lineNumber++
-		}
-		ps.batchFileLinesByPK[pk] = lineNumber
 	}
 	err := ps.marshaller.Marshal(processedObject)
 	if err != nil {
