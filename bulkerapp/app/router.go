@@ -124,7 +124,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), true)
 		return
 	}
-	topicId, err := destination.TopicId(tableName, mode)
+	topicId, err := destination.TopicId(tableName, mode, r.config.KafkaTopicPrefix)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true)
 		return

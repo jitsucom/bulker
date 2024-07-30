@@ -160,7 +160,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			bc.pause(true)
 		})
 
-		bc.Infof("Batch #%d Committing %d events to %s", batchNum, processed, destination.destinationConfig.BulkerType)
+		bc.Infof("Batch #%d Committing %d events to %s", batchNum, processed, destination.config.BulkerType)
 		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(ctx)
 		pauseTimer.Stop()
@@ -168,7 +168,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		bc.postEventsLog(state, processedObjectSample, err)
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition
-			return counters, state, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.destinationConfig.BulkerType, err)
+			return counters, state, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.config.BulkerType, err)
 		}
 		counters.processed = processed
 		_, err = bc.consumer.Load().CommitMessage(latestMessage)

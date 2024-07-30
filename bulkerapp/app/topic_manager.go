@@ -322,10 +322,10 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 				dstTopics.Remove(topic)
 			}
 		}
-		if destination.destinationConfig.Special == "backup" || destination.destinationConfig.Special == "metrics" {
+		if destination.config.Special == "backup" || destination.config.Special == "metrics" {
 			// create predefined tables for special kind of destinations: backup and metrics
-			tables := []string{destination.destinationConfig.Special}
-			if destination.destinationConfig.Special == "metrics" {
+			tables := []string{destination.config.Special}
+			if destination.config.Special == "metrics" {
 				tables = append(tables, "active_incoming")
 			}
 			for _, table := range tables {

@@ -63,11 +63,11 @@ func (r *Repository) init() error {
 	for id, oldDestination := range oldDestinations {
 		newDst, ok := internal.destinations[id]
 		if !ok {
-			r.Infof("Destination %s (%s) was removed. Ver: %s", id, oldDestination.destinationConfig.BulkerType, oldDestination.destinationConfig.UpdatedAt)
+			r.Infof("Destination %s (%s) was removed. Ver: %s", id, oldDestination.config.BulkerType, oldDestination.config.UpdatedAt)
 			toRetire = append(toRetire, oldDestination)
 			repositoryChange.RemovedDestinationIds = append(repositoryChange.RemovedDestinationIds, id)
 		} else if !newDst.equals(oldDestination) {
-			r.Infof("Destination %s (%s) was updated. New Ver: %s", id, newDst.destinationConfig.BulkerType, newDst.destinationConfig.UpdatedAt)
+			r.Infof("Destination %s (%s) was updated. New Ver: %s", id, newDst.config.BulkerType, newDst.config.UpdatedAt)
 			toRetire = append(toRetire, oldDestination)
 			repositoryChange.ChangedDestinations = append(repositoryChange.ChangedDestinations, newDst)
 		} else {
@@ -78,7 +78,7 @@ func (r *Repository) init() error {
 	for id, dst := range internal.destinations {
 		_, ok := oldDestinations[id]
 		if !ok {
-			r.Infof("Destination %s (%s) was added. Ver: %s", id, dst.destinationConfig.BulkerType, dst.destinationConfig.UpdatedAt)
+			r.Infof("Destination %s (%s) was added. Ver: %s", id, dst.config.BulkerType, dst.config.UpdatedAt)
 			repositoryChange.AddedDestinations = append(repositoryChange.AddedDestinations, dst)
 		}
 	}
@@ -157,7 +157,7 @@ func (r *repositoryInternal) addDestination(cfg *DestinationConfig) {
 		options.Add(opt)
 	}
 	configHash, _ := utils.HashAny(cfg)
-	r.destinations[cfg.Id()] = &Destination{destinationConfig: cfg, configHash: configHash, mode: bulker.ModeOption.Get(&options), streamOptions: &options, owner: r}
+	r.destinations[cfg.Id()] = &Destination{config: cfg, configHash: configHash, mode: bulker.ModeOption.Get(&options), streamOptions: &options, owner: r}
 }
 
 func (r *repositoryInternal) GetDestination(id string) *Destination {
@@ -202,12 +202,11 @@ func (r *repositoryInternal) GetDestinations() []*Destination {
 
 type Destination struct {
 	sync.Mutex
-	destinationConfig *DestinationConfig
-	config            *Config
-	configHash        uint64
-	mode              bulker.BulkMode
-	bulker            bulker.Bulker
-	streamOptions     *bulker.StreamOptions
+	config        *DestinationConfig
+	configHash    uint64
+	mode          bulker.BulkMode
+	bulker        bulker.Bulker
+	streamOptions *bulker.StreamOptions
 
 	owner       *repositoryInternal
 	retired     bool
@@ -215,16 +214,16 @@ type Destination struct {
 }
 
 // TopicId generates topic id for Destination
-func (d *Destination) TopicId(tableName string, modeOverride string) (string, error) {
+func (d *Destination) TopicId(tableName string, modeOverride, prefix string) (string, error) {
 	if tableName == "" {
-		tableName = d.destinationConfig.StreamConfig.TableName
+		tableName = d.config.StreamConfig.TableName
 	}
-	return MakeTopicId(d.Id(), utils.DefaultString(modeOverride, string(d.mode)), tableName, d.config.KafkaTopicPrefix, true)
+	return MakeTopicId(d.Id(), utils.DefaultString(modeOverride, string(d.mode)), tableName, prefix, true)
 }
 
 // Id returns destination id
 func (d *Destination) Id() string {
-	return d.destinationConfig.Id()
+	return d.config.Id()
 }
 
 func (d *Destination) InitBulkerInstance() {
@@ -244,7 +243,7 @@ func (d *Destination) InitBulkerInstance() {
 		}
 	}()
 
-	d.bulker, err = bulker.CreateBulker(d.destinationConfig.Config)
+	d.bulker, err = bulker.CreateBulker(d.config.Config)
 	if err != nil {
 		metrics.RepositoryDestinationInitError(d.Id()).Inc()
 		if d.bulker == nil {
@@ -264,7 +263,7 @@ func (d *Destination) Mode() bulker.BulkMode {
 func (d *Destination) retire() {
 	d.retired = true
 	if d.leasesCount == 0 {
-		logging.Infof("[%s] closing retired destination. Ver: %s", d.Id(), d.destinationConfig.UpdatedAt)
+		logging.Infof("[%s] closing retired destination. Ver: %s", d.Id(), d.config.UpdatedAt)
 		if d.bulker != nil {
 			_ = d.bulker.Close()
 		}
@@ -279,7 +278,7 @@ func (d *Destination) incLeases() {
 func (d *Destination) decLeases() {
 	d.leasesCount--
 	if d.retired && d.leasesCount == 0 {
-		logging.Infof("[%s] closing retired destination. Ver: %s", d.Id(), d.destinationConfig.UpdatedAt)
+		logging.Infof("[%s] closing retired destination. Ver: %s", d.Id(), d.config.UpdatedAt)
 		if d.bulker != nil {
 			_ = d.bulker.Close()
 		}
@@ -298,7 +297,7 @@ func (d *Destination) Release() {
 
 // equals compares destination with another destination
 func (d *Destination) equals(o *Destination) bool {
-	return d.configHash == o.configHash && d.destinationConfig.UpdatedAt == o.destinationConfig.UpdatedAt
+	return d.configHash == o.configHash && d.config.UpdatedAt == o.config.UpdatedAt
 }
 
 //// AddBatchConsumer Add batch consumer to destination

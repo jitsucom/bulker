@@ -3,13 +3,14 @@ package app
 import (
 	"crypto/md5"
 	"fmt"
+	"math"
+	"time"
+
 	kafka2 "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
-	"math"
-	"time"
 )
 
 const MetricsMetaHeader = "metrics_meta"
@@ -55,7 +56,7 @@ func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, event
 	if metricsDst == nil {
 		return
 	}
-	topicId, err := metricsDst.TopicId("metrics", "")
+	topicId, err := metricsDst.TopicId("metrics", "", "")
 	if err != nil {
 		ac.Errorf("Error getting topicId for metrics destination: %v", err)
 		return

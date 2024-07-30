@@ -181,7 +181,7 @@ func (sc *StreamConsumerImpl) restartConsumer() {
 
 // start consuming messages from kafka
 func (sc *StreamConsumerImpl) start() {
-	sc.Infof("Starting stream consumer for topic. Ver: %s", sc.destination.destinationConfig.UpdatedAt)
+	sc.Infof("Starting stream consumer for topic. Ver: %s", sc.destination.config.UpdatedAt)
 	safego.RunWithRestart(func() {
 		var err error
 		for {
@@ -291,7 +291,7 @@ func (sc *StreamConsumerImpl) Retire() {
 		return
 	default:
 	}
-	sc.Infof("Closing stream consumer. Ver: %s", sc.destination.destinationConfig.UpdatedAt)
+	sc.Infof("Closing stream consumer. Ver: %s", sc.destination.config.UpdatedAt)
 	close(sc.closed)
 	sc.destination.Release()
 	//TODO: wait for closing?
@@ -300,7 +300,7 @@ func (sc *StreamConsumerImpl) Retire() {
 
 // UpdateDestination
 func (sc *StreamConsumerImpl) UpdateDestination(destination *Destination) error {
-	sc.Infof("[Updating stream consumer for topic. Ver: %s", sc.destination.destinationConfig.UpdatedAt)
+	sc.Infof("[Updating stream consumer for topic. Ver: %s", sc.destination.config.UpdatedAt)
 
 	//create new stream
 	var bs bulker.BulkerStream
