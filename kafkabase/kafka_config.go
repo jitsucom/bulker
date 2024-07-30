@@ -2,6 +2,7 @@ package kafkabase
 
 import (
 	"fmt"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/hjson/hjson-go/v4"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
@@ -20,6 +21,7 @@ type KafkaConfig struct {
 	KafkaTopicCompression    string `mapstructure:"KAFKA_TOPIC_COMPRESSION" default:"snappy"`
 	KafkaTopicRetentionHours int    `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"48"`
 	KafkaTopicSegmentHours   int    `mapstructure:"KAFKA_TOPIC_SEGMENT_HOURS" default:"24"`
+	KafkaTopicPrefix         string `mapstructure:"KAFKA_TOPIC_PREFIX" default:""`
 
 	KafkaRetryTopicSegmentBytes              int    `mapstructure:"KAFKA_RETRY_TOPIC_SEGMENT_BYTES" default:"104857600"`
 	KafkaDeadTopicRetentionHours             int    `mapstructure:"KAFKA_DEAD_TOPIC_RETENTION_HOURS" default:"168"`

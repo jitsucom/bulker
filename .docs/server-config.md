@@ -178,6 +178,12 @@ Mode can be: `batch` or `stream`, `retry`, `dead`.
 
 Parameters above define how topics are created
 
+### `BULKER_KAFKA_TOPIC_PREFIX`
+
+*Optional, default value: `` (none)*
+
+String prefixed to all destination topic names.
+
 ### `BULKER_KAFKA_TOPIC_RETENTION_HOURS`
 
 *Optional, default value: `168` (7 days)*

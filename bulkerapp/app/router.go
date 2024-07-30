@@ -3,6 +3,14 @@ package app
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/pprof"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
 	"github.com/hjson/hjson-go/v4"
@@ -17,13 +25,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
-	"io"
-	"net/http"
-	"net/http/pprof"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 var TimestampPattern = regexp.MustCompile(`^\d{13}$`)
@@ -284,7 +285,7 @@ func (r *Router) FailedHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown status: " + status + " (should be '" + retryTopicMode + "' or '" + deadTopicMode + "')"})
 		return
 	}
-	topicId, _ := MakeTopicId(destinationId, status, allTablesToken, false)
+	topicId, _ := MakeTopicId(destinationId, status, allTablesToken, r.config.KafkaTopicPrefix, false)
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"auto.offset.reset":             "earliest",
 		"group.id":                      uuid.New(),

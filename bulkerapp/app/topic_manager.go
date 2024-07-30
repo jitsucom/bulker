@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
@@ -12,10 +17,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"regexp"
-	"strings"
-	"sync"
-	"time"
 )
 
 const (
@@ -297,7 +298,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 	for _, destination := range tm.repository.GetDestinations() {
 		dstTopics, hasTopics := tm.destinationTopics[destination.Id()]
 		for mode, config := range tm.requiredDestinationTopics {
-			topicId, _ := MakeTopicId(destination.Id(), mode, allTablesToken, false)
+			topicId, _ := MakeTopicId(destination.Id(), mode, allTablesToken, tm.config.KafkaTopicPrefix, false)
 			if (!hasTopics || !dstTopics.Contains(topicId)) && !staleTopics.Contains(topicId) {
 				//tm.Debugf("Creating topic %s for destination %s", topicId, destination.Id())
 				err := tm.createDestinationTopic(topicId, config)
@@ -321,14 +322,14 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 				dstTopics.Remove(topic)
 			}
 		}
-		if destination.config.Special == "backup" || destination.config.Special == "metrics" {
+		if destination.destinationConfig.Special == "backup" || destination.destinationConfig.Special == "metrics" {
 			// create predefined tables for special kind of destinations: backup and metrics
-			tables := []string{destination.config.Special}
-			if destination.config.Special == "metrics" {
+			tables := []string{destination.destinationConfig.Special}
+			if destination.destinationConfig.Special == "metrics" {
 				tables = append(tables, "active_incoming")
 			}
 			for _, table := range tables {
-				topicId, _ := MakeTopicId(destination.Id(), "batch", table, false)
+				topicId, _ := MakeTopicId(destination.Id(), "batch", table, tm.config.KafkaTopicPrefix, false)
 				if (!hasTopics || !dstTopics.Contains(topicId)) && !staleTopics.Contains(topicId) {
 					tm.Infof("Creating topic %s for destination %s", topicId, destination.Id())
 					err := tm.createDestinationTopic(topicId, nil)
@@ -725,7 +726,7 @@ func ParseTopicId(topic string) (destinationId, mode, tableName string, err erro
 	return
 }
 
-func MakeTopicId(destinationId, mode, tableName string, checkLength bool) (string, error) {
+func MakeTopicId(destinationId, mode, tableName, prefix string, checkLength bool) (string, error) {
 	validName := true
 	if mode == retryTopicMode || mode == deadTopicMode {
 		tableName = allTablesToken
@@ -735,9 +736,9 @@ func MakeTopicId(destinationId, mode, tableName string, checkLength bool) (strin
 	topicId := ""
 	if !validName {
 		tableName = base64.RawURLEncoding.EncodeToString([]byte(tableName))
-		topicId = "in.id." + destinationId + ".m." + mode + ".b64." + tableName
+		topicId = prefix + "in.id." + destinationId + ".m." + mode + ".b64." + tableName
 	} else {
-		topicId = "in.id." + destinationId + ".m." + mode + ".t." + tableName
+		topicId = prefix + "in.id." + destinationId + ".m." + mode + ".t." + tableName
 	}
 	if checkLength && len(topicId) > topicLengthLimit {
 		return "", fmt.Errorf("topic name %s length %d exceeds limit (%d). Please choose shorter table name. Recommended table name length is <= 63 symbols", topicId, len(topicId), topicLengthLimit)

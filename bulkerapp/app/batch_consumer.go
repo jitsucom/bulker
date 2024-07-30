@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
@@ -12,8 +15,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
-	"strconv"
-	"time"
 )
 
 type BatchConsumerImpl struct {
@@ -159,7 +160,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			bc.pause(true)
 		})
 
-		bc.Infof("Batch #%d Committing %d events to %s", batchNum, processed, destination.config.BulkerType)
+		bc.Infof("Batch #%d Committing %d events to %s", batchNum, processed, destination.destinationConfig.BulkerType)
 		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(ctx)
 		pauseTimer.Stop()
@@ -167,7 +168,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		bc.postEventsLog(state, processedObjectSample, err)
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition
-			return counters, state, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.config.BulkerType, err)
+			return counters, state, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.destinationConfig.BulkerType, err)
 		}
 		counters.processed = processed
 		_, err = bc.consumer.Load().CommitMessage(latestMessage)
@@ -247,7 +248,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		}
 		counters.consumed++
 		deadLettered := false
-		failedTopic, _ := MakeTopicId(bc.destinationId, retryTopicMode, allTablesToken, false)
+		failedTopic, _ := MakeTopicId(bc.destinationId, retryTopicMode, allTablesToken, bc.config.KafkaTopicPrefix, false)
 		retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
 		if err != nil {
 			bc.Errorf("failed to read retry header: %v", err)
@@ -255,7 +256,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		if retries >= bc.config.MessagesRetryCount {
 			//no attempts left - send to dead-letter topic
 			deadLettered = true
-			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, false)
+			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, bc.config.KafkaTopicPrefix, false)
 		}
 		headers := message.Headers
 		kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenStringWithEllipsis(originalErr.Error(), 256))

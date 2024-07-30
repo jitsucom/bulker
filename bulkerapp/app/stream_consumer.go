@@ -3,6 +3,10 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"sync/atomic"
+	"time"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
@@ -13,9 +17,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
-	"strconv"
-	"sync/atomic"
-	"time"
 )
 
 const streamConsumerMessageWaitTimeout = 5 * time.Second
@@ -180,7 +181,7 @@ func (sc *StreamConsumerImpl) restartConsumer() {
 
 // start consuming messages from kafka
 func (sc *StreamConsumerImpl) start() {
-	sc.Infof("Starting stream consumer for topic. Ver: %s", sc.destination.config.UpdatedAt)
+	sc.Infof("Starting stream consumer for topic. Ver: %s", sc.destination.destinationConfig.UpdatedAt)
 	safego.RunWithRestart(func() {
 		var err error
 		for {
@@ -237,7 +238,7 @@ func (sc *StreamConsumerImpl) start() {
 				}
 				if err != nil {
 					originalError := err
-					failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, allTablesToken, false)
+					failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, allTablesToken, sc.config.KafkaTopicPrefix, false)
 					retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
 					if err != nil {
 						sc.Errorf("failed to read retry header: %v", err)
@@ -251,7 +252,7 @@ func (sc *StreamConsumerImpl) start() {
 					if retries >= sc.config.MessagesRetryCount {
 						//no attempts left - send to dead-letter topic
 						status = "deadLettered"
-						failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, allTablesToken, false)
+						failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, allTablesToken, sc.config.KafkaTopicPrefix, false)
 					}
 					headers := message.Headers
 					kafkabase.PutKafkaHeader(&headers, errorHeader, originalError.Error())
@@ -290,7 +291,7 @@ func (sc *StreamConsumerImpl) Retire() {
 		return
 	default:
 	}
-	sc.Infof("Closing stream consumer. Ver: %s", sc.destination.config.UpdatedAt)
+	sc.Infof("Closing stream consumer. Ver: %s", sc.destination.destinationConfig.UpdatedAt)
 	close(sc.closed)
 	sc.destination.Release()
 	//TODO: wait for closing?
@@ -299,7 +300,7 @@ func (sc *StreamConsumerImpl) Retire() {
 
 // UpdateDestination
 func (sc *StreamConsumerImpl) UpdateDestination(destination *Destination) error {
-	sc.Infof("[Updating stream consumer for topic. Ver: %s", sc.destination.config.UpdatedAt)
+	sc.Infof("[Updating stream consumer for topic. Ver: %s", sc.destination.destinationConfig.UpdatedAt)
 
 	//create new stream
 	var bs bulker.BulkerStream
