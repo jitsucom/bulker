@@ -2,14 +2,15 @@ package app
 
 import (
 	"fmt"
+	"sync"
+	"sync/atomic"
+
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"sync"
-	"sync/atomic"
 )
 
 type RepositoryChange struct {
@@ -213,11 +214,11 @@ type Destination struct {
 }
 
 // TopicId generates topic id for Destination
-func (d *Destination) TopicId(tableName string, modeOverride string) (string, error) {
+func (d *Destination) TopicId(tableName string, modeOverride, prefix string) (string, error) {
 	if tableName == "" {
 		tableName = d.config.StreamConfig.TableName
 	}
-	return MakeTopicId(d.Id(), utils.DefaultString(modeOverride, string(d.mode)), tableName, true)
+	return MakeTopicId(d.Id(), utils.DefaultString(modeOverride, string(d.mode)), tableName, prefix, true)
 }
 
 // Id returns destination id

@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
@@ -12,10 +17,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"regexp"
-	"strings"
-	"sync"
-	"time"
 )
 
 const (
@@ -297,7 +298,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 	for _, destination := range tm.repository.GetDestinations() {
 		dstTopics, hasTopics := tm.destinationTopics[destination.Id()]
 		for mode, config := range tm.requiredDestinationTopics {
-			topicId, _ := MakeTopicId(destination.Id(), mode, allTablesToken, false)
+			topicId, _ := MakeTopicId(destination.Id(), mode, allTablesToken, tm.config.KafkaTopicPrefix, false)
 			if (!hasTopics || !dstTopics.Contains(topicId)) && !staleTopics.Contains(topicId) {
 				//tm.Debugf("Creating topic %s for destination %s", topicId, destination.Id())
 				err := tm.createDestinationTopic(topicId, config)
@@ -328,7 +329,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 				tables = append(tables, "active_incoming")
 			}
 			for _, table := range tables {
-				topicId, _ := MakeTopicId(destination.Id(), "batch", table, false)
+				topicId, _ := MakeTopicId(destination.Id(), "batch", table, tm.config.KafkaTopicPrefix, false)
 				if (!hasTopics || !dstTopics.Contains(topicId)) && !staleTopics.Contains(topicId) {
 					tm.Infof("Creating topic %s for destination %s", topicId, destination.Id())
 					err := tm.createDestinationTopic(topicId, nil)
@@ -705,13 +706,25 @@ func (tm *TopicManager) Close() error {
 }
 
 func ParseTopicId(topic string) (destinationId, mode, tableName string, err error) {
-	// in.id.(.*).m.(.*).(t|b64).(.*)
-	topicGroups := strings.SplitN(topic, ".", 7)
-	if len(topicGroups) == 7 {
-		destinationId = topicGroups[2]
-		mode = topicGroups[4]
-		tableEncoding := topicGroups[5]
-		tableName = topicGroups[6]
+	// "some.random.prefix.in.id.(.*).m.(.*).(t|b64).(.*)"  -> ["some.random.prefix.in.id", "(.*).m.(.*).(t|b64).(.*)"]
+	topicSplit := strings.SplitAfter(topic, "in.id.")
+
+	if len(topicSplit) != 2 {
+		err = fmt.Errorf("topic name %s doesn't match pattern %s", topic, topicPattern.String())
+
+		return
+	}
+
+	// "(.*).m.(.*).(t|b64).(.*)"
+	usefulTopicInfo := topicSplit[1]
+
+	// "(.*).m.(.*).(t|b64).(.*)"
+	topicGroups := strings.Split(usefulTopicInfo, ".")
+	if len(topicGroups) == 5 {
+		destinationId = topicGroups[0]
+		mode = topicGroups[2]
+		tableEncoding := topicGroups[3]
+		tableName = topicGroups[4]
 		if tableEncoding == "b64" {
 			b, err := base64.RawURLEncoding.DecodeString(tableName)
 			if err != nil {
@@ -725,7 +738,7 @@ func ParseTopicId(topic string) (destinationId, mode, tableName string, err erro
 	return
 }
 
-func MakeTopicId(destinationId, mode, tableName string, checkLength bool) (string, error) {
+func MakeTopicId(destinationId, mode, tableName, prefix string, checkLength bool) (string, error) {
 	validName := true
 	if mode == retryTopicMode || mode == deadTopicMode {
 		tableName = allTablesToken
@@ -735,9 +748,9 @@ func MakeTopicId(destinationId, mode, tableName string, checkLength bool) (strin
 	topicId := ""
 	if !validName {
 		tableName = base64.RawURLEncoding.EncodeToString([]byte(tableName))
-		topicId = "in.id." + destinationId + ".m." + mode + ".b64." + tableName
+		topicId = prefix + "in.id." + destinationId + ".m." + mode + ".b64." + tableName
 	} else {
-		topicId = "in.id." + destinationId + ".m." + mode + ".t." + tableName
+		topicId = prefix + "in.id." + destinationId + ".m." + mode + ".t." + tableName
 	}
 	if checkLength && len(topicId) > topicLengthLimit {
 		return "", fmt.Errorf("topic name %s length %d exceeds limit (%d). Please choose shorter table name. Recommended table name length is <= 63 symbols", topicId, len(topicId), topicLengthLimit)

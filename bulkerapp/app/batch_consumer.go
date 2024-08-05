@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
@@ -12,8 +15,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
-	"strconv"
-	"time"
 )
 
 type BatchConsumerImpl struct {
@@ -247,7 +248,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		}
 		counters.consumed++
 		deadLettered := false
-		failedTopic, _ := MakeTopicId(bc.destinationId, retryTopicMode, allTablesToken, false)
+		failedTopic, _ := MakeTopicId(bc.destinationId, retryTopicMode, allTablesToken, bc.config.KafkaTopicPrefix, false)
 		retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
 		if err != nil {
 			bc.Errorf("failed to read retry header: %v", err)
@@ -255,7 +256,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		if retries >= bc.config.MessagesRetryCount {
 			//no attempts left - send to dead-letter topic
 			deadLettered = true
-			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, false)
+			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, bc.config.KafkaTopicPrefix, false)
 		}
 		headers := message.Headers
 		kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenStringWithEllipsis(originalErr.Error(), 256))
