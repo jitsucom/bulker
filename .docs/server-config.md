@@ -6,7 +6,7 @@
 * [Batching](#batching)
 * [Streaming](#streaming)
 * [Error Handling and Retries](#error-handling-and-retries)
-* [Advanced Kafka Tuning](#kafka-topic-management--advanced-)
+* [Advanced Kafka Tuning](#kafka-topic-management)
 * [Events Log](#events-log) *(optional)*
 * [Defining Destination](#defining-destinations)
   * [Postgres / MySQL / Redshift / Snowflake credentials](#postgres--mysql--redshift--snowflake-credentials)
@@ -170,9 +170,9 @@ Read more about batch processing configuration [below](#defining-destinations)
 Default batch size for destination's Retry Consumer where `retryBatchSize` is not set explicitly.
 Read more about batch processing configuration [below](#defining-destinations)
 
-## Kafka topic management (advanced)
+## Kafka topic management
 
-Bulker automatically creates 3 topics per each table in destination. One topic is for main processing, one is for failed events that should be retried and the last one for failed events that won't be retried - dead. The topic names has format `in.id.{destiantionId}.m.{mode}.t.{tableName}`.
+Bulker automatically creates 3 topics per each table in destination. One topic is for main processing, one is for failed events that should be retried and the last one for failed events that won't be retried - dead. The topic names has format `in.id.{destinationId}.m.{mode}.t.{tableName}`.
 
 Mode can be: `batch` or `stream`, `retry`, `dead`.
 
@@ -183,6 +183,8 @@ Parameters above define how topics are created
 *Optional, default value: `` (none)*
 
 String prefixed to all destination topic names.
+
+e.g. if `BULKER_KAFKA_TOPIC_PREFIX=some.prefix.`, then a full topic name could be `some.prefix.in.id.clyzlw-.m.batch.t.events`
 
 ### `BULKER_KAFKA_TOPIC_RETENTION_HOURS`
 
