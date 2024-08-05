@@ -706,13 +706,25 @@ func (tm *TopicManager) Close() error {
 }
 
 func ParseTopicId(topic string) (destinationId, mode, tableName string, err error) {
-	// in.id.(.*).m.(.*).(t|b64).(.*)
-	topicGroups := strings.SplitN(topic, ".", 7)
-	if len(topicGroups) == 7 {
-		destinationId = topicGroups[2]
-		mode = topicGroups[4]
-		tableEncoding := topicGroups[5]
-		tableName = topicGroups[6]
+	// "some.random.prefix.in.id.(.*).m.(.*).(t|b64).(.*)"  -> ["some.random.prefix.in.id", "(.*).m.(.*).(t|b64).(.*)"]
+	topicSplit := strings.SplitAfter(topic, "in.id.")
+
+	if len(topicSplit) != 2 {
+		err = fmt.Errorf("topic name %s doesn't match pattern %s", topic, topicPattern.String())
+
+		return
+	}
+
+	// "(.*).m.(.*).(t|b64).(.*)"
+	usefulTopicInfo := topicSplit[1]
+
+	// "(.*).m.(.*).(t|b64).(.*)"
+	topicGroups := strings.Split(usefulTopicInfo, ".")
+	if len(topicGroups) == 5 {
+		destinationId = topicGroups[0]
+		mode = topicGroups[2]
+		tableEncoding := topicGroups[3]
+		tableName = topicGroups[4]
 		if tableEncoding == "b64" {
 			b, err := base64.RawURLEncoding.DecodeString(tableName)
 			if err != nil {
