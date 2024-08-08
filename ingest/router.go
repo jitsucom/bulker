@@ -293,8 +293,8 @@ func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, i
 
 func (r *Router) getDataLocator(c *gin.Context, ingestType IngestType, writeKeyExtractor func() string) (cred StreamCredentials, err error) {
 	cred.IngestType = ingestType
-	if c.GetHeader("Authorization") != "" {
-		wk := strings.Replace(c.GetHeader("Authorization"), "Basic ", "", 1)
+	if w := c.GetHeader("Authorization"); w != "" {
+		wk := strings.Replace(w, "Basic ", "", 1)
 		//decode base64
 		wkDecoded, err := base64.StdEncoding.DecodeString(wk)
 		if err != nil {
@@ -303,8 +303,10 @@ func (r *Router) getDataLocator(c *gin.Context, ingestType IngestType, writeKeyE
 		//remove trailing :
 		wkDecoded = bytes.TrimSuffix(wkDecoded, []byte(":"))
 		cred.WriteKey = string(wkDecoded)
-	} else if c.GetHeader("X-Write-Key") != "" {
-		cred.WriteKey = c.GetHeader("X-Write-Key")
+	} else if w := c.GetHeader("X-Write-Key"); w != "" {
+		cred.WriteKey = w
+	} else if w := c.Query("writekey"); w != "" {
+		cred.WriteKey = w
 	} else if writeKeyExtractor != nil {
 		cred.WriteKey = writeKeyExtractor()
 	}
