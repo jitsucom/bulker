@@ -259,7 +259,16 @@ func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, i
 		}
 	}
 	ip := strings.TrimSpace(strings.Split(utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), ",")[0])
-	ev.Set("requestIp", ip)
+	ipPolicy := c.GetHeader("X-IP-Policy")
+	switch ipPolicy {
+	case "stripLastOctet":
+		ip = ipStripLastOctet(ip)
+	case "remove":
+		ip = ""
+	}
+	if ip != "" {
+		ev.Set("requestIp", ip)
+	}
 
 	ctx, ok := ev.GetN("context").(types.Json)
 	if !ok || ctx == nil {
@@ -275,7 +284,9 @@ func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, i
 	}
 	if ingestType == IngestTypeBrowser {
 		//if ip comes from browser, don't trust it!
-		ctx.Set("ip", ip)
+		if ip != "" {
+			ctx.Set("ip", ip)
+		}
 		ctx.SetIfAbsentFunc("userAgent", func() any {
 			return c.GetHeader("User-Agent")
 		})
@@ -294,7 +305,7 @@ func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, i
 func (r *Router) getDataLocator(c *gin.Context, ingestType IngestType, writeKeyExtractor func() string) (cred StreamCredentials, err error) {
 	cred.IngestType = ingestType
 	if w := c.GetHeader("Authorization"); w != "" {
-		wk := strings.Replace(w, "Basic ", "", 1)
+		wk := strings.TrimPrefix(w, "Basic ")
 		//decode base64
 		wkDecoded, err := base64.StdEncoding.DecodeString(wk)
 		if err != nil {
@@ -324,6 +335,14 @@ func (r *Router) getDataLocator(c *gin.Context, ingestType IngestType, writeKeyE
 func isInternalHeader(headerName string) bool {
 	l := strings.ToLower(headerName)
 	return strings.HasPrefix(l, "x-jitsu-") || strings.HasPrefix(l, "x-vercel")
+}
+
+func ipStripLastOctet(ip string) string {
+	parts := strings.Split(ip, ".")
+	if len(parts) == 4 {
+		return strings.Join(parts[:3], ".") + ".0"
+	}
+	return ip
 }
 
 type SyncDestinationsResponse struct {
