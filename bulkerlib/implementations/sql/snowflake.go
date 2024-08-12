@@ -528,8 +528,8 @@ func (s *Snowflake) createClusteringKey(ctx context.Context, table *Table) error
 	}
 	quotedTableName := s.quotedTableName(table.Name)
 	namespacePrefix := s.namespacePrefix(table.Namespace)
-	statement := fmt.Sprintf(sfAlterClusteringKeyTemplate,
-		quotedTableName, namespacePrefix, s.quotedColumnName(table.TimestampColumn))
+	statement := fmt.Sprintf(sfAlterClusteringKeyTemplate, namespacePrefix,
+		quotedTableName, s.quotedColumnName(table.TimestampColumn))
 
 	if _, err := s.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.AlterTableError.Wrap(err, "failed to set clustering key").
