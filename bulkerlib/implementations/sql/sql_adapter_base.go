@@ -19,21 +19,25 @@ import (
 )
 
 const (
-	createTableTemplate     = `CREATE %s TABLE %s (%s)`
-	addColumnTemplate       = `ALTER TABLE %s ADD COLUMN %s`
-	dropPrimaryKeyTemplate  = `ALTER TABLE %s DROP CONSTRAINT %s`
-	alterPrimaryKeyTemplate = `ALTER TABLE %s ADD CONSTRAINT %s PRIMARY KEY (%s)`
+	createTableTemplate     = `CREATE %s TABLE %s%s (%s)`
+	addColumnTemplate       = `ALTER TABLE %s%s ADD COLUMN %s`
+	dropPrimaryKeyTemplate  = `ALTER TABLE %s%s DROP CONSTRAINT %s`
+	alterPrimaryKeyTemplate = `ALTER TABLE %s%s ADD CONSTRAINT %s PRIMARY KEY (%s)`
 
-	deleteQueryTemplate   = `DELETE FROM %s WHERE %s`
-	selectQueryTemplate   = `SELECT %s FROM %s%s%s`
-	insertQuery           = `INSERT INTO {{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}})`
-	insertFromSelectQuery = `INSERT INTO {{.TableTo}}({{.Columns}}) SELECT {{.Columns}} FROM {{.TableFrom}}`
-	renameTableTemplate   = `ALTER TABLE %s%s RENAME TO %s`
+	deleteQueryTemplate   = `DELETE FROM %s%s WHERE %s`
+	selectQueryTemplate   = `SELECT %s FROM %s%s%s%s`
+	insertQuery           = `INSERT INTO {{.Namespace}}{{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}})`
+	insertFromSelectQuery = `INSERT INTO {{.Namespace}}{{.TableTo}}({{.Columns}}) SELECT {{.Columns}} FROM {{.NamespaceFrom}}{{.TableFrom}}`
+	renameTableTemplate   = `ALTER TABLE %s%s%s RENAME TO %s%s`
 
-	updateStatementTemplate = `UPDATE %s SET %s WHERE %s`
-	dropTableTemplate       = `DROP TABLE %s%s`
-	truncateTableTemplate   = `TRUNCATE TABLE %s`
-	deleteAllQueryTemplate  = `DELETE FROM %s`
+	updateStatementTemplate = `UPDATE %s%s SET %s WHERE %s`
+	dropTableTemplate       = `DROP TABLE %s %s%s`
+	truncateTableTemplate   = `TRUNCATE TABLE %s%s`
+	deleteAllQueryTemplate  = `DELETE FROM %s%s`
+
+	// that value indicates that table must not use namespace (schema or db) in queries.
+	// e.g. for Redshift where temporary tables don't belong to any schema
+	NoNamespaceValue = "__jitsu_no_namespace__"
 )
 
 var (
@@ -62,13 +66,16 @@ type ErrorAdapter func(error) error
 
 type SQLAdapterBase[T any] struct {
 	appbase.Service
-	typeId               string
+	typeId string
+	// schema dataset or database
+	namespace            string
 	config               *T
 	dataSource           *sql.DB
 	queryLogger          *logging.QueryLogger
 	batchFileFormat      types2.FileFormat
 	batchFileCompression types2.FileCompression
 	temporaryTables      bool
+	renameToSchemaless   bool
 	// stringifyObjects objects types like JSON, array will be stringified before sent to warehouse (warehouse will parse them back)
 	stringifyObjects bool
 
@@ -84,11 +91,12 @@ type SQLAdapterBase[T any] struct {
 	checkErrFunc         ErrorAdapter
 }
 
-func newSQLAdapterBase[T any](id string, typeId string, config *T, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter, supportsJSON bool) (*SQLAdapterBase[T], error) {
+func newSQLAdapterBase[T any](id string, typeId string, config *T, namespace string, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter, supportsJSON bool) (*SQLAdapterBase[T], error) {
 	s := SQLAdapterBase[T]{
 		Service:              appbase.NewServiceBase(id),
 		typeId:               typeId,
 		config:               config,
+		namespace:            namespace,
 		dbConnectFunction:    dbConnectFunction,
 		queryLogger:          queryLogger,
 		parameterPlaceholder: parameterPlaceholder,
@@ -193,11 +201,13 @@ func (b *SQLAdapterBase[T]) txOrDb(ctx context.Context) TxOrDB {
 	return txOrDb
 }
 
-func (b *SQLAdapterBase[T]) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
-	return b.selectFrom(ctx, selectQueryTemplate, tableName, "*", whenConditions, orderBy)
+func (b *SQLAdapterBase[T]) Select(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
+	return b.selectFrom(ctx, selectQueryTemplate, namespace, tableName, "*", whenConditions, orderBy)
 }
-func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
+func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, namespace string, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	quotedTableName := b.tableHelper.quotedTableName(tableName)
+	quotedSchema := b.namespacePrefix(namespace)
+
 	whenCondition, values := b.ToWhenConditions(whenConditions, b.parameterPlaceholder, 0)
 	if whenCondition != "" {
 		whenCondition = " WHERE " + whenCondition
@@ -212,7 +222,7 @@ func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, ta
 	}
 	var rows *sql.Rows
 	var err error
-	query := fmt.Sprintf(statement, selectExpression, quotedTableName, whenCondition, orderByClause)
+	query := fmt.Sprintf(statement, selectExpression, quotedSchema, quotedTableName, whenCondition, orderByClause)
 	if b.typeId == MySQLBulkerTypeId {
 		//For MySQL using Prepared statement switches mySQL to use Binary protocol that preserves types information
 		var stmt *sql.Stmt
@@ -261,8 +271,8 @@ func (b *SQLAdapterBase[T]) selectFrom(ctx context.Context, statement string, ta
 	return result, nil
 }
 
-func (b *SQLAdapterBase[T]) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
-	res, err := b.selectFrom(ctx, selectQueryTemplate, tableName, "count(*) as jitsu_count", whenConditions, nil)
+func (b *SQLAdapterBase[T]) Count(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions) (int, error) {
+	res, err := b.selectFrom(ctx, selectQueryTemplate, namespace, tableName, "count(*) as jitsu_count", whenConditions, nil)
 	if err != nil {
 		return -1, err
 	}
@@ -273,11 +283,12 @@ func (b *SQLAdapterBase[T]) Count(ctx context.Context, tableName string, whenCon
 	return strconv.Atoi(fmt.Sprint(scnt))
 }
 
-func (b *SQLAdapterBase[T]) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {
+func (b *SQLAdapterBase[T]) Delete(ctx context.Context, namespace string, tableName string, deleteConditions *WhenConditions) error {
 	quotedTableName := b.quotedTableName(tableName)
+	quotedSchema := b.namespacePrefix(namespace)
 
 	deleteCondition, values := b.ToWhenConditions(deleteConditions, b.parameterPlaceholder, 0)
-	query := fmt.Sprintf(deleteQueryTemplate, quotedTableName, deleteCondition)
+	query := fmt.Sprintf(deleteQueryTemplate, quotedSchema, quotedTableName, deleteCondition)
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query, values...); err != nil {
 
@@ -293,6 +304,7 @@ func (b *SQLAdapterBase[T]) Delete(ctx context.Context, tableName string, delete
 
 func (b *SQLAdapterBase[T]) Update(ctx context.Context, table *Table, object types2.Object, whenConditions *WhenConditions) error {
 	quotedTableName := b.quotedTableName(table.Name)
+	quotedSchema := b.namespacePrefix(table.Namespace)
 
 	count := object.Len()
 
@@ -311,7 +323,7 @@ func (b *SQLAdapterBase[T]) Update(ctx context.Context, table *Table, object typ
 		values[i+a] = updateValues[a]
 	}
 
-	statement := fmt.Sprintf(updateStatementTemplate, quotedTableName, strings.Join(columns, ", "), updateCondition)
+	statement := fmt.Sprintf(updateStatementTemplate, quotedSchema, quotedTableName, strings.Join(columns, ", "), updateCondition)
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement, values...); err != nil {
 
@@ -326,14 +338,15 @@ func (b *SQLAdapterBase[T]) Update(ctx context.Context, table *Table, object typ
 	return nil
 }
 
-func (b *SQLAdapterBase[T]) DropTable(ctx context.Context, tableName string, ifExists bool) error {
+func (b *SQLAdapterBase[T]) DropTable(ctx context.Context, namespace string, tableName string, ifExists bool) error {
 	quotedTableName := b.quotedTableName(tableName)
+	quotedSchema := b.namespacePrefix(namespace)
 
 	ifExs := ""
 	if ifExists {
 		ifExs = "IF EXISTS "
 	}
-	query := fmt.Sprintf(dropTableTemplate, ifExs, quotedTableName)
+	query := fmt.Sprintf(dropTableTemplate, ifExs, quotedSchema, quotedTableName)
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 
@@ -348,13 +361,14 @@ func (b *SQLAdapterBase[T]) DropTable(ctx context.Context, tableName string, ifE
 }
 
 func (b *SQLAdapterBase[T]) Drop(ctx context.Context, table *Table, ifExists bool) error {
-	return b.DropTable(ctx, table.Name, ifExists)
+	return b.DropTable(ctx, table.Namespace, table.Name, ifExists)
 }
 
-func (b *SQLAdapterBase[T]) TruncateTable(ctx context.Context, tableName string) error {
+func (b *SQLAdapterBase[T]) TruncateTable(ctx context.Context, namespace string, tableName string) error {
 	quotedTableName := b.quotedTableName(tableName)
+	quotedSchema := b.namespacePrefix(namespace)
 
-	statement := fmt.Sprintf(truncateTableTemplate, quotedTableName)
+	statement := fmt.Sprintf(truncateTableTemplate, quotedSchema, quotedTableName)
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.TruncateError.Wrap(err, "failed to truncate table").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
@@ -367,10 +381,11 @@ func (b *SQLAdapterBase[T]) TruncateTable(ctx context.Context, tableName string)
 }
 
 // DeleteAll deletes all records in tableName table
-func (b *SQLAdapterBase[T]) DeleteAll(ctx context.Context, tableName string) error {
+func (b *SQLAdapterBase[T]) DeleteAll(ctx context.Context, namespace, tableName string) error {
 	quotedTableName := b.quotedTableName(tableName)
+	quotedSchema := b.namespacePrefix(namespace)
 
-	statement := fmt.Sprintf(deleteAllQueryTemplate, quotedTableName)
+	statement := fmt.Sprintf(deleteAllQueryTemplate, quotedSchema, quotedTableName)
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.TruncateError.Wrap(err, "failed to delete all from table").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
@@ -383,6 +398,8 @@ func (b *SQLAdapterBase[T]) DeleteAll(ctx context.Context, tableName string) err
 }
 
 type QueryPayload struct {
+	Namespace      string
+	NamespaceFrom  string
 	TableName      string
 	Columns        string
 	Placeholders   string
@@ -402,6 +419,7 @@ func (b *SQLAdapterBase[T]) insert(ctx context.Context, table *Table, objects []
 // plainInsert inserts provided object into Snowflake
 func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, objects []types2.Object, mergeQuery *template.Template) error {
 	quotedTableName := b.quotedTableName(table.Name)
+	quotedSchema := b.namespacePrefix(table.Namespace)
 	count := table.ColumnsCount()
 	columnNames := make([]string, count)
 	placeholders := make([]string, count)
@@ -420,6 +438,7 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 	})
 
 	insertPayload := QueryPayload{
+		Namespace:      quotedSchema,
 		TableName:      quotedTableName,
 		Columns:        strings.Join(columnNames, ", "),
 		Placeholders:   strings.Join(placeholders, ", "),
@@ -466,6 +485,8 @@ func (b *SQLAdapterBase[T]) copy(ctx context.Context, targetTable *Table, source
 
 func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table, sourceTable *Table, mergeQuery *template.Template, sourceAlias string) (state bulkerlib.WarehouseState, err error) {
 	startTime := time.Now()
+	quotedSchema := b.namespacePrefix(targetTable.Namespace)
+	quotedSchemaFrom := b.namespacePrefix(sourceTable.Namespace)
 	quotedTargetTableName := b.quotedTableName(targetTable.Name)
 	quotedSourceTableName := b.quotedTableName(sourceTable.Name)
 
@@ -489,6 +510,8 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 		})
 	}
 	insertPayload := QueryPayload{
+		Namespace:      quotedSchema,
+		NamespaceFrom:  quotedSchemaFrom,
 		TableTo:        quotedTargetTableName,
 		TableFrom:      quotedSourceTableName,
 		Columns:        strings.Join(columnNames, ","),
@@ -528,6 +551,8 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 // make fields from Table PkFields - 'not null'
 func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Table) error {
 	quotedTableName := b.quotedTableName(schemaToCreate.Name)
+	quotedSchema := b.namespacePrefix(schemaToCreate.Namespace)
+
 	columnsDDL := schemaToCreate.MappedColumns(func(columnName string, column types2.SQLColumn) string {
 		return b.columnDDL(columnName, schemaToCreate, column)
 	})
@@ -536,7 +561,7 @@ func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Tab
 		temporary = "TEMPORARY"
 	}
 
-	query := fmt.Sprintf(createTableTemplate, temporary, quotedTableName, strings.Join(columnsDDL, ", "))
+	query := fmt.Sprintf(createTableTemplate, temporary, quotedSchema, quotedTableName, strings.Join(columnsDDL, ", "))
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		return errorj.CreateTableError.Wrap(err, "failed to create table").
@@ -558,11 +583,12 @@ func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Tab
 // recreate primary key (if not empty) or delete primary key if Table.DeletePrimaryKeyNamed is true
 func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Table) error {
 	quotedTableName := b.quotedTableName(patchTable.Name)
+	quotedSchema := b.namespacePrefix(patchTable.Namespace)
 
 	//patch columns
 	err := patchTable.Columns.ForEachIndexedE(func(_ int, columnName string, column types2.SQLColumn) error {
 		columnDDL := b.columnDDL(columnName, patchTable, column)
-		query := fmt.Sprintf(addColumnTemplate, quotedTableName, columnDDL)
+		query := fmt.Sprintf(addColumnTemplate, quotedSchema, quotedTableName, columnDDL)
 
 		if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 			return errorj.PatchTableError.Wrap(err, "failed to patch table").
@@ -604,13 +630,14 @@ func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) 
 	}
 
 	quotedTableName := b.quotedTableName(table.Name)
+	quotedSchema := b.namespacePrefix(table.Namespace)
 
 	columnNames := make([]string, table.PKFields.Size())
 	for i, column := range table.GetPKFields() {
 		columnNames[i] = b.quotedColumnName(column)
 	}
 
-	statement := fmt.Sprintf(alterPrimaryKeyTemplate,
+	statement := fmt.Sprintf(alterPrimaryKeyTemplate, quotedSchema,
 		quotedTableName, b.quotedTableName(table.PrimaryKeyName), strings.Join(columnNames, ","))
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
@@ -628,8 +655,9 @@ func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) 
 // delete primary key
 func (b *SQLAdapterBase[T]) deletePrimaryKey(ctx context.Context, table *Table, pkName string) error {
 	quotedTableName := b.quotedTableName(table.Name)
+	quotedSchema := b.namespacePrefix(table.Namespace)
 
-	query := fmt.Sprintf(dropPrimaryKeyTemplate, quotedTableName, b.quotedTableName(pkName))
+	query := fmt.Sprintf(dropPrimaryKeyTemplate, quotedSchema, quotedTableName, b.quotedTableName(pkName))
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		return errorj.DeletePrimaryKeysError.Wrap(err, "failed to delete primary key").
@@ -643,15 +671,16 @@ func (b *SQLAdapterBase[T]) deletePrimaryKey(ctx context.Context, table *Table, 
 	return nil
 }
 
-func (b *SQLAdapterBase[T]) renameTable(ctx context.Context, ifExists bool, tableName, newTableName string) error {
+func (b *SQLAdapterBase[T]) renameTable(ctx context.Context, ifExists bool, namespace, tableName, newTableName string) error {
 	quotedTableName := b.quotedTableName(tableName)
 	quotedNewTableName := b.quotedTableName(newTableName)
-
+	quotedSchema := b.namespacePrefix(namespace)
+	renameToSchema := utils.Ternary(b.renameToSchemaless, "", quotedSchema)
 	ifExs := ""
 	if ifExists {
 		ifExs = "IF EXISTS "
 	}
-	query := fmt.Sprintf(renameTableTemplate, ifExs, quotedTableName, quotedNewTableName)
+	query := fmt.Sprintf(renameTableTemplate, ifExs, quotedSchema, quotedTableName, renameToSchema, quotedNewTableName)
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		return errorj.RenameError.Wrap(err, "failed to rename table").
@@ -666,10 +695,10 @@ func (b *SQLAdapterBase[T]) renameTable(ctx context.Context, ifExists bool, tabl
 
 func (b *SQLAdapterBase[T]) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
 	tmpTable := "deprecated_" + targetTableName + time.Now().Format("_20060102_150405")
-	err1 := b.renameTable(ctx, true, targetTableName, tmpTable)
-	err = b.renameTable(ctx, false, replacementTable.Name, targetTableName)
+	err1 := b.renameTable(ctx, true, replacementTable.Namespace, targetTableName, tmpTable)
+	err = b.renameTable(ctx, false, replacementTable.Namespace, replacementTable.Name, targetTableName)
 	if dropOldTable && err1 == nil && err == nil {
-		return b.DropTable(ctx, tmpTable, true)
+		return b.DropTable(ctx, replacementTable.Namespace, tmpTable, true)
 	} else if err != nil {
 		return multierror.Append(err, err1).ErrorOrNil()
 	}
@@ -688,6 +717,20 @@ func (b *SQLAdapterBase[T]) columnDDL(name string, table *Table, column types2.S
 // quotedColumnName adapts table name to sql identifier rules of database and quotes accordingly (if needed)
 func (b *SQLAdapterBase[T]) quotedTableName(tableName string) string {
 	return b.tableHelper.quotedTableName(tableName)
+}
+
+func (b *SQLAdapterBase[T]) namespaceName(namespace string) string {
+	if namespace == NoNamespaceValue {
+		return ""
+	}
+	return b.tableHelper.TableName(utils.DefaultString(namespace, b.namespace))
+}
+
+func (b *SQLAdapterBase[T]) namespacePrefix(namespace string) string {
+	if namespace == NoNamespaceValue {
+		return ""
+	}
+	return b.tableHelper.quotedTableName(utils.DefaultString(namespace, b.namespace)) + "."
 }
 
 // quotedColumnName adapts column name to sql identifier rules of database and quotes accordingly (if needed)
@@ -759,6 +802,14 @@ func (b *SQLAdapterBase[T]) GetAvroSchema(table *Table) *types2.AvroSchema {
 
 func (b *SQLAdapterBase[T]) BuildConstraintName(tableName string) string {
 	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers())
+}
+
+func (b *SQLAdapterBase[T]) DefaultNamespace() string {
+	return b.namespace
+}
+
+func (b *SQLAdapterBase[T]) TmpNamespace(targetNamespace string) string {
+	return targetNamespace
 }
 
 func match(target, pattern string) bool {

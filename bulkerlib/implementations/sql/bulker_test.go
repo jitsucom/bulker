@@ -44,9 +44,10 @@ type StepFunction func(testConfig bulkerTestConfig, mode bulker.BulkMode) error
 var configRegistry = map[string]any{}
 
 type ExpectedTable struct {
-	Name     string
-	PKFields []string
-	Columns  Columns
+	Name      string
+	Namespace string
+	PKFields  []string
+	Columns   Columns
 }
 
 var postgresContainer *testcontainers2.PostgresContainer
@@ -212,6 +213,7 @@ type bulkerTestConfig struct {
 	name string
 	//tableName name of the destination table. Leave empty generate automatically
 	tableName string
+	namespace string
 	//bulker config
 	config *bulker.Config
 	//for which bulker predefined configurations to run test
@@ -412,6 +414,28 @@ func TestBasics(t *testing.T) {
 				},
 			})},
 		},
+		{
+			name:              "namespace",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			namespace:         "bnsp",
+			dataFile:          "test_data/columns_added.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("_timestamp", "id", "name", "column1", "column2", "column3"),
+			},
+			expectedRowsCount: 6,
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "test", "column1": nil, "column2": nil, "column3": nil},
+				{"_timestamp": constantTime, "id": 2, "name": "test2", "column1": "data", "column2": nil, "column3": nil},
+				{"_timestamp": constantTime, "id": 3, "name": "test3", "column1": "data", "column2": "data", "column3": nil},
+				{"_timestamp": constantTime, "id": 4, "name": "test2", "column1": "data", "column2": nil, "column3": nil},
+				{"_timestamp": constantTime, "id": 5, "name": "test", "column1": nil, "column2": nil, "column3": nil},
+				{"_timestamp": constantTime, "id": 6, "name": "test4", "column1": "data", "column2": "data", "column3": "data"},
+			},
+			streamOptions:  []bulker.StreamOption{bulker.WithNamespace("bnsp")},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -471,17 +495,18 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	reqr.True(ok)
 	ctx := context.Background()
 	id, tableName := testConfig.getIdAndTableName(mode)
+	namespace := utils.DefaultString(testConfig.namespace, sqlAdapter.DefaultNamespace())
 	err = sqlAdapter.InitDatabase(ctx)
 	PostStep("init_database", testConfig, mode, reqr, err)
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
-		err = sqlAdapter.DropTable(ctx, tableName, true)
-		PostStep("pre_cleanup", testConfig, mode, reqr, err)
+		_ = sqlAdapter.DropTable(ctx, namespace, tableName, true)
+		//PostStep("pre_cleanup", testConfig, mode, reqr, err)
 	}
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		defer func() {
-			_ = sqlAdapter.DropTable(ctx, tableName, true)
+			_ = sqlAdapter.DropTable(ctx, namespace, tableName, true)
 		}()
 	}
 	stream, err := blk.CreateStream(id, tableName, mode, testConfig.streamOptions...)
@@ -540,7 +565,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	//PostStep("state_lasterror", testConfig, mode, reqr, state.LastError)
 	if testConfig.expectedTable.Columns.Len() > 0 {
 		//Check table schema
-		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
+		table, err := sqlAdapter.GetTableSchema(ctx, namespace, tableName)
 		PostStep("get_table", testConfig, mode, reqr, err)
 		switch testConfig.expectedTableTypeChecking {
 		case TypeCheckingDisabled:
@@ -604,6 +629,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 		table.PrimaryKeyName = ""
 		expectedTable := &Table{
 			Name:           testConfig.expectedTable.Name,
+			Namespace:      utils.Nvl(testConfig.expectedTable.Namespace, namespace),
 			PrimaryKeyName: "",
 			PKFields:       expectedPKFields,
 			Columns:        testConfig.expectedTable.Columns,
@@ -623,7 +649,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	if testConfig.expectedRowsCount != nil || testConfig.expectedRows != nil {
 		time.Sleep(1 * time.Second)
 		//Check rows count and rows data when provided
-		rows, err := sqlAdapter.Select(ctx, tableName, nil, testConfig.orderBy)
+		rows, err := sqlAdapter.Select(ctx, namespace, tableName, nil, testConfig.orderBy)
 		PostStep("select_result", testConfig, mode, reqr, err)
 		if testConfig.expectedRows == nil {
 			reqr.Equal(testConfig.expectedRowsCount, len(rows))

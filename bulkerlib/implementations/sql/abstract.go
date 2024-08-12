@@ -23,6 +23,7 @@ type AbstractSQLStream struct {
 	mode              bulker.BulkMode
 	options           bulker.StreamOptions
 	tableName         string
+	namespace         string
 	merge             bool
 	mergeWindow       int
 	omitNils          bool
@@ -63,6 +64,10 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	if ps.timestampColumn != "" {
 		ps.timestampColumn = p.ColumnName(ps.timestampColumn)
 	}
+	ps.namespace = bulker.NamespaceOption.Get(&ps.options)
+	if ps.namespace != "" {
+		ps.namespace = p.TableName(ps.namespace)
+	}
 	ps.omitNils = OmitNilsOption.Get(&ps.options)
 	ps.schemaFreeze = SchemaFreezeOption.Get(&ps.options)
 
@@ -98,7 +103,7 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Obje
 	if err != nil {
 		return nil, nil, err
 	}
-	table, processedObject := ps.sqlAdapter.TableHelper().MapTableSchema(ps.sqlAdapter, batchHeader, processedObject, ps.pkColumns, ps.timestampColumn)
+	table, processedObject := ps.sqlAdapter.TableHelper().MapTableSchema(ps.sqlAdapter, batchHeader, processedObject, ps.pkColumns, ps.timestampColumn, ps.namespace)
 	ps.state.ProcessedRows++
 	return table, processedObject, nil
 }

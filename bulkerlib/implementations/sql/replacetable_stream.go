@@ -28,6 +28,7 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 	}
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		tmpTable := &Table{
+			Namespace:      ps.namespace,
 			Name:           fmt.Sprintf("%s_tmp%s", utils.ShortenString(ps.tableName, 47), time.Now().Format("060102150405")),
 			PrimaryKeyName: tableForObject.PrimaryKeyName,
 			//PrimaryKeyName: fmt.Sprintf("%s_%s", tableForObject.PrimaryKeyName, time.Now().Format("060102_150405")),
@@ -89,17 +90,17 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 				err = ps.init(ctx)
 				if err == nil {
 					var table *Table
-					table, err = ps.tx.GetTableSchema(ctx, ps.tableName)
+					table, err = ps.tx.GetTableSchema(ctx, ps.namespace, ps.tableName)
 					if table.Exists() {
-						err = ps.tx.TruncateTable(ctx, ps.tableName)
+						err = ps.tx.TruncateTable(ctx, ps.namespace, ps.tableName)
 					}
 				}
 			} else {
 				//no transaction was opened yet and not needed that is why we use ps.sqlAdapter instead of tx
 				var table *Table
-				table, err = ps.sqlAdapter.GetTableSchema(ctx, ps.tableName)
+				table, err = ps.sqlAdapter.GetTableSchema(ctx, ps.namespace, ps.tableName)
 				if table.Exists() {
-					err = ps.sqlAdapter.TruncateTable(ctx, ps.tableName)
+					err = ps.sqlAdapter.TruncateTable(ctx, ps.namespace, ps.tableName)
 				}
 			}
 		}

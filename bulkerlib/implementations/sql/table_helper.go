@@ -60,13 +60,17 @@ func NewTableHelper(maxIdentifierLength int, identifierQuoteChar rune) TableHelp
 // MapTableSchema maps types.TypesHeader (JSON structure with json data types) into types.Table (structure with SQL types)
 // applies column types mapping
 // adjusts object properties names to column names
-func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesHeader, object types2.Object, pkColumns []string, timestampColumn string) (*Table, types2.Object) {
+func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesHeader, object types2.Object, pkColumns []string, timestampColumn string, namespace string) (*Table, types2.Object) {
 	adaptedPKFields := types.NewOrderedSet[string]()
 	for _, pkField := range pkColumns {
 		adaptedPKFields.Put(pkField)
 	}
+	if namespace != "" {
+		namespace = th.TableName(namespace)
+	}
 	table := &Table{
 		Name:      sqlAdapter.TableName(batchHeader.TableName),
+		Namespace: namespace,
 		Columns:   NewColumns(),
 		Partition: batchHeader.Partition,
 		PKFields:  adaptedPKFields,
@@ -267,7 +271,7 @@ func (th *TableHelper) getOrCreateWithLock(ctx context.Context, sqlAdapter SQLAd
 
 func (th *TableHelper) getOrCreate(ctx context.Context, sqlAdapter SQLAdapter, dataSchema *Table) (*Table, error) {
 	//Get schema
-	dbTableSchema, err := sqlAdapter.GetTableSchema(ctx, dataSchema.Name)
+	dbTableSchema, err := sqlAdapter.GetTableSchema(ctx, dataSchema.Namespace, dataSchema.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +312,7 @@ func (th *TableHelper) getTableIdentifier(destinationID, tableName string) strin
 	return destinationID + "_" + tableName
 }
 
-func (th *TableHelper) Get(ctx context.Context, sqlAdapter SQLAdapter, tableName string, cacheTable bool) (*Table, error) {
+func (th *TableHelper) Get(ctx context.Context, sqlAdapter SQLAdapter, namespace string, tableName string, cacheTable bool) (*Table, error) {
 	var table *Table
 	var ok bool
 	if cacheTable {
@@ -317,7 +321,7 @@ func (th *TableHelper) Get(ctx context.Context, sqlAdapter SQLAdapter, tableName
 			return table, nil
 		}
 	}
-	table, err := sqlAdapter.GetTableSchema(ctx, tableName)
+	table, err := sqlAdapter.GetTableSchema(ctx, namespace, tableName)
 	if err != nil {
 		return nil, err
 	}

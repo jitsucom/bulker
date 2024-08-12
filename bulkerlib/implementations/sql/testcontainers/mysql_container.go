@@ -63,8 +63,8 @@ func NewMySQLContainer(ctx context.Context) (*MySQLContainer, error) {
 	}
 	dbSettings := make(map[string]string, 0)
 	dbSettings["MYSQL_ROOT_PASSWORD"] = mySQLRootPassword
-	dbSettings["MYSQL_USER"] = mySQLUser
-	dbSettings["MYSQL_PASSWORD"] = mySQLPassword
+	//dbSettings["MYSQL_USER"] = mySQLUser
+	//dbSettings["MYSQL_PASSWORD"] = mySQLPassword
 	dbSettings["MYSQL_DATABASE"] = mySQLDatabase
 
 	//exposedPort := fmt.Sprintf("%d:%d", utils.GetPort(), 3306)
@@ -94,11 +94,11 @@ func NewMySQLContainer(ctx context.Context) (*MySQLContainer, error) {
 		container.Terminate(ctx)
 		return nil, err
 	}
-	_, _, err = container.Exec(context.Background(), []string{"mysql", "-uroot", "-p" + mySQLRootPassword, "-Bse", "CREATE USER 'root'@'%' IDENTIFIED BY '" + mySQLRootPassword + "';GRANT ALL ON *.* TO 'root'@'%';FLUSH PRIVILEGES;"})
-	//logging.Infof("Exec result: %v err: %v", res, err)
+	_, _, err = container.Exec(context.Background(), []string{"mysql", "-uroot", "-p" + mySQLRootPassword, "-Bse", fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s';GRANT ALL PRIVILEGES ON *.* TO '%s'@'%%';FLUSH PRIVILEGES;", mySQLUser, mySQLPassword, mySQLUser)})
+	logging.Infof("Exec result err: %v", err)
 	// [user[:password]@][net[(addr)]]/dbname[?param1=value1&paramN=valueN]
 	connectionString := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
-		"root", mySQLRootPassword, host, port.Int(), mySQLDatabase)
+		mySQLUser, mySQLPassword, host, port.Int(), mySQLDatabase)
 	dataSource, err := sql.Open("mysql", connectionString)
 	if err != nil {
 		container.Terminate(ctx)

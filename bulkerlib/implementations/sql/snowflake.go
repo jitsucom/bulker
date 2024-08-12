@@ -32,16 +32,16 @@ const (
 	SnowflakeBulkerTypeId = "snowflake"
 
 	sfTableExistenceQuery        = `SELECT count(*) from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = ? and TABLE_NAME = ?`
-	sfDescTableQuery             = `desc table %s`
-	sfAlterClusteringKeyTemplate = `ALTER TABLE %s CLUSTER BY (DATE_TRUNC('MONTH', %s))`
+	sfDescTableQuery             = `desc table %s%s`
+	sfAlterClusteringKeyTemplate = `ALTER TABLE %s%s CLUSTER BY (DATE_TRUNC('MONTH', %s))`
 
-	sfCopyStatement = `COPY INTO %s (%s) from @~/%s FILE_FORMAT=(TYPE= 'CSV', FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE SKIP_HEADER = 1) `
+	sfCopyStatement = `COPY INTO %s%s (%s) from @~/%s FILE_FORMAT=(TYPE= 'CSV', FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE SKIP_HEADER = 1) `
 
-	sfMergeStatement = `MERGE INTO {{.TableTo}} T USING (SELECT {{.Columns}} FROM {{.TableFrom}} ) S ON {{.JoinConditions}} WHEN MATCHED THEN UPDATE SET {{.UpdateSet}} WHEN NOT MATCHED THEN INSERT ({{.Columns}}) VALUES ({{.SourceColumns}})`
+	sfMergeStatement = `MERGE INTO {{.Namespace}}{{.TableTo}} T USING (SELECT {{.Columns}} FROM {{.NamespaceFrom}}{{.TableFrom}} ) S ON {{.JoinConditions}} WHEN MATCHED THEN UPDATE SET {{.UpdateSet}} WHEN NOT MATCHED THEN INSERT ({{.Columns}}) VALUES ({{.SourceColumns}})`
 
 	sfCreateSchemaIfNotExistsTemplate = `CREATE SCHEMA IF NOT EXISTS %s`
 
-	sfPrimaryKeyFieldsQuery = `show primary keys in %s`
+	sfPrimaryKeyFieldsQuery = `show primary keys in %s%s`
 )
 
 var (
@@ -165,7 +165,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if bulkerConfig.LogLevel == bulker.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	sqlAdapter, err := newSQLAdapterBase(bulkerConfig.Id, SnowflakeBulkerTypeId, config, dbConnectFunction, snowflakeTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr, false)
+	sqlAdapter, err := newSQLAdapterBase(bulkerConfig.Id, SnowflakeBulkerTypeId, config, config.Schema, dbConnectFunction, snowflakeTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, sfColumnDDL, unmappedValue, checkErr, false)
 	s := &Snowflake{sqlAdapter}
 	s.batchFileFormat = types2.FileFormatCSV
 	s.batchFileCompression = types2.FileCompressionGZIP
@@ -217,29 +217,39 @@ func (s *Snowflake) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	return s.openTx(ctx, s)
 }
 
-// InitDatabase create database schema instance if doesn't exist
-func (s *Snowflake) InitDatabase(ctx context.Context) error {
-	query := fmt.Sprintf(sfCreateSchemaIfNotExistsTemplate, s.config.Schema)
+func (s *Snowflake) createSchemaIfNotExists(ctx context.Context, schema string) error {
+	if schema == "" {
+		return nil
+	}
+	schema = s.namespaceName(schema)
+	if schema == "" {
+		return nil
+	}
+	query := fmt.Sprintf(sfCreateSchemaIfNotExistsTemplate, schema)
 
 	if _, err := s.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		err = checkErr(err)
 
 		return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Schema:    s.config.Schema,
+				Schema:    schema,
 				Statement: query,
 			})
 	}
-
 	return nil
 }
 
-// GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
-func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
-	quotedTableName, tableName := s.tableHelper.adaptTableName(tableName)
-	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+// InitDatabase create database schema instance if doesn't exist
+func (s *Snowflake) InitDatabase(ctx context.Context) error {
+	return s.createSchemaIfNotExists(ctx, s.config.Schema)
+}
 
-	query := fmt.Sprintf(sfDescTableQuery, quotedTableName)
+// GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
+func (s *Snowflake) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
+	quotedTableName, tableName := s.tableHelper.adaptTableName(tableName)
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+
+	query := fmt.Sprintf(sfDescTableQuery, s.namespacePrefix(namespace), quotedTableName)
 	rows, err := s.txOrDb(ctx).QueryContext(ctx, query)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") {
@@ -280,7 +290,7 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 			})
 	}
 
-	primaryKeyName, pkFields, err := s.getPrimaryKey(ctx, tableName)
+	primaryKeyName, pkFields, err := s.getPrimaryKey(ctx, namespace, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -301,16 +311,16 @@ func (s *Snowflake) BuildConstraintName(tableName string) string {
 }
 
 // getPrimaryKey returns primary key name and fields
-func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string, types.OrderedSet[string], error) {
+func (s *Snowflake) getPrimaryKey(ctx context.Context, namespace, tableName string) (string, types.OrderedSet[string], error) {
 	quotedTableName := s.quotedTableName(tableName)
 
 	primaryKeys := types.NewOrderedSet[string]()
-	statement := fmt.Sprintf(sfPrimaryKeyFieldsQuery, quotedTableName)
+	statement := fmt.Sprintf(sfPrimaryKeyFieldsQuery, s.namespacePrefix(namespace), quotedTableName)
 	pkFieldsRows, err := s.txOrDb(ctx).QueryContext(ctx, statement)
 	if err != nil {
 		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Schema:    s.config.Schema,
+				Schema:    namespace,
 				Table:     quotedTableName,
 				Statement: statement,
 			})
@@ -325,7 +335,7 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 		if err != nil {
 			return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Schema:    s.config.Schema,
+					Schema:    namespace,
 					Table:     quotedTableName,
 					Statement: statement,
 				})
@@ -351,7 +361,7 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 	if err := pkFieldsRows.Err(); err != nil {
 		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Schema:    s.config.Schema,
+				Schema:    namespace,
 				Table:     quotedTableName,
 				Statement: statement,
 			})
@@ -368,7 +378,7 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, tableName string) (string
 // LoadTable transfer data from local file to Snowflake by passing COPY request to Snowflake
 func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := s.quotedTableName(targetTable.Name)
-
+	namespacePrefix := s.namespacePrefix(targetTable.Namespace)
 	if loadSource.Type != LocalFile {
 		return state, fmt.Errorf("LoadTable: only local file is supported")
 	}
@@ -407,12 +417,12 @@ func (s *Snowflake) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 		})
 	}()
 	columnNames := targetTable.MappedColumnNames(s.quotedColumnName)
-	statement := fmt.Sprintf(sfCopyStatement, quotedTableName, strings.Join(columnNames, ","), path.Base(loadSource.Path))
+	statement := fmt.Sprintf(sfCopyStatement, namespacePrefix, quotedTableName, strings.Join(columnNames, ","), path.Base(loadSource.Path))
 
 	if _, err := s.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return state, errorj.CopyError.Wrap(err, "failed to copy data from stage").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Schema:    s.config.Schema,
+				Schema:    targetTable.Namespace,
 				Table:     quotedTableName,
 				Statement: statement,
 			})
@@ -436,7 +446,7 @@ func (s *Snowflake) Insert(ctx context.Context, table *Table, merge bool, object
 				pkMatchConditions = pkMatchConditions.Add(pkColumn, "=", value)
 			}
 		}
-		res, err := s.SQLAdapterBase.Select(ctx, table.Name, pkMatchConditions, nil)
+		res, err := s.SQLAdapterBase.Select(ctx, table.Namespace, table.Name, pkMatchConditions, nil)
 		if err != nil {
 			return errorj.ExecuteInsertError.Wrap(err, "failed check primary key collision").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
@@ -464,10 +474,10 @@ func (s *Snowflake) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 
 func (s *Snowflake) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) error {
 	tmpTable := "deprecated_" + targetTableName + time.Now().Format("_20060102_150405")
-	err1 := s.renameTable(ctx, true, targetTableName, tmpTable)
-	err := s.renameTable(ctx, false, replacementTable.Name, targetTableName)
+	err1 := s.renameTable(ctx, true, replacementTable.Namespace, targetTableName, tmpTable)
+	err := s.renameTable(ctx, false, replacementTable.Namespace, replacementTable.Name, targetTableName)
 	if dropOldTable && err1 == nil && err == nil {
-		return s.DropTable(ctx, tmpTable, true)
+		return s.DropTable(ctx, replacementTable.Namespace, tmpTable, true)
 	}
 	return nil
 }
@@ -477,9 +487,9 @@ func sfColumnDDL(quotedName, _ string, _ *Table, column types2.SQLColumn) string
 	return fmt.Sprintf(`%s %s`, quotedName, column.GetDDLType())
 }
 
-func (s *Snowflake) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
+func (s *Snowflake) Select(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	ctx = sf.WithHigherPrecision(ctx)
-	return s.SQLAdapterBase.Select(ctx, tableName, whenConditions, orderBy)
+	return s.SQLAdapterBase.Select(ctx, namespace, tableName, whenConditions, orderBy)
 }
 
 func sfIdentifierFunction(value string, alphanumeric bool) (adapted string, needQuotes bool) {
@@ -494,14 +504,18 @@ func sfIdentifierFunction(value string, alphanumeric bool) (adapted string, need
 }
 
 func (s *Snowflake) CreateTable(ctx context.Context, schemaToCreate *Table) error {
-	err := s.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
+	err := s.createSchemaIfNotExists(ctx, schemaToCreate.Namespace)
+	if err != nil {
+		return err
+	}
+	err = s.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
 	if err != nil {
 		return err
 	}
 	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
 		err = s.createClusteringKey(ctx, schemaToCreate)
 		if err != nil {
-			s.DropTable(ctx, schemaToCreate.Name, true)
+			s.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)
 			return fmt.Errorf("failed to create sort key: %v", err)
 		}
 	}
@@ -513,9 +527,9 @@ func (s *Snowflake) createClusteringKey(ctx context.Context, table *Table) error
 		return nil
 	}
 	quotedTableName := s.quotedTableName(table.Name)
-
+	namespacePrefix := s.namespacePrefix(table.Namespace)
 	statement := fmt.Sprintf(sfAlterClusteringKeyTemplate,
-		quotedTableName, s.quotedColumnName(table.TimestampColumn))
+		quotedTableName, namespacePrefix, s.quotedColumnName(table.TimestampColumn))
 
 	if _, err := s.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.AlterTableError.Wrap(err, "failed to set clustering key").

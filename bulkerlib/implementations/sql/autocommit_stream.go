@@ -53,7 +53,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	if err != nil {
 		return
 	}
-	existingTable, err := ps.sqlAdapter.TableHelper().Get(ctx, ps.sqlAdapter, table.Name, true)
+	existingTable, err := ps.sqlAdapter.TableHelper().Get(ctx, ps.sqlAdapter, table.Namespace, table.Name, true)
 	if err != nil {
 		err = errorj.Decorate(err, "failed to get current table table")
 		return

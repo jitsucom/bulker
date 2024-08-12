@@ -20,7 +20,7 @@ func init() {
 const (
 	RedshiftBulkerTypeId = "redshift"
 
-	redshiftCopyTemplate = `copy %s (%s)
+	redshiftCopyTemplate = `copy %s%s (%s)
 					from 's3://%s/%s'
     				ACCESS_KEY_ID '%s'
     				SECRET_ACCESS_KEY '%s'
@@ -31,8 +31,8 @@ const (
                     dateformat 'auto'
                     timeformat 'auto'`
 
-	redshiftAlterSortKeyTemplate       = `ALTER TABLE %s ALTER SORTKEY (%s)`
-	redshiftDeleteBeforeBulkMergeUsing = `DELETE FROM %s using %s where %s`
+	redshiftAlterSortKeyTemplate       = `ALTER TABLE %s%s ALTER SORTKEY (%s)`
+	redshiftDeleteBeforeBulkMergeUsing = `DELETE FROM %s%s using %s where %s`
 
 	redshiftPrimaryKeyFieldsQuery = `select tco.constraint_name as constraint_name, kcu.column_name as key_column
 									 from information_schema.table_constraints tco
@@ -92,6 +92,7 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	r.typesMapping, r.reverseTypesMapping = InitTypes(redshiftTypes, false)
 	r.tableHelper = NewTableHelper(127, '"')
 	r.temporaryTables = true
+	r.renameToSchemaless = true
 	//// Redshift is case insensitive by default
 	//r._columnNameFunc = strings.ToLower
 	//r._tableNameFunc = func(config *DataSourceConfig, tableName string) string { return tableName }
@@ -151,7 +152,7 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 				pkMatchConditions = pkMatchConditions.Add(pkColumn, "=", value)
 			}
 		}
-		res, err := p.Select(ctx, table.Name, pkMatchConditions, nil)
+		res, err := p.Select(ctx, table.Namespace, table.Name, pkMatchConditions, nil)
 		if err != nil {
 			return errorj.ExecuteInsertError.Wrap(err, "failed check primary key collision").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
@@ -172,6 +173,7 @@ func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects
 // LoadTable copy transfer data from s3 to redshift by passing COPY request to redshift
 func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := p.quotedTableName(targetTable.Name)
+	namespace := p.namespacePrefix(targetTable.Namespace)
 	if loadSource.Type != AmazonS3 {
 		return state, fmt.Errorf("LoadTable: only Amazon S3 file is supported")
 	}
@@ -185,13 +187,13 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if s3Config.Folder != "" {
 		fileKey = s3Config.Folder + "/" + fileKey
 	}
-	statement := fmt.Sprintf(redshiftCopyTemplate, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
+	statement := fmt.Sprintf(redshiftCopyTemplate, namespace, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return state, errorj.CopyError.Wrap(err, "failed to copy data from s3").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    p.config.Schema,
 				Table:     quotedTableName,
-				Statement: fmt.Sprintf(redshiftCopyTemplate, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, credentialsMask, credentialsMask, s3Config.Region),
+				Statement: fmt.Sprintf(redshiftCopyTemplate, namespace, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, credentialsMask, credentialsMask, s3Config.Region),
 			})
 	}
 
@@ -200,6 +202,7 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 
 func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
 	quotedTargetTableName := p.quotedTableName(targetTable.Name)
+	namespace := p.namespacePrefix(targetTable.Namespace)
 	quotedSourceTableName := p.quotedTableName(sourceTable.Name)
 
 	if mergeWindow > 0 && targetTable.PKFields.Size() > 0 {
@@ -211,7 +214,7 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 			}
 			pkMatchConditions += fmt.Sprintf(`%s.%s = %s.%s`, quotedTargetTableName, pkColumn, quotedSourceTableName, pkColumn)
 		}
-		deleteStatement := fmt.Sprintf(redshiftDeleteBeforeBulkMergeUsing, quotedTargetTableName, quotedSourceTableName, pkMatchConditions)
+		deleteStatement := fmt.Sprintf(redshiftDeleteBeforeBulkMergeUsing, namespace, quotedTargetTableName, quotedSourceTableName, pkMatchConditions)
 
 		if _, err = p.txOrDb(ctx).ExecContext(ctx, deleteStatement); err != nil {
 
@@ -229,17 +232,18 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 
 func (p *Redshift) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
 	tmpTable := "deprecated_" + targetTableName + time.Now().Format("_20060102_150405")
-	err1 := p.renameTable(ctx, true, targetTableName, tmpTable)
-	err = p.renameTable(ctx, false, replacementTable.Name, targetTableName)
+	err1 := p.renameTable(ctx, true, replacementTable.Namespace, targetTableName, tmpTable)
+	err = p.renameTable(ctx, false, replacementTable.Namespace, replacementTable.Name, targetTableName)
 	if dropOldTable && err1 == nil && err == nil {
-		return p.DropTable(ctx, tmpTable, true)
+		return p.DropTable(ctx, replacementTable.Namespace, tmpTable, true)
 	}
 	return
 }
 
-func (p *Redshift) renameTable(ctx context.Context, ifExists bool, tableName, newTableName string) error {
+func (p *Redshift) renameTable(ctx context.Context, ifExists bool, namespace, tableName, newTableName string) error {
 	if ifExists {
-		row := p.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema ilike '%s' AND table_name = '%s')`, p.config.Schema, tableName))
+		schema := p.TableName(utils.DefaultString(namespace, p.namespace))
+		row := p.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema ilike '%s' AND table_name = '%s')`, schema, tableName))
 		exists := false
 		err := row.Scan(&exists)
 		if err != nil {
@@ -249,12 +253,12 @@ func (p *Redshift) renameTable(ctx context.Context, ifExists bool, tableName, ne
 			return nil
 		}
 	}
-	return p.SQLAdapterBase.renameTable(ctx, false, tableName, newTableName)
+	return p.SQLAdapterBase.renameTable(ctx, false, namespace, tableName, newTableName)
 }
 
 // GetTableSchema return table (name,columns, primary key) representation wrapped in Table struct
-func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
-	table, err := p.getTable(ctx, strings.ToLower(tableName))
+func (p *Redshift) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
+	table, err := p.getTable(ctx, namespace, strings.ToLower(tableName))
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +268,7 @@ func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table
 		return table, nil
 	}
 
-	primaryKeyName, pkFields, err := p.getPrimaryKeys(ctx, table.Name)
+	primaryKeyName, pkFields, err := p.getPrimaryKeys(ctx, table.Namespace, table.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -278,14 +282,15 @@ func (p *Redshift) GetTableSchema(ctx context.Context, tableName string) (*Table
 	return table, nil
 }
 
-func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string, types.OrderedSet[string], error) {
+func (p *Redshift) getPrimaryKeys(ctx context.Context, namespace, tableName string) (string, types.OrderedSet[string], error) {
 	tableName = p.TableName(tableName)
+	namespace = p.namespaceName(namespace)
 	primaryKeys := types.NewOrderedSet[string]()
-	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftPrimaryKeyFieldsQuery, p.config.Schema, tableName)
+	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {
 		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Schema:    p.config.Schema,
+				Schema:    namespace,
 				Table:     tableName,
 				Statement: redshiftPrimaryKeyFieldsQuery,
 				Values:    []any{p.config.Schema, tableName},
@@ -300,7 +305,7 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 		if err := pkFieldsRows.Scan(&constraintName, &fieldName); err != nil {
 			return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Schema:    p.config.Schema,
+					Schema:    namespace,
 					Table:     tableName,
 					Statement: redshiftPrimaryKeyFieldsQuery,
 					Values:    []any{p.config.Schema, tableName},
@@ -314,7 +319,7 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 	if err := pkFieldsRows.Err(); err != nil {
 		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Schema:    p.config.Schema,
+				Schema:    namespace,
 				Table:     tableName,
 				Statement: redshiftPrimaryKeyFieldsQuery,
 				Values:    []any{p.config.Schema, tableName},
@@ -326,16 +331,23 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, tableName string) (string
 
 	return primaryKeyName, primaryKeys, nil
 }
+func (p *Redshift) TmpNamespace(string) string {
+	return NoNamespaceValue
+}
 
 func (p *Redshift) CreateTable(ctx context.Context, schemaToCreate *Table) error {
-	err := p.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
+	err := p.createSchemaIfNotExists(ctx, schemaToCreate.Namespace)
+	if err != nil {
+		return err
+	}
+	err = p.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
 	if err != nil {
 		return err
 	}
 	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
 		err = p.createSortKey(ctx, schemaToCreate)
 		if err != nil {
-			p.DropTable(ctx, schemaToCreate.Name, true)
+			p.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)
 			return fmt.Errorf("failed to create sort key: %v", err)
 		}
 	}
@@ -347,9 +359,10 @@ func (p *Redshift) createSortKey(ctx context.Context, table *Table) error {
 		return nil
 	}
 	quotedTableName := p.quotedTableName(table.Name)
+	namespace := p.namespacePrefix(table.Namespace)
 
 	statement := fmt.Sprintf(redshiftAlterSortKeyTemplate,
-		quotedTableName, p.quotedColumnName(table.TimestampColumn))
+		namespace, quotedTableName, p.quotedColumnName(table.TimestampColumn))
 
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.AlterTableError.Wrap(err, "failed to set sort key").

@@ -88,6 +88,11 @@ var (
 		ParseFunc: utils.ParseString,
 	}
 
+	NamespaceOption = ImplementationOption[string]{
+		Key:       "namespace",
+		ParseFunc: utils.ParseString,
+	}
+
 	// TimestampOption - field name that contains timestamp. For creating sorting indexes or partitions by that field in destination tables
 	TimestampOption = ImplementationOption[string]{
 		Key:       "timestampColumn",
@@ -145,6 +150,7 @@ func init() {
 	RegisterOption(&PartitionIdOption)
 	RegisterOption(&TimestampOption)
 	RegisterOption(&SchemaOption)
+	RegisterOption(&NamespaceOption)
 
 	dummyParse := func(_ any) (any, error) { return nil, nil }
 	for _, ignoredOption := range ignoredOptions {
@@ -263,4 +269,8 @@ func WithDiscriminatorField(discriminatorField []string) StreamOption {
 
 func WithSchema(schema types.Schema) StreamOption {
 	return WithOption(&SchemaOption, schema)
+}
+
+func WithNamespace(namespace string) StreamOption {
+	return WithOption(&NamespaceOption, namespace)
 }

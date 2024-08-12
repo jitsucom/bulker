@@ -50,15 +50,14 @@ FROM information_schema.table_constraints tco
 WHERE tco.constraint_type = 'PRIMARY KEY' AND 
       kcu.table_schema ilike $1 AND
       kcu.table_name = $2 order by kcu.ordinal_position`
-	pgSetSearchPath                     = `SET search_path TO "%s";`
-	pgCreateDbSchemaIfNotExistsTemplate = `CREATE SCHEMA IF NOT EXISTS "%s"; SET search_path TO "%s";`
-	pgCreateIndexTemplate               = `CREATE INDEX ON %s (%s);`
+	pgCreateDbSchemaIfNotExistsTemplate = `CREATE SCHEMA IF NOT EXISTS "%s"`
+	pgCreateIndexTemplate               = `CREATE INDEX ON %s%s (%s);`
 
-	pgMergeQuery = `INSERT INTO {{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}}) ON CONFLICT ON CONSTRAINT {{.PrimaryKeyName}} DO UPDATE set {{.UpdateSet}}`
+	pgMergeQuery = `INSERT INTO {{.Namespace}}{{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}}) ON CONFLICT ON CONSTRAINT {{.PrimaryKeyName}} DO UPDATE set {{.UpdateSet}}`
 
-	pgCopyTemplate = `COPY %s(%s) FROM STDIN`
+	pgCopyTemplate = `COPY %s%s(%s) FROM STDIN`
 
-	pgBulkMergeQuery       = `INSERT INTO {{.TableTo}}({{.Columns}}) SELECT {{.Columns}} FROM {{.TableFrom}} ON CONFLICT ON CONSTRAINT {{.PrimaryKeyName}} DO UPDATE SET {{.UpdateSet}}`
+	pgBulkMergeQuery       = `INSERT INTO {{.Namespace}}{{.TableTo}}({{.Columns}}) SELECT {{.Columns}} FROM {{.NamespaceFrom}}{{.TableFrom}} ON CONFLICT ON CONSTRAINT {{.PrimaryKeyName}} DO UPDATE SET {{.UpdateSet}}`
 	pgBulkMergeSourceAlias = `excluded`
 )
 
@@ -159,8 +158,9 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		dataSource.SetMaxIdleConns(10)
 		return dataSource, nil
 	}
-	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr, true)
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, config.Schema, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr, true)
 	p := &Postgres{sqlAdapterBase, tmpDir}
+	// some clients have no permission to create tmp tables
 	p.temporaryTables = false
 	p.tableHelper = NewTableHelper(63, '"')
 	return p, err
@@ -198,24 +198,36 @@ func (p *Postgres) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	return p.openTx(ctx, p)
 }
 
-// InitDatabase creates database schema instance if doesn't exist
-func (p *Postgres) InitDatabase(ctx context.Context) error {
-	query := fmt.Sprintf(pgCreateDbSchemaIfNotExistsTemplate, p.config.Schema, p.config.Schema)
+func (p *Postgres) createSchemaIfNotExists(ctx context.Context, schema string) error {
+	if schema == "" {
+		return nil
+	}
+	n := p.namespaceName(schema)
+	if n == "" {
+		return nil
+	}
+	query := fmt.Sprintf(pgCreateDbSchemaIfNotExistsTemplate, n)
 
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-		//return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
-		//	WithProperty(errorj.DBInfo, &types.ErrorPayload{
-		//		Schema:    p.config.Schema,
-		//		Statement: query,
-		//	})
+		return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
+			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
+				Schema:    n,
+				Statement: query,
+			})
 	}
+	return nil
+}
+
+// InitDatabase creates database schema instance if doesn't exist
+func (p *Postgres) InitDatabase(ctx context.Context) error {
+	_ = p.createSchemaIfNotExists(ctx, p.config.Schema)
 
 	return nil
 }
 
 // GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
-func (p *Postgres) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
-	table, err := p.getTable(ctx, tableName)
+func (p *Postgres) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
+	table, err := p.getTable(ctx, namespace, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +237,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, tableName string) (*Table
 		return table, nil
 	}
 
-	primaryKeyName, pkFields, err := p.getPrimaryKey(ctx, tableName)
+	primaryKeyName, pkFields, err := p.getPrimaryKey(ctx, namespace, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -239,14 +251,15 @@ func (p *Postgres) GetTableSchema(ctx context.Context, tableName string) (*Table
 	return table, nil
 }
 
-func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, error) {
+func (p *Postgres) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
-	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
-	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, p.config.Schema, tableName)
+	namespace = p.namespaceName(namespace)
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, namespace, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Schema:      p.config.Schema,
+				Schema:      namespace,
 				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   pgTableSchemaQuery,
@@ -260,7 +273,7 @@ func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, erro
 		if err := rows.Scan(&columnName, &columnPostgresType); err != nil {
 			return nil, errorj.GetTableError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Schema:      p.config.Schema,
+					Schema:      namespace,
 					Table:       tableName,
 					PrimaryKeys: table.GetPKFields(),
 					Statement:   pgTableSchemaQuery,
@@ -278,7 +291,7 @@ func (p *Postgres) getTable(ctx context.Context, tableName string) (*Table, erro
 	if err := rows.Err(); err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Schema:      p.config.Schema,
+				Schema:      namespace,
 				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   pgTableSchemaQuery,
@@ -307,6 +320,7 @@ func (p *Postgres) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 
 func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := p.quotedTableName(targetTable.Name)
+	qoutedNamespace := p.namespacePrefix(targetTable.Namespace)
 	if loadSource.Type != LocalFile {
 		return state, fmt.Errorf("LoadTable: only local file is supported")
 	}
@@ -314,12 +328,12 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		return state, fmt.Errorf("LoadTable: only %s format is supported", p.batchFileFormat)
 	}
 	columnNames := targetTable.MappedColumnNames(p.quotedColumnName)
-	copyStatement := fmt.Sprintf(pgCopyTemplate, quotedTableName, strings.Join(columnNames, ", "))
+	copyStatement := fmt.Sprintf(pgCopyTemplate, qoutedNamespace, quotedTableName, strings.Join(columnNames, ", "))
 	defer func() {
 		if err != nil {
 			err = errorj.LoadError.Wrap(err, "failed to load table").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Schema:      p.config.Schema,
+					Schema:      qoutedNamespace,
 					Table:       quotedTableName,
 					PrimaryKeys: targetTable.GetPKFields(),
 					Statement:   copyStatement,
@@ -405,14 +419,15 @@ func getDefaultValueStatement(sqlType string) string {
 }
 
 // getPrimaryKey returns primary key name and fields
-func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string, types.OrderedSet[string], error) {
+func (p *Postgres) getPrimaryKey(ctx context.Context, namespace string, tableName string) (string, types.OrderedSet[string], error) {
 	tableName = p.TableName(tableName)
+	namespace = p.namespaceName(namespace)
 	primaryKeys := types.NewOrderedSet[string]()
-	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, pgPrimaryKeyFieldsQuery, p.config.Schema, tableName)
+	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, pgPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {
 		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Schema:    p.config.Schema,
+				Schema:    namespace,
 				Table:     tableName,
 				Statement: pgPrimaryKeyFieldsQuery,
 				Values:    []any{p.config.Schema, tableName},
@@ -427,7 +442,7 @@ func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string,
 		if err := pkFieldsRows.Scan(&constraintName, &keyColumn); err != nil {
 			return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Schema:    p.config.Schema,
+					Schema:    namespace,
 					Table:     tableName,
 					Statement: pgPrimaryKeyFieldsQuery,
 					Values:    []any{p.config.Schema, tableName},
@@ -443,7 +458,7 @@ func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string,
 	if err := pkFieldsRows.Err(); err != nil {
 		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Schema:    p.config.Schema,
+				Schema:    namespace,
 				Table:     tableName,
 				Statement: pgPrimaryKeyFieldsQuery,
 				Values:    []any{p.config.Schema, tableName},
@@ -456,14 +471,18 @@ func (p *Postgres) getPrimaryKey(ctx context.Context, tableName string) (string,
 }
 
 func (p *Postgres) CreateTable(ctx context.Context, schemaToCreate *Table) error {
-	err := p.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
+	err := p.createSchemaIfNotExists(ctx, schemaToCreate.Namespace)
+	if err != nil {
+		return err
+	}
+	err = p.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
 	if err != nil {
 		return err
 	}
 	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
 		err = p.createIndex(ctx, schemaToCreate)
 		if err != nil {
-			p.DropTable(ctx, schemaToCreate.Name, true)
+			p.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)
 			return fmt.Errorf("failed to create sort key: %v", err)
 		}
 	}
@@ -480,7 +499,7 @@ func (p *Postgres) ReplaceTable(ctx context.Context, targetTableName string, rep
 	if err != nil {
 		return err
 	}
-	err = p.TruncateTable(ctx, targetTableName)
+	err = p.TruncateTable(ctx, replacementTable.Namespace, targetTableName)
 	if err != nil {
 		return err
 	}
@@ -489,7 +508,7 @@ func (p *Postgres) ReplaceTable(ctx context.Context, targetTableName string, rep
 		return err
 	}
 	if dropOldTable {
-		err = p.DropTable(ctx, replacementTable.Name, true)
+		err = p.DropTable(ctx, replacementTable.Namespace, replacementTable.Name, true)
 		if err != nil {
 			return err
 		}
@@ -502,14 +521,16 @@ func (p *Postgres) createIndex(ctx context.Context, table *Table) error {
 		return nil
 	}
 	quotedTableName := p.quotedTableName(table.Name)
+	quotedSchema := p.namespacePrefix(table.Namespace)
 
-	statement := fmt.Sprintf(pgCreateIndexTemplate,
+	statement := fmt.Sprintf(pgCreateIndexTemplate, quotedSchema,
 		quotedTableName, p.quotedColumnName(table.TimestampColumn))
 
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.AlterTableError.Wrap(err, "failed to set sort key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Table:       quotedTableName,
+				Schema:      quotedSchema,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   statement,
 			})
@@ -522,11 +543,12 @@ func (p *Postgres) Ping(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, err = p.txOrDb(ctx).ExecContext(ctx, fmt.Sprintf(pgSetSearchPath, p.config.Schema)); err != nil {
-		return err
-	}
 	return nil
 }
+
+//func (p *Postgres) TmpNamespace(namespace string) string {
+//	return NoNamespaceValue
+//}
 
 // Close underlying sql.DB
 func (p *Postgres) Close() error {

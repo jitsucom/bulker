@@ -99,13 +99,13 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 	PostStep("init_database", testConfig, mode, reqr, err)
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
-		err = sqlAdapter.DropTable(ctx, tableName, true)
+		err = sqlAdapter.DropTable(ctx, "", tableName, true)
 		PostStep("pre_cleanup", testConfig, mode, reqr, err)
 	}
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		defer func() {
-			_ = sqlAdapter.DropTable(ctx, tableName, true)
+			_ = sqlAdapter.DropTable(ctx, "", tableName, true)
 		}()
 	}
 	stream, err := blk.CreateStream(t.Name(), tableName, mode, testConfig.streamOptions...)
@@ -161,14 +161,14 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 
 	if testConfig.expectedTable.Columns != nil && testConfig.expectedTable.Columns.Len() > 0 {
 		//Check table schema
-		table, err := sqlAdapter.GetTableSchema(ctx, tableName)
+		table, err := sqlAdapter.GetTableSchema(ctx, "", tableName)
 		PostStep("get_table", testConfig, mode, reqr, err)
 		reqr.Equal(testConfig.expectedTable, table)
 	}
 	if testConfig.expectedRowsCount != nil {
 		time.Sleep(1 * time.Second)
 		//Check rows count and rows data when provided
-		count, err := sqlAdapter.Count(ctx, tableName, nil)
+		count, err := sqlAdapter.Count(ctx, "", tableName, nil)
 		PostStep("select_count", testConfig, mode, reqr, err)
 		reqr.Equal(testConfig.expectedRowsCount, count)
 	}
