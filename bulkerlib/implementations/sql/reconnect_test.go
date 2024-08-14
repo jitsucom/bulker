@@ -132,7 +132,7 @@ func _TestReconnect(t *testing.T) {
 				"create_bulker":            "connection refused",
 				"consume_object_0":         "connection refused",
 				"consume_object_1":         "connection refused",
-				"pre_cleanup":              "database connection is not initialized",
+				"create_stream":            "database connection is not initialized",
 				"init_database_clickhouse": "database connection is not initialized",
 			},
 			postStepFunctions: map[string]StepFunction{

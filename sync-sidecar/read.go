@@ -13,6 +13,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,7 @@ const cancelledError = "Sync job was cancelled"
 
 type ReadSideCar struct {
 	*AbstractSideCar
+	namespace       string
 	tableNamePrefix string
 
 	eventsLogService eventslog.EventsLogService
@@ -398,7 +400,16 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 		s.processedStreams[streamName] = stream
 	}
 	s.lastStream = stream
-	tableName := utils.NvlString(str.TableName, s.tableNamePrefix+streamName)
+	var namespace string
+	tableNamePrefix := strings.ReplaceAll(s.tableNamePrefix, "${SOURCE_NAMESPACE}", str.Namespace)
+	tableName := utils.NvlString(str.TableName, tableNamePrefix+str.Name)
+	if s.namespace == "${LEGACY}" {
+		namespace = ""
+		tableName = utils.NvlString(str.TableName, tableNamePrefix+streamName)
+	} else {
+		namespace = strings.TrimSpace(strings.ReplaceAll(s.namespace, "${SOURCE_NAMESPACE}", str.Namespace))
+	}
+
 	jobId := fmt.Sprintf("%s_%s_%s", s.syncId, s.taskId, tableName)
 
 	var streamOptions []bulker.StreamOption
@@ -415,6 +426,9 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 		streamOptions = append(streamOptions, bulker.WithDiscriminatorField(str.CursorField))
 	} else if len(str.DefaultCursorField) > 0 {
 		streamOptions = append(streamOptions, bulker.WithDiscriminatorField(str.DefaultCursorField))
+	}
+	if namespace != "" {
+		streamOptions = append(streamOptions, bulker.WithNamespace(namespace))
 	}
 	bulkerStream, err := s.blk.CreateStream(jobId, tableName, mode, streamOptions...)
 	if err != nil {

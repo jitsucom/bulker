@@ -41,7 +41,7 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 			}
 		} else {
 			//for ReplaceTable stream we should replace existing file with empty one
-			if err = ps.fileAdapter.UploadBytes(ps.filenameFunc(ctx), []byte{}); err != nil {
+			if err = ps.fileAdapter.UploadBytes(ps.filename(ctx), []byte{}); err != nil {
 				return ps.state, err
 			}
 		}

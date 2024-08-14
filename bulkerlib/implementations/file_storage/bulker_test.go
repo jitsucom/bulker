@@ -110,6 +110,7 @@ type bulkerTestConfig struct {
 	name string
 	//tableName name of the destination table. Leave empty generate automatically
 	tableName string
+	namespace string
 	//bulker config
 	config *bulker.Config
 	//for which bulker predefined configurations to run test
@@ -171,7 +172,8 @@ func (c *bulkerTestConfig) adaptConfig(mode bulker.BulkMode, fileAdapter impleme
 	case bulker.Batch:
 		expectedFileName = fmt.Sprintf("%s_%s", expectedFileName, constantTime.Format(FilenameDate))
 	}
-	expectedFileName = expectedFileName + ext
+	expectedFileName = utils.JoinNonEmptyStrings("/", c.namespace, expectedFileName) + ext
+
 	return
 }
 
@@ -197,6 +199,26 @@ func TestBasics(t *testing.T) {
 				{"_timestamp": constantTimeStr, "id": 1, "name": "test7"},
 			},
 			configIds: allBulkerConfigs,
+		},
+		{
+			name:               "namespaces",
+			modes:              []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			dataFile:           "test_data/repeated_ids.ndjson",
+			expectPartitionId:  true,
+			leaveResultingFile: true,
+			namespace:          "mynsp",
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTimeStr, "id": 1, "name": "test"},
+				{"_timestamp": constantTimeStr, "id": 2, "name": "test1"},
+				{"_timestamp": constantTimeStr, "id": 3, "name": "test2"},
+				{"_timestamp": constantTimeStr, "id": 3, "name": "test3"},
+				{"_timestamp": constantTimeStr, "id": 4, "name": "test4"},
+				{"_timestamp": constantTimeStr, "id": 4, "name": "test5"},
+				{"_timestamp": constantTimeStr, "id": 3, "name": "test6"},
+				{"_timestamp": constantTimeStr, "id": 1, "name": "test7"},
+			},
+			streamOptions: []bulker.StreamOption{bulker.WithNamespace("mynsp")},
+			configIds:     allBulkerConfigs,
 		},
 		{
 			name:              "repeated_ids_pk",
@@ -313,7 +335,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	reqr.True(ok)
 	ctx := context.Background()
 	id, tableName, expectedFileName := testConfig.adaptConfig(mode, fileAdapter)
-
+	logging.Infof("Expected file name: %s", expectedFileName)
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingFile {
 		_ = fileAdapter.DeleteObject(expectedFileName)

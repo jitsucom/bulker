@@ -38,10 +38,10 @@ const (
 								WHERE table_schema = ? AND table_name = ? AND CONSTRAINT_NAME = 'PRIMARY' order by ORDINAL_POSITION`
 	mySQLCreateDBIfNotExistsTemplate = "CREATE DATABASE IF NOT EXISTS %s"
 	mySQLAllowLocalFile              = "SET GLOBAL local_infile = 1"
-	mySQLIndexTemplate               = `CREATE INDEX %s ON %s (%s);`
-	mySQLLoadTemplate                = `LOAD DATA LOCAL INFILE '%s' INTO TABLE %s FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\n' IGNORE 1 LINES (%s)`
-	mySQLMergeQuery                  = `INSERT INTO {{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}}) ON DUPLICATE KEY UPDATE {{.UpdateSet}}`
-	mySQLBulkMergeQuery              = "INSERT INTO {{.TableTo}}({{.Columns}}) SELECT * FROM (SELECT {{.Columns}} FROM {{.TableFrom}}) AS S ON DUPLICATE KEY UPDATE {{.UpdateSet}}"
+	mySQLIndexTemplate               = `CREATE INDEX %s ON %s%s (%s);`
+	mySQLLoadTemplate                = `LOAD DATA LOCAL INFILE '%s' INTO TABLE %s%s FIELDS TERMINATED BY ',' ENCLOSED BY '"' LINES TERMINATED BY '\n' IGNORE 1 LINES (%s)`
+	mySQLMergeQuery                  = `INSERT INTO {{.Namespace}}{{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}}) ON DUPLICATE KEY UPDATE {{.UpdateSet}}`
+	mySQLBulkMergeQuery              = "INSERT INTO {{.Namespace}}{{.TableTo}}({{.Columns}}) SELECT * FROM (SELECT {{.Columns}} FROM {{.NamespaceFrom}}{{.TableFrom}}) AS S ON DUPLICATE KEY UPDATE {{.UpdateSet}}"
 )
 
 var (
@@ -126,7 +126,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 	// disable infile support for convenience
 	infileEnabled := false
-	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, MySQLBulkerTypeId, config, dbConnectFunction, mysqlTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr, true)
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, MySQLBulkerTypeId, config, config.Db, dbConnectFunction, mysqlTypes, queryLogger, typecastFunc, QuestionMarkParameterPlaceholder, mySQLColumnDDL, mySQLMapColumnValue, checkErr, true)
 	m := &MySQL{
 		SQLAdapterBase: sqlAdapterBase,
 		infileEnabled:  infileEnabled,
@@ -166,17 +166,28 @@ func (m *MySQL) validateOptions(streamOptions []bulker.StreamOption) error {
 	return nil
 }
 
+func (m *MySQL) createDatabaseIfNotExists(ctx context.Context, database string) error {
+	if database == "" {
+		return nil
+	}
+	n := m.namespaceName(database)
+	if n == "" {
+		return nil
+	}
+	query := fmt.Sprintf(mySQLCreateDBIfNotExistsTemplate, n)
+	if _, err := m.txOrDb(ctx).ExecContext(ctx, query); err != nil {
+		return errorj.CreateSchemaError.Wrap(err, "failed to create database").
+			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
+				Database:  m.config.Db,
+				Statement: query,
+			})
+	}
+	return nil
+}
+
 // InitDatabase creates database instance if doesn't exist
 func (m *MySQL) InitDatabase(ctx context.Context) error {
-	//query := fmt.Sprintf(mySQLCreateDBIfNotExistsTemplate, m.config.Db)
-	//if _, err := m.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-	//	return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
-	//		WithProperty(errorj.DBInfo, &types.ErrorPayload{
-	//			Database:  m.config.Db,
-	//			Statement: query,
-	//		})
-	//}
-
+	_ = m.createDatabaseIfNotExists(ctx, m.config.Db)
 	return nil
 }
 
@@ -204,6 +215,7 @@ func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable 
 
 func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	quotedTableName := m.quotedTableName(targetTable.Name)
+	quotedNamespace := m.namespacePrefix(targetTable.Namespace)
 
 	if loadSource.Type != LocalFile {
 		return state, fmt.Errorf("LoadTable: only local file is supported")
@@ -221,7 +233,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		defer mysql.DeregisterLocalFile(loadSource.Path)
 
 		header := targetTable.MappedColumnNames(m.quotedColumnName)
-		loadStatement := fmt.Sprintf(mySQLLoadTemplate, loadSource.Path, quotedTableName, strings.Join(header, ", "))
+		loadStatement := fmt.Sprintf(mySQLLoadTemplate, loadSource.Path, quotedNamespace, quotedTableName, strings.Join(header, ", "))
 		if _, err := m.txOrDb(ctx).ExecContext(ctx, loadStatement); err != nil {
 			return state, errorj.LoadError.Wrap(err, "failed to load data from local file system").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
@@ -239,6 +251,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 			placeholders[i] = m.typecastFunc(m.parameterPlaceholder(i+1, name), col)
 		})
 		insertPayload := QueryPayload{
+			Namespace:      quotedNamespace,
 			TableName:      quotedTableName,
 			Columns:        strings.Join(columnNames, ", "),
 			Placeholders:   strings.Join(placeholders, ", "),
@@ -306,8 +319,8 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 }
 
 // GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
-func (m *MySQL) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
-	table, err := m.getTable(ctx, tableName)
+func (m *MySQL) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
+	table, err := m.getTable(ctx, namespace, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +330,7 @@ func (m *MySQL) GetTableSchema(ctx context.Context, tableName string) (*Table, e
 		return table, nil
 	}
 
-	pkFields, err := m.getPrimaryKeys(ctx, tableName)
+	pkFields, err := m.getPrimaryKeys(ctx, namespace, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -334,16 +347,17 @@ func (m *MySQL) BuildConstraintName(tableName string) string {
 	return "PRIMARY"
 }
 
-func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) {
+func (m *MySQL) getTable(ctx context.Context, namespace, tableName string) (*Table, error) {
 	tableName = m.TableName(tableName)
-	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	namespace = m.namespaceName(namespace)
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
-	rows, err := m.dataSource.QueryContext(ctx, mySQLTableSchemaQuery, m.config.Db, tableName)
+	rows, err := m.dataSource.QueryContext(ctx, mySQLTableSchemaQuery, namespace, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Database:    m.config.Db,
+				Database:    namespace,
 				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   mySQLTableSchemaQuery,
@@ -357,7 +371,7 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 		if err := rows.Scan(&columnName, &columnType); err != nil {
 			return nil, errorj.GetTableError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Database:    m.config.Db,
+					Database:    namespace,
 					Table:       tableName,
 					PrimaryKeys: table.GetPKFields(),
 					Statement:   mySQLTableSchemaQuery,
@@ -375,7 +389,7 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 	if err := rows.Err(); err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Database:    m.config.Db,
+				Database:    namespace,
 				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
 				Statement:   mySQLTableSchemaQuery,
@@ -386,13 +400,14 @@ func (m *MySQL) getTable(ctx context.Context, tableName string) (*Table, error) 
 	return table, nil
 }
 
-func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (types.OrderedSet[string], error) {
+func (m *MySQL) getPrimaryKeys(ctx context.Context, namespace, tableName string) (types.OrderedSet[string], error) {
 	tableName = m.TableName(tableName)
-	pkFieldsRows, err := m.dataSource.QueryContext(ctx, mySQLPrimaryKeyFieldsQuery, m.config.Db, tableName)
+	namespace = m.namespaceName(namespace)
+	pkFieldsRows, err := m.dataSource.QueryContext(ctx, mySQLPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {
 		return types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Database:  m.config.Db,
+				Database:  namespace,
 				Table:     tableName,
 				Statement: mySQLPrimaryKeyFieldsQuery,
 				Values:    []any{m.config.Db, tableName},
@@ -407,7 +422,7 @@ func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (types.Ord
 		if err := pkFieldsRows.Scan(&fieldName); err != nil {
 			return types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Database:  m.config.Db,
+					Database:  namespace,
 					Table:     tableName,
 					Statement: mySQLPrimaryKeyFieldsQuery,
 					Values:    []any{m.config.Db, tableName},
@@ -418,7 +433,7 @@ func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (types.Ord
 	if err := pkFieldsRows.Err(); err != nil {
 		return types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Database:  m.config.Db,
+				Database:  namespace,
 				Table:     tableName,
 				Statement: mySQLPrimaryKeyFieldsQuery,
 				Values:    []any{m.config.Db, tableName},
@@ -430,18 +445,19 @@ func (m *MySQL) getPrimaryKeys(ctx context.Context, tableName string) (types.Ord
 
 func (m *MySQL) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
 	tmpTable := "deprecated_" + targetTableName + time.Now().Format("_20060102_150405")
-	err1 := m.renameTable(ctx, true, targetTableName, tmpTable)
-	err = m.renameTable(ctx, false, replacementTable.Name, targetTableName)
+	err1 := m.renameTable(ctx, true, replacementTable.Namespace, targetTableName, tmpTable)
+	err = m.renameTable(ctx, false, replacementTable.Namespace, replacementTable.Name, targetTableName)
 	if dropOldTable && err1 == nil && err == nil {
-		return m.DropTable(ctx, tmpTable, true)
+		return m.DropTable(ctx, replacementTable.Namespace, tmpTable, true)
 	}
 	return
 }
 
-func (m *MySQL) renameTable(ctx context.Context, ifExists bool, tableName, newTableName string) error {
+func (m *MySQL) renameTable(ctx context.Context, ifExists bool, namespace, tableName, newTableName string) error {
 	if ifExists {
+		db := m.namespaceName(namespace)
 		tableName = m.TableName(tableName)
-		row := m.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s')`, m.config.Db, tableName))
+		row := m.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s')`, db, tableName))
 		exists := false
 		err := row.Scan(&exists)
 		if err != nil {
@@ -451,7 +467,7 @@ func (m *MySQL) renameTable(ctx context.Context, ifExists bool, tableName, newTa
 			return nil
 		}
 	}
-	return m.SQLAdapterBase.renameTable(ctx, false, tableName, newTableName)
+	return m.SQLAdapterBase.renameTable(ctx, false, namespace, tableName, newTableName)
 }
 
 func mySQLDriverConnectionString(config *DataSourceConfig) string {
@@ -499,14 +515,18 @@ func mySQLMapColumnValue(value any, valuePresent bool, column types2.SQLColumn) 
 }
 
 func (m *MySQL) CreateTable(ctx context.Context, schemaToCreate *Table) error {
-	err := m.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
+	err := m.createDatabaseIfNotExists(ctx, schemaToCreate.Namespace)
+	if err != nil {
+		return err
+	}
+	err = m.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
 	if err != nil {
 		return err
 	}
 	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
 		err = m.createIndex(ctx, schemaToCreate)
 		if err != nil {
-			m.DropTable(ctx, schemaToCreate.Name, true)
+			m.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)
 			return fmt.Errorf("failed to create sort key: %v", err)
 		}
 	}
@@ -518,9 +538,10 @@ func (m *MySQL) createIndex(ctx context.Context, table *Table) error {
 		return nil
 	}
 	quotedTableName := m.quotedTableName(table.Name)
+	quotedNamespace := m.namespacePrefix(table.Namespace)
 
 	statement := fmt.Sprintf(mySQLIndexTemplate, "bulker_timestamp_index",
-		quotedTableName, m.quotedColumnName(table.TimestampColumn))
+		quotedNamespace, quotedTableName, m.quotedColumnName(table.TimestampColumn))
 
 	if _, err := m.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.AlterTableError.Wrap(err, "failed to set sort key").

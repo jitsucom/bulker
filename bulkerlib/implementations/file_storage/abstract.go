@@ -27,6 +27,7 @@ type AbstractFileStorageStream struct {
 	mode         bulker.BulkMode
 	fileAdapter  implementations2.FileAdapter
 	options      bulker.StreamOptions
+	namespace    string
 	filenameFunc func(ctx context.Context) string
 
 	flatten         bool
@@ -66,6 +67,7 @@ func newAbstractFileStorageStream(id string, p implementations2.FileAdapter, fil
 	for _, option := range streamOptions {
 		ps.options.Add(option)
 	}
+	ps.namespace = bulker.NamespaceOption.Get(&ps.options)
 	ps.merge = bulker.DeduplicateOption.Get(&ps.options)
 	pkColumns := bulker.PrimaryKeyOption.Get(&ps.options)
 	if ps.merge && pkColumns.Empty() {
@@ -272,8 +274,7 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 		if err != nil {
 			return errorj.Decorate(err, "failed to seek to beginning of tmp file")
 		}
-		fileName := ps.filenameFunc(ctx)
-		fileName = ps.fileAdapter.AddFileExtension(fileName)
+		fileName := ps.filename(ctx)
 		ps.state.Representation = map[string]string{
 			"name": ps.fileAdapter.Path(fileName),
 		}
@@ -398,6 +399,12 @@ func (ps *AbstractFileStorageStream) Abort(ctx context.Context) (state bulker.St
 	}
 	ps.state.Status = bulker.Aborted
 	return ps.state
+}
+
+func (ps *AbstractFileStorageStream) filename(ctx context.Context) string {
+	fileName := utils.JoinNonEmptyStrings("/", ps.namespace, ps.filenameFunc(ctx))
+	fileName = ps.fileAdapter.AddFileExtension(fileName)
+	return fileName
 }
 
 func (ps *AbstractFileStorageStream) getEventTime(object types2.Object) time.Time {

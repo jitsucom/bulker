@@ -38,7 +38,9 @@ type TableField struct {
 
 // Table is a dto for DWH Table representation
 type Table struct {
-	Name      string
+	Name string
+	// database or schema depending on warehouse
+	Namespace string
 	Temporary bool
 	Cached    bool
 
@@ -105,6 +107,7 @@ func (t *Table) CleanClone() *Table {
 	clonedPkFields := t.PKFields.Clone()
 
 	return &Table{
+		Namespace:             t.Namespace,
 		Name:                  t.Name,
 		Columns:               clonedColumns,
 		PKFields:              clonedPkFields,
@@ -141,6 +144,7 @@ func (t *Table) Clone() *Table {
 	clonedPkFields := t.PKFields.Clone()
 
 	return &Table{
+		Namespace:             t.Namespace,
 		Name:                  t.Name,
 		Columns:               clonedColumns,
 		PKFields:              clonedPkFields,
@@ -168,7 +172,7 @@ func (t *Table) GetPKFieldsSet() types2.OrderedSet[string] {
 // 2) all fields from another schema exist in current schema
 // NOTE: Diff method doesn't take types into account
 func (t *Table) Diff(sqlAdapter SQLAdapter, another *Table) *Table {
-	diff := &Table{Name: t.Name, Columns: NewColumns(), PKFields: types2.NewOrderedSet[string]()}
+	diff := &Table{Name: t.Name, Namespace: t.Namespace, Columns: NewColumns(), PKFields: types2.NewOrderedSet[string]()}
 
 	if !another.Exists() {
 		return diff

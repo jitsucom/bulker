@@ -32,7 +32,7 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 		return nil, err
 	}
 	ps.partitionId = partitionId
-	ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.tableName)
+	ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.namespace, ps.tableName)
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		dstTable := utils.Ternary(ps.existingTable.Exists(), ps.existingTable, tableForObject).Clone()
 		ps.adjustTableColumnTypes(dstTable, ps.existingTable, tableForObject, object)
@@ -41,6 +41,7 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 		}
 		tmpTableName := fmt.Sprintf("%s_tmp%s", utils.ShortenString(tableName, 47), time.Now().Format("060102150405"))
 		return &Table{
+			Namespace:       p.TmpNamespace(ps.namespace),
 			Name:            tmpTableName,
 			Columns:         dstTable.Columns,
 			Temporary:       true,
@@ -118,7 +119,7 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 
 func (ps *ReplacePartitionStream) clearPartition(ctx context.Context, tx *TxSQLAdapter) error {
 	//check if destination table already exists
-	table, err := tx.GetTableSchema(ctx, ps.tableName)
+	table, err := tx.GetTableSchema(ctx, ps.namespace, ps.tableName)
 	if err != nil {
 		return fmt.Errorf("couldn't start ReplacePartitionStream: failed to check existence of table: %s error: %s", ps.tableName, err)
 	}
@@ -130,7 +131,7 @@ func (ps *ReplacePartitionStream) clearPartition(ctx context.Context, tx *TxSQLA
 			return fmt.Errorf("couldn't start ReplacePartitionStream: destination table [%s] exist but it is not managed by ReplacePartitionStream: %s column is missing", ps.tableName, tx.ColumnName(PartitonIdKeyword))
 		}
 		//delete previous data by provided partition id
-		err = tx.Delete(ctx, ps.tableName, ByPartitionId(ps.partitionId))
+		err = tx.Delete(ctx, ps.namespace, ps.tableName, ByPartitionId(ps.partitionId))
 		if err != nil {
 			return fmt.Errorf("couldn't start ReplacePartitionStream: failed to delete data for partitionId: %s error: %s", ps.partitionId, err)
 		}

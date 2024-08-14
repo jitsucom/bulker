@@ -194,6 +194,7 @@ func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
 }
 
 func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
+	namespace := bq.namespaceName(targetTable.Namespace)
 	if mergeWindow <= 0 {
 		defer func() {
 			if err != nil {
@@ -206,19 +207,19 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 					})
 			}
 		}()
-		dataset := bq.client.Dataset(bq.config.Dataset)
+		dataset := bq.client.Dataset(namespace)
 		copier := dataset.Table(targetTable.Name).CopierFrom(dataset.Table(sourceTable.Name))
 		copier.WriteDisposition = bigquery.WriteAppend
 		copier.CreateDisposition = bigquery.CreateIfNeeded
-		_, state, err = bq.RunJob(ctx, copier, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
+		_, state, err = bq.RunJob(ctx, copier, fmt.Sprintf("copy data from %s to %s", bq.fullTableName(sourceTable.Namespace, sourceTable.Name), bq.fullTableName(targetTable.Namespace, targetTable.Name)))
 		state.Name = "copy"
 		if err != nil {
 			// try to insert from select as a fallback
 			quotedColumns := sourceTable.MappedColumnNames(bq.quotedColumnName)
 			columnsString := strings.Join(quotedColumns, ",")
-			insertFromSelectStatement := fmt.Sprintf(bigqueryInsertFromSelectTemplate, bq.fullTableName(targetTable.Name), columnsString, columnsString, bq.fullTableName(sourceTable.Name))
+			insertFromSelectStatement := fmt.Sprintf(bigqueryInsertFromSelectTemplate, bq.fullTableName(targetTable.Namespace, targetTable.Name), columnsString, columnsString, bq.fullTableName(sourceTable.Namespace, sourceTable.Name))
 			query := bq.client.Query(insertFromSelectStatement)
-			_, state2, err := bq.RunJob(ctx, query, fmt.Sprintf("copy data from '%s' to '%s'", sourceTable.Name, targetTable.Name))
+			_, state2, err := bq.RunJob(ctx, query, fmt.Sprintf("copy data from %s to %s", bq.fullTableName(sourceTable.Namespace, sourceTable.Name), bq.fullTableName(targetTable.Namespace, targetTable.Name)))
 			state2.Name = "insert_from_select"
 			state.Merge(state2)
 			return state, err
@@ -230,7 +231,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 			if err != nil {
 				err = errorj.BulkMergeError.Wrap(err, "failed to run merge").
 					WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-						Dataset: bq.config.Dataset,
+						Dataset: namespace,
 						Bucket:  bq.config.Bucket,
 						Project: bq.config.Project,
 						Table:   targetTable.Name,
@@ -252,7 +253,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 			monthBefore := timestamp.Now().Add(time.Duration(mergeWindow) * -24 * time.Hour).Format("2006-01-02")
 			joinConditions = append(joinConditions, fmt.Sprintf("T.%s >= '%s'", bq.quotedColumnName(targetTable.TimestampColumn), monthBefore))
 		}
-		insertFromSelectStatement := fmt.Sprintf(bigqueryMergeTemplate, bq.fullTableName(targetTable.Name), bq.fullTableName(sourceTable.Name),
+		insertFromSelectStatement := fmt.Sprintf(bigqueryMergeTemplate, bq.fullTableName(targetTable.Namespace, targetTable.Name), bq.fullTableName(sourceTable.Namespace, sourceTable.Name),
 			strings.Join(joinConditions, " AND "), strings.Join(updateSet, ", "), columnsString, columnsString)
 
 		query := bq.client.Query(insertFromSelectStatement)
@@ -285,11 +286,11 @@ func (bq *BigQuery) Ping(ctx context.Context) error {
 }
 
 // GetTableSchema return google BigQuery table (name,columns) representation wrapped in Table struct
-func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
+func (bq *BigQuery) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = bq.TableName(tableName)
-	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
-
-	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
+	namespace = bq.namespaceName(namespace)
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	bqTable := bq.client.Dataset(namespace).Table(tableName)
 
 	meta, err := bqTable.Metadata(ctx)
 	if err != nil {
@@ -299,7 +300,7 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Dataset: bq.config.Dataset,
+				Dataset: namespace,
 				Bucket:  bq.config.Bucket,
 				Project: bq.config.Project,
 				Table:   tableName,
@@ -340,8 +341,13 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, tableName string) (*Tabl
 
 // CreateTable creates google BigQuery table from Table
 func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
+	err = bq.createDatasetIfNotExists(ctx, table.Namespace)
+	if err != nil {
+		return err
+	}
 	tableName := bq.TableName(table.Name)
-	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
+	namespace := bq.namespaceName(table.Namespace)
+	bqTable := bq.client.Dataset(namespace).Table(tableName)
 
 	_, err = bqTable.Metadata(ctx)
 	if err == nil {
@@ -352,7 +358,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	if !isNotFoundErr(err) {
 		return errorj.GetTableError.Wrap(err, "failed to get table metadata").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Dataset: bq.config.Dataset,
+				Dataset: namespace,
 				Bucket:  bq.config.Bucket,
 				Project: bq.config.Project,
 				Table:   tableName,
@@ -401,12 +407,12 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	if table.Temporary {
 		tableMetaData.ExpirationTime = time.Now().Add(time.Hour)
 	}
-	bq.logQuery("CREATE table for schema: ", tableMetaData, nil)
+	bq.logQuery(fmt.Sprintf("CREATE table %s with schema: ", bq.fullTableName(table.Namespace, table.Name)), tableMetaData, nil)
 	if err := bqTable.Create(ctx, &tableMetaData); err != nil {
 		schemaJson, _ := bqSchema.ToJSONFields()
 		return errorj.GetTableError.Wrap(err, "failed to create table").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Dataset:   bq.config.Dataset,
+				Dataset:   namespace,
 				Bucket:    bq.config.Bucket,
 				Project:   bq.config.Project,
 				Table:     tableName,
@@ -417,9 +423,14 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	return nil
 }
 
-// InitDatabase creates google BigQuery Dataset if doesn't exist
-func (bq *BigQuery) InitDatabase(ctx context.Context) error {
-	dataset := bq.config.Dataset
+func (bq *BigQuery) createDatasetIfNotExists(ctx context.Context, dataset string) error {
+	if dataset == "" {
+		return nil
+	}
+	dataset = bq.namespaceName(dataset)
+	if dataset == "" {
+		return nil
+	}
 	bqDataset := bq.client.Dataset(dataset)
 	if _, err := bqDataset.Metadata(ctx); err != nil {
 		if isNotFoundErr(err) {
@@ -442,14 +453,20 @@ func (bq *BigQuery) InitDatabase(ctx context.Context) error {
 	return nil
 }
 
+// InitDatabase creates google BigQuery Dataset if doesn't exist
+func (bq *BigQuery) InitDatabase(ctx context.Context) error {
+	return bq.createDatasetIfNotExists(ctx, bq.config.Dataset)
+}
+
 // PatchTableSchema adds Table columns to google BigQuery table
 func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) error {
-	bqTable := bq.client.Dataset(bq.config.Dataset).Table(patchSchema.Name)
+	namespace := bq.namespaceName(patchSchema.Namespace)
+	bqTable := bq.client.Dataset(namespace).Table(patchSchema.Name)
 	metadata, err := bqTable.Metadata(ctx)
 	if err != nil {
 		return errorj.PatchTableError.Wrap(err, "failed to get table metadata").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Dataset: bq.config.Dataset,
+				Dataset: namespace,
 				Bucket:  bq.config.Bucket,
 				Project: bq.config.Project,
 				Table:   patchSchema.Name,
@@ -490,7 +507,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 		schemaJson, _ := metadata.Schema.ToJSONFields()
 		return errorj.PatchTableError.Wrap(err, "failed to patch table").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Dataset:   bq.config.Dataset,
+				Dataset:   namespace,
 				Bucket:    bq.config.Bucket,
 				Project:   bq.config.Project,
 				Table:     patchSchema.Name,
@@ -501,13 +518,14 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 	return nil
 }
 
-func (bq *BigQuery) DeletePartition(ctx context.Context, tableName string, datePartiton *DatePartition) error {
+func (bq *BigQuery) DeletePartition(ctx context.Context, namespace, tableName string, datePartiton *DatePartition) error {
 	tableName = bq.TableName(tableName)
+	namespace = bq.namespaceName(namespace)
 	partitions := GranularityToPartitionIds(datePartiton.Granularity, datePartiton.Value)
 	for _, partition := range partitions {
 		bq.logQuery("DELETE partition "+partition+" in table"+tableName, "", nil)
 		bq.Infof("Deletion partition %s in table %s", partition, tableName)
-		if err := bq.client.Dataset(bq.config.Dataset).Table(tableName + "$" + partition).Delete(ctx); err != nil {
+		if err := bq.client.Dataset(namespace).Table(tableName + "$" + partition).Delete(ctx); err != nil {
 			gerr, ok := err.(*googleapi.Error)
 			if ok && gerr.Code == 404 {
 				bq.Infof("Partition %s$%s was not found", tableName, partition)
@@ -515,7 +533,7 @@ func (bq *BigQuery) DeletePartition(ctx context.Context, tableName string, dateP
 			}
 			return errorj.DeleteFromTableError.Wrap(err, "failed to delete partition").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Dataset:   bq.config.Dataset,
+					Dataset:   namespace,
 					Bucket:    bq.config.Bucket,
 					Project:   bq.config.Project,
 					Table:     tableName,
@@ -557,7 +575,8 @@ func GranularityToPartitionIds(g Granularity, t time.Time) []string {
 }
 
 func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, objects ...types2.Object) (err error) {
-	inserter := bq.client.Dataset(bq.config.Dataset).Table(table.Name).Inserter()
+	namespace := bq.namespaceName(table.Namespace)
+	inserter := bq.client.Dataset(namespace).Table(table.Name).Inserter()
 	bq.logQuery(fmt.Sprintf("Inserting [%d] values to table %s using BigQuery Streaming API with chunks [%d]: ", len(objects), table.Name, bigqueryRowsLimitPerInsertOperation), objects, nil)
 
 	items := make([]*BQItem, 0, bigqueryRowsLimitPerInsertOperation)
@@ -569,7 +588,7 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 			if err := bq.insertItems(ctx, inserter, items); err != nil {
 				return errorj.ExecuteInsertInBatchError.Wrap(err, "failed to execute middle insert %d of %d in batch", operation, operations).
 					WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-						Dataset: bq.config.Dataset,
+						Dataset: namespace,
 						Bucket:  bq.config.Bucket,
 						Project: bq.config.Project,
 						Table:   table.Name,
@@ -600,11 +619,12 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 
 func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	tableName := bq.TableName(targetTable.Name)
+	dataset := bq.namespaceName(targetTable.Namespace)
 	defer func() {
 		if err != nil {
 			err = errorj.ExecuteInsertInBatchError.Wrap(err, "failed to execute middle insert batch").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Dataset: bq.config.Dataset,
+					Dataset: dataset,
 					Bucket:  bq.config.Bucket,
 					Project: bq.config.Project,
 					Table:   tableName,
@@ -621,8 +641,11 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 	defer func() {
 		_ = file.Close()
 	}()
-	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
+	bqTable := bq.client.Dataset(dataset).Table(tableName)
 	meta, err := bqTable.Metadata(ctx)
+	if err != nil {
+		return state, err
+	}
 
 	if loadSource.Format == types2.FileFormatCSV {
 		//sort meta schema field order to match csv file column order
@@ -660,20 +683,21 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 			UseAvroLogicalTypes: true,
 		}
 	}
-	loader := bq.client.Dataset(bq.config.Dataset).Table(tableName).LoaderFrom(source)
+	loader := bq.client.Dataset(dataset).Table(tableName).LoaderFrom(source)
 	loader.CreateDisposition = bigquery.CreateIfNeeded
 	loader.WriteDisposition = bigquery.WriteAppend
-	_, state, err = bq.RunJob(ctx, loader, fmt.Sprintf("load into table '%s'", tableName))
+	_, state, err = bq.RunJob(ctx, loader, fmt.Sprintf("load into table %s", bq.fullTableName(dataset, tableName)))
 	state.Name = "load"
 	return state, err
 }
 
 // DropTable drops table from BigQuery
-func (bq *BigQuery) DropTable(ctx context.Context, tableName string, ifExists bool) error {
+func (bq *BigQuery) DropTable(ctx context.Context, namespace string, tableName string, ifExists bool) error {
 	tableName = bq.TableName(tableName)
-	bq.logQuery(fmt.Sprintf("DROP table '%s' if exists: %t", tableName, ifExists), nil, nil)
+	dataset := bq.namespaceName(namespace)
+	bq.logQuery(fmt.Sprintf("DROP table %s if exists: %t", bq.fullTableName(dataset, tableName), ifExists), nil, nil)
 
-	bqTable := bq.client.Dataset(bq.config.Dataset).Table(tableName)
+	bqTable := bq.client.Dataset(dataset).Table(tableName)
 	_, err := bqTable.Metadata(ctx)
 	gerr, ok := err.(*googleapi.Error)
 	if ok && gerr.Code == 404 && ifExists {
@@ -682,7 +706,7 @@ func (bq *BigQuery) DropTable(ctx context.Context, tableName string, ifExists bo
 	if err := bqTable.Delete(ctx); err != nil {
 		return errorj.DropError.Wrap(err, "failed to drop table").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Dataset: bq.config.Dataset,
+				Dataset: dataset,
 				Bucket:  bq.config.Bucket,
 				Project: bq.config.Project,
 				Table:   tableName,
@@ -693,11 +717,12 @@ func (bq *BigQuery) DropTable(ctx context.Context, tableName string, ifExists bo
 }
 
 func (bq *BigQuery) Drop(ctx context.Context, table *Table, ifExists bool) error {
-	return bq.DropTable(ctx, table.Name, ifExists)
+	return bq.DropTable(ctx, table.Namespace, table.Name, ifExists)
 }
 
 func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
 	targetTableName = bq.TableName(targetTableName)
+	namespace := bq.namespaceName(replacementTable.Namespace)
 	replacementTableName := bq.TableName(replacementTable.Name)
 	defer func() {
 		if err != nil {
@@ -710,7 +735,7 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, re
 				})
 		}
 	}()
-	dataset := bq.client.Dataset(bq.config.Dataset)
+	dataset := bq.client.Dataset(namespace)
 	copier := dataset.Table(targetTableName).CopierFrom(dataset.Table(replacementTableName))
 	copier.WriteDisposition = bigquery.WriteTruncate
 	copier.CreateDisposition = bigquery.CreateIfNeeded
@@ -719,16 +744,16 @@ func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, re
 		return err
 	}
 	if dropOldTable {
-		return bq.DropTable(ctx, replacementTableName, false)
+		return bq.DropTable(ctx, replacementTable.Namespace, replacementTableName, false)
 	} else {
 		return nil
 	}
 }
 
 // TruncateTable deletes all records in tableName table
-func (bq *BigQuery) TruncateTable(ctx context.Context, tableName string) error {
+func (bq *BigQuery) TruncateTable(ctx context.Context, namespace string, tableName string) error {
 	tableName = bq.TableName(tableName)
-	query := fmt.Sprintf(bigqueryTruncateTemplate, bq.fullTableName(tableName))
+	query := fmt.Sprintf(bigqueryTruncateTemplate, bq.fullTableName(namespace, tableName))
 	bq.logQuery(query, nil, nil)
 	if _, err := bq.client.Query(query).Read(ctx); err != nil {
 		extraText := ""
@@ -820,7 +845,7 @@ func (bqi *BQItem) Save() (row map[string]bigquery.Value, insertID string, err e
 	return
 }
 
-func (bq *BigQuery) Update(ctx context.Context, tableName string, object types2.Object, whenConditions *WhenConditions) (err error) {
+func (bq *BigQuery) Update(ctx context.Context, namespace, tableName string, object types2.Object, whenConditions *WhenConditions) (err error) {
 	tableName = bq.TableName(tableName)
 	updateCondition, updateValues := bq.toWhenConditions(whenConditions)
 
@@ -835,7 +860,7 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types2.
 	for a := 0; a < len(updateValues); a++ {
 		values[i+a] = updateValues[a]
 	}
-	updateQuery := fmt.Sprintf(bigqueryUpdateTemplate, bq.fullTableName(tableName), strings.Join(columns, ", "), updateCondition)
+	updateQuery := fmt.Sprintf(bigqueryUpdateTemplate, bq.fullTableName(namespace, tableName), strings.Join(columns, ", "), updateCondition)
 	defer func() {
 		v := make([]any, len(values))
 		for i, value := range values {
@@ -858,10 +883,10 @@ func (bq *BigQuery) Update(ctx context.Context, tableName string, object types2.
 	return err
 }
 
-func (bq *BigQuery) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
-	return bq.selectFrom(ctx, tableName, "*", whenConditions, orderBy)
+func (bq *BigQuery) Select(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
+	return bq.selectFrom(ctx, namespace, tableName, "*", whenConditions, orderBy)
 }
-func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy []string) (res []map[string]any, err error) {
+func (bq *BigQuery) selectFrom(ctx context.Context, namespace, tableName string, selectExpression string, whenConditions *WhenConditions, orderBy []string) (res []map[string]any, err error) {
 	tableName = bq.TableName(tableName)
 	whenCondition, values := bq.toWhenConditions(whenConditions)
 	if whenCondition != "" {
@@ -875,7 +900,7 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 		}
 		orderByClause = " ORDER BY " + strings.Join(quotedOrderByColumns, ", ")
 	}
-	selectQuery := fmt.Sprintf(bigquerySelectTemplate, selectExpression, bq.fullTableName(tableName), whenCondition, orderByClause)
+	selectQuery := fmt.Sprintf(bigquerySelectTemplate, selectExpression, bq.fullTableName(namespace, tableName), whenCondition, orderByClause)
 
 	defer func() {
 		v := make([]any, len(values))
@@ -895,7 +920,7 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 
 	query := bq.client.Query(selectQuery)
 	query.Parameters = values
-	job, _, err := bq.RunJob(ctx, query, fmt.Sprintf("select from table '%s'", tableName))
+	job, _, err := bq.RunJob(ctx, query, fmt.Sprintf("select from table %s", bq.fullTableName(namespace, tableName)))
 	if err != nil {
 		return nil, err
 	}
@@ -928,8 +953,8 @@ func (bq *BigQuery) selectFrom(ctx context.Context, tableName string, selectExpr
 	return result, nil
 }
 
-func (bq *BigQuery) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
-	res, err := bq.selectFrom(ctx, tableName, "count(*) as jitsu_count", whenConditions, nil)
+func (bq *BigQuery) Count(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions) (int, error) {
+	res, err := bq.selectFrom(ctx, namespace, tableName, "count(*) as jitsu_count", whenConditions, nil)
 	if err != nil {
 		return -1, err
 	}
@@ -959,13 +984,13 @@ func (bq *BigQuery) toWhenConditions(conditions *WhenConditions) (string, []bigq
 
 	return strings.Join(queryConditions, " "+conditions.JoinCondition+" "), values
 }
-func (bq *BigQuery) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) (err error) {
+func (bq *BigQuery) Delete(ctx context.Context, namespace string, tableName string, deleteConditions *WhenConditions) (err error) {
 	tableName = bq.TableName(tableName)
 	whenCondition, values := bq.toWhenConditions(deleteConditions)
 	if len(whenCondition) == 0 {
 		return errors.New("delete conditions are empty")
 	}
-	deleteQuery := fmt.Sprintf(bigqueryDeleteTemplate, bq.fullTableName(tableName), whenCondition)
+	deleteQuery := fmt.Sprintf(bigqueryDeleteTemplate, bq.fullTableName(namespace, tableName), whenCondition)
 	defer func() {
 		v := make([]any, len(values))
 		for i, value := range values {
@@ -998,8 +1023,8 @@ func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	return &TxSQLAdapter{sqlAdapter: bq, tx: NewDummyTxWrapper(bq.Type())}, nil
 }
 
-func (bq *BigQuery) fullTableName(tableName string) string {
-	return fmt.Sprintf("`%s`.`%s`", bq.config.Project, bq.config.Dataset) + "." + bq.tableHelper.quotedTableName(tableName)
+func (bq *BigQuery) fullTableName(namespace, tableName string) string {
+	return fmt.Sprintf("`%s`.`%s`", bq.config.Project, bq.namespaceName(namespace)) + "." + bq.tableHelper.quotedTableName(tableName)
 }
 
 func tableNameFunc(identifier string, alphanumeric bool) (adapted string, needQuote bool) {
@@ -1087,6 +1112,18 @@ func (bq *BigQuery) GetAvroSchema(table *Table) *types2.AvroSchema {
 
 func (bq *BigQuery) TableHelper() *TableHelper {
 	return &bq.tableHelper
+}
+
+func (bq *BigQuery) DefaultNamespace() string {
+	return bq.config.Dataset
+}
+
+func (bq *BigQuery) TmpNamespace(namespace string) string {
+	return namespace
+}
+
+func (bq *BigQuery) namespaceName(namespace string) string {
+	return bq.tableHelper.TableName(utils.DefaultString(namespace, bq.config.Dataset))
 }
 
 type JobRunner interface {

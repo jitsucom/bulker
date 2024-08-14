@@ -36,27 +36,31 @@ type SQLAdapter interface {
 	// InitDatabase setups required db objects like 'schema' or 'dataset' if they don't exist
 	InitDatabase(ctx context.Context) error
 	TableHelper() *TableHelper
-	GetTableSchema(ctx context.Context, tableName string) (*Table, error)
+	GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error)
 	CreateTable(ctx context.Context, schemaToCreate *Table) error
 	CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error)
 	LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error)
 	PatchTableSchema(ctx context.Context, patchTable *Table) error
-	TruncateTable(ctx context.Context, tableName string) error
+	TruncateTable(ctx context.Context, namespace string, tableName string) error
 	//(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error
-	Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error
-	DropTable(ctx context.Context, tableName string, ifExists bool) error
+	Delete(ctx context.Context, namespace string, tableName string, deleteConditions *WhenConditions) error
+	DropTable(ctx context.Context, namespace string, tableName string, ifExists bool) error
 	Drop(ctx context.Context, table *Table, ifExists bool) error
 
 	ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) error
 
-	Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error)
-	Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error)
+	Select(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error)
+	Count(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions) (int, error)
 
 	// ColumnName adapts column name to sql identifier rules of database
 	ColumnName(rawColumn string) string
 	// TableName adapts table name to sql identifier rules of database
 	TableName(rawTableName string) string
 	BuildConstraintName(tableName string) string
+	DefaultNamespace() string
+	// TmpNamespace returns namespace used by temporary tables, e.g. for warehouses where temporary tables
+	// must not be specified with schema or db prefix NoNamespaceValue constant must be used
+	TmpNamespace(targetNamespace string) string
 }
 
 type LoadSourceType string
@@ -77,6 +81,14 @@ type LoadSource struct {
 type TxSQLAdapter struct {
 	sqlAdapter SQLAdapter
 	tx         *TxWrapper
+}
+
+func (tx *TxSQLAdapter) TmpNamespace(targetNamespace string) string {
+	return tx.sqlAdapter.TmpNamespace(targetNamespace)
+}
+
+func (tx *TxSQLAdapter) DefaultNamespace() string {
+	return tx.sqlAdapter.DefaultNamespace()
 }
 
 func (tx *TxSQLAdapter) Type() string {
@@ -131,9 +143,9 @@ func (tx *TxSQLAdapter) TableHelper() *TableHelper {
 	return tx.sqlAdapter.TableHelper()
 }
 
-func (tx *TxSQLAdapter) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
+func (tx *TxSQLAdapter) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.GetTableSchema(ctx, tableName)
+	return tx.sqlAdapter.GetTableSchema(ctx, namespace, tableName)
 }
 func (tx *TxSQLAdapter) CreateTable(ctx context.Context, schemaToCreate *Table) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
@@ -151,22 +163,22 @@ func (tx *TxSQLAdapter) PatchTableSchema(ctx context.Context, patchTable *Table)
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.PatchTableSchema(ctx, patchTable)
 }
-func (tx *TxSQLAdapter) TruncateTable(ctx context.Context, tableName string) error {
+func (tx *TxSQLAdapter) TruncateTable(ctx context.Context, namespace string, tableName string) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.TruncateTable(ctx, tableName)
+	return tx.sqlAdapter.TruncateTable(ctx, namespace, tableName)
 }
 
 //	func (tx *TxSQLAdapter) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error {
 //		ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 //		return tx.sqlAdapter.Update(ctx, tableName, object, whenConditions)
 //	}
-func (tx *TxSQLAdapter) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {
+func (tx *TxSQLAdapter) Delete(ctx context.Context, namespace string, tableName string, deleteConditions *WhenConditions) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.Delete(ctx, tableName, deleteConditions)
+	return tx.sqlAdapter.Delete(ctx, namespace, tableName, deleteConditions)
 }
-func (tx *TxSQLAdapter) DropTable(ctx context.Context, tableName string, ifExists bool) error {
+func (tx *TxSQLAdapter) DropTable(ctx context.Context, namespace string, tableName string, ifExists bool) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.DropTable(ctx, tableName, ifExists)
+	return tx.sqlAdapter.DropTable(ctx, namespace, tableName, ifExists)
 }
 func (tx *TxSQLAdapter) Drop(ctx context.Context, table *Table, ifExists bool) error {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
@@ -177,13 +189,13 @@ func (tx *TxSQLAdapter) ReplaceTable(ctx context.Context, targetTableName string
 	return tx.sqlAdapter.ReplaceTable(ctx, targetTableName, replacementTable, dropOldTable)
 }
 
-func (tx *TxSQLAdapter) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
+func (tx *TxSQLAdapter) Select(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.Select(ctx, tableName, whenConditions, orderBy)
+	return tx.sqlAdapter.Select(ctx, namespace, tableName, whenConditions, orderBy)
 }
-func (tx *TxSQLAdapter) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
+func (tx *TxSQLAdapter) Count(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions) (int, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	return tx.sqlAdapter.Count(ctx, tableName, whenConditions)
+	return tx.sqlAdapter.Count(ctx, namespace, tableName, whenConditions)
 }
 
 func (tx *TxSQLAdapter) Commit() error {

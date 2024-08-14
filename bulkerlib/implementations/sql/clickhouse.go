@@ -36,29 +36,29 @@ const (
 
 	chDatabaseQuery          = "SELECT name FROM system.databases where name = ?"
 	chClusterQuery           = "SELECT max(shard_num) > 1 FROM system.clusters where cluster = ?"
-	chCreateDatabaseTemplate = `CREATE DATABASE IF NOT EXISTS ? %s`
+	chCreateDatabaseTemplate = `CREATE DATABASE IF NOT EXISTS %s %s`
 
 	chTableSchemaQuery        = `SELECT name, type FROM system.columns WHERE database = ? and table = ? and default_kind not in ('MATERIALIZED', 'ALIAS', 'EPHEMERAL') order by position`
 	chPrimaryKeyFieldsQuery   = `SELECT primary_key FROM system.tables WHERE database = ? and table = ?`
 	chOnClusterClauseTemplate = " ON CLUSTER `%s` "
 	chNullableColumnTemplate  = ` Nullable(%s) `
 
-	chCreateDistributedTableTemplate = `CREATE TABLE %s %s AS %s ENGINE = Distributed(%s,%s,%s,%s)`
-	chAlterTableTemplate             = `ALTER TABLE %s %s %s`
-	chDeleteBeforeBulkMergeUsing     = `ALTER TABLE %s %s DELETE WHERE %s in (select %s from %s)`
+	chCreateDistributedTableTemplate = `CREATE TABLE %s%s %s AS %s%s ENGINE = Distributed(%s,%s,%s,%s)`
+	chAlterTableTemplate             = `ALTER TABLE %s%s %s %s`
+	chDeleteBeforeBulkMergeUsing     = `ALTER TABLE %s%s %s DELETE WHERE %s in (select %s from %s)`
 	//chDeleteBeforeBulkMergeUsing = `DELETE FROM %s %s WHERE %s in (select %s from %s)`
 
-	chDeleteQueryTemplate = `ALTER TABLE %s %s DELETE WHERE %s`
+	chDeleteQueryTemplate = `ALTER TABLE %s%s %s DELETE WHERE %s`
 
-	chCreateTableTemplate   = `CREATE TABLE %s %s (%s) %s %s %s %s`
-	chDropTableTemplate     = `DROP TABLE %s%s %s`
-	chTruncateTableTemplate = `TRUNCATE TABLE IF EXISTS %s %s`
-	chExchangeTableTemplate = `EXCHANGE TABLES %s AND %s %s`
-	chRenameTableTemplate   = `RENAME TABLE %s TO %s %s`
+	chCreateTableTemplate   = `CREATE TABLE %s%s %s (%s) %s %s %s %s`
+	chDropTableTemplate     = `DROP TABLE %s %s%s %s`
+	chTruncateTableTemplate = `TRUNCATE TABLE IF EXISTS %s%s %s`
+	chExchangeTableTemplate = `EXCHANGE TABLES %s%s AND %s%s %s`
+	chRenameTableTemplate   = `RENAME TABLE %s%s TO %s%s %s`
 
-	chSelectFinalStatement = `SELECT %s FROM %s FINAL %s%s`
-	chLoadStatement        = `INSERT INTO %s (%s) VALUES %s`
-	chLoadJSONStatement    = `INSERT INTO %s format JSONEachRow`
+	chSelectFinalStatement = `SELECT %s FROM %s%s FINAL %s%s`
+	chLoadStatement        = `INSERT INTO %s%s (%s) VALUES %s`
+	chLoadJSONStatement    = `INSERT INTO %s%s format JSONEachRow`
 
 	chDateFormat = `2006-01-02 15:04:05.000000`
 )
@@ -222,7 +222,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	if bulkerConfig.LogLevel == bulkerlib.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, dbConnectFunction, clickhouseTypes, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr, false)
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, config.Database, dbConnectFunction, clickhouseTypes, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr, false)
 	sqlAdapterBase.batchFileFormat = types.FileFormatNDJSON
 
 	c := &ClickHouse{
@@ -330,24 +330,39 @@ func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), db, ch.queryLogger, ch.checkErrFunc, true)}, nil
 }
 
-// InitDatabase create database instance if doesn't exist
-func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
+func (ch *ClickHouse) createDatabaseIfNotExists(ctx context.Context, db string) error {
+	if db == "" {
+		return nil
+	}
 	var dbname string
-	row := ch.txOrDb(ctx).QueryRowContext(ctx, chDatabaseQuery, ch.config.Database)
+	db = ch.namespaceName(db)
+	if db == "" {
+		return nil
+	}
+	row := ch.txOrDb(ctx).QueryRowContext(ctx, chDatabaseQuery, db)
 	if row != nil {
 		_ = row.Scan(&dbname)
 	}
 	if dbname == "" {
-		query := fmt.Sprintf(chCreateDatabaseTemplate, ch.getOnClusterClause())
+		query := fmt.Sprintf(chCreateDatabaseTemplate, db, ch.getOnClusterClause())
 
-		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query, ch.config.Database); err != nil {
+		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 			return errorj.CreateSchemaError.Wrap(err, "failed to create db schema").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
-					Database:  ch.config.Database,
+					Database:  db,
 					Cluster:   ch.config.Cluster,
 					Statement: query,
 				})
 		}
+	}
+	return nil
+}
+
+// InitDatabase create database instance if doesn't exist
+func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
+	err := ch.createDatabaseIfNotExists(ctx, ch.config.Database)
+	if err != nil {
+		return err
 	}
 	if ch.config.Cluster != "" {
 		var distributed bool
@@ -371,6 +386,12 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 // CreateTable create database table with name,columns provided in Table representation
 // New tables will have MergeTree() or ReplicatedMergeTree() engine depends on config.cluster empty or not
 func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
+	err := ch.createDatabaseIfNotExists(ctx, table.Namespace)
+	if err != nil {
+		return err
+	}
+	quotedSchema := ch.namespacePrefix(table.Namespace)
+
 	if table.Temporary {
 		table := table.Clone()
 		table.PKFields = types2.NewOrderedSet[string]()
@@ -378,7 +399,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 			return ch.columnDDL(name, table, column)
 		})
 
-		query := fmt.Sprintf(createTableTemplate, "TEMPORARY", ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
+		query := fmt.Sprintf(createTableTemplate, "TEMPORARY", quotedSchema, ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
 
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 			return errorj.CreateTableError.Wrap(err, "failed to create table").
@@ -393,7 +414,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 		return ch.columnDDL(name, table, column)
 	})
 
-	statementStr := ch.tableStatementFactory.CreateTableStatement(ch.quotedLocalTableName(table.Name), ch.TableName(table.Name), strings.Join(columnsDDL, ","), table)
+	statementStr := ch.tableStatementFactory.CreateTableStatement(quotedSchema, ch.quotedLocalTableName(table.Name), ch.TableName(table.Name), strings.Join(columnsDDL, ","), table)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, statementStr); err != nil {
 		return errorj.CreateTableError.Wrap(err, "failed to create table").
@@ -415,16 +436,17 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 }
 
 // GetTableSchema return table (name,columns with name and types) representation wrapped in Table struct
-func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Table, error) {
+func (ch *ClickHouse) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	//local table name since schema of distributed table lacks primary keys
 	queryTableName := ch.TableName(ch.localTableName(tableName))
+	namespace = ch.namespaceName(namespace)
 	tableName = ch.TableName(tableName)
-	table := &Table{Name: tableName, Columns: NewColumns(), PKFields: types2.NewOrderedSet[string]()}
-	rows, err := ch.txOrDb(ctx).QueryContext(ctx, chTableSchemaQuery, ch.config.Database, queryTableName)
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types2.NewOrderedSet[string]()}
+	rows, err := ch.txOrDb(ctx).QueryContext(ctx, chTableSchemaQuery, namespace, queryTableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Database:    ch.config.Database,
+				Database:    namespace,
 				Cluster:     ch.config.Cluster,
 				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
@@ -439,7 +461,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 		if err := rows.Scan(&columnName, &columnClickhouseType); err != nil {
 			return nil, errorj.GetTableError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
-					Database:    ch.config.Database,
+					Database:    namespace,
 					Cluster:     ch.config.Cluster,
 					Table:       tableName,
 					PrimaryKeys: table.GetPKFields(),
@@ -453,7 +475,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 	if err := rows.Err(); err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Database:    ch.config.Database,
+				Database:    namespace,
 				Cluster:     ch.config.Cluster,
 				Table:       tableName,
 				PrimaryKeys: table.GetPKFields(),
@@ -461,7 +483,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 				Values:      []interface{}{ch.config.Database, queryTableName},
 			})
 	}
-	primaryKeyName, pkFields, err := ch.getPrimaryKey(ctx, tableName)
+	primaryKeyName, pkFields, err := ch.getPrimaryKey(ctx, namespace, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -474,14 +496,15 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, tableName string) (*Ta
 }
 
 // getPrimaryKey returns primary key name and fields
-func (ch *ClickHouse) getPrimaryKey(ctx context.Context, tableName string) (string, types2.OrderedSet[string], error) {
+func (ch *ClickHouse) getPrimaryKey(ctx context.Context, namespace, tableName string) (string, types2.OrderedSet[string], error) {
 	tableName = ch.TableName(tableName)
+	namespace = ch.namespaceName(namespace)
 	queryTableName := ch.TableName(ch.localTableName(tableName))
-	pkFieldsRows, err := ch.txOrDb(ctx).QueryContext(ctx, chPrimaryKeyFieldsQuery, ch.config.Database, queryTableName)
+	pkFieldsRows, err := ch.txOrDb(ctx).QueryContext(ctx, chPrimaryKeyFieldsQuery, namespace, queryTableName)
 	if err != nil {
 		return "", types2.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Database:  ch.config.Database,
+				Database:  namespace,
 				Cluster:   ch.config.Cluster,
 				Table:     tableName,
 				Statement: chPrimaryKeyFieldsQuery,
@@ -494,7 +517,7 @@ func (ch *ClickHouse) getPrimaryKey(ctx context.Context, tableName string) (stri
 		if err = pkFieldsRows.Scan(&pkString); err != nil {
 			return "", types2.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
-					Database:  ch.config.Database,
+					Database:  namespace,
 					Cluster:   ch.config.Cluster,
 					Table:     tableName,
 					Statement: chPrimaryKeyFieldsQuery,
@@ -520,8 +543,9 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 	addedColumnsDDL := patchSchema.MappedColumns(func(columnName string, column types.SQLColumn) string {
 		return "ADD COLUMN " + ch.columnDDL(columnName, patchSchema, column)
 	})
+	namespace := ch.namespacePrefix(patchSchema.Namespace)
 
-	query := fmt.Sprintf(chAlterTableTemplate, ch.quotedLocalTableName(patchSchema.Name), ch.getOnClusterClause(), strings.Join(addedColumnsDDL, ", "))
+	query := fmt.Sprintf(chAlterTableTemplate, namespace, ch.quotedLocalTableName(patchSchema.Name), ch.getOnClusterClause(), strings.Join(addedColumnsDDL, ", "))
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		return errorj.PatchTableError.Wrap(err, "failed to patch table").
@@ -535,13 +559,13 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 	}
 
 	if ch.distributed.Load() {
-		query := fmt.Sprintf(chAlterTableTemplate, ch.quotedTableName(patchSchema.Name), ch.getOnClusterClause(), strings.Join(addedColumnsDDL, ", "))
+		query := fmt.Sprintf(chAlterTableTemplate, namespace, ch.quotedTableName(patchSchema.Name), ch.getOnClusterClause(), strings.Join(addedColumnsDDL, ", "))
 
 		_, err := ch.txOrDb(ctx).ExecContext(ctx, query)
 		if err != nil {
 			ch.Errorf("Error altering distributed table for [%s] with statement [%s]: %v", patchSchema.Name, query, err)
 			// fallback for older clickhouse versions: drop and create distributed table if ReplicatedMergeTree engine
-			ch.dropTable(ctx, ch.quotedTableName(patchSchema.Name), ch.getOnClusterClause(), true)
+			ch.dropTable(ctx, namespace, ch.quotedTableName(patchSchema.Name), ch.getOnClusterClause(), true)
 			return ch.createDistributedTableInTransaction(ctx, patchSchema)
 		}
 
@@ -550,32 +574,32 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 	return nil
 }
 
-func (ch *ClickHouse) Select(ctx context.Context, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
+func (ch *ClickHouse) Select(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
 	tableName = ch.TableName(tableName)
-	table, err := ch.GetTableSchema(ctx, tableName)
+	table, err := ch.GetTableSchema(ctx, namespace, tableName)
 	if err != nil {
 		return nil, err
 	}
 
 	if table.PKFields.Size() > 0 {
-		return ch.selectFrom(ctx, chSelectFinalStatement, tableName, "*", whenConditions, orderBy)
+		return ch.selectFrom(ctx, chSelectFinalStatement, namespace, tableName, "*", whenConditions, orderBy)
 	} else {
-		return ch.selectFrom(ctx, selectQueryTemplate, tableName, "*", whenConditions, orderBy)
+		return ch.selectFrom(ctx, selectQueryTemplate, namespace, tableName, "*", whenConditions, orderBy)
 	}
 }
 
-func (ch *ClickHouse) Count(ctx context.Context, tableName string, whenConditions *WhenConditions) (int, error) {
+func (ch *ClickHouse) Count(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions) (int, error) {
 	tableName = ch.TableName(tableName)
-	table, err := ch.GetTableSchema(ctx, tableName)
+	table, err := ch.GetTableSchema(ctx, namespace, tableName)
 	if err != nil {
 		return -1, err
 	}
 
 	var res []map[string]any
 	if table.PKFields.Size() > 0 {
-		res, err = ch.selectFrom(ctx, chSelectFinalStatement, tableName, "count(*) as jitsu_count", whenConditions, nil)
+		res, err = ch.selectFrom(ctx, chSelectFinalStatement, namespace, tableName, "count(*) as jitsu_count", whenConditions, nil)
 	} else {
-		res, err = ch.selectFrom(ctx, selectQueryTemplate, tableName, "count(*) as jitsu_count", whenConditions, nil)
+		res, err = ch.selectFrom(ctx, selectQueryTemplate, namespace, tableName, "count(*) as jitsu_count", whenConditions, nil)
 	}
 	if err != nil {
 		return -1, err
@@ -601,6 +625,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	}
 	startTime := time.Now()
 	tableName := ch.quotedTableName(targetTable.Name)
+	namespace := ch.namespacePrefix(targetTable.Namespace)
 
 	var copyStatement string
 	defer func() {
@@ -628,7 +653,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		if err != nil {
 			return state, err
 		}
-		copyStatement = fmt.Sprintf(chLoadJSONStatement+"\n", tableName)
+		copyStatement = fmt.Sprintf(chLoadJSONStatement+"\n", namespace, tableName)
 		builder := strings.Builder{}
 		builder.Grow(int(stat.Size()) + len(copyStatement))
 		builder.WriteString(copyStatement)
@@ -689,7 +714,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 				Name:            "clickhouse_prepare_data",
 				TimeProcessedMs: loadTime.Sub(startTime).Milliseconds(),
 			}
-			copyStatement = fmt.Sprintf(chLoadStatement, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
+			copyStatement = fmt.Sprintf(chLoadStatement, namespace, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
 			if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
 				return state, checkErr(err)
 			}
@@ -706,14 +731,15 @@ func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, source
 	return ch.copy(ctx, targetTable, sourceTable)
 }
 
-func (ch *ClickHouse) Delete(ctx context.Context, tableName string, deleteConditions *WhenConditions) error {
+func (ch *ClickHouse) Delete(ctx context.Context, namespace string, tableName string, deleteConditions *WhenConditions) error {
 	deleteCondition, values := ch.ToWhenConditions(deleteConditions, ch.parameterPlaceholder, 0)
-	deleteQuery := fmt.Sprintf(chDeleteQueryTemplate, ch.quotedLocalTableName(tableName), ch.getOnClusterClause(), deleteCondition)
+	quotedSchema := ch.namespacePrefix(namespace)
+	deleteQuery := fmt.Sprintf(chDeleteQueryTemplate, quotedSchema, ch.quotedLocalTableName(tableName), ch.getOnClusterClause(), deleteCondition)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, deleteQuery, values...); err != nil {
 		return errorj.DeleteFromTableError.Wrap(err, "failed to delete data").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
-				Database:  ch.config.Database,
+				Database:  quotedSchema,
 				Cluster:   ch.config.Cluster,
 				Table:     tableName,
 				Statement: deleteQuery,
@@ -724,9 +750,9 @@ func (ch *ClickHouse) Delete(ctx context.Context, tableName string, deleteCondit
 }
 
 // TruncateTable deletes all records in tableName table
-func (ch *ClickHouse) TruncateTable(ctx context.Context, tableName string) error {
+func (ch *ClickHouse) TruncateTable(ctx context.Context, namespace string, tableName string) error {
 	tableName = ch.TableName(tableName)
-	statement := fmt.Sprintf(chTruncateTableTemplate, ch.quotedLocalTableName(tableName), ch.getOnClusterClause())
+	statement := fmt.Sprintf(chTruncateTableTemplate, ch.namespacePrefix(namespace), ch.quotedLocalTableName(tableName), ch.getOnClusterClause())
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return errorj.TruncateError.Wrap(err, "failed to truncate table").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
@@ -738,31 +764,31 @@ func (ch *ClickHouse) TruncateTable(ctx context.Context, tableName string) error
 	return nil
 }
 
-func (ch *ClickHouse) DropTable(ctx context.Context, tableName string, ifExists bool) error {
-	err := ch.dropTable(ctx, ch.quotedTableName(tableName), ch.getOnClusterClause(), ifExists)
+func (ch *ClickHouse) DropTable(ctx context.Context, namespace string, tableName string, ifExists bool) error {
+	err := ch.dropTable(ctx, ch.namespacePrefix(namespace), ch.quotedTableName(tableName), ch.getOnClusterClause(), ifExists)
 	if err != nil {
 		return err
 	}
 	if ch.distributed.Load() {
-		return ch.dropTable(ctx, ch.quotedLocalTableName(tableName), ch.getOnClusterClause(), true)
+		return ch.dropTable(ctx, ch.namespacePrefix(namespace), ch.quotedLocalTableName(tableName), ch.getOnClusterClause(), true)
 	}
 	return nil
 }
 
 func (ch *ClickHouse) Drop(ctx context.Context, table *Table, ifExists bool) error {
 	if table.Temporary {
-		return ch.dropTable(ctx, ch.quotedTableName(table.Name), "", ifExists)
+		return ch.dropTable(ctx, ch.namespacePrefix(table.Namespace), ch.quotedTableName(table.Name), "", ifExists)
 	} else {
-		return ch.DropTable(ctx, table.Name, ifExists)
+		return ch.DropTable(ctx, table.Namespace, table.Name, ifExists)
 	}
 }
 
-func (ch *ClickHouse) dropTable(ctx context.Context, fullTableName string, onClusterClause string, ifExists bool) error {
+func (ch *ClickHouse) dropTable(ctx context.Context, namespacePrefix, fullTableName string, onClusterClause string, ifExists bool) error {
 	ifExs := ""
 	if ifExists {
 		ifExs = "IF EXISTS "
 	}
-	query := fmt.Sprintf(chDropTableTemplate, ifExs, fullTableName, onClusterClause)
+	query := fmt.Sprintf(chDropTableTemplate, ifExs, namespacePrefix, fullTableName, onClusterClause)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 
@@ -779,7 +805,8 @@ func (ch *ClickHouse) dropTable(ctx context.Context, fullTableName string, onClu
 }
 
 func (ch *ClickHouse) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
-	targetTable, err := ch.GetTableSchema(ctx, targetTableName)
+	targetTable, err := ch.GetTableSchema(ctx, replacementTable.Namespace, targetTableName)
+	namespace := ch.namespacePrefix(replacementTable.Namespace)
 	if err != nil {
 		return fmt.Errorf("failed to check existence of target table: %s : %v", targetTableName, err)
 	}
@@ -795,13 +822,13 @@ func (ch *ClickHouse) ReplaceTable(ctx context.Context, targetTableName string, 
 		}
 		//exchange local tables only.
 		//For cluster no need to exchange distribute tables. they are linked by name and will represent new data
-		query := fmt.Sprintf(chExchangeTableTemplate, ch.quotedLocalTableName(targetTableName), ch.quotedLocalTableName(replacementTable.Name), ch.getOnClusterClause())
+		query := fmt.Sprintf(chExchangeTableTemplate, namespace, ch.quotedLocalTableName(targetTableName), namespace, ch.quotedLocalTableName(replacementTable.Name), ch.getOnClusterClause())
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 			return fmt.Errorf("error replacing [%s] table: %v", targetTableName, err)
 		}
 	} else {
 		//if target table does not exist yet, just rename replacement table to target one
-		query := fmt.Sprintf(chRenameTableTemplate, ch.quotedLocalTableName(replacementTable.Name), ch.quotedLocalTableName(targetTableName), ch.getOnClusterClause())
+		query := fmt.Sprintf(chRenameTableTemplate, namespace, ch.quotedLocalTableName(replacementTable.Name), namespace, ch.quotedLocalTableName(targetTableName), ch.getOnClusterClause())
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 			return fmt.Errorf("error renaming [%s] table: %v", replacementTable.Name, err)
 		}
@@ -815,7 +842,7 @@ func (ch *ClickHouse) ReplaceTable(ctx context.Context, targetTableName string, 
 	}
 
 	if targetTable.Exists() && dropOldTable {
-		return ch.DropTable(ctx, replacementTable.Name, true)
+		return ch.DropTable(ctx, replacementTable.Namespace, replacementTable.Name, true)
 	} else {
 		return nil
 	}
@@ -834,12 +861,13 @@ func (ch *ClickHouse) getOnClusterClause() string {
 // create distributed table, ignore errors
 func (ch *ClickHouse) createDistributedTableInTransaction(ctx context.Context, originTable *Table) error {
 	originTableName := originTable.Name
+	namespace := ch.namespacePrefix(originTable.Namespace)
 	shardingKey := "rand()"
 	if originTable.PKFields.Size() > 0 {
 		shardingKey = "halfMD5(" + strings.Join(originTable.GetPKFields(), ",") + ")"
 	}
 	statement := fmt.Sprintf(chCreateDistributedTableTemplate,
-		ch.quotedTableName(originTable.Name), ch.getOnClusterClause(), ch.quotedLocalTableName(originTableName), ch.config.Cluster, ch.config.Database, ch.quotedLocalTableName(originTableName), shardingKey)
+		namespace, ch.quotedTableName(originTable.Name), ch.getOnClusterClause(), namespace, ch.quotedLocalTableName(originTableName), ch.config.Cluster, ch.namespaceName(originTable.Namespace), ch.quotedLocalTableName(originTableName), shardingKey)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return fmt.Errorf("error creating distributed table statement with statement [%s] for [%s] : %v", statement, ch.quotedTableName(originTableName), err)
@@ -1067,10 +1095,10 @@ func NewTableStatementFactory(ch ClickHouseCluster) *TableStatementFactory {
 }
 
 // CreateTableStatement return clickhouse DDL for creating table statement
-func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName, columnsClause string, table *Table) string {
+func (tsf TableStatementFactory) CreateTableStatement(namespacePrefix, quotedTableName, tableName, columnsClause string, table *Table) string {
 	config := tsf.ch.Config()
 	if config.Engine != nil && len(config.Engine.RawStatement) > 0 {
-		return fmt.Sprintf(chCreateTableTemplate, quotedTableName, tsf.onClusterClause, columnsClause, config.Engine.RawStatement,
+		return fmt.Sprintf(chCreateTableTemplate, namespacePrefix, quotedTableName, tsf.onClusterClause, columnsClause, config.Engine.RawStatement,
 			"", "", "")
 	}
 	var engineStatement string
@@ -1119,8 +1147,12 @@ func (tsf TableStatementFactory) CreateTableStatement(quotedTableName, tableName
 		keeperPath = fmt.Sprintf("%s_%x", keeperPath, utils.HashString(tableName))
 		engineStatement = fmt.Sprintf(engineStatement, keeperPath)
 	}
-	return fmt.Sprintf(chCreateTableTemplate, quotedTableName, tsf.onClusterClause, columnsClause, engineStatement,
+	return fmt.Sprintf(chCreateTableTemplate, namespacePrefix, quotedTableName, tsf.onClusterClause, columnsClause, engineStatement,
 		partitionClause, orderByClause, primaryKeyClause)
+}
+
+func (ch *ClickHouse) TmpNamespace(string) string {
+	return NoNamespaceValue
 }
 
 func (ch *ClickHouse) Ping(_ context.Context) error {

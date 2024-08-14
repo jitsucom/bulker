@@ -121,6 +121,7 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 		PackageVersion:  c.Query("version"),
 		SyncID:          c.Query("syncId"),
 		TaskID:          c.Query("taskId"),
+		Namespace:       c.Query("namespace"),
 		TableNamePrefix: c.Query("tableNamePrefix"),
 		FullSync:        c.Query("fullSync"),
 		StartedBy:       c.Query("startedBy"),

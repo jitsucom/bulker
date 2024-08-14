@@ -50,7 +50,7 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 			}
 		} else {
 			//for ReplacePartitionStream  we should replace existing file with empty one
-			if err = ps.fileAdapter.UploadBytes(ps.filenameFunc(ctx), []byte{}); err != nil {
+			if err = ps.fileAdapter.UploadBytes(ps.filename(ctx), []byte{}); err != nil {
 				return ps.state, err
 			}
 		}
