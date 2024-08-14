@@ -455,7 +455,7 @@ func (m *MySQL) ReplaceTable(ctx context.Context, targetTableName string, replac
 
 func (m *MySQL) renameTable(ctx context.Context, ifExists bool, namespace, tableName, newTableName string) error {
 	if ifExists {
-		db := m.TableName(utils.DefaultString(namespace, m.namespace))
+		db := m.namespaceName(namespace)
 		tableName = m.TableName(tableName)
 		row := m.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s')`, db, tableName))
 		exists := false

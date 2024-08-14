@@ -242,7 +242,7 @@ func (p *Redshift) ReplaceTable(ctx context.Context, targetTableName string, rep
 
 func (p *Redshift) renameTable(ctx context.Context, ifExists bool, namespace, tableName, newTableName string) error {
 	if ifExists {
-		schema := p.TableName(utils.DefaultString(namespace, p.namespace))
+		schema := p.namespaceName(namespace)
 		row := p.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema ilike '%s' AND table_name = '%s')`, schema, tableName))
 		exists := false
 		err := row.Scan(&exists)

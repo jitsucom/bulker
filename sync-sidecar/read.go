@@ -24,6 +24,7 @@ const cancelledError = "Sync job was cancelled"
 
 type ReadSideCar struct {
 	*AbstractSideCar
+	namespace       string
 	tableNamePrefix string
 
 	eventsLogService eventslog.EventsLogService
@@ -402,18 +403,13 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	var namespace string
 	tableNamePrefix := strings.ReplaceAll(s.tableNamePrefix, "${SOURCE_NAMESPACE}", str.Namespace)
 	tableName := utils.NvlString(str.TableName, tableNamePrefix+str.Name)
-	switch str.NamespaceMode {
-	case "source":
-		namespace = str.Namespace
-	case "custom":
-		namespace = strings.ReplaceAll(str.CustomNamespace, "${SOURCE_NAMESPACE}", str.Namespace)
-	case "destination":
-		namespace = ""
-	default:
-		// legacy
+	if s.namespace == "${LEGACY}" {
 		namespace = ""
 		tableName = utils.NvlString(str.TableName, tableNamePrefix+streamName)
+	} else {
+		namespace = strings.TrimSpace(strings.ReplaceAll(s.namespace, "${SOURCE_NAMESPACE}", str.Namespace))
 	}
+
 	jobId := fmt.Sprintf("%s_%s_%s", s.syncId, s.taskId, tableName)
 
 	var streamOptions []bulker.StreamOption
