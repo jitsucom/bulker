@@ -26,6 +26,7 @@ type ReadSideCar struct {
 	*AbstractSideCar
 	namespace       string
 	tableNamePrefix string
+	toSameCase      bool
 
 	eventsLogService eventslog.EventsLogService
 
@@ -416,7 +417,6 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	if len(str.GetPrimaryKeys()) > 0 {
 		streamOptions = append(streamOptions, bulker.WithPrimaryKey(str.GetPrimaryKeys()...), bulker.WithDeduplicate())
 	}
-	s.log("Stream '%s' created bulker. table: %s mode: %s primary keys: %s", streamName, tableName, mode, str.GetPrimaryKeys())
 	schema := str.ToSchema()
 	//s.log("Schema: %+v", schema)
 	if len(schema.Fields) > 0 {
@@ -430,10 +430,15 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	if namespace != "" {
 		streamOptions = append(streamOptions, bulker.WithNamespace(namespace))
 	}
+	if s.toSameCase {
+		streamOptions = append(streamOptions, bulker.WithToSameCase())
+	}
 	bulkerStream, err := s.blk.CreateStream(jobId, tableName, mode, streamOptions...)
 	if err != nil {
 		return stream, fmt.Errorf("error creating bulker stream: %v", err)
 	}
+	s.log("Stream '%s' created bulker. table: %s mode: %s primary keys: %s", streamName, tableName, mode, str.GetPrimaryKeys())
+
 	err = stream.Begin(bulkerStream)
 	if err != nil {
 		return stream, fmt.Errorf("error starting bulker stream: %v", err)

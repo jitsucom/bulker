@@ -528,6 +528,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 		"PACKAGE_VERSION":   task.PackageVersion,
 		"COMMAND":           task.TaskType,
 		"NAMESPACE":         task.Namespace,
+		"TO_SAME_CASE":      task.ToSameCase,
 		"TABLE_NAME_PREFIX": task.TableNamePrefix,
 		"FULL_SYNC":         task.FullSync,
 		"DATABASE_URL":      databaseURL,

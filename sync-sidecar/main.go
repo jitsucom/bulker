@@ -82,7 +82,11 @@ func main() {
 		startedAt:      startedAt,
 	}
 	if command == "read" {
-		sidecar = &ReadSideCar{AbstractSideCar: abstract, namespace: os.Getenv("NAMESPACE"), tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX")}
+		sidecar = &ReadSideCar{AbstractSideCar: abstract,
+			namespace:       os.Getenv("NAMESPACE"),
+			tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX"),
+			toSameCase:      os.Getenv("TO_SAME_CASE") == "true",
+		}
 		sidecar.(*ReadSideCar).eventsLogService = &eventslog.DummyEventsLogService{}
 		clickhouseHost := os.Getenv("CLICKHOUSE_HOST")
 		if clickhouseHost != "" {

@@ -17,6 +17,7 @@ type TaskDescriptor struct {
 	Package         string `json:"package"`
 	PackageVersion  string `json:"packageVersion"`
 	Namespace       string `json:"namespace"`
+	ToSameCase      string `json:"sameCase"`
 	TableNamePrefix string `json:"tableNamePrefix"`
 	FullSync        string `json:"fullSync"`
 	StartedBy       string `json:"startedBy"`

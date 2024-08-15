@@ -58,6 +58,8 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 			ps.nameTransformer = strings.ToLower
 		}
 		ps.tableName = ps.nameTransformer(tableName)
+	} else {
+		ps.nameTransformer = func(s string) string { return s }
 	}
 	ps.merge = bulker.DeduplicateOption.Get(&ps.options)
 	pkColumns := bulker.PrimaryKeyOption.Get(&ps.options)
@@ -84,7 +86,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	schema := bulker.SchemaOption.Get(&ps.options)
 	if !schema.IsEmpty() {
 		ps.schemaOptions = schema
-		ps.schemaFromOptions = ps.sqlAdapter.TableHelper().MapSchema(ps.sqlAdapter, schema)
+		ps.schemaFromOptions = ps.sqlAdapter.TableHelper().MapSchema(ps.sqlAdapter, schema, ps.nameTransformer)
 	}
 
 	ps.unmappedDataColumn = p.ColumnName(unmappedDataColumn)

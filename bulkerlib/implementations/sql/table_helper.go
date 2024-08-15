@@ -111,14 +111,14 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 }
 
 // MapSchema maps types.Schema into types.Table (structure with SQL types)
-func (th *TableHelper) MapSchema(sqlAdapter SQLAdapter, schema types2.Schema) *Table {
+func (th *TableHelper) MapSchema(sqlAdapter SQLAdapter, schema types2.Schema, nameTransformer func(string) string) *Table {
 	table := &Table{
-		Name:    sqlAdapter.TableName(schema.Name),
+		Name:    th.TableName(nameTransformer(schema.Name)),
 		Columns: NewColumns(),
 	}
 
 	for _, field := range schema.Fields {
-		colName := th.ColumnName(field.Name)
+		colName := th.ColumnName(nameTransformer(field.Name))
 		//map Jitsu type -> SQL type
 		sqlType, ok := sqlAdapter.GetSQLType(field.Type)
 		if ok {
