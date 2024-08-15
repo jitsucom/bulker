@@ -254,12 +254,13 @@ type bulkerTestConfig struct {
 	frozenTime time.Time
 }
 
-func (c *bulkerTestConfig) getIdAndTableName(mode bulker.BulkMode) (id, tableName string) {
+func (c *bulkerTestConfig) getIdAndTableName(mode bulker.BulkMode) (id, tableName, expectedTableName string) {
 	tableName = c.tableName
 	if tableName == "" {
 		tableName = c.name
 	}
 	tableName = tableName + "_" + strings.ToLower(string(mode))
+	expectedTableName = utils.DefaultString(c.expectedTable.Name, tableName)
 	id = fmt.Sprintf("%s_%s", c.config.BulkerType, tableName)
 	return
 }
@@ -494,19 +495,19 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	sqlAdapter, ok := blk.(SQLAdapter)
 	reqr.True(ok)
 	ctx := context.Background()
-	id, tableName := testConfig.getIdAndTableName(mode)
+	id, tableName, expectedTableName := testConfig.getIdAndTableName(mode)
 	namespace := utils.DefaultString(testConfig.namespace, sqlAdapter.DefaultNamespace())
 	err = sqlAdapter.InitDatabase(ctx)
 	PostStep("init_database", testConfig, mode, reqr, err)
 	//clean up in case of previous test failure
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
-		_ = sqlAdapter.DropTable(ctx, namespace, tableName, true)
+		_ = sqlAdapter.DropTable(ctx, namespace, expectedTableName, true)
 		//PostStep("pre_cleanup", testConfig, mode, reqr, err)
 	}
 	//clean up after test run
 	if !testConfig.leaveResultingTable && !forceLeaveResultingTables {
 		defer func() {
-			_ = sqlAdapter.DropTable(ctx, namespace, tableName, true)
+			_ = sqlAdapter.DropTable(ctx, namespace, expectedTableName, true)
 		}()
 	}
 	stream, err := blk.CreateStream(id, tableName, mode, testConfig.streamOptions...)
@@ -565,7 +566,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	//PostStep("state_lasterror", testConfig, mode, reqr, state.LastError)
 	if testConfig.expectedTable.Columns.Len() > 0 {
 		//Check table schema
-		table, err := sqlAdapter.GetTableSchema(ctx, namespace, tableName)
+		table, err := sqlAdapter.GetTableSchema(ctx, namespace, expectedTableName)
 		PostStep("get_table", testConfig, mode, reqr, err)
 		switch testConfig.expectedTableTypeChecking {
 		case TypeCheckingDisabled:
@@ -590,45 +591,14 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				el.Value = types2.SQLColumn{Type: el.Value.Type}
 			}
 		}
-		if !testConfig.expectedTableCaseChecking {
-			newColumns := NewColumns()
-			for el := testConfig.expectedTable.Columns.Front(); el != nil; el = el.Next() {
-				newColumns.Set(strings.ToLower(el.Key), el.Value)
-			}
-			testConfig.expectedTable.Columns = newColumns
-			newColumns = NewColumns()
-			for el := table.Columns.Front(); el != nil; el = el.Next() {
-				newColumns.Set(strings.ToLower(el.Key), el.Value)
-			}
-			table.Columns = newColumns
-
-			newPKFields := types.NewOrderedSet[string]()
-			for _, k := range testConfig.expectedTable.PKFields {
-				newPKFields.Put(strings.ToLower(k))
-			}
-			testConfig.expectedTable.PKFields = newPKFields.ToSlice()
-			newPKFields = types.NewOrderedSet[string]()
-			table.PKFields.ForEach(func(k string) {
-				newPKFields.Put(strings.ToLower(k))
-			})
-			table.PKFields = newPKFields
-
-			testConfig.expectedTable.Name = strings.ToLower(testConfig.expectedTable.Name)
-			table.Name = strings.ToLower(table.Name)
-
-			table.PrimaryKeyName = strings.ToLower(table.PrimaryKeyName)
-		}
 		expectedPKFields := types.NewOrderedSet[string]()
 		if len(testConfig.expectedTable.PKFields) > 0 {
 			expectedPKFields.PutAll(testConfig.expectedTable.PKFields)
 		}
-		// don't check table name if not explicitly set
-		if testConfig.expectedTable.Name == "" {
-			table.Name = ""
-		}
+
 		table.PrimaryKeyName = ""
 		expectedTable := &Table{
-			Name:           testConfig.expectedTable.Name,
+			Name:           expectedTableName,
 			Namespace:      utils.Nvl(testConfig.expectedTable.Namespace, namespace),
 			PrimaryKeyName: "",
 			PKFields:       expectedPKFields,
@@ -637,6 +607,37 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			Partition: table.Partition,
 			// don't check this yet
 			TimestampColumn: table.TimestampColumn,
+		}
+		// don't check table name if not explicitly set
+		if testConfig.expectedTable.Name == "" {
+			table.Name = ""
+			expectedTable.Name = ""
+		}
+		if !testConfig.expectedTableCaseChecking {
+			newColumns := NewColumns()
+			for el := expectedTable.Columns.Front(); el != nil; el = el.Next() {
+				newColumns.Set(strings.ToLower(el.Key), el.Value)
+			}
+			expectedTable.Columns = newColumns
+			newColumns = NewColumns()
+			for el := table.Columns.Front(); el != nil; el = el.Next() {
+				newColumns.Set(strings.ToLower(el.Key), el.Value)
+			}
+			table.Columns = newColumns
+
+			newPKFields := types.NewOrderedSet[string]()
+			expectedTable.PKFields.ForEach(func(k string) {
+				newPKFields.Put(strings.ToLower(k))
+			})
+			expectedTable.PKFields = newPKFields
+			newPKFields = types.NewOrderedSet[string]()
+			table.PKFields.ForEach(func(k string) {
+				newPKFields.Put(strings.ToLower(k))
+			})
+			table.PKFields = newPKFields
+
+			table.Name = strings.ToLower(table.Name)
+			expectedTable.Name = strings.ToLower(expectedTable.Name)
 		}
 		actualColumns := table.Columns
 		expectedColumns := expectedTable.Columns
@@ -649,7 +650,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	if testConfig.expectedRowsCount != nil || testConfig.expectedRows != nil {
 		time.Sleep(1 * time.Second)
 		//Check rows count and rows data when provided
-		rows, err := sqlAdapter.Select(ctx, namespace, tableName, nil, testConfig.orderBy)
+		rows, err := sqlAdapter.Select(ctx, namespace, expectedTableName, nil, testConfig.orderBy)
 		PostStep("select_result", testConfig, mode, reqr, err)
 		if testConfig.expectedRows == nil {
 			reqr.Equal(testConfig.expectedRowsCount, len(rows))
@@ -694,7 +695,7 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 						t.Fatalf("test config error: expected table must have a 'name' column of string type to guess what type to expect for %s column", PartitonIdKeyword)
 					}
 				}
-				newExpectedTable := ExpectedTable{Columns: NewColumns(), PKFields: slices.Clone(testConfig.expectedTable.PKFields)}
+				newExpectedTable := ExpectedTable{Name: testConfig.expectedTable.Name, Columns: NewColumns(), PKFields: slices.Clone(testConfig.expectedTable.PKFields)}
 				newExpectedTable.Columns.Set(PartitonIdKeyword, textColumn)
 				newExpectedTable.Columns.SetAll(testConfig.expectedTable.Columns)
 				testConfig.expectedTable = newExpectedTable

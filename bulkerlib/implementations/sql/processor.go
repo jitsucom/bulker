@@ -12,7 +12,7 @@ import (
 // ProcessEvents processes events objects without applying mapping rules
 // returns table headerm array of processed objects
 // or error if at least 1 was occurred
-func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTypes, omitNils bool, stringifyObjects bool, notFlatteningKeys types2.Set[string]) (*TypesHeader, types.Object, error) {
+func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTypes, nameTransformer func(string) string, omitNils bool, stringifyObjects bool, notFlatteningKeys types2.Set[string]) (*TypesHeader, types.Object, error) {
 	sqlTypesHints, err := extractSQLTypesHints(event)
 	if err != nil {
 		return nil, nil, err
@@ -28,7 +28,7 @@ func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTy
 			notFlatteningKeys.Put(key)
 		}
 	}
-	flatObject, err := implementations.NewFlattener(omitNils, stringifyObjects).FlattenObject(event, notFlatteningKeys)
+	flatObject, err := implementations.NewFlattener(nameTransformer, omitNils, stringifyObjects).FlattenObject(event, notFlatteningKeys)
 	if err != nil {
 		return nil, nil, err
 	}

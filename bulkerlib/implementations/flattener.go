@@ -16,13 +16,20 @@ type Flattener interface {
 }
 
 type FlattenerImpl struct {
-	omitNilValues bool
+	nameTransformer func(string) string
+	omitNilValues   bool
 	// stringifyObjects objects types like JSON, array will be stringified before sent to warehouse (warehouse will parse them back)
 	stringifyObjects bool
 }
 
-func NewFlattener(omitNilValues, stringifyObjects bool) Flattener {
+func NewFlattener(nameTransformer func(string) string, omitNilValues, stringifyObjects bool) Flattener {
+	if nameTransformer == nil {
+		nameTransformer = func(s string) string {
+			return s
+		}
+	}
 	return &FlattenerImpl{
+		nameTransformer:  nameTransformer,
 		omitNilValues:    omitNilValues,
 		stringifyObjects: stringifyObjects,
 	}
@@ -64,9 +71,11 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 		return nil
 	}
 	for el := value.Front(); el != nil; el = el.Next() {
-		newKey := el.Key
+		var newKey string
 		if key != "" {
-			newKey = key + "_" + newKey
+			newKey = key + "_" + f.nameTransformer(el.Key)
+		} else {
+			newKey = f.nameTransformer(el.Key)
 		}
 		elv := el.Value
 		if elv == nil {

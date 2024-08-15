@@ -124,7 +124,7 @@ func (ps *AbstractFileStorageStream) init(ctx context.Context) error {
 
 func (ps *AbstractFileStorageStream) preprocess(object types2.Object) (types2.Object, error) {
 	if ps.flatten {
-		flatObject, err := implementations2.NewFlattener(false, false).FlattenObject(object, nil)
+		flatObject, err := implementations2.NewFlattener(nil, false, false).FlattenObject(object, nil)
 		if err != nil {
 			return nil, err
 		} else {

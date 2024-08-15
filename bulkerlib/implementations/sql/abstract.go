@@ -9,6 +9,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"strings"
 	"time"
 )
 
@@ -24,6 +25,7 @@ type AbstractSQLStream struct {
 	options           bulker.StreamOptions
 	tableName         string
 	namespace         string
+	nameTransformer   func(string) string
 	merge             bool
 	mergeWindow       int
 	omitNils          bool
@@ -48,6 +50,14 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {
 		ps.options.Add(option)
+	}
+	if bulker.ToSameCaseOption.Get(&ps.options) {
+		if p.Type() == SnowflakeBulkerTypeId {
+			ps.nameTransformer = strings.ToUpper
+		} else {
+			ps.nameTransformer = strings.ToLower
+		}
+		ps.tableName = ps.nameTransformer(tableName)
 	}
 	ps.merge = bulker.DeduplicateOption.Get(&ps.options)
 	pkColumns := bulker.PrimaryKeyOption.Get(&ps.options)
@@ -99,7 +109,7 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Obje
 			}
 		}
 	}
-	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.omitNils, ps.sqlAdapter.StringifyObjects(), notFlatteningKeys)
+	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.nameTransformer, ps.omitNils, ps.sqlAdapter.StringifyObjects(), notFlatteningKeys)
 	if err != nil {
 		return nil, nil, err
 	}

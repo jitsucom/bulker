@@ -99,6 +99,13 @@ var (
 		ParseFunc: utils.ParseString,
 	}
 
+	// ToSameCaseOption - when true all fields and tables name will be converted to the same case (lowercase for most db, uppercase for snowflake)
+	ToSameCaseOption = ImplementationOption[bool]{
+		Key:          "toSameCase",
+		DefaultValue: false,
+		ParseFunc:    utils.ParseBool,
+	}
+
 	// DiscriminatorFieldOption - array represents path to the object property. when deduplicate is true, and multiple rows has the same primary key, row with the highest value of this field will be selected
 	DiscriminatorFieldOption = ImplementationOption[[]string]{
 		Key:          "discriminatorField",
@@ -273,4 +280,8 @@ func WithSchema(schema types.Schema) StreamOption {
 
 func WithNamespace(namespace string) StreamOption {
 	return WithOption(&NamespaceOption, namespace)
+}
+
+func WithToSameCase() StreamOption {
+	return WithOption(&ToSameCaseOption, true)
 }
