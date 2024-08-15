@@ -9,13 +9,32 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 )
+
+var ids = sync.Map{}
+
+func init() {
+	ticker := time.NewTicker(1 * time.Minute)
+	go func() {
+		for range ticker.C {
+			arr := make([]string, 0)
+			ids.Range(func(key, value interface{}) bool {
+				arr = append(arr, key.(string))
+				return true
+			})
+			logging.Infof("[S2S] %s", strings.Join(arr, ","))
+		}
+	}()
+}
 
 func (r *Router) IngestHandler(c *gin.Context) {
 	domain := ""
@@ -102,6 +121,9 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	eventsLogId = stream.Stream.Id
+	if ingestType == IngestTypeS2S {
+		ids.LoadOrStore(stream.Stream.WorkspaceId+"."+eventsLogId, true)
+	}
 	//if err = r.checkOrigin(c, &loc, stream); err != nil {
 	//	r.Warnf("%v", err)
 	//}
