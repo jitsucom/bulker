@@ -67,7 +67,7 @@ func (s *ReadSideCar) Run() {
 			s.registerErr(fmt.Errorf("%v", r))
 			s.closeActiveStreams(false)
 		} else {
-			s.closeActiveStreams(!cancelled)
+			s.closeActiveStreams(!cancelled && !s.isErr())
 		}
 		if len(s.processedStreams) > 0 {
 			statusMap := types2.NewOrderedMap[string, any]()
