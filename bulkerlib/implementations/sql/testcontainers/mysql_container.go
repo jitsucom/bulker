@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/testcontainers/testcontainers-go"
 	tcWait "github.com/testcontainers/testcontainers-go/wait"
 	"os"
@@ -67,15 +68,14 @@ func NewMySQLContainer(ctx context.Context) (*MySQLContainer, error) {
 	//dbSettings["MYSQL_PASSWORD"] = mySQLPassword
 	dbSettings["MYSQL_DATABASE"] = mySQLDatabase
 
-	//exposedPort := fmt.Sprintf("%d:%d", utils.GetPort(), 3306)
+	exposedPort := fmt.Sprintf("%d:%d", utils.GetPort(), 3306)
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image: "mysql/mysql-server:8.0",
-			// TODO: enable back after fixing testcontainers
-			//ExposedPorts: []string{exposedPort},
-			Env:        dbSettings,
-			WaitingFor: tcWait.ForLog("port: 3306  MySQL Community Server - GPL").WithStartupTimeout(time.Second * 180),
+			Image:        "mysql/mysql-server:8.0",
+			ExposedPorts: []string{exposedPort},
+			Env:          dbSettings,
+			WaitingFor:   tcWait.ForLog("port: 3306  MySQL Community Server - GPL").WithStartupTimeout(time.Second * 180),
 		},
 		Started: true,
 	})

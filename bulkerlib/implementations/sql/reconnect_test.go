@@ -7,8 +7,7 @@ import (
 	"time"
 )
 
-// TODO: enable back after fixing testcontainers
-func _TestReconnect(t *testing.T) {
+func TestReconnect(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
 			name:      "reconnect_test",
@@ -132,7 +131,6 @@ func _TestReconnect(t *testing.T) {
 				"create_bulker":            "connection refused",
 				"consume_object_0":         "connection refused",
 				"consume_object_1":         "connection refused",
-				"create_stream":            "database connection is not initialized",
 				"init_database_clickhouse": "database connection is not initialized",
 			},
 			postStepFunctions: map[string]StepFunction{

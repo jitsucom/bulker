@@ -188,6 +188,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	utils.MapPutIfAbsent(config.Parameters, "dial_timeout", "60s")
 	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "60s")
 	utils.MapPutIfAbsent(config.Parameters, "date_time_input_format", "best_effort")
+	utils.MapPutIfAbsent(config.Parameters, "distributed_foreground_insert", "1")
 
 	dbConnectFunction := func(config *ClickHouseConfig) (*sql.DB, error) {
 		dsn := clickhouseDriverConnectionString(config)
