@@ -42,6 +42,8 @@ const (
 	sfCreateSchemaIfNotExistsTemplate = `CREATE SCHEMA IF NOT EXISTS %s`
 
 	sfPrimaryKeyFieldsQuery = `show primary keys in %s%s`
+
+	sfReplaceTableTemplate = `CREATE OR REPLACE TABLE %s%s CLONE %s%s`
 )
 
 var (
@@ -472,14 +474,31 @@ func (s *Snowflake) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 	}
 }
 
-func (s *Snowflake) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) error {
-	tmpTable := "deprecated_" + targetTableName + time.Now().Format("_20060102_150405")
-	err1 := s.renameTable(ctx, true, replacementTable.Namespace, targetTableName, tmpTable)
-	err := s.renameTable(ctx, false, replacementTable.Namespace, replacementTable.Name, targetTableName)
-	if dropOldTable && err1 == nil && err == nil {
-		return s.DropTable(ctx, replacementTable.Namespace, tmpTable, true)
+func (b *SQLAdapterBase[T]) replaceTable(ctx context.Context, namespace, targetTable, sourceTable string) error {
+	quotedTargetTableName := b.quotedTableName(targetTable)
+	quotedSourceTableName := b.quotedTableName(sourceTable)
+	quotedSchema := b.namespacePrefix(namespace)
+	query := fmt.Sprintf(sfReplaceTableTemplate, quotedSchema, quotedTargetTableName, quotedSchema, quotedSourceTableName)
+
+	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
+		return errorj.RenameError.Wrap(err, "failed to replace table").
+			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
+				Table:     quotedTargetTableName,
+				Statement: query,
+			})
 	}
+
 	return nil
+}
+
+func (s *Snowflake) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
+	err = s.replaceTable(ctx, replacementTable.Namespace, targetTableName, replacementTable.Name)
+	if dropOldTable && err == nil {
+		return s.DropTable(ctx, replacementTable.Namespace, replacementTable.Name, true)
+	} else if err != nil {
+		return err
+	}
+	return
 }
 
 // columnDDLsfColumnDDL returns column DDL (column name, mapped sql type)
