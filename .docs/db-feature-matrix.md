@@ -313,8 +313,7 @@ Algorithm:
 - Load tmp file to `stage`
 - `BEGIN TRANSACTION`
 - `COPY from stage to tmp_table`
-- `RENAME target_table to deprecated_target_table_20060101_150405`
-- `RENAME tmp_table to target_table`
+- `CREATE OR REPLACE TABLE target_table CLONE tmp_table`
 - `DROP TABLE deprecated_target_table_20060101_150405`
 - `COMMIT`
 
