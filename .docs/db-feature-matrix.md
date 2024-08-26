@@ -314,7 +314,7 @@ Algorithm:
 - `BEGIN TRANSACTION`
 - `COPY from stage to tmp_table`
 - `CREATE OR REPLACE TABLE target_table CLONE tmp_table`
-- `DROP TABLE deprecated_target_table_20060101_150405`
+- `DROP TABLE tmp_table`
 - `COMMIT`
 
 ### Snowflake Replace Partition
