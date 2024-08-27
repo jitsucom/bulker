@@ -158,6 +158,7 @@ func init() {
 	RegisterOption(&TimestampOption)
 	RegisterOption(&SchemaOption)
 	RegisterOption(&NamespaceOption)
+	RegisterOption(&ToSameCaseOption)
 
 	dummyParse := func(_ any) (any, error) { return nil, nil }
 	for _, ignoredOption := range ignoredOptions {
