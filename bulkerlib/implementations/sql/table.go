@@ -121,6 +121,9 @@ func (t *Table) CleanClone() *Table {
 }
 
 func (t *Table) CloneIfNeeded() *Table {
+	if t == nil {
+		return nil
+	}
 	if t.Cached {
 		return t
 	}
@@ -128,10 +131,16 @@ func (t *Table) CloneIfNeeded() *Table {
 }
 
 func (t *Table) WithoutColumns() *Table {
+	if t == nil {
+		return nil
+	}
 	return t.clone(true)
 }
 
 func (t *Table) Clone() *Table {
+	if t == nil {
+		return nil
+	}
 	return t.clone(false)
 }
 
