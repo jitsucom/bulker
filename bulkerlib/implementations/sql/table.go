@@ -127,18 +127,28 @@ func (t *Table) CloneIfNeeded() *Table {
 	return t.Clone()
 }
 
-// Clone returns clone of current table
+func (t *Table) WithoutColumns() *Table {
+	return t.clone(true)
+}
+
 func (t *Table) Clone() *Table {
+	return t.clone(false)
+}
+
+// Clone returns clone of current table
+func (t *Table) clone(omitColumns bool) *Table {
 	clonedColumns := NewColumns()
-	for el := t.Columns.Front(); el != nil; el = el.Next() {
-		v := el.Value
-		clonedColumns.Set(el.Key, types.SQLColumn{
-			Type:     v.Type,
-			DdlType:  v.DdlType,
-			DataType: v.DataType,
-			New:      v.New,
-			Override: v.Override,
-		})
+	if !omitColumns {
+		for el := t.Columns.Front(); el != nil; el = el.Next() {
+			v := el.Value
+			clonedColumns.Set(el.Key, types.SQLColumn{
+				Type:     v.Type,
+				DdlType:  v.DdlType,
+				DataType: v.DataType,
+				New:      v.New,
+				Override: v.Override,
+			})
+		}
 	}
 
 	clonedPkFields := t.PKFields.Clone()

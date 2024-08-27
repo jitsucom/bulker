@@ -54,6 +54,12 @@ var (
 		ParseFunc:    utils.ParseBool,
 	}
 
+	MaxColumnsCount = bulker.ImplementationOption[int]{
+		Key:          "maxColumnsCount",
+		DefaultValue: 10000,
+		ParseFunc:    utils.ParseInt,
+	}
+
 	localBatchFileOption = bulker.ImplementationOption[string]{Key: "BULKER_OPTION_LOCAL_BATCH_FILE"}
 
 	s3BatchFileOption = bulker.ImplementationOption[*S3OptionConfig]{Key: "BULKER_OPTION_S3_BATCH_FILE"}
@@ -64,6 +70,7 @@ func init() {
 	bulker.RegisterOption(&ColumnTypesOption)
 	bulker.RegisterOption(&OmitNilsOption)
 	bulker.RegisterOption(&SchemaFreezeOption)
+	bulker.RegisterOption(&MaxColumnsCount)
 
 }
 
@@ -85,6 +92,10 @@ func WithoutOmitNils() bulker.StreamOption {
 
 func WithSchemaFreeze() bulker.StreamOption {
 	return bulker.WithOption(&SchemaFreezeOption, true)
+}
+
+func WithMaxColumnsCount(maxColumnsCount int) bulker.StreamOption {
+	return bulker.WithOption(&MaxColumnsCount, maxColumnsCount)
 }
 
 func WithDeduplicateWindow(deduplicateWindow int) bulker.StreamOption {

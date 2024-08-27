@@ -30,6 +30,7 @@ type AbstractSQLStream struct {
 	mergeWindow       int
 	omitNils          bool
 	schemaFreeze      bool
+	maxColumnsCount   int
 	schemaOptions     types.Schema
 	schemaFromOptions *Table
 
@@ -82,6 +83,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	}
 	ps.omitNils = OmitNilsOption.Get(&ps.options)
 	ps.schemaFreeze = SchemaFreezeOption.Get(&ps.options)
+	ps.maxColumnsCount = MaxColumnsCount.Get(&ps.options)
 
 	schema := bulker.SchemaOption.Get(&ps.options)
 	if !schema.IsEmpty() {
@@ -176,21 +178,21 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 		newCol := el.Value
 		var existingCol types.SQLColumn
 		ok := false
-		if existingTable != nil && existingTable.Columns != nil {
+		if existingTable.Exists() {
 			existingCol, ok = existingTable.Columns.Get(name)
 		}
 		if !ok {
-			if ps.schemaFreeze {
-				// when schemaFreeze=true all new columns values go to _unmapped_data
-				v, ok := values.Get(name)
-				if ok {
-					unmappedObj[name] = v
-				}
-				current.Delete(name)
-				values.Delete(name)
-			} else {
-				existingCol, ok = current.Get(name)
-				if !ok {
+			existingCol, ok = current.Get(name)
+			if !ok {
+				if ps.schemaFreeze || current.Len() >= ps.maxColumnsCount {
+					// when schemaFreeze=true all new columns values go to _unmapped_data
+					v, ok := values.Get(name)
+					if ok {
+						unmappedObj[name] = v
+					}
+					values.Delete(name)
+					continue
+				} else {
 					// column doesn't exist in database and in current batch - adding as New
 					if !newCol.Override && !newCol.Important {
 						newCol.New = true
