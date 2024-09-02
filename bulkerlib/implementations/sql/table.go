@@ -94,6 +94,9 @@ func (t *Table) MappedColumnNames(f func(string) string) []string {
 
 // CleanClone returns clone of current table w/o 'New' or 'Override' flags
 func (t *Table) CleanClone() *Table {
+	if t == nil {
+		return nil
+	}
 	clonedColumns := NewColumns()
 	for el := t.Columns.Front(); el != nil; el = el.Next() {
 		v := el.Value

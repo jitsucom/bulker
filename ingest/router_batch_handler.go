@@ -18,6 +18,8 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	var rError *appbase.RouterError
 	var payload BatchPayload
 	domain := "BATCH"
+	var s2sEndpoint bool
+
 	defer func() {
 		if rError != nil {
 			IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
@@ -46,13 +48,11 @@ func (r *Router) BatchHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing message", false, err, true)
 		return
 	}
-	var ingestType IngestType
 	if c.FullPath() == "/api/s/s2s/batch" {
-		ingestType = IngestTypeS2S
-	} else {
-		ingestType = IngestTypeWriteKeyDefined
+		// may still be overridden by write key type
+		s2sEndpoint = true
 	}
-	loc, err := r.getDataLocator(c, ingestType, func() string { return payload.WriteKey })
+	loc, err := r.getDataLocator(c, IngestTypeWriteKeyDefined, func() string { return payload.WriteKey })
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusBadRequest, "error processing message", false, err, true)
 		return
@@ -60,11 +60,13 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
 	c.Set(appbase.ContextDomain, domain)
 
-	stream := r.getStream(&loc)
+	stream := r.getStream(&loc, true, s2sEndpoint)
 	if stream == nil {
 		rError = r.ResponseError(c, http.StatusUnauthorized, "stream not found", false, fmt.Errorf("for: %+v", loc), true)
 		return
 	}
+	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S
+
 	eventsLogId := stream.Stream.Id
 	//if err = r.checkOrigin(c, &loc, stream); err != nil {
 	//	r.Warnf("[batch] %v", err)
