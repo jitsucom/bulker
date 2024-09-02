@@ -157,6 +157,7 @@ type StreamConfig struct {
 	Name                        string   `json:"name"`
 	Domains                     []string `json:"domains"`
 	AuthorizedJavaScriptDomains string   `json:"authorizedJavaScriptDomains"`
+	Strict                      bool     `json:"strict"`
 	PublicKeys                  []ApiKey `json:"publicKeys"`
 	PrivateKeys                 []ApiKey `json:"privateKeys"`
 }

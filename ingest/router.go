@@ -504,19 +504,21 @@ type IngestMessage struct {
 	HttpPayload    types.Json          `json:"httpPayload"`
 }
 
-type StreamLocator func(loc *StreamCredentials) *StreamWithDestinations
+type StreamLocator func(loc *StreamCredentials, s2sEndpoint bool) *StreamWithDestinations
 
-func (r *Router) getStream(loc *StreamCredentials) *StreamWithDestinations {
+func (r *Router) getStream(loc *StreamCredentials, strict, s2sEndpoint bool) *StreamWithDestinations {
 	var locators []StreamLocator
-	if loc.IngestType == IngestTypeWriteKeyDefined {
+	if strict {
 		locators = []StreamLocator{r.WriteKeyStreamLocator}
+	} else if loc.IngestType == IngestTypeWriteKeyDefined {
+		locators = []StreamLocator{r.WriteKeyStreamLocator, r.SlugStreamLocator, r.AmbiguousDomainStreamLocator, r.SoleStreamLocator}
 	} else if loc.IngestType == IngestTypeS2S {
 		locators = []StreamLocator{r.WriteKeyStreamLocator, r.SlugStreamLocator, r.AmbiguousDomainStreamLocator}
 	} else {
 		locators = []StreamLocator{r.SlugStreamLocator, r.DomainStreamLocator, r.WriteKeyStreamLocator, r.SoleStreamLocator}
 	}
 	for _, locator := range locators {
-		stream := locator(loc)
+		stream := locator(loc, s2sEndpoint)
 		if stream != nil {
 			return stream
 		}
@@ -545,7 +547,7 @@ func (r *Router) checkOrigin(c *gin.Context, loc *StreamCredentials, stream *Str
 	return nil
 }
 
-func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials) *StreamWithDestinations {
+func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials, _ bool) *StreamWithDestinations {
 	if loc.WriteKey != "" {
 		parts := strings.Split(loc.WriteKey, ":")
 		if len(parts) == 1 {
@@ -570,39 +572,60 @@ func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials) *StreamWithDestin
 	return nil
 }
 
-func (r *Router) SlugStreamLocator(loc *StreamCredentials) *StreamWithDestinations {
+func (r *Router) SlugStreamLocator(loc *StreamCredentials, s2sEndpoint bool) *StreamWithDestinations {
 	if loc.Slug != "" {
-		return r.repository.GetData().GetStreamById(loc.Slug)
+		stream := r.repository.GetData().GetStreamById(loc.Slug)
+		if !stream.Stream.Strict {
+			loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
+			return stream
+		}
 	}
 	return nil
 }
 
-func (r *Router) DomainStreamLocator(loc *StreamCredentials) *StreamWithDestinations {
+func (r *Router) DomainStreamLocator(loc *StreamCredentials, s2sEndpoint bool) *StreamWithDestinations {
 	if loc.Domain != "" {
 		streams := r.repository.GetData().GetStreamsByDomain(loc.Domain)
 		if len(streams) == 1 {
-			return streams[0]
+			stream := streams[0]
+			if !stream.Stream.Strict {
+				loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
+				return stream
+			}
 		} else if loc.WriteKey == "" && len(streams) > 1 {
-			return streams[0]
+			stream := streams[0]
+			if !stream.Stream.Strict {
+				loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
+				return stream
+			}
 		}
 	}
 	return nil
 }
 
-func (r *Router) AmbiguousDomainStreamLocator(loc *StreamCredentials) *StreamWithDestinations {
+func (r *Router) AmbiguousDomainStreamLocator(loc *StreamCredentials, s2sEndpoint bool) *StreamWithDestinations {
 	if loc.Domain != "" {
 		streams := r.repository.GetData().GetStreamsByDomain(loc.Domain)
 		if len(streams) > 0 {
-			return streams[0]
+			for _, stream := range streams {
+				if !stream.Stream.Strict {
+					loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
+					return stream
+				}
+			}
 		}
 	}
 	return nil
 }
 
-func (r *Router) SoleStreamLocator(_ *StreamCredentials) *StreamWithDestinations {
+func (r *Router) SoleStreamLocator(loc *StreamCredentials, s2sEndpoint bool) *StreamWithDestinations {
 	streams := r.repository.GetData().GetStreams()
 	if len(streams) == 1 {
-		return streams[0]
+		stream := streams[0]
+		if !stream.Stream.Strict {
+			loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
+			return stream
+		}
 	}
 	return nil
 }

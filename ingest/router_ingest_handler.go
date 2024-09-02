@@ -9,43 +9,41 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
-	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"io"
 	"net/http"
 	"strings"
-	"sync"
-	"time"
 )
 
-var ids = sync.Map{}
-
-func init() {
-	ticker := time.NewTicker(1 * time.Minute)
-	go func() {
-		for range ticker.C {
-			arr := make([]string, 0)
-			ids.Range(func(key, value interface{}) bool {
-				arr = append(arr, key.(string))
-				return true
-			})
-			logging.Infof("[S2S] %s", strings.Join(arr, ","))
-		}
-	}()
-}
+//var ids = sync.Map{}
+//
+//func init() {
+//	ticker := time.NewTicker(1 * time.Minute)
+//	go func() {
+//		for range ticker.C {
+//			arr := make([]string, 0)
+//			ids.Range(func(key, value interface{}) bool {
+//				arr = append(arr, key.(string))
+//				return true
+//			})
+//			logging.Infof("[S2S] %s", strings.Join(arr, ","))
+//		}
+//	}()
+//}
 
 func (r *Router) IngestHandler(c *gin.Context) {
 	domain := ""
 	// TODO: use workspaceId as default for all stream identification errors
 	var eventsLogId string
-	var ingestType IngestType
 	var rError *appbase.RouterError
 	var body []byte
 	var ingestMessageBytes []byte
 	var asyncDestinations []string
 	var tagsDestinations []string
+	ingestType := IngestTypeWriteKeyDefined
+	var s2s bool
 
 	defer func() {
 		if len(ingestMessageBytes) == 0 {
@@ -82,21 +80,20 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	if c.FullPath() == "/api/s/s2s/:tp" {
-		ingestType = IngestTypeS2S
-	} else {
-		ingestType = IngestTypeBrowser
+		// may still be overridden by write key type
+		s2s = true
 	}
 	tp := c.Param("tp")
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
-		rError = r.ResponseError(c, utils.Ternary(ingestType == IngestTypeS2S, http.StatusBadRequest, http.StatusOK), "error reading HTTP body", false, err, true)
+		rError = r.ResponseError(c, utils.Ternary(s2s, http.StatusBadRequest, http.StatusOK), "error reading HTTP body", false, err, true)
 		return
 	}
 	var message types.Json
 	err = jsonorder.Unmarshal(body, &message)
 	if err != nil {
-		rError = r.ResponseError(c, utils.Ternary(ingestType == IngestTypeS2S, http.StatusBadRequest, http.StatusOK), "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
+		rError = r.ResponseError(c, utils.Ternary(s2s, http.StatusBadRequest, http.StatusOK), "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
 		return
 	}
 	messageId := message.GetS("messageId")
@@ -109,30 +106,30 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	//func() string { wk, _ := message["writeKey"].(string); return wk }
 	loc, err := r.getDataLocator(c, ingestType, nil)
 	if err != nil {
-		rError = r.ResponseError(c, utils.Ternary(ingestType == IngestTypeS2S, http.StatusBadRequest, http.StatusOK), "error processing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
+		rError = r.ResponseError(c, utils.Ternary(s2s, http.StatusBadRequest, http.StatusOK), "error processing message", false, fmt.Errorf("%v: %s", err, string(body)), true)
 		return
 	}
+
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
 	c.Set(appbase.ContextDomain, domain)
 
-	stream := r.getStream(&loc)
+	stream := r.getStream(&loc, false, s2s)
 	if stream == nil {
-		rError = r.ResponseError(c, utils.Ternary(ingestType == IngestTypeS2S, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %+v", loc), true)
+		rError = r.ResponseError(c, utils.Ternary(s2s, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %+v", loc), true)
 		return
 	}
+	s2s = s2s || loc.IngestType == IngestTypeS2S
+
 	eventsLogId = stream.Stream.Id
-	if ingestType == IngestTypeS2S {
-		ids.LoadOrStore(stream.Stream.WorkspaceId+"."+eventsLogId, true)
-	}
 	//if err = r.checkOrigin(c, &loc, stream); err != nil {
 	//	r.Warnf("%v", err)
 	//}
 	ingestMessage, ingestMessageBytes, err := r.buildIngestMessage(c, messageId, message, nil, tp, loc, stream)
 	if err != nil {
-		rError = r.ResponseError(c, utils.Ternary(ingestType == IngestTypeS2S, http.StatusBadRequest, http.StatusOK), "event error", false, err, true)
+		rError = r.ResponseError(c, utils.Ternary(s2s, http.StatusBadRequest, http.StatusOK), "event error", false, err, true)
 		return
 	}
-	if len(stream.AsynchronousDestinations) == 0 && (len(stream.SynchronousDestinations) == 0 || ingestType == IngestTypeS2S) {
+	if len(stream.AsynchronousDestinations) == 0 && (len(stream.SynchronousDestinations) == 0 || s2s) {
 		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true)
 		return
 	}
@@ -140,7 +137,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	if rError != nil {
 		return
 	}
-	if len(tagsDestinations) == 0 || ingestType == IngestTypeS2S {
+	if len(tagsDestinations) == 0 || s2s {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
