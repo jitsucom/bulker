@@ -593,10 +593,11 @@ func (r *Router) DomainStreamLocator(loc *StreamCredentials, s2sEndpoint bool) *
 				return stream
 			}
 		} else if loc.WriteKey == "" && len(streams) > 1 {
-			stream := streams[0]
-			if !stream.Stream.Strict {
-				loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
-				return stream
+			for _, stream := range streams {
+				if !stream.Stream.Strict {
+					loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
+					return stream
+				}
 			}
 		}
 	}

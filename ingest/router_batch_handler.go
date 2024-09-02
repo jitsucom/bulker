@@ -18,7 +18,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	var rError *appbase.RouterError
 	var payload BatchPayload
 	domain := "BATCH"
-	var s2s bool
+	var s2sEndpoint bool
 
 	defer func() {
 		if rError != nil {
@@ -50,7 +50,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	}
 	if c.FullPath() == "/api/s/s2s/batch" {
 		// may still be overridden by write key type
-		s2s = true
+		s2sEndpoint = true
 	}
 	loc, err := r.getDataLocator(c, IngestTypeWriteKeyDefined, func() string { return payload.WriteKey })
 	if err != nil {
@@ -60,11 +60,13 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
 	c.Set(appbase.ContextDomain, domain)
 
-	stream := r.getStream(&loc, true, s2s)
+	stream := r.getStream(&loc, true, s2sEndpoint)
 	if stream == nil {
 		rError = r.ResponseError(c, http.StatusUnauthorized, "stream not found", false, fmt.Errorf("for: %+v", loc), true)
 		return
 	}
+	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S
+
 	eventsLogId := stream.Stream.Id
 	//if err = r.checkOrigin(c, &loc, stream); err != nil {
 	//	r.Warnf("[batch] %v", err)
