@@ -20,6 +20,7 @@ type TaskDescriptor struct {
 	ToSameCase      string `json:"sameCase"`
 	TableNamePrefix string `json:"tableNamePrefix"`
 	FullSync        string `json:"fullSync"`
+	Debug           string `json:"debug"`
 	StartedBy       string `json:"startedBy"`
 	StartedAt       string `json:"startedAt"`
 }

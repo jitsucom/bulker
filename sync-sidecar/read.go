@@ -194,6 +194,16 @@ func (s *ReadSideCar) Run() {
 					}
 				}
 				s.sourceLog(row.Log.Level, row.Log.Message)
+			case DebugType:
+				message := row.Message
+				if row.Data != nil {
+					jsonData, _ := jsonorder.Marshal(row.Data)
+					sData := string(jsonData)
+					if sData != "" && sData != "{}" {
+						message = fmt.Sprintf("%s: %s", message, sData)
+					}
+				}
+				s.sourceLog("DEBUG", message)
 			case StateType:
 				if s.lastStateMessage != lineStr {
 					s.processState(row.State)
@@ -206,7 +216,7 @@ func (s *ReadSideCar) Run() {
 			case ControlType:
 				s.sourceLog("WARN", "Control messages are not supported and ignored: %s", lineStr)
 			default:
-				s.panic("not supported Airbyte message type: %s", row.Type)
+				s.panic("not supported Airbyte message type: %s: %s", row.Type, lineStr)
 			}
 		}
 		if err := scanner.Err(); err != nil && !s.cancelled.Load() {

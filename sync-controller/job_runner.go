@@ -510,13 +510,14 @@ func (j *JobRunner) TerminatePod(podName string) {
 
 func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration *TaskConfiguration) *v1.Pod {
 	var command string
+	debug := utils.Ternary(task.Debug == "true", "--debug ", "")
 	switch task.TaskType {
 	case "check":
 		command = "check --config /config/config.json"
 	case "discover":
 		command = "discover --config /config/config.json"
 	case "read":
-		command = "read --config /config/config.json --catalog /config/catalog.json --state /config/state.json"
+		command = "read " + debug + "--config /config/config.json --catalog /config/catalog.json --state /config/state.json"
 	case "spec":
 		command = "spec"
 	}

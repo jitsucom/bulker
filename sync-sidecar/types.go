@@ -13,6 +13,7 @@ const (
 	StateType            = "STATE"
 	RecordType           = "RECORD"
 	TraceType            = "TRACE"
+	DebugType            = "DEBUG"
 	CatalogType          = "CATALOG"
 	ControlType          = "CONTROL"
 	SpecType             = "SPEC"
@@ -28,6 +29,9 @@ type Row struct {
 	Trace            *TraceRow                       `json:"trace,omitempty"`
 	Catalog          *types2.OrderedMap[string, any] `json:"catalog,omitempty"`
 	Spec             *types2.OrderedMap[string, any] `json:"spec,omitempty"`
+	// From DEBUG type
+	Message string `json:"message,omitempty"`
+	Data    any    `json:"data,omitempty"`
 }
 
 // LogRow is a dto for airbyte logs serialization
