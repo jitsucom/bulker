@@ -575,7 +575,7 @@ func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials, _ bool) *StreamWi
 func (r *Router) SlugStreamLocator(loc *StreamCredentials, s2sEndpoint bool) *StreamWithDestinations {
 	if loc.Slug != "" {
 		stream := r.repository.GetData().GetStreamById(loc.Slug)
-		if !stream.Stream.Strict {
+		if stream != nil && !stream.Stream.Strict {
 			loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
 			return stream
 		}
