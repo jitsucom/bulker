@@ -121,6 +121,29 @@ func (m *OrderedMap[K, V]) Set(key K, value V) bool {
 	return true
 }
 
+func (m *OrderedMap[K, V]) SetPath(path K, value V) {
+	p := strings.Split(any(path).(string), ".")
+	obj := m
+	for i, key := range p {
+		if i == len(p)-1 {
+			obj.Set(any(key).(K), value)
+			return
+		}
+		var ok bool
+		o, ok := obj.Get(any(key).(K))
+		if !ok {
+			newObj := NewOrderedMap[K, V]()
+			obj.Set(any(key).(K), any(newObj).(V))
+			obj = newObj
+			continue
+		}
+		obj, ok = any(o).(*OrderedMap[K, V])
+		if !ok {
+			return
+		}
+	}
+}
+
 // SetIfAbsent sets a value for a key only if the key does not already exist in the map.
 // It returns true if the value was set successfully, or false if the key already exists.
 func (m *OrderedMap[K, V]) SetIfAbsent(key K, value V) bool {

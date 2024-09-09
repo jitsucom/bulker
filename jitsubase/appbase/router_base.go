@@ -17,6 +17,14 @@ const ContextLoggerName = "contextLogger"
 const ContextDomain = "contextDomain"
 const ContextMessageId = "contextMessageId"
 
+var EmptyGif = []byte{
+	0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00,
+	0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x21,
+	0xF9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2C, 0x00, 0x00,
+	0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44,
+	0x01, 0x00, 0x3B,
+}
+
 var IsHexRegex = regexp.MustCompile(`^[a-fA-F0-9]+$`)
 
 type Router struct {
@@ -140,7 +148,12 @@ func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskE
 	logFormat := utils.JoinNonEmptyStrings(" ", builder.String(), "%v")
 	r.Errorf(logFormat, err)
 	if sendResponse {
-		c.JSON(code, gin.H{"error": routerError.PublicError.Error()})
+		if c.FullPath() == "/api/px/:tp" {
+			c.Header("X-Jitsu-Error", routerError.PublicError.Error())
+			c.Data(http.StatusOK, "image/gif", EmptyGif)
+		} else {
+			c.JSON(code, gin.H{"error": routerError.PublicError.Error()})
+		}
 	}
 	return &routerError
 }

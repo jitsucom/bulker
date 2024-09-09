@@ -89,6 +89,7 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 		"/batch",
 		"/api/s/s2s/batch",
 		"/api/s/:tp",
+		"/api/px/:tp",
 		"/api/s/s2s/:tp",
 	})
 
@@ -142,6 +143,7 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/s2s/batch", router.BatchHandler)
 
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/:tp", router.IngestHandler)
+	fast.Match([]string{"OPTIONS", "GET"}, "/api/px/:tp", router.PixelHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/s2s/:tp", router.IngestHandler)
 
 	fast.Match([]string{"GET", "HEAD", "OPTIONS"}, "/p.js", router.ScriptHandler)
