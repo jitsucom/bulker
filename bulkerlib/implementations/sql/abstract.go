@@ -108,7 +108,9 @@ func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Obje
 	if !ps.schemaOptions.IsEmpty() {
 		notFlatteningKeys = types2.NewSet[string]()
 		for _, field := range ps.schemaOptions.Fields {
-			notFlatteningKeys.Put(field.Name)
+			if field.Type == types.JSON {
+				notFlatteningKeys.Put(field.Name)
+			}
 		}
 	}
 	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.nameTransformer, ps.omitNils, ps.sqlAdapter.StringifyObjects(), notFlatteningKeys)
