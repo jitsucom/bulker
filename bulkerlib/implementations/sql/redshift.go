@@ -53,7 +53,7 @@ var (
 		types2.FLOAT64:   {"double precision"},
 		types2.TIMESTAMP: {"timestamp with time zone", "timestamp", "timestamp without time zone"},
 		types2.BOOL:      {"boolean"},
-		types2.JSON:      {"character varying(65535)"},
+		types2.JSON:      {"super"},
 		types2.UNKNOWN:   {"character varying(65535)"},
 	}
 )
@@ -85,11 +85,21 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err != nil {
 		return nil, err
 	}
+	typecastFunc := func(placeholder string, column types2.SQLColumn) string {
+		if column.DataType == types2.JSON || column.Type == "super" {
+			return fmt.Sprintf("JSON_PARSE(%s)", placeholder)
+		}
+		if column.Override {
+			return placeholder + "::" + column.Type
+		}
+		return placeholder
+	}
 	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: &config.S3OptionConfig}
 	r.batchFileFormat = types2.FileFormatCSV
 	r.batchFileCompression = types2.FileCompressionGZIP
 	r._columnDDLFunc = redshiftColumnDDL
-	r.typesMapping, r.reverseTypesMapping = InitTypes(redshiftTypes, false)
+	r.typecastFunc = typecastFunc
+	r.typesMapping, r.reverseTypesMapping = InitTypes(redshiftTypes, true)
 	r.tableHelper = NewTableHelper(127, '"')
 	r.temporaryTables = true
 	r.renameToSchemaless = true

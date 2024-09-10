@@ -158,7 +158,7 @@ func (cm *CSVMarshaller) Marshal(object ...Object) error {
 			v := obj.GetN(field)
 			strValue := ""
 			if v == nil {
-				strValue = "\\N"
+				strValue = ""
 			} else {
 				switch v := v.(type) {
 				case string:
