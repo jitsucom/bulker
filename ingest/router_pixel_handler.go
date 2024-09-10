@@ -71,7 +71,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 	c.Header("Expires", "0")
 	c.Set(appbase.ContextLoggerName, "ingest")
 	tp := c.Param("tp")
-	message, err := r.parsePixelEvent(c)
+	message, err := r.parsePixelEvent(c, tp)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, err, true)
 		return
@@ -120,7 +120,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 }
 
 // parseEvent parses event from query parameters (dataField and json paths)
-func (r *Router) parsePixelEvent(c *gin.Context) (event types.Json, err error) {
+func (r *Router) parsePixelEvent(c *gin.Context, tp string) (event types.Json, err error) {
 	parameters := c.Request.URL.Query()
 	event = types.NewJson()
 
@@ -149,12 +149,12 @@ func (r *Router) parsePixelEvent(c *gin.Context) (event types.Json, err error) {
 	}
 	processHeadersFlag := parameters.Get(processHeaders)
 	if utils.IsTruish(processHeadersFlag) {
-		processHeadersData(c, event)
+		processHeadersData(c, event, tp)
 	}
 	return event, nil
 }
 
-func processHeadersData(c *gin.Context, event types.Json) {
+func processHeadersData(c *gin.Context, event types.Json, tp string) {
 	anonymousId := event.GetS("anonymousId")
 	if anonymousId == "" {
 		var err error
@@ -241,6 +241,20 @@ func processHeadersData(c *gin.Context, event types.Json) {
 			page.SetIfAbsent("host", r.Host)
 			if page.Len() > 0 {
 				ctx.Set("page", page)
+			}
+			if tp == "page" || tp == "p" {
+				var properties types.Json
+				o, ok = ctx.Get("properties")
+				if ok {
+					properties, _ = o.(types.Json)
+				}
+				if properties == nil {
+					properties = types.NewJson()
+				}
+				properties.SetIfAbsent("url", referer)
+				properties.SetIfAbsent("path", r.Path)
+				properties.SetIfAbsent("search", r.RawQuery)
+				event.Set("properties", properties)
 			}
 		}
 	}
