@@ -208,7 +208,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 		if existingCol.DataType == newCol.DataType {
 			continue
 		}
-		if newCol.Override || newCol.Important {
+		if (newCol.Override || newCol.Important) && existingCol.New {
 			//if column sql type is overridden by user - leave it this way
 			current.Set(name, newCol)
 			continue
