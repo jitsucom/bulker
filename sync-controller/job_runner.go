@@ -315,8 +315,8 @@ func (j *JobRunner) createSecret(podName string, task TaskDescriptor, configurat
 			Labels:    map[string]string{k8sCreatorLabel: k8sCreatorLabelValue},
 			Namespace: j.namespace,
 		},
-		Immutable:  &trueVar,
-		StringData: configuration.ToMap(),
+		Immutable: &trueVar,
+		Data:      configuration.ToMap(),
 	}
 	return cm
 }
@@ -383,12 +383,12 @@ func (j *JobRunner) createCronJob(jobId string, task TaskDescriptor, configurati
 	}
 	initCommand := []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr"}
 	if !configuration.IsEmpty() {
-		initCommand = []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; cp /configmap/* /config/"}
+		initCommand = []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; cp /configmap/* /config/; gunzip /config/*.gz"}
 		items := []v1.KeyToPath{}
-		for k := range configuration.ToMap() {
+		for _, k := range configuration.Keys() {
 			items = append(items, v1.KeyToPath{
 				Key:  k,
-				Path: k + ".json",
+				Path: k + ".json.gz",
 			})
 		}
 		volumes = append(volumes, v1.Volume{
@@ -581,12 +581,12 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	}
 	initCommand := []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr"}
 	if !configuration.IsEmpty() {
-		initCommand = []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; cp /configmap/* /config/"}
+		initCommand = []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; cp /configmap/* /config/; gunzip /config/*.gz"}
 		items := []v1.KeyToPath{}
-		for k := range configuration.ToMap() {
+		for _, k := range configuration.Keys() {
 			items = append(items, v1.KeyToPath{
 				Key:  k,
-				Path: k + ".json",
+				Path: k + ".json.gz",
 			})
 		}
 		volumes = append(volumes, v1.Volume{

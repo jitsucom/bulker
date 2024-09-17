@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/mitchellh/mapstructure"
@@ -79,26 +81,52 @@ func (t *TaskConfiguration) IsEmpty() bool {
 	return t == nil || (t.Config == nil && t.Catalog == nil && t.State == nil)
 }
 
-func (t *TaskConfiguration) ToMap() map[string]string {
+func gzipJson(json any) []byte {
+	var gzipBuffer bytes.Buffer
+	gzipWriter, _ := gzip.NewWriterLevel(&gzipBuffer, gzip.BestCompression)
+	encoder := jsonorder.NewEncoder(gzipWriter)
+	_ = encoder.Encode(json)
+	_ = gzipWriter.Close()
+	gzippedData := gzipBuffer.Bytes()
+	return gzippedData
+}
+
+func (t *TaskConfiguration) Keys() []string {
 	if t == nil {
 		return nil
 	}
-	m := map[string]string{}
+	m := make([]string, 0)
 	if t.Config != nil {
-		config, _ := jsonorder.Marshal(t.Config)
-		m["config"] = string(config)
+		m = append(m, "config")
 	}
 	if t.Catalog != nil {
-		catalog, _ := jsonorder.Marshal(t.Catalog)
-		m["catalog"] = string(catalog)
+		m = append(m, "catalog")
 	}
 	if t.State != nil {
-		state, _ := jsonorder.Marshal(t.State)
-		m["state"] = string(state)
+		m = append(m, "state")
 	}
 	if t.DestinationConfig != nil {
-		destinationConfig, _ := jsonorder.Marshal(t.DestinationConfig)
-		m["destinationConfig"] = string(destinationConfig)
+		m = append(m, "destinationConfig")
+	}
+	return m
+}
+
+func (t *TaskConfiguration) ToMap() map[string][]byte {
+	if t == nil {
+		return nil
+	}
+	m := map[string][]byte{}
+	if t.Config != nil {
+		m["config"] = gzipJson(t.Config)
+	}
+	if t.Catalog != nil {
+		m["catalog"] = gzipJson(t.Catalog)
+	}
+	if t.State != nil {
+		m["state"] = gzipJson(t.State)
+	}
+	if t.DestinationConfig != nil {
+		m["destinationConfig"] = gzipJson(t.DestinationConfig)
 	}
 	return m
 }
