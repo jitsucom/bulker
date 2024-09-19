@@ -725,7 +725,8 @@ func TestTransactionalJSONnString(t *testing.T) {
 			tableName: "transactional_json_string_test",
 			modes:     []bulker.BulkMode{bulker.Batch},
 			dataFile:  "test_data/empty.ndjson",
-			configIds: allBulkerConfigs,
+			// TODO: BQ currently doesn't support enforcing STRING type for objects
+			configIds: utils.ArrayExcluding(allBulkerConfigs, BigqueryBulkerTypeId),
 		},
 		{
 			name:                "added_columns_first_run",
@@ -747,7 +748,7 @@ func TestTransactionalJSONnString(t *testing.T) {
 					{Name: "array1", Type: types2.STRING},
 				},
 			})},
-			configIds: allBulkerConfigs,
+			configIds: utils.ArrayExcluding(allBulkerConfigs, BigqueryBulkerTypeId),
 		},
 		{
 			name:                "added_columns_second_run",
@@ -769,7 +770,7 @@ func TestTransactionalJSONnString(t *testing.T) {
 					{Name: "array1", Type: types2.JSON},
 				},
 			})},
-			configIds: allBulkerConfigs,
+			configIds: utils.ArrayExcluding(allBulkerConfigs, BigqueryBulkerTypeId),
 		},
 		{
 			name:                "added_columns_third_run",
@@ -791,14 +792,14 @@ func TestTransactionalJSONnString(t *testing.T) {
 					{Name: "array1", Type: types2.JSON},
 				},
 			})},
-			configIds: allBulkerConfigs,
+			configIds: utils.ArrayExcluding(allBulkerConfigs, BigqueryBulkerTypeId),
 		},
 		{
 			name:      "dummy_test_table_cleanup",
 			tableName: "transactional_json_string_test",
 			modes:     []bulker.BulkMode{bulker.Batch},
 			dataFile:  "test_data/empty.ndjson",
-			configIds: allBulkerConfigs,
+			configIds: utils.ArrayExcluding(allBulkerConfigs, BigqueryBulkerTypeId),
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}
