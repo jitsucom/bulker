@@ -23,6 +23,12 @@ import (
 const interruptError = "Stream was interrupted. Check logs for errors."
 const cancelledError = "Sync job was cancelled"
 
+var forceTemporaryBatchesSources = types2.NewSet(
+	"airbyte/source-sftp-bulk",
+	"airbyte/source-file",
+	"airbyte/source-sftp",
+)
+
 type ReadSideCar struct {
 	*AbstractSideCar
 	namespace       string
@@ -438,7 +444,7 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	} else if len(str.DefaultCursorField) > 0 {
 		streamOptions = append(streamOptions, bulker.WithDiscriminatorField(str.DefaultCursorField))
 	}
-	if str.SyncMode != "incremental" {
+	if str.SyncMode != "incremental" || forceTemporaryBatchesSources.Contains(s.packageName) {
 		streamOptions = append(streamOptions, sql.WithTemporaryBatchSize(100000))
 	}
 	if namespace != "" {
