@@ -531,6 +531,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	scanner := bufio.NewScanner(file)
 	i := 0
 	streamNum := 0
+	scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
 	for scanner.Scan() {
 		if i > 0 && testConfig.batchSize > 0 && i%testConfig.batchSize == 0 {
 			_, err := stream.Complete(ctx)

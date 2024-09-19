@@ -1,8 +1,8 @@
 module github.com/jitsucom/bulker/admin
 
-go 1.22.0
+go 1.23
 
-toolchain go1.22.4
+toolchain go1.23.1
 
 require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.5.0

@@ -1,6 +1,6 @@
 module github.com/jitsucom/bulker/connectors/firebase
 
-go 1.22
+go 1.23
 
 require (
 	cloud.google.com/go/firestore v1.15.0

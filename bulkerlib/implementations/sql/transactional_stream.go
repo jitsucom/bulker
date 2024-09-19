@@ -62,7 +62,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 			Name:            "consume",
 			TimeProcessedMs: time.Since(ps.startTime).Milliseconds(),
 		})
-		if ps.batchFile != nil {
+		if ps.localBatchFileName != "" {
 			ws, err := ps.flushBatchFile(ctx)
 			ps.state.AddWarehouseState(ws)
 			if err != nil {

@@ -31,11 +31,9 @@ func TestMillionRows(t *testing.T) {
 	}
 	tests := []bulkerTestConfig{
 		{
-			name:  "one_million_rows",
-			modes: []bulker.BulkMode{bulker.Batch},
-			expectedTable: ExpectedTable{
-				Columns: justColumns("_timestamp", "id", "name"),
-			},
+			name:              "one_million_rows",
+			modes:             []bulker.BulkMode{bulker.Batch},
+			batchSize:         eventsCount + 1,
 			expectedRowsCount: eventsCount,
 			configIds:         configIds,
 		},
@@ -80,6 +78,38 @@ func TestMillionRowsBatched(t *testing.T) {
 		})
 	}
 }
+
+func TestMillionRowsTmpBatches(t *testing.T) {
+	configsEnabled := os.Getenv("BULKER_TEST_MILLION_ROWS_TMP_BATCHES")
+	if configsEnabled == "" {
+		t.Skip("This test is disabled by default. To enable it set BULKER_TEST_MILLION_ROWS env variable with comma separated list of bulker config ids")
+		return
+	}
+	configIds := strings.Split(configsEnabled, ",")
+	configIds = utils.ArrayIntersection(allBulkerConfigs, configIds)
+	if len(configIds) == 0 {
+		t.Skipf("Test was skipped. IDs: %v is not among configured configs: %v", configIds, allBulkerConfigs)
+		return
+	}
+	tests := []bulkerTestConfig{
+		{
+			name:              "one_million_rows_tmp_batches",
+			modes:             []bulker.BulkMode{bulker.Batch},
+			batchSize:         eventsCount + 1,
+			expectedRowsCount: eventsCount,
+			configIds:         configIds,
+			streamOptions:     []bulker.StreamOption{WithTemporaryBatchSize(34000)},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			runTestConfig(t, tt, testLotOfEvents)
+		})
+	}
+}
+
 func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode) {
 	reqr := require.New(t)
 	blk, err := bulker.CreateBulker(*testConfig.config)
@@ -149,7 +179,7 @@ func testLotOfEvents(t *testing.T, testConfig bulkerTestConfig, mode bulker.Bulk
 	state, err := stream.Complete(ctx)
 	sqlAdapter = blk.(SQLAdapter)
 	PostStep("stream_complete", testConfig, mode, reqr, err)
-	logging.Infof("%d. batch is completed in %s", i, time.Since(startTime))
+	logging.Infof("%d. batch is completed in %s: state: %s", i, time.Since(startTime), state.String())
 
 	if testConfig.expectedState != nil {
 		reqr.Equal(*testConfig.expectedState, state)

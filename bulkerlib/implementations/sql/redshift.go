@@ -197,6 +197,7 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	if s3Config.Folder != "" {
 		fileKey = s3Config.Folder + "/" + fileKey
 	}
+	_, _ = p.txOrDb(ctx).ExecContext(ctx, "SET json_parse_truncate_strings=ON")
 	statement := fmt.Sprintf(redshiftCopyTemplate, namespace, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return state, errorj.CopyError.Wrap(err, "failed to copy data from s3").

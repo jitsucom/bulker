@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/pg"
@@ -436,6 +437,9 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 		streamOptions = append(streamOptions, bulker.WithDiscriminatorField(str.CursorField))
 	} else if len(str.DefaultCursorField) > 0 {
 		streamOptions = append(streamOptions, bulker.WithDiscriminatorField(str.DefaultCursorField))
+	}
+	if str.SyncMode != "incremental" {
+		streamOptions = append(streamOptions, sql.WithTemporaryBatchSize(100000))
 	}
 	if namespace != "" {
 		streamOptions = append(streamOptions, bulker.WithNamespace(namespace))

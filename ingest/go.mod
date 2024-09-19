@@ -1,8 +1,8 @@
 module github.com/jitsucom/bulker/ingest
 
-go 1.22.0
+go 1.23
 
-toolchain go1.22.4
+toolchain go1.23.1
 
 require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.5.0
@@ -11,6 +11,7 @@ require (
 	github.com/penglongli/gin-metrics v0.1.10
 	github.com/prometheus/client_golang v1.19.1
 	github.com/spf13/viper v1.19.0
+	golang.org/x/net v0.27.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
@@ -65,7 +66,6 @@ require (
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/crypto v0.25.0 // indirect
 	golang.org/x/exp v0.0.0-20240112132812-db7319d0e0e3 // indirect
-	golang.org/x/net v0.27.0 // indirect
 	golang.org/x/oauth2 v0.21.0 // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect

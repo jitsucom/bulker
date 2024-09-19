@@ -60,6 +60,12 @@ var (
 		ParseFunc:    utils.ParseInt,
 	}
 
+	TemporaryBatchSizeOption = bulker.ImplementationOption[int]{
+		Key:          "temporaryBatchSize",
+		DefaultValue: 0,
+		ParseFunc:    utils.ParseInt,
+	}
+
 	localBatchFileOption = bulker.ImplementationOption[string]{Key: "BULKER_OPTION_LOCAL_BATCH_FILE"}
 
 	s3BatchFileOption = bulker.ImplementationOption[*S3OptionConfig]{Key: "BULKER_OPTION_S3_BATCH_FILE"}
@@ -71,7 +77,7 @@ func init() {
 	bulker.RegisterOption(&OmitNilsOption)
 	bulker.RegisterOption(&SchemaFreezeOption)
 	bulker.RegisterOption(&MaxColumnsCount)
-
+	bulker.RegisterOption(&TemporaryBatchSizeOption)
 }
 
 type S3OptionConfig struct {
@@ -140,5 +146,11 @@ func withLocalBatchFile(fileName string) bulker.StreamOption {
 func withS3BatchFile(s3OptionConfig *S3OptionConfig) bulker.StreamOption {
 	return func(options *bulker.StreamOptions) {
 		s3BatchFileOption.Set(options, s3OptionConfig)
+	}
+}
+
+func WithTemporaryBatchSize(temporaryBatchSize int) bulker.StreamOption {
+	return func(options *bulker.StreamOptions) {
+		TemporaryBatchSizeOption.Set(options, temporaryBatchSize)
 	}
 }

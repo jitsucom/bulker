@@ -28,6 +28,8 @@ type AbstractTransactionalSQLStream struct {
 	//function that generate tmp table schema based on target table schema
 	tmpTableFunc       func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table)
 	dstTable           *Table
+	temporaryBatchSize int
+	localBatchFileName string
 	batchFile          *os.File
 	marshaller         types.Marshaller
 	targetMarshaller   types.Marshaller
@@ -62,7 +64,26 @@ func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, m
 			ps.useDiscriminator = true
 		}
 	}
+	ps.localBatchFileName = localBatchFileOption.Get(&ps.options)
+	ps.temporaryBatchSize = TemporaryBatchSizeOption.Get(&ps.options)
 	return &ps, nil
+}
+
+func (ps *AbstractTransactionalSQLStream) initTmpFile(ctx context.Context) (err error) {
+	if ps.batchFile == nil {
+		if !ps.merge && ps.sqlAdapter.GetBatchFileFormat() == types.FileFormatNDJSON {
+			//without merge we can write file with compression - no need to convert
+			ps.marshaller, _ = types.NewMarshaller(ps.sqlAdapter.GetBatchFileFormat(), ps.sqlAdapter.GetBatchFileCompression())
+		} else {
+			ps.marshaller, _ = types.NewMarshaller(types.FileFormatNDJSON, types.FileCompressionNONE)
+		}
+		ps.targetMarshaller, err = types.NewMarshaller(ps.sqlAdapter.GetBatchFileFormat(), ps.sqlAdapter.GetBatchFileCompression())
+		if err != nil {
+			return err
+		}
+		ps.batchFile, err = os.CreateTemp("", ps.localBatchFileName+"_*"+ps.marshaller.FileExtension())
+	}
+	return
 }
 
 func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) {
@@ -77,20 +98,10 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 			return fmt.Errorf("failed to setup s3 client: %v", err)
 		}
 	}
-	localBatchFile := localBatchFileOption.Get(&ps.options)
-	if localBatchFile != "" && ps.batchFile == nil {
-		ps.marshaller, _ = types.NewMarshaller(types.FileFormatNDJSON, types.FileCompressionNONE)
-		ps.targetMarshaller, err = types.NewMarshaller(ps.sqlAdapter.GetBatchFileFormat(), ps.sqlAdapter.GetBatchFileCompression())
+	if ps.localBatchFileName != "" && ps.batchFile == nil {
+		err = ps.initTmpFile(ctx)
 		if err != nil {
-			return err
-		}
-		if !ps.merge && ps.sqlAdapter.GetBatchFileFormat() == types.FileFormatNDJSON {
-			//without merge we can write file with compression - no need to convert
-			ps.marshaller, _ = types.NewMarshaller(ps.sqlAdapter.GetBatchFileFormat(), ps.sqlAdapter.GetBatchFileCompression())
-		}
-		ps.batchFile, err = os.CreateTemp("", localBatchFile+"_*"+ps.marshaller.FileExtension())
-		if err != nil {
-			return err
+			return
 		}
 	}
 	err = ps.AbstractSQLStream.init(ctx)
@@ -146,9 +157,11 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		}
 		_ = ps.batchFile.Close()
 		_ = os.Remove(ps.batchFile.Name())
+		ps.batchFile = nil
+		ps.eventsInBatch = 0
 	}()
-	if ps.eventsInBatch > 0 {
-		err = ps.tx.CreateTable(ctx, table)
+	if ps.batchFile != nil && ps.eventsInBatch > 0 {
+		_, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.tx, ps.id, table)
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to create table")
 		}
@@ -345,6 +358,17 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 //}
 
 func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, targetTable *Table, processedObject types.Object) error {
+	if ps.temporaryBatchSize > 0 && ps.eventsInBatch >= ps.temporaryBatchSize {
+		ws, err := ps.flushBatchFile(ctx)
+		ps.state.AddWarehouseState(ws)
+		if err != nil {
+			return err
+		}
+		err = ps.initTmpFile(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	ps.adjustTables(ctx, targetTable, processedObject)
 	ps.updateRepresentationTable(ps.tmpTable)
 	err := ps.marshaller.InitSchema(ps.batchFile, nil, nil)
@@ -435,7 +459,7 @@ func (ps *AbstractTransactionalSQLStream) Consume(ctx context.Context, object ty
 	if err != nil {
 		return
 	}
-	batchFile := ps.batchFile != nil
+	batchFile := ps.localBatchFileName != ""
 	if batchFile {
 		err = ps.writeToBatchFile(ctx, tableForObject, processedObject)
 	} else {

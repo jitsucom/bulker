@@ -87,7 +87,7 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 		}
 		err = ps.clearPartition(ctx, ps.tx)
 		if err == nil && ps.state.SuccessfulRows > 0 {
-			if ps.batchFile != nil {
+			if ps.localBatchFileName != "" {
 				ws, err := ps.flushBatchFile(ctx)
 				ps.state.AddWarehouseState(ws)
 				if err != nil {
