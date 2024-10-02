@@ -194,6 +194,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 			abandonedTopicsCount++
 			continue
 		}
+		var ok bool
 		if tm.config.StaleTopics {
 			lastMessageDate, ok := tm.topicLastActiveDate[topic]
 			if !ok || lastMessageDate.Before(staleTopicsCutOff) {
