@@ -5,6 +5,16 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"math/rand"
+	"net/http"
+	"net/http/pprof"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/eventslog"
@@ -17,15 +27,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/jitsucom/bulker/kafkabase"
 	"github.com/penglongli/gin-metrics/ginmetrics"
-	"io"
-	"math/rand"
-	"net/http"
-	"net/http/pprof"
-	"net/url"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 var eventTypesDict = map[string]string{
@@ -195,7 +196,7 @@ type BatchPayload struct {
 func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *StreamWithDestinations, sendResponse bool) (asyncDestinations []string, tagsDestinations []string, rError *appbase.RouterError) {
 	var err error
 	if stream.BackupEnabled {
-		backupTopic := fmt.Sprintf("%sin.id.%s_backup.m.batch.t.backup", r.config.KafkaTopicPrefix, stream.Stream.WorkspaceId)
+		backupTopic := fmt.Sprintf("%sin.id.%s.backup.m.batch.t.backup", r.config.KafkaTopicPrefix, stream.Stream.WorkspaceId)
 		err2 := r.producer.ProduceAsync(backupTopic, uuid.New(), ingestMessageBytes, nil, kafka.PartitionAny)
 		if err2 != nil {
 			r.Errorf("Error producing to backup topic %s: %v", backupTopic, err2)
