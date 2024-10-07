@@ -10,8 +10,8 @@ const (
 	upsertSpecSQL = `INSERT INTO source_spec as s (package, version, specs, timestamp, error ) VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT ON CONSTRAINT source_spec_pkey DO UPDATE SET specs = $3, timestamp = $4, error=$5 where s.specs is null`
 
-	insertSpecErrorSQL = `INSERT INTO source_spec (package, version, timestamp, error ) VALUES ($1, $2, $3, $4)
-ON CONFLICT ON CONSTRAINT source_spec_pkey DO NOTHING`
+	insertSpecErrorSQL = `INSERT INTO source_spec as s (package, version, timestamp, error ) VALUES ($1, $2, $3, $4)
+ON CONFLICT ON CONSTRAINT source_spec_pkey DO UPDATE SET timestamp = $3, error=$4 where s.specs is null`
 
 	upsertCatalogStatusSQL = `INSERT INTO source_catalog (package, version, key, timestamp, status, description) VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT ON CONSTRAINT source_catalog_pkey DO UPDATE SET timestamp = $4, status=$5, description=$6`
