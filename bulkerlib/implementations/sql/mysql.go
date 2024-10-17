@@ -258,7 +258,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 			PrimaryKeyName: targetTable.PrimaryKeyName,
 		}
 		buf := strings.Builder{}
-		err := defaultInsertQueryTemplate.Execute(&buf, insertPayload)
+		err := insertQueryTemplate.Execute(&buf, insertPayload)
 		if err != nil {
 			return state, errorj.ExecuteInsertError.Wrap(err, "failed to build query from template")
 		}

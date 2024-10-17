@@ -41,7 +41,7 @@ const (
 )
 
 var (
-	defaultInsertQueryTemplate, _    = template.New("insertQuery").Parse(insertQuery)
+	insertQueryTemplate, _           = template.New("insertQuery").Parse(insertQuery)
 	insertFromSelectQueryTemplate, _ = template.New("insertFromSelectQuery").Parse(insertFromSelectQuery)
 
 	unmappedValue ValueMappingFunction = func(val any, valPresent bool, column types2.SQLColumn) any {
@@ -89,8 +89,6 @@ type SQLAdapterBase[T any] struct {
 	_columnDDLFunc       ColumnDDLFunction
 	tableHelper          TableHelper
 	checkErrFunc         ErrorAdapter
-
-	insertQueryTemplate *template.Template
 }
 
 func newSQLAdapterBase[T any](id string, typeId string, config *T, namespace string, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter, supportsJSON bool) (*SQLAdapterBase[T], error) {
@@ -107,7 +105,6 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, namespace str
 		_columnDDLFunc:       columnDDLFunc,
 		checkErrFunc:         checkErrFunc,
 		stringifyObjects:     true,
-		insertQueryTemplate:  defaultInsertQueryTemplate,
 	}
 	s.temporaryTables = true
 	s.batchFileFormat = types2.FileFormatNDJSON
@@ -449,7 +446,7 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 		UpdateSet:      strings.Join(updateColumns, ","),
 	}
 	buf := strings.Builder{}
-	template := b.insertQueryTemplate
+	template := insertQueryTemplate
 	if mergeQuery != nil {
 		template = mergeQuery
 	}
