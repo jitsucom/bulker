@@ -478,6 +478,10 @@ func hashApiKey(token string, salt string, secret string) string {
 
 func (r *Router) checkHash(hash string, secret string) bool {
 	pk := strings.SplitN(hash, ".", 2)
+	if len(pk) < 2 {
+		r.Errorf("invalid hash format: %s", hash)
+		return false
+	}
 	salt := pk[0]
 	hashPart := pk[1]
 	for _, globalSecret := range r.config.GlobalHashSecrets {

@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"text/template"
 	"time"
 )
 
@@ -59,6 +60,7 @@ const (
 	chSelectFinalStatement = `SELECT %s FROM %s%s FINAL %s%s`
 	chLoadStatement        = `INSERT INTO %s%s (%s) VALUES %s`
 	chLoadJSONStatement    = `INSERT INTO %s%s format JSONEachRow`
+	chAsyncInsertQuery     = `INSERT INTO {{.Namespace}}{{.TableName}}({{.Columns}}) SETTINGS async_insert=1, wait_for_async_insert=0 VALUES ({{.Placeholders}})`
 
 	chDateFormat = `2006-01-02 15:04:05.000000`
 )
@@ -114,6 +116,8 @@ var (
 		"uuid":                          "00000000-0000-0000-0000-000000000000",
 	}
 	nonLettersCharacters = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+
+	asyncInsertQueryTemplate, _ = template.New("insertQuery").Parse(chAsyncInsertQuery)
 )
 
 type ClickHouseProtocol string
@@ -225,7 +229,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, config.Database, dbConnectFunction, clickhouseTypes, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr, false)
 	sqlAdapterBase.batchFileFormat = types.FileFormatNDJSON
-
+	sqlAdapterBase.insertQueryTemplate = asyncInsertQueryTemplate
 	c := &ClickHouse{
 		SQLAdapterBase: sqlAdapterBase,
 		httpMode:       httpMode,

@@ -14,6 +14,7 @@ import (
 )
 
 const MetricsMetaHeader = "metrics_meta"
+const PrimaryKeysHeader = "primary_keys"
 
 type AbstractConsumer struct {
 	appbase.Service
