@@ -24,22 +24,23 @@ jobs:
         uses: actions/checkout@v2
         with:
           repository: 'portcullis-co/bulker'
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+        
       - name: Set PORTCULLIS_VERSION if not set
         run: |
           if [ -z "${{ env.PORTCULLIS_VERSION }}" ]; then
             echo "PORTCULLIS_VERSION=red-coral" >> $GITHUB_ENV
           fi
+          
       - name: Generate fly.toml
         run: |
           cat <<EOF > fly.toml
           app = "my-app"
           primary_region = "iad"
           
-        [env]
+          [env]
           BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE=10000
           BULKER_CONFIG_SOURCE="${{ secrets.BULKER_CONFIG_SOURCE }}"
           BULKER_CONFIG_SOURCE_HTTP_AUTH_TOKEN="${{ secrets.BULKER_CONFIG_SOURCE_HTTP_AUTH_TOKEN }}"
@@ -54,18 +55,9 @@ jobs:
           REPO_TOKEN="${{ secrets.REPO_TOKEN }}"
           BULKER_INPUT_DATA="${{ github.event.inputs.data }}"
           BULKER_INSTANCE_ID="${{ github.event.inputs.instance_id }}"
-        EOF
+          EOF
+          
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only
         env:
-          BULKER_CONFIG_SOURCE: ${{ secrets.BULKER_CONFIG_SOURCE }}
-          BULKER_BATCH_RUNNER_DEFAULT_BATCH_SIZE: 10000
-          BULKER_CONFIG_SOURCE_HTTP_AUTH_TOKEN: ${{ secrets.BULKER_CONFIG_SOURCE_HTTP_AUTH_TOKEN }}
-          BULKER_KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.BULKER_KAFKA_BOOTSTRAP_SERVERS }}
-          BULKER_KAFKA_SSL: true
-          BULKER_CLICKHOUSE_HOST: ${{ secrets.BULKER_CLICKHOUSE_HOST }}
-          BULKER_CLICKHOUSE_DATABASE: ${{ secrets.BULKER_CLICKHOUSE_DATABASE }}
-          BULKER_CLICKHOUSE_SSL: true
-          BULKER_CLICKHOUSE_USERNAME: ${{ secrets.BULKER_CLICKHOUSE_USERNAME }}
-          BULKER_CLICKHOUSE_PASSWORD: ${{ secrets.BULKER_CLICKHOUSE_PASSWORD }}
-          BULKER_KAFKA_TOPIC_PREFIX: ${{ github.event.inputs.org_id }}
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          BULKER_INPUT_DATA: ${{ github.event.inputs.data }}
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
