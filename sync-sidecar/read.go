@@ -74,7 +74,7 @@ func (s *ReadSideCar) Run() {
 			s.registerErr(fmt.Errorf("%v", r))
 			s.closeActiveStreams(false)
 		} else {
-			s.closeActiveStreams(!cancelled && !s.isErr())
+			s.closeActiveStreams(!cancelled && !s.isCriticalError())
 		}
 		if len(s.processedStreams) > 0 {
 			statusMap := types2.NewOrderedMap[string, any]()
@@ -282,7 +282,7 @@ func (s *ReadSideCar) saveState(stream string, data any) {
 			return
 		}
 	} else {
-		if s.isErr() {
+		if s.isCriticalError() {
 			s.errprint("STATE: not saving '%s' state because of previous errors", stream)
 			return
 		}
@@ -636,6 +636,12 @@ func (s *ReadSideCar) loadDestinationConfig() error {
 	}
 	s.destinationConfig = destinationConfig
 	return nil
+}
+
+// isCriticalError returns true if first error occurred during sync run
+// and we consider it as valid reason to tread all streams that haven't received COMPLETE status as FAILED
+func (s *ReadSideCar) isCriticalError() bool {
+	return s.isErr() && s.packageName != "airbyte/source-netsuite"
 }
 
 type StreamStat struct {
