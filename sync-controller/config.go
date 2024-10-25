@@ -27,8 +27,9 @@ type Config struct {
 	// nodeSelector for sync pods in json format, e.g: {"disktype": "ssd"}
 	KubernetesNodeSelector string `mapstructure:"KUBERNETES_NODE_SELECTOR"`
 
-	ContainerStatusCheckSeconds int `mapstructure:"CONTAINER_STATUS_CHECK_SECONDS" default:"10"`
-	ContainerInitTimeoutSeconds int `mapstructure:"CONTAINER_INIT_TIMEOUT_SECONDS" default:"180"`
+	ContainerStatusCheckSeconds   int `mapstructure:"CONTAINER_STATUS_CHECK_SECONDS" default:"10"`
+	ContainerGraceShutdownSeconds int `mapstructure:"CONTAINER_GRACE_SHUTDOWN_SECONDS" default:"30"`
+	ContainerInitTimeoutSeconds   int `mapstructure:"CONTAINER_INIT_TIMEOUT_SECONDS" default:"180"`
 
 	TaskTimeoutHours int `mapstructure:"TASK_TIMEOUT_HOURS" default:"48"`
 

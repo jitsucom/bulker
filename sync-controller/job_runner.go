@@ -8,6 +8,7 @@ import (
 	"github.com/hjson/hjson-go/v4"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
+	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/mitchellh/mapstructure"
@@ -34,12 +35,13 @@ var nonAlphaNum = regexp.MustCompile(`[^a-zA-Z0-9-]`)
 
 type JobRunner struct {
 	appbase.Service
-	config       *Config
-	namespace    string
-	clientset    *kubernetes.Clientset
-	closeCh      chan struct{}
-	taskStatusCh chan *TaskStatus
-	runningPods  map[string]time.Time
+	config        *Config
+	namespace     string
+	clientset     *kubernetes.Clientset
+	closeCh       chan struct{}
+	taskStatusCh  chan *TaskStatus
+	runningPods   map[string]time.Time
+	cleanedUpPods types.Set[string]
 }
 
 func NewJobRunner(appContext *Context) (*JobRunner, error) {
@@ -49,9 +51,10 @@ func NewJobRunner(appContext *Context) (*JobRunner, error) {
 		return nil, err
 	}
 	j := &JobRunner{Service: base, config: appContext.config, clientset: clientset, namespace: appContext.config.KubernetesNamespace,
-		closeCh:      make(chan struct{}),
-		taskStatusCh: make(chan *TaskStatus, 100),
-		runningPods:  map[string]time.Time{},
+		closeCh:       make(chan struct{}),
+		taskStatusCh:  make(chan *TaskStatus, 100),
+		runningPods:   map[string]time.Time{},
+		cleanedUpPods: types.NewSet[string](),
 	}
 	safego.RunWithRestart(j.watchPodStatuses)
 	return j, nil
@@ -70,7 +73,12 @@ func (j *JobRunner) watchPodStatuses() {
 				j.Errorf("failed to list pods: %v", err.Error())
 				continue
 			}
+			activePods := types.NewSet[string]()
 			for _, pod := range list.Items {
+				activePods.Put(pod.Name)
+				if j.cleanedUpPods.Contains(pod.Name) {
+					continue
+				}
 				taskStatus := TaskStatus{}
 				_ = mapstructure.Decode(pod.Annotations, &taskStatus)
 				taskStatus.PodName = pod.Name
@@ -131,6 +139,17 @@ func (j *JobRunner) watchPodStatuses() {
 				}
 				j.sendStatus(&taskStatus)
 			}
+			//clean up pods that are not active anymore
+			for podName := range j.runningPods {
+				if !activePods.Contains(podName) {
+					delete(j.runningPods, podName)
+				}
+			}
+			for podName := range j.cleanedUpPods {
+				if !activePods.Contains(podName) {
+					j.cleanedUpPods.Remove(podName)
+				}
+			}
 		}
 	}
 
@@ -145,11 +164,11 @@ func (j *JobRunner) sendStatus(taskStatus *TaskStatus) {
 }
 
 func (j *JobRunner) cleanupPod(name string) {
-	gracePeriodSeconds := int64(math.Max(1.0, float64(j.config.ContainerStatusCheckSeconds)*0.8))
+	j.cleanedUpPods.Put(name)
+	gracePeriodSeconds := int64(j.config.ContainerGraceShutdownSeconds)
 	_ = j.clientset.CoreV1().Pods(j.namespace).Delete(context.Background(), name, metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
 	_ = j.clientset.CoreV1().Secrets(j.namespace).Delete(context.Background(), name+"-config", metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
 	_ = j.clientset.CoreV1().ConfigMaps(j.namespace).Delete(context.Background(), name+"-config", metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
-	delete(j.runningPods, name)
 }
 
 func accumulatePodStatus(status v1.PodStatus) string {
@@ -631,7 +650,9 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 					Image:   fmt.Sprintf("%s:%s", task.Package, task.PackageVersion),
 					Command: []string{"sh", "-c", fmt.Sprintf("eval \"$AIRBYTE_ENTRYPOINT %s\" 2> /pipes/stderr > /pipes/stdout", command)},
 					Env: []v1.EnvVar{{Name: "USE_STREAM_CAPABLE_STATE", Value: "true"},
-						{Name: "AUTO_DETECT_SCHEMA", Value: "true"}},
+						{Name: "AUTO_DETECT_SCHEMA", Value: "true"},
+						{Name: "JAVA_OPTS", Value: "-Xmx8192m"}},
+
 					VolumeMounts: volumeMounts,
 					Resources: v1.ResourceRequirements{
 						Limits: v1.ResourceList{
