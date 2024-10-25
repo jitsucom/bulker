@@ -651,7 +651,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 					Command: []string{"sh", "-c", fmt.Sprintf("eval \"$AIRBYTE_ENTRYPOINT %s\" 2> /pipes/stderr > /pipes/stdout", command)},
 					Env: []v1.EnvVar{{Name: "USE_STREAM_CAPABLE_STATE", Value: "true"},
 						{Name: "AUTO_DETECT_SCHEMA", Value: "true"},
-						{Name: "JAVA_OPTS", Value: "-Xmx8192m"}},
+						{Name: "JAVA_OPTS", Value: "-Xmx7000m"}},
 
 					VolumeMounts: volumeMounts,
 					Resources: v1.ResourceRequirements{
