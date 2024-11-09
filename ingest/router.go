@@ -77,6 +77,10 @@ type StreamCredentials struct {
 	IngestType IngestType `json:"ingestType"`
 }
 
+func (sc *StreamCredentials) String() string {
+	return fmt.Sprintf("[slug: %s][domain: %s][writeKey: %s][ingestType: %s]", sc.Slug, sc.Domain, maskWriteKey(sc.WriteKey), sc.IngestType)
+}
+
 func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelector) *Router {
 	base := appbase.NewRouterBase(appContext.config.Config, []string{
 		"/health",
@@ -562,9 +566,9 @@ func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials, _ bool) *StreamWi
 			binding := r.repository.GetData().getStreamByKeyId(parts[0])
 			if binding != nil {
 				if loc.IngestType != IngestTypeWriteKeyDefined && binding.KeyType != string(loc.IngestType) {
-					r.Errorf("invalid key type: found %s, expected %s", binding.KeyType, loc.IngestType)
+					r.Errorf("[stream: %s]%s invalid key type found %s, expected %s", binding.StreamId, loc.String(), binding.KeyType, loc.IngestType)
 				} else if !r.checkHash(binding.Hash, parts[1]) {
-					r.Errorf("invalid key secret")
+					r.Errorf("[stream: %s]%s invalid key secret", binding.StreamId, loc.String())
 				} else {
 					stream := r.repository.GetData().GetStreamById(binding.StreamId)
 					if stream != nil {
