@@ -93,7 +93,7 @@ func (decoder *sliceDecoder) doDecode(ptr unsafe.Pointer, iter *Iterator) {
 		decoder.elemDecoder.Decode(elemPtr, iter)
 	}
 	if c != ']' {
-		iter.ReportError("decode slice", "expect ], but found "+string([]byte{c}))
+		iter.ReportError("decode slice", "expect ], but found "+fmt.Sprintf("%d", c))
 		return
 	}
 }
