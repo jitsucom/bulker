@@ -10,6 +10,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -40,11 +41,16 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	if strings.Contains(c.GetHeader("Content-Encoding"), "gzip") {
 		bodyReader, err = gzip.NewReader(bodyReader)
 	}
+	var body []byte
 	if err == nil {
-		err = jsonorder.NewDecoder(bodyReader).Decode(&payload)
+		body, err = io.ReadAll(bodyReader)
+		_ = bodyReader.Close()
+	}
+	if err == nil {
+		err = jsonorder.Unmarshal(body, &payload)
 	}
 	if err != nil {
-		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
+		err = fmt.Errorf("Client Ip: %s: %v Body:\n%s", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err, string(body))
 		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing message", false, err, true)
 		return
 	}
