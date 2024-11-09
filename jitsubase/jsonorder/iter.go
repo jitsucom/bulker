@@ -158,7 +158,7 @@ func (iter *Iterator) skipWhitespacesWithoutLoadMore() bool {
 	for i := iter.head; i < iter.tail; i++ {
 		c := iter.buf[i]
 		switch c {
-		case ' ', '\n', '\t', '\r':
+		case ' ', '\n', '\t', '\r', '\u0000':
 			continue
 		}
 		iter.head = i
@@ -172,7 +172,7 @@ func (iter *Iterator) jitsuSkipWhitespaces() {
 		for i := iter.head; i < iter.tail; i++ {
 			c := iter.buf[i]
 			switch c {
-			case ' ', '\n', '\t', '\r':
+			case ' ', '\n', '\t', '\r', '\u0000':
 				continue
 			}
 			iter.head = i
@@ -203,7 +203,7 @@ func (iter *Iterator) nextToken() byte {
 		for i := iter.head; i < iter.tail; i++ {
 			c := iter.buf[i]
 			switch c {
-			case ' ', '\n', '\t', '\r':
+			case ' ', '\n', '\t', '\r', '\u0000':
 				continue
 			}
 			iter.head = i + 1
