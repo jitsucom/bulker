@@ -84,6 +84,7 @@ func (sc *StreamCredentials) String() string {
 func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelector) *Router {
 	base := appbase.NewRouterBase(appContext.config.Config, []string{
 		"/health",
+		"/robots.txt",
 		"/p.js",
 		"/v1/projects/:writeKey/settings",
 		"/v1/b",
@@ -154,6 +155,9 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 
 	engine.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "pass"})
+	})
+	engine.GET("/robots.txt", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/plain", []byte("User-agent: *\nDisallow: /\n"))
 	})
 
 	engine.GET("/debug/pprof/profile", gin.WrapF(pprof.Profile))
