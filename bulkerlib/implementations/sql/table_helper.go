@@ -38,6 +38,7 @@ type TableHelper struct {
 
 	maxIdentifierLength int
 	identifierQuoteStr  string
+	useQuoting          bool
 
 	tableNameFunc  IdentifierFunction
 	columnNameFunc IdentifierFunction
@@ -54,6 +55,7 @@ func NewTableHelper(maxIdentifierLength int, identifierQuoteChar rune) TableHelp
 
 		maxIdentifierLength: maxIdentifierLength,
 		identifierQuoteStr:  string(identifierQuoteChar),
+		useQuoting:          identifierQuoteChar != 0,
 	}
 }
 
@@ -381,20 +383,27 @@ func (th *TableHelper) adaptColumnName(columnName string) (quotedIfNeeded string
 // - must only contain letters, numbers, underscores, hyphen, and spaces - all other characters are removed
 // - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
 func (th *TableHelper) adaptSqlIdentifier(identifier string, kind string, idFunc IdentifierFunction) (quotedIfNeeded string, unquoted string) {
-	useQuoting := th.identifierQuoteStr != ""
-	cleanIdentifier := identifier
-	alphanumeric := utils.IsAlphanumeric(identifier)
-	if !alphanumeric {
-		cleanIdentifier = sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "_")
-		if cleanIdentifier == "" || cleanIdentifier == "_" {
-			cleanIdentifier = fmt.Sprintf("%s_%x", kind, utils.HashString(identifier))
-			alphanumeric = true
+	useQuoting := th.useQuoting
+	alphanumeric := true
+	var result string
+	if identifier == "" {
+		result = "_unnamed"
+	} else {
+		result = identifier
+		alphanumeric = utils.IsAlphanumeric(identifier)
+		if !alphanumeric {
+			result = sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "_")
+			if result == "" || result == "_" {
+				result = fmt.Sprintf("%s_%x", kind, utils.HashString(identifier))
+				alphanumeric = true
+			}
 		}
-	}
-	result := utils.ShortenString(cleanIdentifier, th.maxIdentifierLength)
-	if !alphanumeric {
-		// shortening or cleaning might remove all non-alphanumeric characters
-		alphanumeric = utils.IsAlphanumeric(result)
+		var shortened bool
+		result, shortened = utils.ShortenString2(result, th.maxIdentifierLength)
+		if !alphanumeric && shortened {
+			// shortening or cleaning might remove all non-alphanumeric characters
+			alphanumeric = utils.IsAlphanumeric(result)
+		}
 	}
 	if idFunc != nil {
 		result, useQuoting = idFunc(result, alphanumeric)

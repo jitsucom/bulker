@@ -41,6 +41,14 @@ func ShortenString(str string, n int) string {
 	return string([]rune(str)[:n])
 }
 
+// ShortenString returns the first N slice of a string and a flag indicating if the string was shortened.
+func ShortenString2(str string, n int) (string, bool) {
+	if len([]rune(str)) <= n {
+		return str, false
+	}
+	return string([]rune(str)[:n]), true
+}
+
 // ShortenStringWithEllipsis returns the first N slice of a string and ends with ellipsis.
 func ShortenStringWithEllipsis(str string, n int) string {
 	if len([]rune(str)) <= n {
