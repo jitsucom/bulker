@@ -258,10 +258,16 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 		}
 	}
 	if len(unmappedObj) > 0 {
-		jsonSQLType, _ := ps.sqlAdapter.GetSQLType(types.JSON)
-		added := current.SetIfAbsent(ps.unmappedDataColumn, types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
-		if added {
-			columnsAdded++
+		ok := false
+		if existingTable.Exists() {
+			_, ok = existingTable.Columns.Get(ps.unmappedDataColumn)
+		}
+		if !ok {
+			jsonSQLType, _ := ps.sqlAdapter.GetSQLType(types.JSON)
+			added := current.SetIfAbsent(ps.unmappedDataColumn, types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
+			if added {
+				columnsAdded++
+			}
 		}
 		if ps.sqlAdapter.StringifyObjects() {
 			b, _ := jsoniter.Marshal(unmappedObj)
