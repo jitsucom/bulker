@@ -156,9 +156,9 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 	engine.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "pass"})
 	})
-	engine.GET("/robots.txt", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/plain", []byte("User-agent: *\nDisallow: /\n"))
-	})
+	//engine.GET("/robots.txt", func(c *gin.Context) {
+	//	c.Data(http.StatusOK, "text/plain", []byte("User-agent: *\nDisallow: /\n"))
+	//})
 
 	engine.GET("/debug/pprof/profile", gin.WrapF(pprof.Profile))
 	engine.GET("/debug/pprof/heap", gin.WrapF(pprof.Handler("heap").ServeHTTP))
