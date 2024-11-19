@@ -24,17 +24,18 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 		return nil, err
 	}
 	ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.namespace, ps.tableName)
+	ps.initialColumnsCount = ps.existingTable.ColumnsCount()
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
-		dstTable := utils.Ternary(ps.existingTable.Exists(), ps.existingTable.Clone(), tableForObject.WithoutColumns())
-		ps.adjustTableColumnTypes(dstTable, ps.existingTable, tableForObject, object)
+		tmpTable := tableForObject.WithoutColumns()
+		ps.adjustTableColumnTypes(tmpTable, ps.existingTable, tableForObject, object)
 		if ps.schemaFromOptions != nil {
-			ps.adjustTableColumnTypes(dstTable, ps.existingTable, ps.schemaFromOptions, object)
+			ps.adjustTableColumnTypes(tmpTable, ps.existingTable, ps.schemaFromOptions, object)
 		}
 		tmpTableName := fmt.Sprintf("%s_tmp%s", utils.ShortenString(ps.tableName, 47), time.Now().Format("060102150405"))
 		return &Table{
 			Namespace:       p.TmpNamespace(ps.namespace),
 			Name:            tmpTableName,
-			Columns:         dstTable.Columns,
+			Columns:         tmpTable.Columns,
 			Temporary:       true,
 			TimestampColumn: tableForObject.TimestampColumn,
 		}

@@ -64,6 +64,8 @@ const (
 )
 
 var (
+	clickHouseCloudHost = regexp.MustCompile(`^.+\.clickhouse\.cloud(?::\d+$|$)`)
+
 	clickhouseTypes = map[types.DataType][]string{
 		types.STRING:    {"String", "%String%", "%CHAR%", "%TEXT%", "%BLOB%", "%Enum%", "%UUID%"},
 		types.INT64:     {"Int64", "Int", "LowCardinality(Int"},
@@ -175,6 +177,11 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	httpMode := false
 	if config.Protocol == ClickHouseProtocolHTTP || config.Protocol == ClickHouseProtocolHTTPS {
 		httpMode = true
+	}
+	chCloud := clickHouseCloudHost.MatchString(config.Hosts[0])
+	if chCloud {
+		// ClickHouse Cloud don't need cluster parameter
+		config.Cluster = ""
 	}
 	if config.Parameters == nil {
 		config.Parameters = map[string]string{}

@@ -243,5 +243,8 @@ func (t *Table) ToSimpleMap() *types2.OrderedMap[string, any] {
 }
 
 func (t *Table) ColumnsCount() int {
+	if t == nil {
+		return 0
+	}
 	return t.Columns.Len()
 }

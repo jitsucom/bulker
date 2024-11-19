@@ -43,6 +43,11 @@ type AbstractSQLStream struct {
 
 	unmappedDataColumn string
 
+	// initial columns count in the destination table
+	initialColumnsCount int
+	// columns added to the destination table during processing.
+	addedColumns int
+
 	startTime time.Time
 }
 
@@ -168,7 +173,7 @@ func (ps *AbstractSQLStream) init(ctx context.Context) error {
 // object values that can't be casted will be added to '_unmaped_data' column of JSON type as an json object
 // returns true if new column was added to the currentTable as a result of this function call
 func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable, desiredTable *Table, values types.Object) bool {
-	columnsAdded := false
+	columnsAdded := 0
 	current := currentTable.Columns
 	unmappedObj := map[string]any{}
 	for el := desiredTable.Columns.Front(); el != nil; el = el.Next() {
@@ -182,7 +187,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 		if !ok {
 			existingCol, ok = current.Get(name)
 			if !ok {
-				if ps.schemaFreeze || current.Len() >= ps.maxColumnsCount {
+				if ps.schemaFreeze || ps.initialColumnsCount+ps.addedColumns+columnsAdded >= ps.maxColumnsCount {
 					// when schemaFreeze=true all new columns values go to _unmapped_data
 					v, ok := values.Get(name)
 					if ok {
@@ -196,7 +201,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 						newCol.New = true
 					}
 					current.Set(name, newCol)
-					columnsAdded = true
+					columnsAdded++
 					continue
 				}
 			}
@@ -255,7 +260,9 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 	if len(unmappedObj) > 0 {
 		jsonSQLType, _ := ps.sqlAdapter.GetSQLType(types.JSON)
 		added := current.SetIfAbsent(ps.unmappedDataColumn, types.SQLColumn{DataType: types.JSON, Type: jsonSQLType})
-		columnsAdded = columnsAdded || added
+		if added {
+			columnsAdded++
+		}
 		if ps.sqlAdapter.StringifyObjects() {
 			b, _ := jsoniter.Marshal(unmappedObj)
 			values.Set(ps.unmappedDataColumn, string(b))
@@ -263,7 +270,8 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 			values.Set(ps.unmappedDataColumn, unmappedObj)
 		}
 	}
-	return columnsAdded
+	ps.addedColumns += columnsAdded
+	return columnsAdded > 0
 }
 
 func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {

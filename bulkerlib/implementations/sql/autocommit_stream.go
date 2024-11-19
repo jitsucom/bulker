@@ -46,10 +46,6 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		return
 	}
 	table, processedObject, err := ps.preprocess(object)
-	if ps.schemaFromOptions != nil {
-		//just to convert values to schema data types
-		ps.adjustTableColumnTypes(table, nil, ps.schemaFromOptions, object)
-	}
 	if err != nil {
 		return
 	}
@@ -59,6 +55,13 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		return
 	}
 	if existingTable.Exists() {
+		if ps.initialColumnsCount == 0 {
+			ps.initialColumnsCount = existingTable.ColumnsCount()
+		}
+		if ps.schemaFromOptions != nil {
+			//just to convert values to schema data types
+			ps.adjustTableColumnTypes(table, existingTable, ps.schemaFromOptions, object)
+		}
 		currentTable := existingTable.CloneIfNeeded()
 		currentTable.PKFields = table.PKFields
 		columnsAdded := ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
@@ -94,6 +97,10 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		ps.updateRepresentationTable(currentTable)
 		err = ps.sqlAdapter.Insert(ctx, currentTable, ps.merge, processedObject)
 	} else {
+		if ps.schemaFromOptions != nil {
+			//just to convert values to schema data types
+			ps.adjustTableColumnTypes(table, nil, ps.schemaFromOptions, object)
+		}
 		existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
 		if err != nil {
 			err = errorj.Decorate(err, "failed to ensure table")
