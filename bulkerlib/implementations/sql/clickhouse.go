@@ -11,6 +11,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
@@ -949,7 +950,7 @@ func convertType(value any, column types.SQLColumn) (any, error) {
 	case "string":
 		switch n := v.(type) {
 		case time.Time:
-			return n.Format("2006-01-02 15:04:05Z"), nil
+			return n.Format(timestamp.JsonISO), nil
 		case int64:
 			return strconv.FormatInt(n, 10), nil
 		case float64:

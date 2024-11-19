@@ -56,7 +56,7 @@ var (
 
 	MaxColumnsCount = bulker.ImplementationOption[int]{
 		Key:          "maxColumnsCount",
-		DefaultValue: 10000,
+		DefaultValue: 5000,
 		ParseFunc:    utils.ParseInt,
 	}
 

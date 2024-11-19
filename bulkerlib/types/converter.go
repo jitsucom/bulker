@@ -208,7 +208,7 @@ func anyToBoolean(v any) (any, error) {
 func timestampToString(v any) (any, error) {
 	switch t := v.(type) {
 	case time.Time:
-		return t.Format(timestamp.Layout), nil
+		return t.Format(timestamp.JsonISO), nil
 	case string:
 		return t, nil
 	default:
