@@ -34,7 +34,7 @@ func NewGCSBulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		Bucket:     gcsConfig.Bucket,
 		KeyFile:    gcsConfig.AccessKey,
 	}
-	//TODO: auto recoonect the same way as in SQL bulkers
+	//TODO: auto reconnect the same way as in SQL bulkers
 	gcsAdapter, err := implementations2.NewGoogleCloudStorage(&googleConfig)
 	if err != nil {
 		return nil, err

@@ -3,10 +3,9 @@ package testcontainers
 import (
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/testcontainers/testcontainers-go"
@@ -79,17 +78,25 @@ func NewMinioContainer(ctx context.Context, bucketName string) (*MinioContainer,
 }
 
 func (mc *MinioContainer) createBucket(bucketName string) error {
-	awsConfig := aws.NewConfig().
-		WithCredentials(credentials.NewStaticCredentials(minioAccessKey, minioSecretKey, "")).
-		WithRegion("us-east-1").WithEndpoint(fmt.Sprintf("http://%s:%d", mc.Host, mc.Port)).WithS3ForcePathStyle(true)
-
-	s3Session, err := session.NewSession()
+	var opts []func(*config.LoadOptions) error
+	opts = append(opts, config.WithRegion("us-east-1"))
+	opts = append(opts, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+		minioAccessKey,
+		minioSecretKey,
+		"",
+	)))
+	awsCfg, err := config.LoadDefaultConfig(context.Background(), opts...)
 	if err != nil {
 		return err
 	}
-	client := s3.New(s3Session, awsConfig)
-	_, err = client.CreateBucket(&s3.CreateBucketInput{
-		Bucket: aws.String(bucketName),
+	endpoint := fmt.Sprintf("http://%s:%d", mc.Host, mc.Port)
+	o := func(o *s3.Options) {
+		o.BaseEndpoint = &endpoint
+		o.UsePathStyle = true
+	}
+	client := s3.NewFromConfig(awsCfg, o)
+	_, err = client.CreateBucket(context.Background(), &s3.CreateBucketInput{
+		Bucket: &bucketName,
 	})
 	if err != nil {
 		return err

@@ -64,11 +64,11 @@ func init() {
 			Format:      types.FileFormatNDJSON,
 			Compression: types.FileCompressionGZIP,
 		},
-		Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
-		Region:    "us-east-1",
-		Bucket:    "bulkertests",
-		AccessKey: minioContainer.AccessKey,
-		SecretKey: minioContainer.SecretKey,
+		Endpoint:        fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+		Region:          "us-east-1",
+		Bucket:          "bulkertests",
+		AccessKeyID:     minioContainer.AccessKey,
+		SecretAccessKey: minioContainer.SecretKey,
 	}}
 	configRegistry[S3BulkerTypeId+"_flat"] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
 		FileConfig: implementations.FileConfig{
@@ -76,11 +76,11 @@ func init() {
 			Format:      types.FileFormatNDJSONFLAT,
 			Compression: types.FileCompressionNONE,
 		},
-		Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
-		Region:    "us-east-1",
-		Bucket:    "bulkertests",
-		AccessKey: minioContainer.AccessKey,
-		SecretKey: minioContainer.SecretKey,
+		Endpoint:        fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+		Region:          "us-east-1",
+		Bucket:          "bulkertests",
+		AccessKeyID:     minioContainer.AccessKey,
+		SecretAccessKey: minioContainer.SecretKey,
 	}}
 	configRegistry[S3BulkerTypeId] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
 		FileConfig: implementations.FileConfig{
@@ -88,11 +88,11 @@ func init() {
 			Format:      types.FileFormatNDJSON,
 			Compression: types.FileCompressionNONE,
 		},
-		Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
-		Region:    "us-east-1",
-		Bucket:    "bulkertests",
-		AccessKey: minioContainer.AccessKey,
-		SecretKey: minioContainer.SecretKey,
+		Endpoint:        fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+		Region:          "us-east-1",
+		Bucket:          "bulkertests",
+		AccessKeyID:     minioContainer.AccessKey,
+		SecretAccessKey: minioContainer.SecretKey,
 	}}
 
 	allBulkerConfigs = make([]string, 0, len(configRegistry))
@@ -303,7 +303,7 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 		for _, testConfigId := range tt.configIds {
 			newTd := tt
 			if !utils.ArrayContains(allBulkerConfigs, testConfigId) {
-				t.Skipf("Config '%s' is not selected for this test", testConfigId)
+				continue
 			}
 			testConfigRaw, ok := configRegistry[testConfigId]
 			if !ok {

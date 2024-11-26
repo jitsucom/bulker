@@ -108,7 +108,7 @@ func TestExistingTable2(t *testing.T) {
 				{"id": 2, "data": nil, "_unmapped_data": "{\"data\":\"string_id\"}"},
 			},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
-			configIds:      utils.ArrayIntersection(allBulkerConfigs, []string{RedshiftBulkerTypeId, BigqueryBulkerTypeId}),
+			configIds:      utils.ArrayIntersection(allBulkerConfigs, []string{RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless", RedshiftBulkerTypeId + "_iam", BigqueryBulkerTypeId}),
 		},
 		{
 			name:                "existing_table2_add_events",
