@@ -59,6 +59,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 			ps.initialColumnsCount = existingTable.ColumnsCount()
 		}
 		currentTable := table.WithoutColumns()
+		currentTable.PrimaryKeyName = existingTable.PrimaryKeyName
 		if ps.schemaFromOptions != nil {
 			//just to convert values to schema data types
 			ps.adjustTableColumnTypes(currentTable, existingTable, ps.schemaFromOptions, object)
