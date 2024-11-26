@@ -59,7 +59,6 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 			ps.initialColumnsCount = existingTable.ColumnsCount()
 		}
 		currentTable := table.WithoutColumns()
-		currentTable.PrimaryKeyName = existingTable.PrimaryKeyName
 		if ps.schemaFromOptions != nil {
 			//just to convert values to schema data types
 			ps.adjustTableColumnTypes(currentTable, existingTable, ps.schemaFromOptions, object)
@@ -100,6 +99,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 				currentTable.Columns.Delete(name)
 			}
 		}
+		currentTable.PrimaryKeyName = existingTable.PrimaryKeyName
 		err = ps.sqlAdapter.Insert(ctx, currentTable, ps.merge, processedObject)
 	} else {
 		if ps.schemaFromOptions != nil {
