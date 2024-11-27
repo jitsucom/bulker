@@ -47,52 +47,52 @@ var minioContainer *testcontainers.MinioContainer
 func init() {
 	gcsConfig := os.Getenv("BULKER_TEST_GCS")
 	if gcsConfig != "" {
-		configRegistry[GCSBulkerTypeId] = TestConfig{BulkerType: GCSBulkerTypeId, Config: gcsConfig}
+		configRegistry[implementations.GCSBulkerTypeId] = TestConfig{BulkerType: implementations.GCSBulkerTypeId, Config: gcsConfig}
 	}
 	s3Config := os.Getenv("BULKER_TEST_S3")
 	if s3Config != "" {
-		configRegistry[S3BulkerTypeId+"_aws"] = TestConfig{BulkerType: S3BulkerTypeId, Config: s3Config}
+		configRegistry[implementations.S3BulkerTypeId+"_aws"] = TestConfig{BulkerType: implementations.S3BulkerTypeId, Config: s3Config}
 	}
 	var err error
 	minioContainer, err = testcontainers.NewMinioContainer(context.Background(), "bulkertests")
 	if err != nil {
 		panic(err)
 	}
-	configRegistry[S3BulkerTypeId+"_gzip"] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
+	configRegistry[implementations.S3BulkerTypeId+"_gzip"] = TestConfig{BulkerType: implementations.S3BulkerTypeId, Config: implementations.S3Config{
 		FileConfig: implementations.FileConfig{
 			Folder:      "tests",
 			Format:      types.FileFormatNDJSON,
 			Compression: types.FileCompressionGZIP,
 		},
-		Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
-		Region:    "us-east-1",
-		Bucket:    "bulkertests",
-		AccessKey: minioContainer.AccessKey,
-		SecretKey: minioContainer.SecretKey,
+		Endpoint:        fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+		Region:          "us-east-1",
+		Bucket:          "bulkertests",
+		AccessKeyID:     minioContainer.AccessKey,
+		SecretAccessKey: minioContainer.SecretKey,
 	}}
-	configRegistry[S3BulkerTypeId+"_flat"] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
+	configRegistry[implementations.S3BulkerTypeId+"_flat"] = TestConfig{BulkerType: implementations.S3BulkerTypeId, Config: implementations.S3Config{
 		FileConfig: implementations.FileConfig{
 			Folder:      "tests",
 			Format:      types.FileFormatNDJSONFLAT,
 			Compression: types.FileCompressionNONE,
 		},
-		Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
-		Region:    "us-east-1",
-		Bucket:    "bulkertests",
-		AccessKey: minioContainer.AccessKey,
-		SecretKey: minioContainer.SecretKey,
+		Endpoint:        fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+		Region:          "us-east-1",
+		Bucket:          "bulkertests",
+		AccessKeyID:     minioContainer.AccessKey,
+		SecretAccessKey: minioContainer.SecretKey,
 	}}
-	configRegistry[S3BulkerTypeId] = TestConfig{BulkerType: S3BulkerTypeId, Config: implementations.S3Config{
+	configRegistry[implementations.S3BulkerTypeId] = TestConfig{BulkerType: implementations.S3BulkerTypeId, Config: implementations.S3Config{
 		FileConfig: implementations.FileConfig{
 			Folder:      "tests",
 			Format:      types.FileFormatNDJSON,
 			Compression: types.FileCompressionNONE,
 		},
-		Endpoint:  fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
-		Region:    "us-east-1",
-		Bucket:    "bulkertests",
-		AccessKey: minioContainer.AccessKey,
-		SecretKey: minioContainer.SecretKey,
+		Endpoint:        fmt.Sprintf("http://%s:%d", minioContainer.Host, minioContainer.Port),
+		Region:          "us-east-1",
+		Bucket:          "bulkertests",
+		AccessKeyID:     minioContainer.AccessKey,
+		SecretAccessKey: minioContainer.SecretKey,
 	}}
 
 	allBulkerConfigs = make([]string, 0, len(configRegistry))
@@ -243,7 +243,7 @@ func TestBasics(t *testing.T) {
 				{"_timestamp": constantTimeAStr, "id": 1, "name": "A", "int1": 1, "nested": map[string]any{"int1": 1}},
 				{"_timestamp": constantTimeAStr, "id": 2, "name": "A", "int1": 1, "nested": map[string]any{"int1": 1}},
 			},
-			configIds:     utils.ArrayExcluding(allBulkerConfigs, S3BulkerTypeId+"_flat"),
+			configIds:     utils.ArrayExcluding(allBulkerConfigs, implementations.S3BulkerTypeId+"_flat"),
 			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
 		},
 		{
@@ -255,7 +255,7 @@ func TestBasics(t *testing.T) {
 				{"_timestamp": constantTimeAStr, "id": 1, "name": "A", "int1": 1, "nested_int1": 1},
 				{"_timestamp": constantTimeAStr, "id": 2, "name": "A", "int1": 1, "nested_int1": 1},
 			},
-			configIds:     []string{S3BulkerTypeId + "_flat"},
+			configIds:     []string{implementations.S3BulkerTypeId + "_flat"},
 			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
 		},
 		{
@@ -267,7 +267,7 @@ func TestBasics(t *testing.T) {
 				{"_timestamp": constantTimeStr, "id": 3, "name": "C", "int1": 3, "nested": map[string]any{"int1": 3}},
 				{"_timestamp": constantTimeStr, "id": 2, "name": "C", "int1": 3, "nested": map[string]any{"int1": 3}},
 			},
-			configIds:     utils.ArrayExcluding(allBulkerConfigs, S3BulkerTypeId+"_flat"),
+			configIds:     utils.ArrayExcluding(allBulkerConfigs, implementations.S3BulkerTypeId+"_flat"),
 			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate(), bulker.WithDiscriminatorField([]string{"nested", "int1"})},
 		},
 		{
@@ -279,7 +279,7 @@ func TestBasics(t *testing.T) {
 				{"_timestamp": constantTimeStr, "id": 3, "name": "C", "int1": 3, "nested_int1": 3},
 				{"_timestamp": constantTimeStr, "id": 2, "name": "C", "int1": 3, "nested_int1": 3},
 			},
-			configIds:     []string{S3BulkerTypeId + "_flat"},
+			configIds:     []string{implementations.S3BulkerTypeId + "_flat"},
 			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate(), bulker.WithDiscriminatorField([]string{"nested", "int1"})},
 		},
 	}
@@ -303,7 +303,7 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 		for _, testConfigId := range tt.configIds {
 			newTd := tt
 			if !utils.ArrayContains(allBulkerConfigs, testConfigId) {
-				t.Skipf("Config '%s' is not selected for this test", testConfigId)
+				continue
 			}
 			testConfigRaw, ok := configRegistry[testConfigId]
 			if !ok {

@@ -480,10 +480,10 @@ func (b *SQLAdapterBase[T]) insertOrMerge(ctx context.Context, table *Table, obj
 }
 
 func (b *SQLAdapterBase[T]) copy(ctx context.Context, targetTable *Table, sourceTable *Table) (state bulkerlib.WarehouseState, err error) {
-	return b.copyOrMerge(ctx, targetTable, sourceTable, nil, "")
+	return b.copyOrMerge(ctx, targetTable, sourceTable, nil, "", "")
 }
 
-func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table, sourceTable *Table, mergeQuery *template.Template, sourceAlias string) (state bulkerlib.WarehouseState, err error) {
+func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table, sourceTable *Table, mergeQuery *template.Template, targetAlias string, sourceAlias string) (state bulkerlib.WarehouseState, err error) {
 	startTime := time.Now()
 	quotedSchema := b.namespacePrefix(targetTable.Namespace)
 	quotedSchemaFrom := b.namespacePrefix(sourceTable.Namespace)
@@ -506,7 +506,7 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 		})
 		targetTable.PKFields.ForEach(func(pkField string) {
 			pkName := b.quotedColumnName(pkField)
-			joinConditions = append(joinConditions, fmt.Sprintf("T.%s = %s.%s", pkName, sourceAlias, pkName))
+			joinConditions = append(joinConditions, fmt.Sprintf("%s.%s = %s.%s", targetAlias, pkName, sourceAlias, pkName))
 		})
 	}
 	insertPayload := QueryPayload{

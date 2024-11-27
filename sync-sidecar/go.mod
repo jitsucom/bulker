@@ -2,7 +2,7 @@ module github.com/jitsucom/bulker/sync-sidecar
 
 go 1.23
 
-toolchain go1.23.1
+toolchain go1.23.3
 
 require (
 	github.com/google/uuid v1.6.0

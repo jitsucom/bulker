@@ -27,7 +27,7 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 
 const forceLeaveResultingTables = false
 
-var allBulkerConfigs = []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless", SnowflakeBulkerTypeId, PostgresBulkerTypeId,
+var allBulkerConfigs = []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_iam", RedshiftBulkerTypeId + "_serverless", SnowflakeBulkerTypeId, PostgresBulkerTypeId,
 	MySQLBulkerTypeId, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}
 
 var exceptBigquery []string
@@ -84,6 +84,14 @@ func init() {
 			configRegistry[RedshiftBulkerTypeId+"_serverless"] = TestConfig{BulkerType: RedshiftBulkerTypeId, Config: redshiftServerlessConfig}
 		} else {
 			allBulkerConfigs = utils.ArrayExcluding(allBulkerConfigs, RedshiftBulkerTypeId+"_serverless")
+		}
+	}
+	if utils.ArrayContains(allBulkerConfigs, RedshiftBulkerTypeId+"_iam") {
+		redshiftServerlessConfig := os.Getenv("BULKER_TEST_REDSHIFT_IAM")
+		if redshiftServerlessConfig != "" {
+			configRegistry[RedshiftBulkerTypeId+"_iam"] = TestConfig{BulkerType: RedshiftBulkerTypeId, Config: redshiftServerlessConfig}
+		} else {
+			allBulkerConfigs = utils.ArrayExcluding(allBulkerConfigs, RedshiftBulkerTypeId+"_iam")
 		}
 	}
 
@@ -458,7 +466,7 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 		for _, testConfigId := range tt.configIds {
 			newTd := tt
 			if !utils.ArrayContains(allBulkerConfigs, testConfigId) {
-				t.Skipf("Config '%s' is not selected for this test", testConfigId)
+				continue
 			}
 			testConfigRaw, ok := configRegistry[testConfigId]
 			if !ok {

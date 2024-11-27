@@ -227,6 +227,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 						if err != nil {
 							//logging.Warnf("Can't convert '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), err)
 							unmappedObj[name] = v
+							current.Delete(name)
 							values.Delete(name)
 							continue
 						} else {
@@ -236,6 +237,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 					} else {
 						//logging.Warnf("Can't convert '%s' value '%v' from %s to %s", name, values[name], newCol.DataType.String(), existingCol.DataType.String())
 						unmappedObj[name] = v
+						current.Delete(name)
 						values.Delete(name)
 						continue
 					}

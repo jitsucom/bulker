@@ -20,6 +20,8 @@ import (
 	"google.golang.org/api/option"
 )
 
+const GCSBulkerTypeId = "gcs"
+
 var ErrMalformedBQDataset = errors.New("bq_dataset must be alphanumeric (plus underscores) and must be at most 1024 characters long")
 
 type GoogleConfig struct {
@@ -127,7 +129,6 @@ func (gcs *GoogleCloudStorage) Upload(fileName string, fileReader io.ReadSeeker)
 	if gcs.closed.Load() {
 		return fmt.Errorf("attempt to use closed GoogleCloudStorage instance")
 	}
-
 	bucket := gcs.client.Bucket(gcs.config.Bucket)
 	object := bucket.Object(fileName)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
@@ -257,4 +258,12 @@ func (gcs *GoogleCloudStorage) ValidateWritePermission() error {
 func (gcs *GoogleCloudStorage) Close() error {
 	gcs.closed.Store(true)
 	return gcs.client.Close()
+}
+
+func (gcs *GoogleCloudStorage) Type() string {
+	return GCSBulkerTypeId
+}
+
+func (gcs *GoogleCloudStorage) Ping() error {
+	return nil
 }

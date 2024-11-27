@@ -58,12 +58,11 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		if ps.initialColumnsCount == 0 {
 			ps.initialColumnsCount = existingTable.ColumnsCount()
 		}
+		currentTable := table.WithoutColumns()
 		if ps.schemaFromOptions != nil {
 			//just to convert values to schema data types
-			ps.adjustTableColumnTypes(table, existingTable, ps.schemaFromOptions, object)
+			ps.adjustTableColumnTypes(currentTable, existingTable, ps.schemaFromOptions, object)
 		}
-		currentTable := existingTable.CloneIfNeeded()
-		currentTable.PKFields = table.PKFields
 		columnsAdded := ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
 		if columnsAdded || !currentTable.PKFields.Equals(existingTable.PKFields) {
 			ps.updateRepresentationTable(currentTable)
@@ -77,7 +76,6 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 					err = errorj.Decorate(err, "failed to ensure table")
 					return
 				}
-				currentTable = existingTable.CloneIfNeeded()
 				// here this method only tries to convert values to existing column types
 				columnsAdded = ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
 				if columnsAdded {
@@ -88,13 +86,20 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 						err = errorj.Decorate(err, "failed to ensure table")
 						return
 					}
-					currentTable = existingTable.CloneIfNeeded()
 				}
-			} else {
-				currentTable = existingTable.CloneIfNeeded()
 			}
 		}
 		ps.updateRepresentationTable(currentTable)
+		// remove columns with missed data from Insert statements
+		for el := currentTable.Columns.Front(); el != nil; {
+			name := el.Key
+			el = el.Next()
+			v, ok := processedObject.Get(name)
+			if !ok || v == nil {
+				currentTable.Columns.Delete(name)
+			}
+		}
+		currentTable.PrimaryKeyName = existingTable.PrimaryKeyName
 		err = ps.sqlAdapter.Insert(ctx, currentTable, ps.merge, processedObject)
 	} else {
 		if ps.schemaFromOptions != nil {
@@ -105,6 +110,16 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		if err != nil {
 			err = errorj.Decorate(err, "failed to ensure table")
 			return
+		}
+		ps.updateRepresentationTable(existingTable)
+		// remove columns with missed data from Insert statements
+		for el := existingTable.Columns.Front(); el != nil; {
+			name := el.Key
+			el = el.Next()
+			v, ok := processedObject.Get(name)
+			if !ok || v == nil {
+				existingTable.Columns.Delete(name)
+			}
 		}
 		err = ps.sqlAdapter.Insert(ctx, existingTable, ps.merge, processedObject)
 	}

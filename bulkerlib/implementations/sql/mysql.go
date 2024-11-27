@@ -209,7 +209,7 @@ func (m *MySQL) CopyTables(ctx context.Context, targetTable *Table, sourceTable 
 	if mergeWindow <= 0 {
 		return m.copy(ctx, targetTable, sourceTable)
 	} else {
-		return m.copyOrMerge(ctx, targetTable, sourceTable, mySQLBulkMergeQueryTemplate, "S")
+		return m.copyOrMerge(ctx, targetTable, sourceTable, mySQLBulkMergeQueryTemplate, "T", "S")
 	}
 }
 

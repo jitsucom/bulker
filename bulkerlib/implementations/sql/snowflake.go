@@ -470,7 +470,7 @@ func (s *Snowflake) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 	if mergeWindow <= 0 {
 		return s.copy(ctx, targetTable, sourceTable)
 	} else {
-		return s.copyOrMerge(ctx, targetTable, sourceTable, sfMergeQueryTemplate, "S")
+		return s.copyOrMerge(ctx, targetTable, sourceTable, sfMergeQueryTemplate, "T", "S")
 	}
 }
 

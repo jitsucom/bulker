@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	driver "github.com/jitsucom/bulker/bulkerlib/implementations/sql/redshift_driver"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	_ "github.com/lib/pq"
 	"strings"
+	"text/template"
 	"time"
 )
 
@@ -31,8 +33,8 @@ const (
                     dateformat 'auto'
                     timeformat 'auto'`
 
-	redshiftAlterSortKeyTemplate       = `ALTER TABLE %s%s ALTER SORTKEY (%s)`
-	redshiftDeleteBeforeBulkMergeUsing = `DELETE FROM %s%s using %s where %s`
+	redshiftAlterSortKeyTemplate = `ALTER TABLE %s%s ALTER SORTKEY (%s)`
+	redshiftMergeStatement       = `MERGE INTO {{.Namespace}}{{.TableTo}} USING {{.NamespaceFrom}}{{.TableFrom}} S ON {{.JoinConditions}} WHEN MATCHED THEN UPDATE SET {{.UpdateSet}} WHEN NOT MATCHED THEN INSERT ({{.Columns}}) VALUES ({{.SourceColumns}})`
 
 	redshiftPrimaryKeyFieldsQuery = `select tco.constraint_name as constraint_name, kcu.column_name as key_column
 									 from information_schema.table_constraints tco
@@ -47,6 +49,8 @@ const (
 )
 
 var (
+	redshiftMergeQueryTemplate, _ = template.New("redshiftMergeStatement").Parse(redshiftMergeStatement)
+
 	redshiftTypes = map[types2.DataType][]string{
 		types2.STRING:    {"character varying(65535)"},
 		types2.INT64:     {"bigint"},
@@ -58,11 +62,6 @@ var (
 	}
 )
 
-type RedshiftConfig struct {
-	DataSourceConfig `mapstructure:",squash"`
-	S3OptionConfig   `mapstructure:",squash" yaml:"-,inline"`
-}
-
 // Redshift adapter for creating,patching (schema or table), inserting and copying data from s3 to redshift
 type Redshift struct {
 	//Aws Redshift uses Postgres fork under the hood
@@ -70,9 +69,21 @@ type Redshift struct {
 	s3Config *S3OptionConfig
 }
 
-// NewRedshift returns configured Redshift adapter instance
 func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
-	config := &RedshiftConfig{}
+	config := &driver.RedshiftConfig{}
+	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
+		return nil, fmt.Errorf("failed to parse destination config: %v", err)
+	}
+	if config.AuthenticationMethod == "iam" {
+		return NewRedshiftIAM(bulkerConfig)
+	} else {
+		return NewRedshiftClassic(bulkerConfig)
+	}
+}
+
+// NewRedshift returns configured Redshift adapter instance
+func NewRedshiftClassic(bulkerConfig bulker.Config) (bulker.Bulker, error) {
+	config := &driver.RedshiftConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
 		return nil, fmt.Errorf("failed to parse destination config: %v", err)
 	}
@@ -80,7 +91,15 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		config.Port = 5439
 	}
 
-	bulkerConfig.DestinationConfig = PostgresConfig{DataSourceConfig: config.DataSourceConfig}
+	bulkerConfig.DestinationConfig = PostgresConfig{DataSourceConfig: DataSourceConfig{
+		Host:       config.Host,
+		Port:       config.Port,
+		Db:         config.Db,
+		Schema:     config.Schema,
+		Username:   config.Username,
+		Password:   config.Password,
+		Parameters: config.Parameters,
+	}}
 	postgres, err := NewPostgres(bulkerConfig)
 	if err != nil {
 		return nil, err
@@ -94,7 +113,13 @@ func NewRedshift(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		}
 		return placeholder
 	}
-	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: &config.S3OptionConfig}
+	r := &Redshift{Postgres: postgres.(*Postgres), s3Config: &S3OptionConfig{
+		AccessKeyID:     config.AccessKeyID,
+		SecretAccessKey: config.SecretAccessKey,
+		Bucket:          config.Bucket,
+		Region:          config.Region,
+		Folder:          config.Folder,
+	}}
 	r.batchFileFormat = types2.FileFormatCSV
 	r.batchFileCompression = types2.FileCompressionGZIP
 	r._columnDDLFunc = redshiftColumnDDL
@@ -145,7 +170,8 @@ func (p *Redshift) Type() string {
 
 // OpenTx opens underline sql transaction and return wrapped instance
 func (p *Redshift) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
-	return p.openTx(ctx, p)
+	return &TxSQLAdapter{sqlAdapter: p, tx: NewDbWrapper(p.Type(), p.dataSource, p.queryLogger, p.checkErrFunc, false)}, nil
+	//return p.openTx(ctx, p)
 }
 
 func (p *Redshift) Insert(ctx context.Context, table *Table, merge bool, objects ...types2.Object) error {
@@ -198,7 +224,7 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		fileKey = s3Config.Folder + "/" + fileKey
 	}
 	_, _ = p.txOrDb(ctx).ExecContext(ctx, "SET json_parse_truncate_strings=ON")
-	statement := fmt.Sprintf(redshiftCopyTemplate, namespace, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretKey, s3Config.Region)
+	statement := fmt.Sprintf(redshiftCopyTemplate, namespace, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretAccessKey, s3Config.Region)
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return state, errorj.CopyError.Wrap(err, "failed to copy data from s3").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
@@ -211,60 +237,58 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	return state, nil
 }
 
-func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
-	quotedTargetTableName := p.quotedTableName(targetTable.Name)
-	namespace := p.namespacePrefix(targetTable.Namespace)
-	quotedSourceTableName := p.quotedTableName(sourceTable.Name)
-
-	if mergeWindow > 0 && targetTable.PKFields.Size() > 0 {
-		//delete duplicates from table
-		var pkMatchConditions string
-		for i, pkColumn := range targetTable.GetPKFields() {
-			if i > 0 {
-				pkMatchConditions += " AND "
-			}
-			pkMatchConditions += fmt.Sprintf(`%s.%s = %s.%s`, quotedTargetTableName, pkColumn, quotedSourceTableName, pkColumn)
-		}
-		deleteStatement := fmt.Sprintf(redshiftDeleteBeforeBulkMergeUsing, namespace, quotedTargetTableName, quotedSourceTableName, pkMatchConditions)
-
-		if _, err = p.txOrDb(ctx).ExecContext(ctx, deleteStatement); err != nil {
-
-			return state, errorj.BulkMergeError.Wrap(err, "failed to delete duplicated rows").
-				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Schema:      p.config.Schema,
-					Table:       quotedTargetTableName,
-					PrimaryKeys: targetTable.GetPKFields(),
-					Statement:   deleteStatement,
-				})
-		}
+func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (bulker.WarehouseState, error) {
+	if mergeWindow <= 0 {
+		return p.copy(ctx, targetTable, sourceTable)
+	} else {
+		return p.copyOrMerge(ctx, targetTable, sourceTable, redshiftMergeQueryTemplate, p.quotedTableName(targetTable.Name), "S")
 	}
-	return p.copy(ctx, targetTable, sourceTable)
 }
 
 func (p *Redshift) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
+	row := p.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema ilike '%s' AND table_name = '%s')`, p.namespaceName(replacementTable.Namespace), targetTableName))
+	exists := false
+	err = row.Scan(&exists)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return p.renameTable(ctx, p.txOrDb(ctx), replacementTable.Namespace, replacementTable.Name, targetTableName)
+	}
+	// rename in 2 ops in transaction
+	tx, err := p.openTx(ctx, p)
+	if err != nil {
+		return err
+	}
 	tmpTable := "deprecated_" + targetTableName + time.Now().Format("_20060102_150405")
-	err1 := p.renameTable(ctx, true, replacementTable.Namespace, targetTableName, tmpTable)
-	err = p.renameTable(ctx, false, replacementTable.Namespace, replacementTable.Name, targetTableName)
-	if dropOldTable && err1 == nil && err == nil {
-		return p.DropTable(ctx, replacementTable.Namespace, tmpTable, true)
+	err1 := p.renameTable(ctx, tx.tx, replacementTable.Namespace, targetTableName, tmpTable)
+	err = p.renameTable(ctx, tx.tx, replacementTable.Namespace, replacementTable.Name, targetTableName)
+	if err == nil && err1 == nil {
+		err = tx.Commit()
+		if dropOldTable && err == nil {
+			return p.DropTable(ctx, replacementTable.Namespace, tmpTable, true)
+		}
+	} else {
+		_ = tx.Rollback()
 	}
 	return
 }
 
-func (p *Redshift) renameTable(ctx context.Context, ifExists bool, namespace, tableName, newTableName string) error {
-	if ifExists {
-		schema := p.namespaceName(namespace)
-		row := p.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema ilike '%s' AND table_name = '%s')`, schema, tableName))
-		exists := false
-		err := row.Scan(&exists)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			return nil
-		}
+func (p *Redshift) renameTable(ctx context.Context, tx TxOrDB, namespace, tableName, newTableName string) error {
+	quotedTableName := p.quotedTableName(tableName)
+	quotedSchema := p.namespacePrefix(namespace)
+	quotedNewTableName := p.quotedTableName(newTableName)
+	renameToSchema := utils.Ternary(p.renameToSchemaless, "", quotedSchema)
+	query := fmt.Sprintf(renameTableTemplate, "", quotedSchema, quotedTableName, renameToSchema, quotedNewTableName)
+
+	if _, err := tx.ExecContext(ctx, query); err != nil {
+		return errorj.RenameError.Wrap(err, "failed to rename table").
+			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
+				Table:     quotedTableName,
+				Statement: query,
+			})
 	}
-	return p.SQLAdapterBase.renameTable(ctx, false, namespace, tableName, newTableName)
+	return nil
 }
 
 // GetTableSchema return table (name,columns, primary key) representation wrapped in Table struct

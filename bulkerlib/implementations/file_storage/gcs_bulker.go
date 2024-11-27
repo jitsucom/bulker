@@ -8,11 +8,10 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
-const GCSBulkerTypeId = "gcs"
 const GCSAutocommitUnsupported = "Stream mode is not supported for GCS. Please use 'batch' mode"
 
 func init() {
-	bulker.RegisterBulker(GCSBulkerTypeId, NewGCSBulker)
+	bulker.RegisterBulker(implementations2.GCSBulkerTypeId, NewGCSBulker)
 }
 
 type GCSConfig struct {
@@ -34,7 +33,7 @@ func NewGCSBulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		Bucket:     gcsConfig.Bucket,
 		KeyFile:    gcsConfig.AccessKey,
 	}
-	//TODO: auto recoonect the same way as in SQL bulkers
+	//TODO: auto reconnect the same way as in SQL bulkers
 	gcsAdapter, err := implementations2.NewGoogleCloudStorage(&googleConfig)
 	if err != nil {
 		return nil, err
@@ -54,8 +53,4 @@ func (gcs *GCSBulker) CreateStream(id, tableName string, mode bulker.BulkMode, s
 		return NewReplacePartitionStream(id, gcs, tableName, streamOptions...)
 	}
 	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
-}
-
-func (gcs *GCSBulker) Type() string {
-	return GCSBulkerTypeId
 }

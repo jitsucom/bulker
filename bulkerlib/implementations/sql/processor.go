@@ -48,13 +48,13 @@ func extractSQLTypesHints(object types.Object) (types.SQLTypes, error) {
 }
 
 func _extractSQLTypesHints(key string, object types.Object, result types.SQLTypes) error {
-	var toDelete []string
-	for el := object.Front(); el != nil; el = el.Next() {
+	for el := object.Front(); el != nil; {
 		k := el.Key
 		v := el.Value
+		el = el.Next()
 		//if column has __sql_type_ prefix
 		if strings.HasPrefix(k, implementations.SqlTypePrefix) {
-			toDelete = append(toDelete, k)
+			object.Delete(k)
 			columnName := strings.TrimPrefix(k[len(implementations.SqlTypePrefix):], "_")
 			//when columnName is empty it means that provided sql type is meant for the whole object
 			//e.g. to map nested object to sql JSON type you can add the following property to nested object: "__sql_type_": "JSON" )
@@ -77,9 +77,6 @@ func _extractSQLTypesHints(key string, object types.Object, result types.SQLType
 				return err
 			}
 		}
-	}
-	for _, k := range toDelete {
-		object.Delete(k)
 	}
 
 	return nil
