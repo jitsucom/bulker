@@ -23,6 +23,8 @@ func ParseInt(value any) (int, error) {
 		} else {
 			return 0, fmt.Errorf("can't parse float %f as int", v)
 		}
+	case nil:
+		return 0, nil
 	default:
 		return 0, fmt.Errorf("ParseInt: invalid value type %T", value)
 	}
@@ -39,6 +41,8 @@ func ParseFloat(value any) (float64, error) {
 		return float64(v), nil
 	case float64:
 		return v, nil
+	case nil:
+		return 0, nil
 	default:
 		return 0, fmt.Errorf("ParseFloat: invalid value type %T", value)
 	}
