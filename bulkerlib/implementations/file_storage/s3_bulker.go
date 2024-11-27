@@ -8,11 +8,10 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
-const S3BulkerTypeId = "s3"
 const S3AutocommitUnsupported = "Stream mode is not supported for GCS. Please use 'batch' mode"
 
 func init() {
-	bulker.RegisterBulker(S3BulkerTypeId, NewS3Bulker)
+	bulker.RegisterBulker(implementations.S3BulkerTypeId, NewS3Bulker)
 }
 
 type S3Bulker struct {
@@ -43,8 +42,4 @@ func (s3 *S3Bulker) CreateStream(id, tableName string, mode bulker.BulkMode, str
 		return NewReplacePartitionStream(id, s3, tableName, streamOptions...)
 	}
 	return nil, fmt.Errorf("unsupported bulk mode: %s", mode)
-}
-
-func (s3 *S3Bulker) Type() string {
-	return S3BulkerTypeId
 }
