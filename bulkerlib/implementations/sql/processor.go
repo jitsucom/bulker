@@ -52,7 +52,6 @@ func _extractSQLTypesHints(key string, object types.Object, result types.SQLType
 	for el := object.Front(); el != nil; el = el.Next() {
 		k := el.Key
 		v := el.Value
-		el = el.Next()
 		//if column has __sql_type_ prefix
 		if strings.HasPrefix(k, implementations.SqlTypePrefix) {
 			toDelete = append(toDelete, k)
