@@ -1,4 +1,4 @@
-FROM golang:1.23.1-bookworm as build
+FROM golang:1.23.3-bookworm as build
 
 RUN apt-get install gcc libc6-dev
 
