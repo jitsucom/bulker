@@ -5,7 +5,7 @@ go 1.23
 toolchain go1.23.3
 
 require (
-	github.com/confluentinc/confluent-kafka-go/v2 v2.5.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.6.1
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-co-op/gocron/v2 v2.2.4
 	github.com/gomodule/redigo v1.8.9

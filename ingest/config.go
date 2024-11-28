@@ -54,7 +54,7 @@ type Config struct {
 
 	MetricsPort int `mapstructure:"METRICS_PORT" default:"9091"`
 
-	MaxIngestPayloadSize int `mapstructure:"MAX_INGEST_PAYLOAD_SIZE" default:"1048576"`
+	MaxIngestPayloadSize int `mapstructure:"MAX_INGEST_PAYLOAD_SIZE" default:"1000000"`
 
 	WeightedPartitionSelectorLagThreshold int64 `mapstructure:"WEIGHTED_PARTITION_SELECTOR_LAG_THRESHOLD" default:"100"`
 	// # GRACEFUL SHUTDOWN

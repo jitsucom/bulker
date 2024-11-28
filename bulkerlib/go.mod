@@ -16,7 +16,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.32.3
 	github.com/docker/go-connections v0.5.0
 	github.com/go-sql-driver/mysql v1.8.1
-	github.com/hamba/avro/v2 v2.22.1
+	github.com/hamba/avro/v2 v2.24.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joomcode/errorx v1.1.1
 	github.com/lib/pq v1.10.9

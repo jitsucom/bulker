@@ -471,7 +471,7 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event type
 		err = utils.Nvl(err, err1)
 	} else {
 		if len(ingestMessageBytes) > r.config.MaxIngestPayloadSize {
-			err = fmt.Errorf("message size is too big. max allowed: %d", len(ingestMessageBytes)/2)
+			err = fmt.Errorf("message size %d is too big. max allowed: %d", len(ingestMessageBytes), r.config.MaxIngestPayloadSize)
 		}
 	}
 	return

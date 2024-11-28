@@ -255,7 +255,7 @@ func (sc *StreamConsumerImpl) start() {
 						failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, allTablesToken, sc.config.KafkaTopicPrefix, false)
 					}
 					headers := message.Headers
-					kafkabase.PutKafkaHeader(&headers, errorHeader, originalError.Error())
+					kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenStringWithEllipsis(originalError.Error(), 256))
 					kafkabase.PutKafkaHeader(&headers, originalTopicHeader, sc.topicId)
 					kafkabase.PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
 					kafkabase.PutKafkaHeader(&headers, retryTimeHeader, timestamp.ToISOFormat(RetryBackOffTime(sc.config, retries+1).UTC()))
