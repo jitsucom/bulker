@@ -11,6 +11,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -335,11 +336,60 @@ func (p *RedshiftIAM) Insert(ctx context.Context, table *Table, merge bool, obje
 	return nil
 }
 
-func (p *RedshiftIAM) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (bulker.WarehouseState, error) {
+func (p *RedshiftIAM) deleteThenCopy(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
+	quotedTargetTableName := p.quotedTableName(targetTable.Name)
+	namespace := p.namespacePrefix(targetTable.Namespace)
+	quotedSourceTableName := p.quotedTableName(sourceTable.Name)
+	sourceNamespace := p.namespacePrefix(sourceTable.Namespace)
+
+	tx, err := p.openTx(ctx, p)
+	if err != nil {
+		return state, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	//delete duplicates from table
+	var pkMatchConditions string
+	for i, pkColumn := range targetTable.GetPKFields() {
+		if i > 0 {
+			pkMatchConditions += " AND "
+		}
+		pkMatchConditions += fmt.Sprintf(`%s.%s = %s.%s`, quotedTargetTableName, pkColumn, quotedSourceTableName, pkColumn)
+	}
+	deleteStatement := fmt.Sprintf(redshiftDeleteBeforeBulkMergeUsing, namespace, quotedTargetTableName, sourceNamespace, quotedSourceTableName, pkMatchConditions)
+
+	if _, err = tx.tx.ExecContext(ctx, deleteStatement); err != nil {
+		return state, err
+	}
+	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	state, err = p.copy(ctx, targetTable, sourceTable)
+	if err != nil {
+		return state, err
+	}
+	err = tx.Commit()
+	return state, err
+}
+
+func (p *RedshiftIAM) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
 	if mergeWindow <= 0 {
 		return p.copy(ctx, targetTable, sourceTable)
 	} else {
-		return p.copyOrMerge(ctx, targetTable, sourceTable, redshiftMergeQueryTemplate, p.quotedTableName(targetTable.Name), "S")
+		for i := 0; i < 5; i++ {
+			state, err = p.deleteThenCopy(ctx, targetTable, sourceTable, mergeWindow)
+			if err != nil {
+				if strings.Contains(err.Error(), redshiftTxIsolationError) {
+					p.Errorf("Redshift transaction isolation error: %v. Retrying...", err)
+					//sleep 30-39s
+					time.Sleep(time.Duration(30+rand.Intn(10)) * time.Second)
+					continue
+				}
+			}
+			break
+		}
+		return state, err
 	}
 }
 
@@ -423,16 +473,17 @@ func (p *RedshiftIAM) ReplaceTable(ctx context.Context, targetTableName string, 
 		return err
 	}
 	if !exists {
-		return p.renameTable(ctx, p.txOrDb(ctx), replacementTable.Namespace, replacementTable.Name, targetTableName)
+		return p.renameTable(ctx, false, replacementTable.Namespace, replacementTable.Name, targetTableName)
 	}
 	// rename in 2 ops in transaction
 	tx, err := p.openTx(ctx, p)
 	if err != nil {
 		return err
 	}
+	ctxTx := context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	tmpTable := "deprecated_" + targetTableName + time.Now().Format("_20060102_150405")
-	err1 := p.renameTable(ctx, tx.tx, replacementTable.Namespace, targetTableName, tmpTable)
-	err = p.renameTable(ctx, tx.tx, replacementTable.Namespace, replacementTable.Name, targetTableName)
+	err1 := p.renameTable(ctxTx, false, replacementTable.Namespace, targetTableName, tmpTable)
+	err = p.renameTable(ctxTx, false, replacementTable.Namespace, replacementTable.Name, targetTableName)
 	if err == nil && err1 == nil {
 		err = tx.Commit()
 		if dropOldTable && err == nil {
@@ -442,23 +493,6 @@ func (p *RedshiftIAM) ReplaceTable(ctx context.Context, targetTableName string, 
 		_ = tx.Rollback()
 	}
 	return
-}
-
-func (p *RedshiftIAM) renameTable(ctx context.Context, tx TxOrDB, namespace, tableName, newTableName string) error {
-	quotedTableName := p.quotedTableName(tableName)
-	quotedSchema := p.namespacePrefix(namespace)
-	quotedNewTableName := p.quotedTableName(newTableName)
-	renameToSchema := utils.Ternary(p.renameToSchemaless, "", quotedSchema)
-	query := fmt.Sprintf(renameTableTemplate, "", quotedSchema, quotedTableName, renameToSchema, quotedNewTableName)
-
-	if _, err := tx.ExecContext(ctx, query); err != nil {
-		return errorj.RenameError.Wrap(err, "failed to rename table").
-			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-				Table:     quotedTableName,
-				Statement: query,
-			})
-	}
-	return nil
 }
 
 func (p *RedshiftIAM) Ping(ctx context.Context) error {

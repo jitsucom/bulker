@@ -93,10 +93,12 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		// remove columns with missed data from Insert statements
 		for el := currentTable.Columns.Front(); el != nil; {
 			name := el.Key
+			curEl := el
+			// move to the next element before deleting the current one. otherwise iteration will be broken
 			el = el.Next()
 			v, ok := processedObject.Get(name)
 			if !ok || v == nil {
-				currentTable.Columns.Delete(name)
+				currentTable.Columns.DeleteElement(curEl)
 			}
 		}
 		currentTable.PrimaryKeyName = existingTable.PrimaryKeyName
@@ -115,10 +117,12 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		// remove columns with missed data from Insert statements
 		for el := existingTable.Columns.Front(); el != nil; {
 			name := el.Key
+			curEl := el
+			// move to the next element before deleting the current one. otherwise iteration will be broken
 			el = el.Next()
 			v, ok := processedObject.Get(name)
 			if !ok || v == nil {
-				existingTable.Columns.Delete(name)
+				existingTable.Columns.DeleteElement(curEl)
 			}
 		}
 		err = ps.sqlAdapter.Insert(ctx, existingTable, ps.merge, processedObject)

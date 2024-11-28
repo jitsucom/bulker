@@ -259,6 +259,11 @@ func (m *OrderedMap[K, V]) Delete(key K) (didDelete bool) {
 	return ok
 }
 
+func (m *OrderedMap[K, V]) DeleteElement(el *Element[K, V]) {
+	m.ll.Remove(el)
+	delete(m.kv, el.Key)
+}
+
 func (m *OrderedMap[K, V]) Rename(key K, newkey K) {
 	el, ok := m.kv[key]
 	if !ok {
