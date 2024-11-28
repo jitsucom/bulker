@@ -169,7 +169,7 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			singleCount.retryScheduled++
 		}
 		originalError := kafkabase.GetKafkaHeader(message, errorHeader)
-		kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenString(originalError, 1024))
+		kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenString(originalError, 256))
 		kafkabase.PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
 		err = producer.Produce(&kafka.Message{
 			Key:            message.Key,
