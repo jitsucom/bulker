@@ -179,7 +179,8 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			Value:          message.Value,
 		}, nil)
 		if err != nil {
-			return counters, state, false, fmt.Errorf("failed to put message to producer: %v", err)
+			rc.Errorf("Failed to put message to producer: %v\nMessage: %s Headers: %+v Key: %v", err, string(message.Value), headers, message.Key)
+			//return counters, state, false, fmt.Errorf("failed to put message to producer: %v", err)
 		}
 		counters.accumulate(singleCount)
 
