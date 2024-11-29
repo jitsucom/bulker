@@ -34,8 +34,6 @@ type TableHelper struct {
 	coordinationService coordination.Service
 	tablesCache         map[string]*Table
 
-	maxColumns int
-
 	maxIdentifierLength int
 	identifierQuoteStr  string
 	useQuoting          bool
@@ -50,8 +48,6 @@ func NewTableHelper(maxIdentifierLength int, identifierQuoteChar rune) TableHelp
 	return TableHelper{
 		coordinationService: coordination.DummyCoordinationService{},
 		tablesCache:         map[string]*Table{},
-
-		maxColumns: 1000,
 
 		maxIdentifierLength: maxIdentifierLength,
 		identifierQuoteStr:  string(identifierQuoteChar),
@@ -182,15 +178,6 @@ func (th *TableHelper) patchTableIfNeeded(ctx context.Context, sqlAdapter SQLAda
 	diff := currentSchema.Diff(sqlAdapter, desiredSchema)
 	if !diff.Exists() {
 		return currentSchema, nil
-	}
-
-	//check if max columns error
-	if th.maxColumns > 0 {
-		columnsCount := currentSchema.ColumnsCount() + diff.ColumnsCount()
-		if columnsCount > th.maxColumns {
-			//return nil, fmt.Errorf("Count of columns %d should be less or equal 'server.max_columns' (or destination.data_layout.max_columns) setting %d", columnsCount, th.maxColumns)
-			logging.Warnf("[%s] Count of columns %d should be less or equal 'server.max_columns' (or destination.data_layout.max_columns) setting %d", destinationID, columnsCount, th.maxColumns)
-		}
 	}
 
 	//** Diff exists **
