@@ -30,6 +30,7 @@ type RedshiftConfig struct {
 	Password   string            `mapstructure:"password,omitempty" json:"password,omitempty" yaml:"password,omitempty"`
 	Parameters map[string]string `mapstructure:"parameters,omitempty" json:"parameters,omitempty" yaml:"parameters,omitempty"`
 
+	Serverless           bool   `mapstructure:"serverless,omitempty" json:"serverless,omitempty" yaml:"serverless,omitempty"`
 	AuthenticationMethod string `mapstructure:"authenticationMethod,omitempty" json:"authenticationMethod,omitempty" yaml:"authenticationMethod,omitempty"`
 
 	ClusterIdentifier   string        `json:"clusterIdentifier"`
@@ -56,16 +57,70 @@ type RedshiftConfig struct {
 }
 
 func (cfg *RedshiftConfig) Sanitize() {
-	if cfg.ClusterIdentifier != "" {
-		cfg.WorkgroupName = ""
-	}
-	if cfg.WorkgroupName != "" {
-		cfg.Username = ""
+	if cfg.AuthenticationMethod == "iam" {
+		cfg.AccessKeyID = ""
+		cfg.SecretAccessKey = ""
+		cfg.Host = ""
+		if cfg.Serverless {
+			cfg.ClusterIdentifier = ""
+			cfg.Username = ""
+			cfg.Password = ""
+		} else {
+			cfg.WorkgroupName = ""
+			cfg.Password = ""
+		}
 	}
 }
 
 func (cfg *RedshiftConfig) Validate() error {
-	//TODO:
+	if cfg.Db == "" {
+		return errors.New("database is required")
+	}
+	if cfg.Schema == "" {
+		return errors.New("defaultSchema is required")
+	}
+	if cfg.Region == "" {
+		return errors.New("region is required")
+	}
+	if cfg.Bucket == "" {
+		return errors.New("bucket is required")
+	}
+	if cfg.AuthenticationMethod == "" || cfg.AuthenticationMethod == "password" {
+		if cfg.Host == "" {
+			return errors.New("host is required")
+		}
+		if cfg.Username == "" {
+			return errors.New("username is required")
+		}
+		if cfg.Password == "" {
+			return errors.New("password is required")
+		}
+		if cfg.AccessKeyID == "" {
+			return errors.New("accessKeyId is required")
+		}
+		if cfg.SecretAccessKey == "" {
+			return errors.New("secretAccessKey is required")
+		}
+	} else if cfg.AuthenticationMethod == "iam" {
+		if cfg.Serverless {
+			if cfg.WorkgroupName == "" {
+				return errors.New("workgroupName is required")
+			}
+		} else {
+			if cfg.ClusterIdentifier == "" {
+				return errors.New("clusterIdentifier is required")
+			}
+			if cfg.Username == "" {
+				return errors.New("username is required")
+			}
+		}
+		if cfg.RoleARN == "" {
+			return errors.New("roleARN is required")
+		}
+		if cfg.ExternalID == "" {
+			return errors.New("externalID is required")
+		}
+	}
 	return nil
 }
 

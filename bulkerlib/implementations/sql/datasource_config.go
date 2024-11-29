@@ -18,15 +18,6 @@ func (dsc *DataSourceConfig) Validate() error {
 	if dsc == nil {
 		return errors.New("Datasource config is required")
 	}
-	if dsc.Host == "" {
-		return errors.New("Datasource host is required parameter")
-	}
-	if dsc.Db == "" {
-		return errors.New("Datasource db is required parameter")
-	}
-	if dsc.Username == "" {
-		return errors.New("Datasource username is required parameter")
-	}
 
 	if dsc.Parameters == nil {
 		dsc.Parameters = map[string]string{}

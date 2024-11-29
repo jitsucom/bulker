@@ -41,6 +41,8 @@ func NewRedshiftIAM(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
+	config.Sanitize()
+	
 	if config.Parameters == nil {
 		config.Parameters = map[string]string{}
 	}

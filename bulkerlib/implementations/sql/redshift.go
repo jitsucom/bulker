@@ -94,7 +94,9 @@ func NewRedshiftClassic(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Port == 0 {
 		config.Port = 5439
 	}
-
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 	bulkerConfig.DestinationConfig = PostgresConfig{DataSourceConfig: DataSourceConfig{
 		Host:       config.Host,
 		Port:       config.Port,

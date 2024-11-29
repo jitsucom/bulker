@@ -26,12 +26,13 @@ const (
 
 // S3Config is a dto for config deserialization
 type S3Config struct {
-	FileConfig      `mapstructure:",squash" json:",inline" yaml:",inline"`
-	AccessKeyID     string `mapstructure:"accessKeyId,omitempty" json:"accessKeyId,omitempty" yaml:"accessKeyId,omitempty"`
-	SecretAccessKey string `mapstructure:"secretAccessKey,omitempty" json:"secretAccessKey,omitempty" yaml:"secretAccessKey,omitempty"`
-	Bucket          string `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
-	Region          string `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
-	Endpoint        string `mapstructure:"endpoint,omitempty" json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	FileConfig           `mapstructure:",squash" json:",inline" yaml:",inline"`
+	AuthenticationMethod string `mapstructure:"authenticationMethod,omitempty" json:"authenticationMethod,omitempty" yaml:"authenticationMethod,omitempty"`
+	AccessKeyID          string `mapstructure:"accessKeyId,omitempty" json:"accessKeyId,omitempty" yaml:"accessKeyId,omitempty"`
+	SecretAccessKey      string `mapstructure:"secretAccessKey,omitempty" json:"secretAccessKey,omitempty" yaml:"secretAccessKey,omitempty"`
+	Bucket               string `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
+	Region               string `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
+	Endpoint             string `mapstructure:"endpoint,omitempty" json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
 
 	RoleARN       string        `json:"roleARN"`
 	RoleARNExpiry time.Duration `json:"roleARNExpiry"` // default: 15m
@@ -43,9 +44,19 @@ func (s3c *S3Config) Validate() error {
 	if s3c == nil {
 		return errors.New("S3 config is required")
 	}
-	if s3c.RoleARN == "" {
-		if s3c.AccessKeyID == "" || s3c.SecretAccessKey == "" {
-			return errors.New("accessKeyId + secretAccessKey or roleARN are required to authenticate S3")
+	if s3c.AuthenticationMethod == "iam" {
+		if s3c.RoleARN == "" {
+			return errors.New("roleARN is required for IAM authentication method")
+		}
+		if s3c.ExternalID == "" {
+			return errors.New("externalID is required for IAM authentication method")
+		}
+	} else {
+		if s3c.AccessKeyID == "" {
+			return errors.New("accessKeyId is required to authenticate S3")
+		}
+		if s3c.SecretAccessKey == "" {
+			return errors.New("secretAccessKey is required to authenticate S3")
 		}
 	}
 
@@ -56,6 +67,19 @@ func (s3c *S3Config) Validate() error {
 		return errors.New("S3 region is required parameter")
 	}
 	return nil
+}
+
+func (s3c *S3Config) Sanitize() {
+	if s3c.AuthenticationMethod == "iam" {
+		s3c.AccessKeyID = ""
+		s3c.SecretAccessKey = ""
+	} else {
+		s3c.RoleARN = ""
+		s3c.ExternalID = ""
+	}
+	if s3c.Format == "" {
+		s3c.Format = types2.FileFormatNDJSON
+	}
 }
 
 // S3 is a S3 adapter for uploading/deleting files
@@ -73,9 +97,7 @@ func NewS3(s3Config *S3Config) (*S3, error) {
 	if err := s3Config.Validate(); err != nil {
 		return nil, err
 	}
-	if s3Config.Format == "" {
-		s3Config.Format = types2.FileFormatNDJSON
-	}
+	s3Config.Sanitize()
 	s3ClientFunc := func(s3Config *S3Config) (*s3.Client, error) {
 		var opts []func(*config.LoadOptions) error
 		if s3Config.Region != "" {
