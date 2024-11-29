@@ -42,7 +42,7 @@ func NewRedshiftIAM(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return nil, err
 	}
 	config.Sanitize()
-	
+
 	if config.Parameters == nil {
 		config.Parameters = map[string]string{}
 	}
@@ -114,13 +114,12 @@ func (p *RedshiftIAM) CreateStream(id, tableName string, mode bulker.BulkMode, s
 	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s", utils.SanitizeString(id))))
 	if p.config.Bucket != "" {
 		streamOptions = append(streamOptions, withS3BatchFile(&S3OptionConfig{
-			AccessKeyID:     p.config.AccessKeyID,
-			SecretAccessKey: p.config.SecretAccessKey,
-			RoleARN:         p.config.RoleARN,
-			ExternalID:      p.config.ExternalID,
-			Bucket:          p.config.Bucket,
-			Region:          p.config.Region,
-			Folder:          p.config.Folder,
+			AuthenticationMethod: p.config.AuthenticationMethod,
+			RoleARN:              p.config.RoleARN,
+			ExternalID:           p.config.ExternalID,
+			Bucket:               p.config.Bucket,
+			Region:               p.config.Region,
+			Folder:               p.config.Folder,
 		}))
 	}
 	if err := p.validateOptions(streamOptions); err != nil {
