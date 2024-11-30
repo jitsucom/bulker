@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -178,7 +179,12 @@ func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize i
 			Value:          message.Value,
 		}, nil)
 		if err != nil {
-			return counters, state, false, fmt.Errorf("failed to put message to producer: %v", err)
+			if strings.Contains(err.Error(), "Message size too large") {
+				rc.Errorf("Message size too large: %d. Headers: %+v Skipping message", len(message.Value), headers)
+				singleCount.skipped++
+			} else {
+				return counters, state, false, fmt.Errorf("failed to put message to producer: %v", err)
+			}
 		}
 		counters.accumulate(singleCount)
 

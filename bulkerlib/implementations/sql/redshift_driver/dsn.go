@@ -33,14 +33,14 @@ type RedshiftConfig struct {
 	Serverless           bool   `mapstructure:"serverless,omitempty" json:"serverless,omitempty" yaml:"serverless,omitempty"`
 	AuthenticationMethod string `mapstructure:"authenticationMethod,omitempty" json:"authenticationMethod,omitempty" yaml:"authenticationMethod,omitempty"`
 
-	ClusterIdentifier   string        `json:"clusterIdentifier"`
-	WorkgroupName       string        `json:"workgroupName"`
+	ClusterIdentifier   string        `mapstructure:"clusterIdentifier" json:"clusterIdentifier" yaml:"clusterIdentifier"`
+	WorkgroupName       string        `mapstructure:"workgroupName" json:"workgroupName" yaml:"workgroupName"`
 	SecretsARN          string        `json:"secretsARN"`
 	SharedConfigProfile string        `json:"sharedConfigProfile"`
 	SessionToken        string        `json:"sessionToken"`
-	RoleARN             string        `json:"roleARN"`
+	RoleARN             string        `mapstructure:"roleARN" json:"roleARN" yaml:"roleARN"`
 	RoleARNExpiry       time.Duration `json:"roleARNExpiry"` // default: 15m
-	ExternalID          string        `json:"externalID"`
+	ExternalID          string        `mapstructure:"externalID" json:"externalID" yaml:"externalID"`
 	Timeout             time.Duration `json:"timeout"`          // default: no timeout
 	MinPolling          time.Duration `json:"polling"`          // default: 10ms
 	MaxPolling          time.Duration `json:"maxPolling"`       // default: 5s

@@ -34,9 +34,9 @@ type S3Config struct {
 	Region               string `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
 	Endpoint             string `mapstructure:"endpoint,omitempty" json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
 
-	RoleARN       string        `json:"roleARN"`
+	RoleARN       string        `mapstructure:"roleARN" json:"roleARN" yaml:"roleARN"`
 	RoleARNExpiry time.Duration `json:"roleARNExpiry"` // default: 15m
-	ExternalID    string        `json:"externalID"`
+	ExternalID    string        `mapstructure:"externalID" json:"externalID" yaml:"externalID"`
 }
 
 // Validate returns err if invalid
