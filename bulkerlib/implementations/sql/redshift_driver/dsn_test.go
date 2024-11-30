@@ -132,9 +132,11 @@ func TestRedshiftDataConfig__String(t *testing.T) {
 func TestRedshiftConfigSanitize(t *testing.T) {
 	t.Run("cluster config", func(t *testing.T) {
 		c := RedshiftConfig{
-			ClusterIdentifier: "default",
-			WorkgroupName:     "default",
-			Username:          "admin",
+			AuthenticationMethod: "iam",
+			Serverless:           false,
+			ClusterIdentifier:    "default",
+			WorkgroupName:        "default",
+			Username:             "admin",
 		}
 
 		c.Sanitize()
@@ -145,8 +147,10 @@ func TestRedshiftConfigSanitize(t *testing.T) {
 
 	t.Run("workgroup config", func(t *testing.T) {
 		c := RedshiftConfig{
-			WorkgroupName: "default",
-			Username:      "admin",
+			AuthenticationMethod: "iam",
+			Serverless:           true,
+			WorkgroupName:        "default",
+			Username:             "admin",
 		}
 
 		c.Sanitize()
