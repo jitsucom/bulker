@@ -149,8 +149,10 @@ func (ps *AbstractFileStorageStream) postConsume(err error) error {
 }
 
 func (ps *AbstractFileStorageStream) postComplete(err error) (bulker.State, error) {
-	_ = ps.batchFile.Close()
-	_ = os.Remove(ps.batchFile.Name())
+	if ps.batchFile != nil {
+		_ = ps.batchFile.Close()
+		_ = os.Remove(ps.batchFile.Name())
+	}
 	if err != nil {
 		ps.state.SetError(err)
 		ps.state.Status = bulker.Failed

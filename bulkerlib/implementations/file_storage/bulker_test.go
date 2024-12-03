@@ -282,6 +282,14 @@ func TestBasics(t *testing.T) {
 			configIds:     []string{implementations.S3BulkerTypeId + "_flat"},
 			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate(), bulker.WithDiscriminatorField([]string{"nested", "int1"})},
 		},
+		{
+			name:              "empty",
+			modes:             []bulker.BulkMode{bulker.ReplaceTable, bulker.ReplacePartition},
+			dataFile:          "test_data/empty.ndjson",
+			expectedRowsCount: 0,
+			expectPartitionId: true,
+			configIds:         allBulkerConfigs,
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -402,11 +410,12 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 	//PostStep("state_lasterror", testConfig, mode, reqr, state.LastError)
 	if testConfig.expectedRowsCount != nil || testConfig.expectedRows != nil {
 		time.Sleep(1 * time.Second)
+		expectedRowCount := utils.Ternary(testConfig.expectedRows != nil, any(len(testConfig.expectedRows)), testConfig.expectedRowsCount).(int)
 		//Check rows count and rows data when provided
 		rowBytes, err := fileAdapter.Download(expectedFileName)
 		rows := []map[string]any{}
 		var reader io.Reader
-		if fileAdapter.Compression() == types.FileCompressionGZIP {
+		if expectedRowCount > 0 && fileAdapter.Compression() == types.FileCompressionGZIP {
 			reader, _ = gzip.NewReader(bytes.NewReader(rowBytes))
 		} else {
 			reader = bytes.NewReader(rowBytes)
