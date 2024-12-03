@@ -561,10 +561,11 @@ func (r *Router) checkOrigin(c *gin.Context, loc *StreamCredentials, stream *Str
 	return nil
 }
 
-func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials, _ bool) *StreamWithDestinations {
+func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials, s2sEndpoint bool) *StreamWithDestinations {
 	if loc.WriteKey != "" {
 		parts := strings.Split(loc.WriteKey, ":")
 		if len(parts) == 1 {
+			loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
 			return r.repository.GetData().GetStreamById(loc.WriteKey)
 		} else {
 			binding := r.repository.GetData().getStreamByKeyId(parts[0])

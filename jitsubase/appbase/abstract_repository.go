@@ -166,6 +166,7 @@ func (r *AbstractRepository[T]) refresh(notify bool) {
 		if r.cacheDir != "" {
 			r.storeCached()
 		}
+		r.Infof("Updated: %v previous: %v ms: %d", newTag, tag, time.Now().Sub(start).Milliseconds())
 		if notify {
 			select {
 			case r.changesChan <- true:
