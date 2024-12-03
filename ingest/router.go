@@ -212,7 +212,7 @@ func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *
 
 	if stream.Throttle > 0 {
 		if stream.Throttle >= 100 || rand.Int31n(100) < int32(stream.Throttle) {
-			rError = r.ResponseError(c, http.StatusPaymentRequired, ErrThrottledType, false, fmt.Errorf(ErrThrottledDescription), sendResponse)
+			rError = r.ResponseError(c, http.StatusPaymentRequired, ErrThrottledType, false, fmt.Errorf(ErrThrottledDescription), sendResponse, true)
 			return
 		}
 	}
@@ -234,7 +234,7 @@ func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *
 			for _, id := range asyncDestinations {
 				IngestedMessages(id, "error", "producer error").Inc()
 			}
-			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, sendResponse)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, sendResponse, true)
 		}
 		for _, id := range asyncDestinations {
 			IngestedMessages(id, "success", "").Inc()

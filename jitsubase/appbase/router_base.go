@@ -116,7 +116,7 @@ func (r *Router) authMiddleware(c *gin.Context) {
 	return
 }
 
-func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, sendResponse bool) *RouterError {
+func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, sendResponse bool, logError bool) *RouterError {
 	routerError := RouterError{ErrorType: errorType}
 	if err != nil {
 		if maskError {
@@ -146,7 +146,11 @@ func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskE
 		builder.WriteString(fmt.Sprintf("[domain: %s]", domain))
 	}
 	logFormat := utils.JoinNonEmptyStrings(" ", builder.String(), "%v")
-	r.Errorf(logFormat, err)
+	if logError {
+		r.Errorf(logFormat, err)
+	} else {
+		r.Debugf(logFormat, err)
+	}
 	if sendResponse {
 		if c.FullPath() == "/api/px/:tp" {
 			c.Header("X-Jitsu-Error", routerError.PublicError.Error())

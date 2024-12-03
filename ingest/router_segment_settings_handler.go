@@ -16,17 +16,17 @@ func (r *Router) SettingsHandler(c *gin.Context) {
 	writer.WriteHeader(200)
 	_, err := writer.WriteString(settingsHeader)
 	if err != nil {
-		r.ResponseError(c, http.StatusBadRequest, "error writing response", false, err, true)
+		r.ResponseError(c, http.StatusBadRequest, "error writing response", false, err, true, true)
 		return
 	}
 	_, err = writer.WriteString(writeKey)
 	if err != nil {
-		r.ResponseError(c, http.StatusBadRequest, "error writing response", false, err, true)
+		r.ResponseError(c, http.StatusBadRequest, "error writing response", false, err, true, true)
 		return
 	}
 	_, err = writer.WriteString(settingsFooter)
 	if err != nil {
-		r.ResponseError(c, http.StatusBadRequest, "error writing response", false, err, true)
+		r.ResponseError(c, http.StatusBadRequest, "error writing response", false, err, true, true)
 		return
 	}
 }
