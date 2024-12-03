@@ -5,6 +5,7 @@ toolchain go1.23.3
 use (
 	./bulkerapp
 	./bulkerlib
+	./config-keeper
 	./connectors/airbytecdk
 	./connectors/firebase
 	./eventslog

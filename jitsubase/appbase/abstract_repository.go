@@ -12,6 +12,10 @@ import (
 type Repository[T any] interface {
 	io.Closer
 	GetData() *T
+	LastSuccess() time.Time
+	Loaded() bool
+	GetEtag() string
+	GetLastModified() time.Time
 	ChangesChannel() <-chan bool
 }
 
@@ -31,6 +35,7 @@ type AbstractRepository[T any] struct {
 	dataSource       RepositoryDataLoader
 	attempts         int
 	data             RepositoryData[T]
+	lastSuccess      atomic.Pointer[time.Time]
 	tag              atomic.Pointer[any]
 	closed           chan struct{}
 }
@@ -142,6 +147,8 @@ func (r *AbstractRepository[T]) refresh(notify bool) {
 			continue
 		}
 		if !modified {
+			lastSuccess := time.Now()
+			r.lastSuccess.Store(&lastSuccess)
 			r.Debugf("Repository is not modified")
 			return
 		}
@@ -153,6 +160,8 @@ func (r *AbstractRepository[T]) refresh(notify bool) {
 			continue
 		}
 		r.inited.Store(true)
+		lastSuccess := time.Now()
+		r.lastSuccess.Store(&lastSuccess)
 		r.tag.Store(&newTag)
 		if r.cacheDir != "" {
 			r.storeCached()
@@ -200,10 +209,46 @@ func (r *AbstractRepository[T]) Close() error {
 	return nil
 }
 
+func (r *AbstractRepository[T]) Loaded() bool {
+	return r.inited.Load()
+}
+
+func (r *AbstractRepository[T]) LastSuccess() time.Time {
+	t := r.lastSuccess.Load()
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
+}
+
 func (r *AbstractRepository[T]) ChangesChannel() <-chan bool {
 	return r.changesChan
 }
 
 func (r *AbstractRepository[T]) GetData() *T {
 	return r.data.GetData()
+}
+
+func (r *AbstractRepository[T]) GetEtag() string {
+	t := r.tag.Load()
+	if t == nil {
+		return ""
+	}
+	s, ok := (*t).(string)
+	if ok {
+		return s
+	}
+	return ""
+}
+
+func (r *AbstractRepository[T]) GetLastModified() time.Time {
+	t := r.tag.Load()
+	if t == nil {
+		return time.Time{}
+	}
+	s, ok := (*t).(time.Time)
+	if ok {
+		return s
+	}
+	return time.Time{}
 }
