@@ -291,14 +291,15 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, namespace string, tableN
 				Statement: query,
 			})
 	}
-	
+
 	if table.ColumnsCount() == 0 {
 		return table, nil
 	}
 
 	primaryKeyName, pkFields, err := s.getPrimaryKey(ctx, namespace, tableName)
 	if err != nil {
-		return nil, err
+		s.Errorf("failed to get primary key for table %s: %v", tableName, err)
+		//return nil, err
 	}
 
 	table.PKFields = pkFields
@@ -306,7 +307,7 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, namespace string, tableN
 
 	jitsuPrimaryKeyName := s.BuildConstraintName(table.Name)
 	if primaryKeyName != "" && strings.ToLower(primaryKeyName) != strings.ToLower(jitsuPrimaryKeyName) {
-		logging.Debugf("table: %s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
+		s.Debugf("table: %s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
 	}
 
 	return table, nil
