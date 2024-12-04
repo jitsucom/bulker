@@ -291,6 +291,10 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, namespace string, tableN
 				Statement: query,
 			})
 	}
+	
+	if table.ColumnsCount() == 0 {
+		return table, nil
+	}
 
 	primaryKeyName, pkFields, err := s.getPrimaryKey(ctx, namespace, tableName)
 	if err != nil {

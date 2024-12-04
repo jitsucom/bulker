@@ -57,10 +57,17 @@ func NewRouter(appContext *Context) *Router {
 			}
 			repStatuses[name] = status
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"status":       utils.Ternary(healthy, "pass", "fail"),
-			"repositories": repStatuses,
-		})
+		if healthy {
+			c.JSON(http.StatusOK, gin.H{
+				"status":       "pass",
+				"repositories": repStatuses,
+			})
+		} else {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":       "fail",
+				"repositories": repStatuses,
+			})
+		}
 	})
 
 	return router
