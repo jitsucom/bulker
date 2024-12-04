@@ -298,8 +298,7 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, namespace string, tableN
 
 	primaryKeyName, pkFields, err := s.getPrimaryKey(ctx, namespace, tableName)
 	if err != nil {
-		s.Errorf("failed to get primary key for table %s: %v", tableName, err)
-		//return nil, err
+		return nil, err
 	}
 
 	table.PKFields = pkFields
