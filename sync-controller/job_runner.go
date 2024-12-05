@@ -439,8 +439,13 @@ func (j *JobRunner) createCronJob(jobId string, task TaskDescriptor, configurati
 		"PACKAGE":           task.Package,
 		"PACKAGE_VERSION":   task.PackageVersion,
 		"COMMAND":           task.TaskType,
+		"NAMESPACE":         task.Namespace,
+		"TO_SAME_CASE":      task.ToSameCase,
 		"TABLE_NAME_PREFIX": task.TableNamePrefix,
+		"FULL_SYNC":         task.FullSync,
 		"DATABASE_URL":      databaseURL,
+		"LOG_LEVEL":         j.config.LogLevel,
+		"DB_LOG_LEVEL":      j.config.DBLogLevel,
 		"STARTED_BY":        task.StartedBy,
 		"STARTED_AT":        task.StartedAt,
 	}
@@ -633,6 +638,8 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 		"TABLE_NAME_PREFIX": task.TableNamePrefix,
 		"FULL_SYNC":         task.FullSync,
 		"DATABASE_URL":      databaseURL,
+		"LOG_LEVEL":         j.config.LogLevel,
+		"DB_LOG_LEVEL":      j.config.DBLogLevel,
 		"STARTED_BY":        task.StartedBy,
 		"STARTED_AT":        task.StartedAt,
 	}

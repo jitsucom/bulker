@@ -34,6 +34,9 @@ type Config struct {
 	TaskTimeoutHours int `mapstructure:"TASK_TIMEOUT_HOURS" default:"48"`
 
 	SidecarImage string `mapstructure:"SIDECAR_IMAGE" default:"jitsucom/sidecar:latest"`
+
+	LogLevel   string `mapstructure:"LOG_LEVEL" default:"INFO"`
+	DBLogLevel string `mapstructure:"DB_LOG_LEVEL" default:"INFO"`
 }
 
 func init() {
