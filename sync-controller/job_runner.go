@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,8 +18,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/utils/ptr"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,10 +39,14 @@ const (
 var labelUnsupportedChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 var nonAlphaNum = regexp.MustCompile(`[^a-zA-Z0-9-]`)
 
+var cgroupCPUUsage = regexp.MustCompile(`(?m:^usage_usec (\d+)$)`)
+var cgroupMemUsage = regexp.MustCompile(`(?m:^(\d+)$)`)
+
 type JobRunner struct {
 	appbase.Service
 	config        *Config
 	namespace     string
+	clientConfig  *rest.Config
 	clientset     *kubernetes.Clientset
 	closeCh       chan struct{}
 	taskStatusCh  chan *TaskStatus
@@ -46,11 +56,11 @@ type JobRunner struct {
 
 func NewJobRunner(appContext *Context) (*JobRunner, error) {
 	base := appbase.NewServiceBase("job-runner")
-	clientset, err := GetK8SClientSet(appContext)
+	clientset, clientConfig, err := GetK8SClientSet(appContext)
 	if err != nil {
 		return nil, err
 	}
-	j := &JobRunner{Service: base, config: appContext.config, clientset: clientset, namespace: appContext.config.KubernetesNamespace,
+	j := &JobRunner{Service: base, config: appContext.config, clientset: clientset, clientConfig: clientConfig, namespace: appContext.config.KubernetesNamespace,
 		closeCh:       make(chan struct{}),
 		taskStatusCh:  make(chan *TaskStatus, 100),
 		runningPods:   map[string]time.Time{},
@@ -111,6 +121,10 @@ func (j *JobRunner) watchPodStatuses() {
 								j.cleanupPod(pod.Name)
 							} else {
 								taskStatus.Status = StatusRunning
+								metrics := j.getPodResUsage(pod.Name, "source")
+								if len(metrics) > 0 {
+									taskStatus.Metrics = metrics
+								}
 								j.Infof("Pod %s is running", pod.Name)
 								j.runningPods[pod.Name] = time.Now()
 							}
@@ -165,7 +179,7 @@ func (j *JobRunner) sendStatus(taskStatus *TaskStatus) {
 
 func (j *JobRunner) cleanupPod(name string) {
 	j.cleanedUpPods.Put(name)
-	gracePeriodSeconds := int64(j.config.ContainerGraceShutdownSeconds)
+	gracePeriodSeconds := int64(j.config.ContainerGraceShutdownSeconds + 5)
 	_ = j.clientset.CoreV1().Pods(j.namespace).Delete(context.Background(), name, metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
 	_ = j.clientset.CoreV1().Secrets(j.namespace).Delete(context.Background(), name+"-config", metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
 	_ = j.clientset.CoreV1().ConfigMaps(j.namespace).Delete(context.Background(), name+"-config", metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
@@ -257,6 +271,72 @@ func (j *JobRunner) getPodErrorLogs(podName, container string) string {
 	} else {
 		return ""
 	}
+}
+
+func (j *JobRunner) getPodResUsage(podName string, container string) (metrics map[string]any) {
+	startedAt := time.Now()
+	var err error
+	defer func() {
+		if err != nil {
+			j.Errorf("Pod %s resource usage: %+v ms: %v error: %v", podName, metrics, time.Now().Sub(startedAt), err)
+		} else {
+			j.Infof("Pod %s resource usage: %+v ms: %v", podName, metrics, time.Now().Sub(startedAt))
+		}
+	}()
+	cmd := []string{
+		"sh",
+		"-c",
+		"cat /sys/fs/cgroup/cpu.stat && cat /sys/fs/cgroup/memory.current && cat /sys/fs/cgroup/memory.peak",
+	}
+	req := j.clientset.CoreV1().RESTClient().Post().Resource("pods").Name(podName).
+		Namespace(j.namespace).SubResource("exec")
+	option := &v1.PodExecOptions{
+		Container: container,
+		Command:   cmd,
+		Stdout:    true,
+		Stderr:    true,
+	}
+	req.VersionedParams(
+		option,
+		scheme.ParameterCodec,
+	)
+	exec, err := remotecommand.NewSPDYExecutor(j.clientConfig, "POST", req.URL())
+	if err != nil {
+		return nil
+	}
+	var stdout, stderr bytes.Buffer
+	err = exec.StreamWithContext(context.Background(), remotecommand.StreamOptions{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	if err != nil {
+		return nil
+	}
+	metrics = map[string]any{}
+	stdoutStr := stdout.String()
+	cpuUsageMatches := cgroupCPUUsage.FindStringSubmatch(stdoutStr)
+	if len(cpuUsageMatches) == 2 {
+		c, _ := strconv.Atoi(cpuUsageMatches[1])
+		if c > 0 {
+			metrics["cpu_usage"] = float64(c) / 1000000
+		}
+	}
+	memUsage := 0
+	memUsageAllMatches := cgroupMemUsage.FindAllStringSubmatch(stdoutStr, -1)
+	for _, memUsageMatches := range memUsageAllMatches {
+		if len(memUsageMatches) == 2 {
+			m, _ := strconv.Atoi(memUsageMatches[1])
+			memUsage = utils.MaxInt(memUsage, m)
+		}
+	}
+	if memUsage > 0 {
+		metrics["mem_usage"] = memUsage
+	}
+	if stderr.Len() > 0 {
+		err = fmt.Errorf(stderr.String())
+	}
+
+	return metrics
 }
 
 func (j *JobRunner) CreateCronJob(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {
@@ -461,8 +541,9 @@ func (j *JobRunner) createCronJob(jobId string, task TaskDescriptor, configurati
 							Namespace:   j.namespace,
 						},
 						Spec: v1.PodSpec{
-							RestartPolicy: v1.RestartPolicyNever,
-							NodeSelector:  nodeSelector,
+							RestartPolicy:                 v1.RestartPolicyNever,
+							NodeSelector:                  nodeSelector,
+							TerminationGracePeriodSeconds: ptr.To(int64(j.config.ContainerGraceShutdownSeconds)),
 							Containers: []v1.Container{
 								{Name: "source",
 									Image:   fmt.Sprintf("%s:%s", task.Package, task.PackageVersion),
@@ -643,8 +724,9 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			Namespace:   j.namespace,
 		},
 		Spec: v1.PodSpec{
-			RestartPolicy: v1.RestartPolicyNever,
-			NodeSelector:  nodeSelector,
+			RestartPolicy:                 v1.RestartPolicyNever,
+			NodeSelector:                  nodeSelector,
+			TerminationGracePeriodSeconds: ptr.To(int64(j.config.ContainerGraceShutdownSeconds)),
 			Containers: []v1.Container{
 				{Name: "source",
 					Image:   fmt.Sprintf("%s:%s", task.Package, task.PackageVersion),

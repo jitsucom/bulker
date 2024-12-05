@@ -33,6 +33,8 @@ ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status =
 
 	updateRunningTaskDateSQL = `UPDATE source_task SET updated_at=$2 where task_id=$1 and status = 'RUNNING'`
 
+	updateRunningTaskMetricsSQL = `UPDATE source_task SET updated_at=$2, metrics=$3 where task_id=$1 and status = 'RUNNING'`
+
 	updateRunningTaskStatusSQL = `UPDATE source_task SET status=$2 where task_id=$1 and status = 'RUNNING'`
 
 	upsertCheckSQL = `INSERT INTO source_check (package, version, key, status, description, timestamp) VALUES ($1, $2, $3, $4, $5, $6)
@@ -88,6 +90,11 @@ func UpsertRunningTask(dbpool *pgxpool.Pool, syncId, taskId, packageName, packag
 
 func UpdateRunningTaskDate(dbpool *pgxpool.Pool, taskId string) error {
 	_, err := dbpool.Exec(context.Background(), updateRunningTaskDateSQL, taskId, time.Now())
+	return err
+}
+
+func UpdateRunningTaskMetrics(dbpool *pgxpool.Pool, taskId string, metrics map[string]any) error {
+	_, err := dbpool.Exec(context.Background(), updateRunningTaskMetricsSQL, taskId, time.Now(), metrics)
 	return err
 }
 

@@ -10,6 +10,7 @@ import (
 	_ "github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"os"
 	"os/signal"
@@ -18,6 +19,15 @@ import (
 	"syscall"
 	"time"
 )
+
+var logLevels = map[string]int{
+	"TRACE": -2,
+	"DEBUG": -1,
+	"INFO":  0,
+	"WARN":  1,
+	"ERROR": 2,
+	"FATAL": 3,
+}
 
 type SideCar interface {
 	Run()
@@ -35,6 +45,9 @@ type AbstractSideCar struct {
 
 	stdOutPipeFile string
 	stdErrPipeFile string
+
+	logLevel   string
+	dbLogLevel string
 
 	databaseURL string
 	dbpool      *pgxpool.Pool
@@ -79,6 +92,8 @@ func main() {
 		stdOutPipeFile: os.Getenv("STDOUT_PIPE_FILE"),
 		stdErrPipeFile: os.Getenv("STDERR_PIPE_FILE"),
 		databaseURL:    os.Getenv("DATABASE_URL"),
+		logLevel:       strings.ToUpper(utils.DefaultString(os.Getenv("LOG_LEVEL"), "INFO")),
+		dbLogLevel:     strings.ToUpper(utils.DefaultString(os.Getenv("DB_LOG_LEVEL"), "INFO")),
 		startedAt:      startedAt,
 	}
 	if command == "read" {
@@ -183,15 +198,23 @@ func (s *AbstractSideCar) checkJsonRow(json string) bool {
 }
 
 func (s *AbstractSideCar) _log(logger, level, message string) {
-	fmt.Printf("%s : %s\n", level, message)
-	err := s.sendLog(logger, level, message)
-	if err != nil {
-		fmt.Printf("%s: %v\n", level, err)
+	if shouldLog(strings.ToUpper(level), s.logLevel) {
+		fmt.Printf("%s : %s\n", level, message)
+	}
+	if shouldLog(strings.ToUpper(level), s.dbLogLevel) {
+		err := s.sendLog(logger, level, message)
+		if err != nil {
+			fmt.Printf("%s: %v\n", level, err)
+		}
 	}
 }
 
 func (s *AbstractSideCar) sendLog(logger, level string, message string) error {
 	return db.InsertTaskLog(s.dbpool, uuid.New().String(), level, logger, message, s.syncId, s.taskId, time.Now())
+}
+
+func shouldLog(level string, enabledLevel string) bool {
+	return logLevels[level] >= logLevels[enabledLevel]
 }
 
 func joinStrings(str1, str2, sep string) string {

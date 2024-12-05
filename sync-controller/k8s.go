@@ -9,24 +9,24 @@ import (
 	"strings"
 )
 
-func GetK8SClientSet(appContext *Context) (*kubernetes.Clientset, error) {
+func GetK8SClientSet(appContext *Context) (*kubernetes.Clientset, *rest.Config, error) {
 	config := appContext.config.KubernetesClientConfig
 	if config == "" || config == "local" {
 		// creates the in-cluster config
 		cc, err := rest.InClusterConfig()
 		if err != nil {
-			return nil, fmt.Errorf("error getting in cluster config: %v", err)
+			return nil, nil, fmt.Errorf("error getting in cluster config: %v", err)
 		}
 		clientset, err := kubernetes.NewForConfig(cc)
 		if err != nil {
-			return nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
+			return nil, nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
 		}
-		return clientset, nil
+		return clientset, cc, nil
 	} else if strings.ContainsRune(config, '\n') {
 		// suppose yaml file
 		clientconfig, err := clientcmd.NewClientConfigFromBytes([]byte(config))
 		if err != nil {
-			return nil, fmt.Errorf("error parsing kubernetes client config: %v", err)
+			return nil, nil, fmt.Errorf("error parsing kubernetes client config: %v", err)
 		}
 		rawConfig, _ := clientconfig.RawConfig()
 		clientconfig = clientcmd.NewNonInteractiveClientConfig(rawConfig,
@@ -35,13 +35,13 @@ func GetK8SClientSet(appContext *Context) (*kubernetes.Clientset, error) {
 			&clientcmd.ClientConfigLoadingRules{})
 		cc, err := clientconfig.ClientConfig()
 		if err != nil {
-			return nil, fmt.Errorf("error creating kubernetes client config: %v", err)
+			return nil, nil, fmt.Errorf("error creating kubernetes client config: %v", err)
 		}
 		clientset, err := kubernetes.NewForConfig(cc)
 		if err != nil {
-			return nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
+			return nil, nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
 		}
-		return clientset, nil
+		return clientset, cc, nil
 	} else {
 		// suppose kubeconfig file path
 		clientconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
@@ -51,12 +51,12 @@ func GetK8SClientSet(appContext *Context) (*kubernetes.Clientset, error) {
 			})
 		cc, err := clientconfig.ClientConfig()
 		if err != nil {
-			return nil, fmt.Errorf("error creating kubernetes client config: %v", err)
+			return nil, nil, fmt.Errorf("error creating kubernetes client config: %v", err)
 		}
 		clientset, err := kubernetes.NewForConfig(cc)
 		if err != nil {
-			return nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
+			return nil, nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
 		}
-		return clientset, nil
+		return clientset, cc, nil
 	}
 }

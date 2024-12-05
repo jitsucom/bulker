@@ -52,9 +52,10 @@ func (t *TaskDescriptor) ExtractAnnotations() map[string]string {
 
 type TaskStatus struct {
 	TaskDescriptor `json:",inline" mapstructure:",squash" `
-	PodName        string `json:"podName"`
-	Status         Status `json:"status"`
-	Description    string `json:"description"`
+	PodName        string         `json:"podName"`
+	Status         Status         `json:"status"`
+	Description    string         `json:"description"`
+	Metrics        map[string]any `json:"metrics"`
 }
 
 type Status string

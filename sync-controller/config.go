@@ -28,7 +28,7 @@ type Config struct {
 	KubernetesNodeSelector string `mapstructure:"KUBERNETES_NODE_SELECTOR"`
 
 	ContainerStatusCheckSeconds   int `mapstructure:"CONTAINER_STATUS_CHECK_SECONDS" default:"10"`
-	ContainerGraceShutdownSeconds int `mapstructure:"CONTAINER_GRACE_SHUTDOWN_SECONDS" default:"30"`
+	ContainerGraceShutdownSeconds int `mapstructure:"CONTAINER_GRACE_SHUTDOWN_SECONDS" default:"60"`
 	ContainerInitTimeoutSeconds   int `mapstructure:"CONTAINER_INIT_TIMEOUT_SECONDS" default:"180"`
 
 	TaskTimeoutHours int `mapstructure:"TASK_TIMEOUT_HOURS" default:"48"`
