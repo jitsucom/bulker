@@ -160,7 +160,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			bc.pause(true)
 		})
 
-		bc.Infof("Batch #%d Committing %d events to %s", batchNum, processed, destination.config.BulkerType)
+		bc.Debugf("Batch #%d Committing %d events to %s", batchNum, processed, destination.config.BulkerType)
 		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(ctx)
 		pauseTimer.Stop()
