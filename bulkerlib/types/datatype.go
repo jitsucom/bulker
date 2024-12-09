@@ -187,13 +187,13 @@ func ReformatTimeValue(value any, supportDates bool) (time.Time, bool) {
 
 	timeValue, err := time.Parse(time.RFC3339Nano, stringValue)
 	if err == nil {
-		return timeValue, true
+		return timeValue.UTC(), true
 	}
 
 	if l == len(timestamp.GolangLayout) {
 		timeValue, err = time.Parse(timestamp.GolangLayout, stringValue)
 		if err == nil {
-			return timeValue, true
+			return timeValue.UTC(), true
 		}
 	} else if supportDates && l == len(timestamp.DashDayLayout) {
 		timeValue, err = time.Parse(timestamp.DashDayLayout, stringValue)

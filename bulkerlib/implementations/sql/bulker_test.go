@@ -269,7 +269,7 @@ func (c *bulkerTestConfig) getIdAndTableName(mode bulker.BulkMode) (id, tableNam
 	}
 	tableName = tableName + "_" + strings.ToLower(string(mode))
 	expectedTableName = utils.DefaultString(c.expectedTable.Name, tableName)
-	id = fmt.Sprintf("%s_%s", c.config.BulkerType, tableName)
+	id = fmt.Sprintf("%s_%s", c.config.Id, tableName)
 	return
 }
 
@@ -442,6 +442,19 @@ func TestBasics(t *testing.T) {
 				{"_timestamp": constantTime, "id": 6, "name": "test4", "column1": "data", "column2": "data", "column3": "data"},
 			},
 			streamOptions:  []bulker.StreamOption{bulker.WithNamespace("bnsp")},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+		},
+		{
+			name:              "non_utc_timestamp",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/non_utc_timestamp.ndjson",
+			expectedRows: []map[string]any{
+				{"_timestamp": timestamp.MustParseTime(time.RFC3339Nano, "2024-07-16T06:37:15Z"), "id": 1},
+				{"_timestamp": timestamp.MustParseTime(time.RFC3339Nano, "2024-12-09T12:15:02Z"), "id": 2},
+				{"_timestamp": timestamp.MustParseTime(time.RFC3339Nano, "2024-12-09T16:15:02Z"), "id": 3},
+			},
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
 		},

@@ -222,7 +222,7 @@ func (j *JobRunner) accumulateErrorLogs(podName string, taskType string, status 
 				}
 				sourceFailed = true
 			}
-			logs := j.getPodErrorLogs(podName, s.Name)
+			logs := j.getPodLogs(podName, "source", true, 50)
 			if len(logs) > 0 {
 				stb.WriteString(logs)
 				stb.WriteRune('\n')
@@ -232,17 +232,23 @@ func (j *JobRunner) accumulateErrorLogs(podName string, taskType string, status 
 	// all source logs get directed to pipe and translated to the sidecar
 	// so if 'source' container fails we need to look for errors in the sidecar
 	if stb.Len() == 0 && sourceFailed {
-		logs := j.getPodErrorLogs(podName, "sidecar")
+		logs := j.getPodLogs(podName, "sidecar", true, 50)
 		if len(logs) > 0 {
 			stb.WriteString(logs)
 			stb.WriteRune('\n')
+		} else {
+			// if we couldn't find lines with errors in the source logs - get last 5 lines
+			logs = j.getPodLogs(podName, "source", false, 5)
+			if len(logs) > 0 {
+				stb.WriteString(logs)
+				stb.WriteRune('\n')
+			}
 		}
 	}
 	return stb.String()
 }
 
-func (j *JobRunner) getPodErrorLogs(podName, container string) string {
-	tailLines := int64(50)
+func (j *JobRunner) getPodLogs(podName, container string, onlyErrors bool, tailLines int64) string {
 	req := j.clientset.CoreV1().Pods(j.namespace).GetLogs(podName, &v1.PodLogOptions{Container: container, TailLines: &tailLines})
 	podLogs, err := req.Stream(context.Background())
 	if err != nil {
@@ -255,12 +261,17 @@ func (j *JobRunner) getPodErrorLogs(podName, container string) string {
 	errFound := false
 	for scanner.Scan() {
 		t := scanner.Text()
-		tL := strings.ToLower(t)
-		if !errFound && (strings.Contains(tL, "error") || strings.Contains(tL, "panic") || strings.Contains(tL, "errstd") || strings.Contains(tL, "fatal")) {
-			errFound = true
-		}
-		if errFound {
-			buf.WriteString(fmt.Sprintf("%s\n", scanner.Text()))
+		if onlyErrors {
+			tL := strings.ToLower(t)
+			if !errFound && (strings.Contains(tL, "error") || strings.Contains(tL, "panic") || strings.Contains(tL, "errstd") || strings.Contains(tL, "fatal")) {
+				errFound = true
+			}
+			//log everything after error was found
+			if errFound {
+				buf.WriteString(fmt.Sprintf("%s\n", t))
+			}
+		} else {
+			buf.WriteString(fmt.Sprintf("%s\n", t))
 		}
 	}
 	if err = scanner.Err(); err != nil {
@@ -686,7 +697,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			j.Errorf("failed to parse node selector from string: %s\nIngoring it. Error: %v", j.config.KubernetesNodeSelector, err)
 		}
 	}
-	initCommand := []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr"}
+	initCommand := []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; chmod 777 /pipes/*; echo \"OK\""}
 	if !configuration.IsEmpty() {
 		initCommand = []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; cp /configmap/* /config/; gunzip /config/*.gz"}
 		items := []v1.KeyToPath{}
@@ -734,6 +745,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			RestartPolicy:                 v1.RestartPolicyNever,
 			NodeSelector:                  nodeSelector,
 			TerminationGracePeriodSeconds: ptr.To(int64(j.config.ContainerGraceShutdownSeconds)),
+			//SecurityContext:               &v1.PodSecurityContext{FSGroup: ptr.To(int64(65534))},
 			Containers: []v1.Container{
 				{Name: "source",
 					Image:   fmt.Sprintf("%s:%s", task.Package, task.PackageVersion),
