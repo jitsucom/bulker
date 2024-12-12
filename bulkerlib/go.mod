@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go v0.116.0
 	cloud.google.com/go/bigquery v1.64.0
 	cloud.google.com/go/storage v1.43.0
-	github.com/ClickHouse/clickhouse-go/v2 v2.26.0
+	github.com/ClickHouse/clickhouse-go/v2 v2.30.0
 	github.com/Kount/pq-timeouts v1.0.0
 	github.com/aws/aws-sdk-go-v2 v1.32.5
 	github.com/aws/aws-sdk-go-v2/config v1.28.1
@@ -54,7 +54,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Microsoft/hcsshim v0.11.5 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
-	github.com/andybalholm/brotli v1.1.0 // indirect
+	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/apache/arrow/go/v15 v15.0.2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.7 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.18 // indirect
@@ -91,7 +91,7 @@ require (
 	github.com/docker/cli v27.0.3+incompatible // indirect
 	github.com/docker/compose/v2 v2.28.1 // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
-	github.com/docker/docker v27.1.1+incompatible // indirect
+	github.com/docker/docker v27.3.0+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.8.0 // indirect
 	github.com/docker/go v1.5.1-1.0.20160303222718-d30aec9fd63c // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
@@ -166,6 +166,7 @@ require (
 	github.com/moby/sys/signal v0.7.0 // indirect
 	github.com/moby/sys/symlink v0.2.0 // indirect
 	github.com/moby/sys/user v0.1.0 // indirect
+	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect

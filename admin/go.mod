@@ -19,7 +19,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.5 // indirect
 	github.com/aws/smithy-go v1.22.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/docker/docker v27.3.0+incompatible // indirect
 	github.com/klauspost/compress v1.17.10 // indirect
+	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_golang v1.19.1 // indirect
 	github.com/prometheus/client_model v0.6.0 // indirect
