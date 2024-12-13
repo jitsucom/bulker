@@ -118,13 +118,23 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func (ps *AbstractTransactionalSQLStream) initTx(ctx context.Context) (err error) {
+	err = ps.init(ctx)
+	if err != nil {
+		return err
+	}
 	if ps.tx == nil {
+		if err = ps.sqlAdapter.Ping(ctx); err != nil {
+			return err
+		}
 		ps.tx, err = ps.sqlAdapter.OpenTx(ctx)
 		if err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -171,6 +181,10 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		ps.eventsInBatch = 0
 	}()
 	if ps.batchFile != nil && ps.eventsInBatch > 0 {
+		err = ps.initTx(ctx)
+		if err != nil {
+			return state, errorj.Decorate(err, "failed to init transaction")
+		}
 		_, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, table)
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to create table")
@@ -424,6 +438,10 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 func (ps *AbstractTransactionalSQLStream) insert(ctx context.Context, targetTable *Table, processedObject types.Object) (err error) {
 	ps.adjustTables(ctx, targetTable, processedObject)
 	ps.updateRepresentationTable(ps.tmpTable)
+	err = ps.initTx(ctx)
+	if err != nil {
+		return errorj.Decorate(err, "failed to init transaction")
+	}
 	ps.tmpTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, ps.tmpTable)
 	if err != nil {
 		return errorj.Decorate(err, "failed to ensure table")

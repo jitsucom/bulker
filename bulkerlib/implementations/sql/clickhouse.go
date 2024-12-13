@@ -216,6 +216,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 				return nil, err
 			}
 			dataSource.SetMaxIdleConns(10)
+			dataSource.SetConnMaxLifetime(time.Minute * 10)
 			dataSource.SetConnMaxIdleTime(time.Minute * 3)
 		}
 		return dataSource, nil

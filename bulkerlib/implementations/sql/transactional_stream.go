@@ -43,13 +43,6 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 	return &ps, nil
 }
 
-func (ps *TransactionalStream) init(ctx context.Context) (err error) {
-	if ps.inited {
-		return nil
-	}
-	return ps.AbstractTransactionalSQLStream.init(ctx)
-}
-
 func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State, err error) {
 	if ps.state.Status != bulker.Active {
 		return ps.state, errors.New("stream is not active")

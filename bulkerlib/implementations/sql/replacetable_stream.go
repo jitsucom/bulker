@@ -87,7 +87,7 @@ func (ps *ReplaceTableStream) Complete(ctx context.Context) (state bulker.State,
 			//truncation seems like a more straightforward approach.
 			if ps.sqlAdapter.Type() == PostgresBulkerTypeId {
 				// workaround for neon search_path issue
-				err = ps.init(ctx)
+				err = ps.initTx(ctx)
 				if err == nil {
 					var table *Table
 					table, err = ps.tx.GetTableSchema(ctx, ps.namespace, ps.tableName)

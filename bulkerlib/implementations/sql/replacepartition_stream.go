@@ -83,7 +83,7 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 	if ps.state.LastError == nil {
 		//we have to clear all previous data even if no objects was consumed
 		//if stream was empty we need to open transaction.
-		if err = ps.init(ctx); err != nil {
+		if err = ps.initTx(ctx); err != nil {
 			return
 		}
 		err = ps.clearPartition(ctx, ps.tx)
