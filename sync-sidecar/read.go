@@ -10,6 +10,7 @@ import (
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/pg"
+	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
@@ -34,6 +35,7 @@ type ReadSideCar struct {
 	namespace       string
 	tableNamePrefix string
 	toSameCase      bool
+	addMeta         bool
 
 	eventsLogService eventslog.EventsLogService
 
@@ -510,6 +512,10 @@ func (s *ReadSideCar) processRecord(rec *RecordRow, size int) {
 	if err != nil {
 		s.streamErr(stream, "error opening stream: %v", err)
 		return
+	}
+	row := rec.Data
+	if s.addMeta {
+		row.Set("_jitsu_timestamp", time.Now().UTC().Format(timestamp.JsonISO))
 	}
 	err = stream.Consume(rec.Data, size)
 	if err != nil {

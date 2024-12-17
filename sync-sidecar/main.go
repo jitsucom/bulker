@@ -101,6 +101,7 @@ func main() {
 			namespace:       os.Getenv("NAMESPACE"),
 			tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX"),
 			toSameCase:      os.Getenv("TO_SAME_CASE") == "true",
+			addMeta:         os.Getenv("ADD_META") == "true",
 		}
 		sidecar.(*ReadSideCar).eventsLogService = &eventslog.DummyEventsLogService{}
 		clickhouseHost := os.Getenv("CLICKHOUSE_HOST")

@@ -20,6 +20,7 @@ type TaskDescriptor struct {
 	PackageVersion  string `json:"packageVersion"`
 	Namespace       string `json:"namespace"`
 	ToSameCase      string `json:"sameCase"`
+	AddMeta         string `json:"addMeta"`
 	TableNamePrefix string `json:"tableNamePrefix"`
 	FullSync        string `json:"fullSync"`
 	Debug           string `json:"debug"`
