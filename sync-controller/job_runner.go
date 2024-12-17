@@ -699,7 +699,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	}
 	initCommand := []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; chmod 777 /pipes/*; echo \"OK\""}
 	if !configuration.IsEmpty() {
-		initCommand = []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; chmod 777 /pipes/*; cp /configmap/* /config/; gunzip /config/*.gz; echo \"OK\""}
+		initCommand = []string{"sh", "-c", "mkfifo /pipes/stdout; mkfifo /pipes/stderr; chmod 777 /pipes/*; cp /configmap/* /config/; gunzip /config/*.gz; chmod 777 /config/*; echo \"OK\""}
 		items := []v1.KeyToPath{}
 		for _, k := range configuration.Keys() {
 			items = append(items, v1.KeyToPath{
