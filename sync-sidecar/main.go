@@ -49,8 +49,9 @@ type AbstractSideCar struct {
 	logLevel   string
 	dbLogLevel string
 
-	databaseURL string
-	dbpool      *pgxpool.Pool
+	databaseURL      string
+	dbpool           *pgxpool.Pool
+	eventsLogService eventslog.EventsLogService
 
 	startedBy string
 	startedAt time.Time
@@ -83,18 +84,35 @@ func main() {
 	command := os.Getenv("COMMAND")
 	var sidecar SideCar
 	abstract := &AbstractSideCar{
-		syncId:         os.Getenv("SYNC_ID"),
-		taskId:         os.Getenv("TASK_ID"),
-		command:        os.Getenv("COMMAND"),
-		storageKey:     os.Getenv("STORAGE_KEY"),
-		packageName:    os.Getenv("PACKAGE"),
-		packageVersion: os.Getenv("PACKAGE_VERSION"),
-		stdOutPipeFile: os.Getenv("STDOUT_PIPE_FILE"),
-		stdErrPipeFile: os.Getenv("STDERR_PIPE_FILE"),
-		databaseURL:    os.Getenv("DATABASE_URL"),
-		logLevel:       strings.ToUpper(utils.DefaultString(os.Getenv("LOG_LEVEL"), "INFO")),
-		dbLogLevel:     strings.ToUpper(utils.DefaultString(os.Getenv("DB_LOG_LEVEL"), "INFO")),
-		startedAt:      startedAt,
+		syncId:           os.Getenv("SYNC_ID"),
+		taskId:           os.Getenv("TASK_ID"),
+		command:          os.Getenv("COMMAND"),
+		storageKey:       os.Getenv("STORAGE_KEY"),
+		packageName:      os.Getenv("PACKAGE"),
+		packageVersion:   os.Getenv("PACKAGE_VERSION"),
+		stdOutPipeFile:   os.Getenv("STDOUT_PIPE_FILE"),
+		stdErrPipeFile:   os.Getenv("STDERR_PIPE_FILE"),
+		databaseURL:      os.Getenv("DATABASE_URL"),
+		eventsLogService: &eventslog.DummyEventsLogService{},
+		logLevel:         strings.ToUpper(utils.DefaultString(os.Getenv("LOG_LEVEL"), "INFO")),
+		dbLogLevel:       strings.ToUpper(utils.DefaultString(os.Getenv("DB_LOG_LEVEL"), "INFO")),
+		startedAt:        startedAt,
+	}
+	clickhouseHost := os.Getenv("CLICKHOUSE_HOST")
+	if clickhouseHost != "" {
+		eventsLogConfig := eventslog.EventsLogConfig{
+			ClickhouseHost:     clickhouseHost,
+			ClickhouseDatabase: os.Getenv("CLICKHOUSE_DATABASE"),
+			ClickhouseUsername: os.Getenv("CLICKHOUSE_USERNAME"),
+			ClickhousePassword: os.Getenv("CLICKHOUSE_PASSWORD"),
+			ClickhouseSSL:      os.Getenv("CLICKHOUSE_SSL") == "true",
+		}
+		eventsLogService, err := eventslog.NewClickhouseEventsLog(eventsLogConfig)
+		if err != nil {
+			logging.Errorf("Unable to create clickhouse events log: %v", err)
+		} else {
+			abstract.eventsLogService = eventsLogService
+		}
 	}
 	if command == "read" {
 		sidecar = &ReadSideCar{AbstractSideCar: abstract,
@@ -102,23 +120,6 @@ func main() {
 			tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX"),
 			toSameCase:      os.Getenv("TO_SAME_CASE") == "true",
 			addMeta:         os.Getenv("ADD_META") == "true",
-		}
-		sidecar.(*ReadSideCar).eventsLogService = &eventslog.DummyEventsLogService{}
-		clickhouseHost := os.Getenv("CLICKHOUSE_HOST")
-		if clickhouseHost != "" {
-			eventsLogConfig := eventslog.EventsLogConfig{
-				ClickhouseHost:     clickhouseHost,
-				ClickhouseDatabase: os.Getenv("CLICKHOUSE_DATABASE"),
-				ClickhouseUsername: os.Getenv("CLICKHOUSE_USERNAME"),
-				ClickhousePassword: os.Getenv("CLICKHOUSE_PASSWORD"),
-				ClickhouseSSL:      os.Getenv("CLICKHOUSE_SSL") == "true",
-			}
-			eventsLogService, err := eventslog.NewClickhouseEventsLog(eventsLogConfig)
-			if err != nil {
-				logging.Errorf("Unable to create clickhouse events log: %v", err)
-			} else {
-				sidecar.(*ReadSideCar).eventsLogService = eventsLogService
-			}
 		}
 	} else {
 		sidecar = &SpecCatalogSideCar{AbstractSideCar: abstract}
@@ -211,7 +212,11 @@ func (s *AbstractSideCar) _log(logger, level, message string) {
 }
 
 func (s *AbstractSideCar) sendLog(logger, level string, message string) error {
-	return db.InsertTaskLog(s.dbpool, uuid.New().String(), level, logger, message, s.syncId, s.taskId, time.Now())
+	if s.eventsLogService != nil && strings.Contains(s.eventsLogService.Id(), "clickhouse") {
+		return s.eventsLogService.InsertTaskLog(level, logger, message, s.syncId, s.taskId, time.Now())
+	} else {
+		return db.InsertTaskLog(s.dbpool, uuid.New().String(), level, logger, message, s.syncId, s.taskId, time.Now())
+	}
 }
 
 func shouldLog(level string, enabledLevel string) bool {

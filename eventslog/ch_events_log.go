@@ -27,6 +27,10 @@ type ClickhouseEventsLog struct {
 	closeChan             chan struct{}
 }
 
+func (r *ClickhouseEventsLog) Id() string {
+	return "clickhouse"
+}
+
 func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 	base := appbase.NewServiceBase(chEventsLogServiceName)
 	opts := &clickhouse.Options{
@@ -39,7 +43,6 @@ func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 		Settings: clickhouse.Settings{
 			"async_insert":                 1,
 			"wait_for_async_insert":        0,
-			"async_insert_max_data_size":   "10000000",
 			"async_insert_busy_timeout_ms": 10000,
 			"date_time_input_format":       "best_effort",
 		},
@@ -139,6 +142,10 @@ func (r *ClickhouseEventsLog) PostEvent(event *ActorEvent) (id EventsLogRecordId
 
 func (r *ClickhouseEventsLog) GetEvents(eventType EventType, actorId string, level string, filter *EventsLogFilter, limit int) ([]EventsLogRecord, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (r *ClickhouseEventsLog) InsertTaskLog(level, logger, message, syncId, taskId string, timestamp time.Time) error {
+	return r.conn.AsyncInsert(context.Background(), "INSERT INTO task_log(task_id, sync_id, timestamp, level, logger, message) SETTINGS async_insert_busy_timeout_ms=1000 VALUES (?,?,?,?,?,?)", false, taskId, syncId, timestamp.UnixMilli(), level, logger, message)
 }
 
 func (r *ClickhouseEventsLog) Close() error {

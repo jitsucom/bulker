@@ -30,6 +30,10 @@ type RedisEventsLog struct {
 	closeChan             chan struct{}
 }
 
+func (r *RedisEventsLog) Id() string {
+	return "redis"
+}
+
 func NewRedisEventsLog(redisUrl, redisTLSCA string, maxLogSize int) (EventsLogService, error) {
 	base := appbase.NewServiceBase(redisEventsLogServiceName)
 	base.Debugf("Creating RedisEventsLog with redisURL: %s", redisUrl)
@@ -200,6 +204,10 @@ func (r *RedisEventsLog) GetEvents(eventType EventType, actorId string, level st
 
 	}
 	return results, nil
+}
+
+func (r *RedisEventsLog) InsertTaskLog(level, logger, message, syncId, taskId string, timestamp time.Time) error {
+	return fmt.Errorf("not implemented")
 }
 
 func (r *RedisEventsLog) Close() error {

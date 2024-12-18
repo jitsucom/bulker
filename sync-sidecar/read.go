@@ -37,8 +37,6 @@ type ReadSideCar struct {
 	toSameCase      bool
 	addMeta         bool
 
-	eventsLogService eventslog.EventsLogService
-
 	lastMessageTime   atomic.Int64
 	lastStateMessage  string
 	blk               bulker.Bulker

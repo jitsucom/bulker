@@ -2,8 +2,10 @@ package eventslog
 
 import (
 	"fmt"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -55,10 +57,20 @@ type EventsLogService interface {
 	PostAsync(event *ActorEvent)
 
 	GetEvents(eventType EventType, actorId string, level string, filter *EventsLogFilter, limit int) ([]EventsLogRecord, error)
+
+	InsertTaskLog(level, logger, message, syncId, taskId string, timestamp time.Time) error
+
+	Id() string
 }
 
 type MultiEventsLogService struct {
 	Services []EventsLogService
+}
+
+func (m *MultiEventsLogService) Id() string {
+	return strings.Join(utils.ArrayMap(m.Services, func(service EventsLogService) string {
+		return service.Id()
+	}), ",")
 }
 
 func (m *MultiEventsLogService) PostEvent(event *ActorEvent) (id EventsLogRecordId, err error) {
@@ -75,6 +87,16 @@ func (m *MultiEventsLogService) PostAsync(event *ActorEvent) {
 	for _, service := range m.Services {
 		service.PostAsync(event)
 	}
+}
+
+func (m *MultiEventsLogService) InsertTaskLog(level, logger, message, syncId, taskId string, timestamp time.Time) error {
+	for _, service := range m.Services {
+		err := service.InsertTaskLog(level, logger, message, syncId, taskId, timestamp)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *MultiEventsLogService) GetEvents(eventType EventType, actorId string, level string, filter *EventsLogFilter, limit int) ([]EventsLogRecord, error) {
@@ -133,6 +155,10 @@ func parseTimestamp(id string) (time.Time, error) {
 
 type DummyEventsLogService struct{}
 
+func (d *DummyEventsLogService) Id() string {
+	return "dummy"
+}
+
 func (d *DummyEventsLogService) PostAsync(_ *ActorEvent) {
 }
 
@@ -142,6 +168,10 @@ func (d *DummyEventsLogService) PostEvent(_ *ActorEvent) (id EventsLogRecordId, 
 
 func (d *DummyEventsLogService) GetEvents(eventType EventType, actorId string, level string, filter *EventsLogFilter, limit int) ([]EventsLogRecord, error) {
 	return nil, nil
+}
+
+func (d *DummyEventsLogService) InsertTaskLog(level, logger, message, syncId, taskId string, timestamp time.Time) error {
+	return nil
 }
 
 func (d *DummyEventsLogService) Close() error {
