@@ -11,7 +11,7 @@ require (
 	github.com/penglongli/gin-metrics v0.1.10
 	github.com/prometheus/client_golang v1.19.1
 	github.com/spf13/viper v1.19.0
-	golang.org/x/net v0.30.0
+	golang.org/x/net v0.33.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
