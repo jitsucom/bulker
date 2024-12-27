@@ -84,7 +84,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 		var ingestMessageBytes []byte
 		var asyncDestinations, tagsDestinations []string
 		err = patchEvent(c, messageId, event, "event", loc.IngestType, payload.Context)
-		if err != nil {
+		if err == nil {
 			_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, event, event.GetS("type"), loc, stream)
 		}
 		if err == nil {

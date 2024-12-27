@@ -97,8 +97,12 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 		"/api/px/:tp",
 		"/api/s/s2s/:tp",
 		// classic compat
+		"/s/lib.js",
 		"/api/v1/s2s/event",
+		"/api/v1/s2s/event/",
+		"/api/v1/s2s/events",
 		"/api/v1/event",
+		"/api/v1/events",
 		"/api.:ignored",
 	})
 
@@ -156,8 +160,12 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/s2s/:tp", router.IngestHandler)
 
 	// classic compat
+	fast.Match([]string{"GET", "HEAD", "OPTIONS"}, "/s/lib.js", router.ClassicScriptHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/v1/s2s/event", router.ClassicHandler)
+	fast.Match([]string{"OPTIONS", "POST"}, "/api/v1/s2s/event/", router.ClassicHandler)
+	fast.Match([]string{"OPTIONS", "POST"}, "/api/v1/s2s/events", router.ClassicHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/v1/event", router.ClassicHandler)
+	fast.Match([]string{"OPTIONS", "POST"}, "/api/v1/events", router.ClassicHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/api.:ignored", router.ClassicHandler)
 
 	fast.Match([]string{"GET", "HEAD", "OPTIONS"}, "/p.js", router.ScriptHandler)
