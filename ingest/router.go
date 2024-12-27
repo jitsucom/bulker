@@ -96,6 +96,10 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 		"/api/s/:tp",
 		"/api/px/:tp",
 		"/api/s/s2s/:tp",
+		// classic compat
+		"/api/v1/s2s/event",
+		"/api/v1/event",
+		"/api.:ignored",
 	})
 
 	httpClient := &http.Client{
@@ -150,6 +154,11 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/:tp", router.IngestHandler)
 	fast.Match([]string{"OPTIONS", "GET"}, "/api/px/:tp", router.PixelHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/s2s/:tp", router.IngestHandler)
+
+	// classic compat
+	fast.Match([]string{"OPTIONS", "POST"}, "/api/v1/s2s/event", router.ClassicHandler)
+	fast.Match([]string{"OPTIONS", "POST"}, "/api/v1/event", router.ClassicHandler)
+	fast.Match([]string{"OPTIONS", "POST"}, "/api.:ignored", router.ClassicHandler)
 
 	fast.Match([]string{"GET", "HEAD", "OPTIONS"}, "/p.js", router.ScriptHandler)
 
@@ -440,8 +449,7 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 	return &SyncDestinationsResponse{Destinations: data, OK: true}
 }
 
-func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event types.Json, analyticContext types.Json, tp string, loc StreamCredentials, stream *StreamWithDestinations) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
-	err = patchEvent(c, messageId, event, tp, loc.IngestType, analyticContext)
+func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event types.Json, tp string, loc StreamCredentials, stream *StreamWithDestinations) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
 	headers := utils.MapMap(utils.MapFilter(c.Request.Header, func(k string, v []string) bool {
 		return len(v) > 0 && !isInternalHeader(k)
 	}), func(k string, v []string) string {
@@ -450,13 +458,12 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event type
 		}
 		return strings.Join(v, ",")
 	})
-	bodyType := event.GetS("type")
 	ingestMessage = &IngestMessage{
 		IngestType:     loc.IngestType,
 		MessageCreated: time.Now(),
 		MessageId:      messageId,
 		WriteKey:       maskWriteKey(loc.WriteKey),
-		Type:           utils.NvlString(bodyType, tp),
+		Type:           tp,
 		Origin: IngestMessageOrigin{
 			BaseURL:  fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host),
 			Slug:     loc.Slug,

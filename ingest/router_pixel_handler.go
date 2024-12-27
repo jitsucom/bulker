@@ -100,8 +100,12 @@ func (r *Router) PixelHandler(c *gin.Context) {
 	}
 
 	eventsLogId = stream.Stream.Id
-	//}
-	_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, message, nil, tp, loc, stream)
+	err = patchEvent(c, messageId, message, tp, loc.IngestType, nil)
+	if err != nil {
+		rError = r.ResponseError(c, http.StatusOK, "event error", false, err, true, true)
+		return
+	}
+	_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, message, message.GetS("type"), loc, stream)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusOK, "event error", false, err, true, true)
 		return

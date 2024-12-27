@@ -81,16 +81,20 @@ func (r *Router) BatchHandler(c *gin.Context) {
 			messageId = utils.ShortenString(messageIdUnsupportedChars.ReplaceAllString(messageId, "_"), 64)
 		}
 		c.Set(appbase.ContextMessageId, messageId)
-		_, ingestMessageBytes, err1 := r.buildIngestMessage(c, messageId, event, payload.Context, "event", loc, stream)
+		var ingestMessageBytes []byte
 		var asyncDestinations, tagsDestinations []string
-		if err1 == nil {
+		err = patchEvent(c, messageId, event, "event", loc.IngestType, payload.Context)
+		if err != nil {
+			_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, event, event.GetS("type"), loc, stream)
+		}
+		if err == nil {
 			if len(stream.AsynchronousDestinations) == 0 {
 				rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), false, false)
 			} else {
 				asyncDestinations, tagsDestinations, rError = r.sendToRotor(c, ingestMessageBytes, stream, false)
 			}
 		} else {
-			rError = r.ResponseError(c, http.StatusOK, "event error", false, err1, false, true)
+			rError = r.ResponseError(c, http.StatusOK, "event error", false, err, false, true)
 		}
 		if len(ingestMessageBytes) >= 0 {
 			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
