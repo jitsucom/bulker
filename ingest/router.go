@@ -41,6 +41,8 @@ var eventTypesSet = types.NewSet("page", "identify", "track", "group", "alias", 
 
 var messageIdUnsupportedChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
+type eventPatchFunc func(c *gin.Context, messageId string, event types.Json, tp string, ingestType IngestType, analyticContext types.Json) error
+
 type Router struct {
 	*appbase.Router
 	config            *Config
@@ -457,7 +459,8 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 	return &SyncDestinationsResponse{Destinations: data, OK: true}
 }
 
-func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event types.Json, tp string, loc StreamCredentials, stream *StreamWithDestinations) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
+func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event types.Json, analyticContext types.Json, tp string, loc StreamCredentials, stream *StreamWithDestinations, patchFunc eventPatchFunc) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
+	err = patchFunc(c, messageId, event, tp, loc.IngestType, analyticContext)
 	headers := utils.MapMap(utils.MapFilter(c.Request.Header, func(k string, v []string) bool {
 		return len(v) > 0 && !isInternalHeader(k)
 	}), func(k string, v []string) string {
@@ -466,12 +469,13 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event type
 		}
 		return strings.Join(v, ",")
 	})
+	bodyType := utils.Ternary(tp != "classic", event.GetS("type"), event.GetS("event_type"))
 	ingestMessage = &IngestMessage{
 		IngestType:     loc.IngestType,
 		MessageCreated: time.Now(),
 		MessageId:      messageId,
 		WriteKey:       maskWriteKey(loc.WriteKey),
-		Type:           tp,
+		Type:           utils.NvlString(bodyType, tp),
 		Origin: IngestMessageOrigin{
 			BaseURL:  fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host),
 			Slug:     loc.Slug,
@@ -480,6 +484,9 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event type
 		},
 		HttpHeaders: headers,
 		HttpPayload: event,
+	}
+	if tp == "classic" {
+		ingestMessage.Origin.Classic = true
 	}
 	ingestMessageBytes, err1 := jsonorder.Marshal(ingestMessage)
 	if err1 != nil {
@@ -520,6 +527,7 @@ type IngestMessageOrigin struct {
 	Slug     string `json:"slug,omitempty"`
 	SourceId string `json:"sourceId,omitempty"`
 	Domain   string `json:"domain,omitempty"`
+	Classic  bool   `json:"classic,omitempty"`
 }
 
 type IngestMessage struct {

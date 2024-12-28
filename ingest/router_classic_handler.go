@@ -155,12 +155,7 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 	//if err = r.checkOrigin(c, &loc, stream); err != nil {
 	//	r.Warnf("%v", err)
 	//}
-	err = patchClassicEvent(c, messageId, message, loc.IngestType)
-	if err != nil {
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "event error", false, err, true, true)
-		return
-	}
-	_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, message, "classic", loc, stream)
+	_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, message, nil, "classic", loc, stream, patchClassicEvent)
 	if err != nil {
 		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "event error", false, err, true, true)
 		return
@@ -177,7 +172,7 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 	return
 }
 
-func patchClassicEvent(c *gin.Context, messageId string, ev types.Json, ingestType IngestType) error {
+func patchClassicEvent(c *gin.Context, messageId string, ev types.Json, _ string, ingestType IngestType, _ types.Json) error {
 	ip := strings.TrimSpace(strings.Split(utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), ",")[0])
 	ipPolicy := c.Query(IPPolicyParameter)
 	switch ipPolicy {

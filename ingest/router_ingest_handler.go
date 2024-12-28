@@ -124,12 +124,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	//if err = r.checkOrigin(c, &loc, stream); err != nil {
 	//	r.Warnf("%v", err)
 	//}
-	err = patchEvent(c, messageId, message, tp, loc.IngestType, nil)
-	if err != nil {
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "event error", false, err, true, true)
-		return
-	}
-	ingestMessage, ingestMessageBytes, err := r.buildIngestMessage(c, messageId, message, message.GetS("type"), loc, stream)
+	ingestMessage, ingestMessageBytes, err := r.buildIngestMessage(c, messageId, message, nil, tp, loc, stream, patchEvent)
 	if err != nil {
 		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "event error", false, err, true, true)
 		return
