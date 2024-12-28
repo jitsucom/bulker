@@ -143,6 +143,7 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
 	c.Set(appbase.ContextDomain, domain)
+	c.Set("_classic_api_key", loc.WriteKey)
 
 	stream := r.getStream(&loc, false, s2sEndpoint)
 	if stream == nil {
@@ -194,6 +195,7 @@ func patchClassicEvent(c *gin.Context, messageId string, ev types.Json, _ string
 	}
 	nowIsoDate := time.Now().UTC().Format(timestamp.JsonISO)
 	ev.Set("_timestamp", nowIsoDate)
+	ev.Set(APIKeyName, c.GetString("_classic_api_key"))
 	ev.SetIfAbsent("utc_time", nowIsoDate)
 	ev.SetIfAbsent("eventn_ctx_event_id", messageId)
 	return nil
