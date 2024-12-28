@@ -101,7 +101,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 
 	eventsLogId = stream.Stream.Id
 	//}
-	_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, message, nil, tp, loc, stream)
+	_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, message, nil, tp, loc, stream, patchEvent)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusOK, "event error", false, err, true, true)
 		return
