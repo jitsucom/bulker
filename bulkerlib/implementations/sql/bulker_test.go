@@ -298,6 +298,28 @@ func TestBasics(t *testing.T) {
 			configIds:      allBulkerConfigs,
 		},
 		{
+			name:              "added_columns_pk",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/columns_added.ndjson",
+			expectedTable: ExpectedTable{
+				PKFields: []string{"id"},
+				Columns:  justColumns("_timestamp", "id", "name", "column1", "column2", "column3"),
+			},
+			expectedRowsCount: 6,
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "test", "column1": nil, "column2": nil, "column3": nil},
+				{"_timestamp": constantTime, "id": 2, "name": "test2", "column1": "data", "column2": nil, "column3": nil},
+				{"_timestamp": constantTime, "id": 3, "name": "test3", "column1": "data", "column2": "data", "column3": nil},
+				{"_timestamp": constantTime, "id": 4, "name": "test2", "column1": "data", "column2": nil, "column3": nil},
+				{"_timestamp": constantTime, "id": 5, "name": "test", "column1": nil, "column2": nil, "column3": nil},
+				{"_timestamp": constantTime, "id": 6, "name": "test4", "column1": "data", "column2": "data", "column3": "data"},
+			},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
+			configIds:      allBulkerConfigs,
+			streamOptions:  []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
+		},
+		{
 			name:              "repeated_ids_no_pk",
 			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId: true,

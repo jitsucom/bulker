@@ -235,6 +235,20 @@ func TestBasics(t *testing.T) {
 			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
 		},
 		{
+			name:              "no_repeated_ids_pk",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			dataFile:          "test_data/no_repeated_ids.ndjson",
+			expectPartitionId: true,
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTimeStr, "id": 1, "name": "test1"},
+				{"_timestamp": constantTimeStr, "id": 2, "name": "test2"},
+				{"_timestamp": constantTimeStr, "id": 3, "name": "test3"},
+				{"_timestamp": constantTimeStr, "id": 4, "name": "test4"},
+			},
+			configIds:     allBulkerConfigs,
+			streamOptions: []bulker.StreamOption{bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
+		},
+		{
 			name:     "dedup_with_no_discr",
 			modes:    []bulker.BulkMode{bulker.Batch},
 			dataFile: "test_data/repeated_ids_discr.ndjson",

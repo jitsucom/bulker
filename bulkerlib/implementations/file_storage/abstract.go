@@ -193,7 +193,7 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 		workingFile := ps.batchFile
 		needToConvert := false
 		convertStart := time.Now()
-		if ps.targetMarshaller.Format() != ps.marshaller.Format() {
+		if !ps.targetMarshaller.Equal(ps.marshaller) {
 			needToConvert = true
 		}
 		if len(ps.batchFileSkipLines) > 0 || needToConvert {
