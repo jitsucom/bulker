@@ -248,6 +248,7 @@ Algorithm:
 
 Algorithm:
 - Write to tmp file
+- `ALTER TABLE target_table DELETE where partition_id=partiton option value`
 - `INSERT INTO tmp_table(...) VALUES (...)` - bulk load data from tmp file into tmp_table using bulk insert
 - `INSERT INTO target_table(...) SELECT ... FROM tmp_table`
 
