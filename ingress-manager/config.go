@@ -17,15 +17,12 @@ type Config struct {
 	KubernetesContext      string `mapstructure:"KUBERNETES_CONTEXT"`
 
 	// InitialSetup if true, ingress-manager will create ingress on start
-	InitialSetup     bool `mapstructure:"INITIAL_SETUP" default:"false"`
-	MigrateFromCaddy bool `mapstructure:"MIGRATE_FROM_CADDY" default:"false"`
+	InitialSetup bool `mapstructure:"INITIAL_SETUP" default:"false"`
 
 	JitsuCnames              string `mapstructure:"JITSU_CNAMES" default:"cname.jitsu.com,cname2.jitsu.com"`
 	CertificateMapName       string `mapstructure:"CERTIFICATE_MAP_NAME" default:"custom-domains"`
 	GoogleServiceAccountJson string `mapstructure:"GOOGLE_SERVICE_ACCOUNT_JSON"`
 	GoogleCloudProject       string `mapstructure:"GOOGLE_CLOUD_PROJECT"`
-	// AddGoogleCerts if true, for each CertificateMapEntry with letsencrypt cert ingress-manager will add google certs
-	AddGoogleCerts bool `mapstructure:"ADD_GOOGLE_CERTS" default:"false"`
 	// CleanupCerts if true, ingress-manager will delete Certificates and CertificateMapEntry for domain names that no longer leads to a valid cnames
 	CleanupCerts bool `mapstructure:"CLEANUP_CERTS" default:"false"`
 }

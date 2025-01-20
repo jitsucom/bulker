@@ -5,7 +5,7 @@ go 1.23
 toolchain go1.23.3
 
 require (
-	cloud.google.com/go/certificatemanager v1.9.2
+	cloud.google.com/go/certificatemanager v1.9.3
 	github.com/gin-gonic/gin v1.10.0
 	github.com/spf13/viper v1.19.0
 	google.golang.org/api v0.205.0

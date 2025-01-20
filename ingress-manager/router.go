@@ -6,6 +6,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"net/http"
 	"net/http/pprof"
+	"strings"
 )
 
 type Router struct {
@@ -48,12 +49,17 @@ func (r *Router) DomainHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "domain is required"})
 		return
 	}
-	status, err := r.manager.AddDomain(domain)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	if strings.Contains(domain, "*") {
+		status := r.manager.AddWildcardDomain(domain)
+		c.JSON(http.StatusOK, &status)
+	} else {
+		status, err := r.manager.AddDomain(domain)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": status})
 	}
-	c.JSON(http.StatusOK, gin.H{"status": status})
 }
 
 type DomainsPayload struct {
