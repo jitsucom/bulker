@@ -759,12 +759,12 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 					VolumeMounts: volumeMounts,
 					Resources: v1.ResourceRequirements{
 						Limits: v1.ResourceList{
-							v1.ResourceCPU: *resource.NewMilliQuantity(int64(2000), resource.DecimalSI),
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(500), resource.DecimalSI),
 							// 8Gi
 							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 33)), resource.BinarySI),
 						},
 						Requests: v1.ResourceList{
-							v1.ResourceCPU: *resource.NewMilliQuantity(int64(50), resource.DecimalSI),
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(100), resource.DecimalSI),
 							// 256Mi
 							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 28)), resource.BinarySI),
 						},
@@ -778,7 +778,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 					VolumeMounts:    volumeMounts,
 					Resources: v1.ResourceRequirements{
 						Limits: v1.ResourceList{
-							v1.ResourceCPU: *resource.NewMilliQuantity(int64(1000), resource.DecimalSI),
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(500), resource.DecimalSI),
 							// 2Gi
 							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 31)), resource.BinarySI),
 						},
