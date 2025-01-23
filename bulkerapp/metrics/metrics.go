@@ -123,6 +123,15 @@ var (
 		return consumerMessages.WithLabelValues(topicId, mode, destinationId, tableName, status)
 	}
 
+	consumerQueueSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "consumer",
+		Name:      "queue_size",
+	}, []string{"topicId", "mode", "destinationId", "tableName"})
+	ConsumerQueueSize = func(topicId, mode, destinationId, tableName string) prometheus.Gauge {
+		return consumerQueueSize.WithLabelValues(topicId, mode, destinationId, tableName)
+	}
+
 	consumerRuns = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "consumer",

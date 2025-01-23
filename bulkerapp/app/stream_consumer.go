@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -31,9 +32,9 @@ type StreamConsumerImpl struct {
 
 	eventsLogService eventslog.EventsLogService
 
-	tableName string
-
-	closed chan struct{}
+	tableName     string
+	currentOffset int64
+	closed        chan struct{}
 }
 
 type StreamConsumer interface {
@@ -184,6 +185,8 @@ func (sc *StreamConsumerImpl) start() {
 	sc.Infof("Starting stream consumer for topic. Ver: %s", sc.destination.config.UpdatedAt)
 	safego.RunWithRestart(func() {
 		var err error
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-sc.closed:
@@ -196,6 +199,16 @@ func (sc *StreamConsumerImpl) start() {
 				}
 				sc.Infof("Closed stream state: %+v", state)
 				return
+			case <-ticker.C:
+				if sc.currentOffset > 0 {
+					_, highOffset, err := sc.consumer.QueryWatermarkOffsets(sc.topicId, 0, 10_000)
+					if err != nil {
+						sc.Errorf("Error querying watermark offsets: %v", err)
+						metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "query_watermark_failed").Inc()
+					} else {
+						metrics.ConsumerQueueSize(sc.topicId, "stream", sc.destination.Id(), sc.tableName).Set(math.Max(float64(highOffset-sc.currentOffset-1), 0))
+					}
+				}
 			default:
 				var message *kafka.Message
 				message, err = sc.consumer.ReadMessage(streamConsumerMessageWaitTimeout)
@@ -214,6 +227,7 @@ func (sc *StreamConsumerImpl) start() {
 					}
 					continue
 				}
+				sc.currentOffset = int64(message.TopicPartition.Offset)
 				metricsMeta := kafkabase.GetKafkaHeader(message, MetricsMetaHeader)
 				metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "consumed").Inc()
 				var obj types.Object

@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -280,11 +281,19 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.Debugf("Consumer should not consume. offsets: %d-%d", lowOffset, highOffset)
 		return BatchCounters{}, nil
 	}
+	metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(math.Max(float64(highOffset-lowOffset-int64(maxBatchSize)), 0))
 	bc.Debugf("Starting consuming messages from topic. Messages in topic: ~%d. ", highOffset-lowOffset)
 	batchNumber := 1
 	for {
 		if bc.retired.Load() {
 			return
+		}
+		if bc.destinationId != "" {
+			currentDst := bc.repository.GetDestination(bc.destinationId)
+			if currentDst == nil || currentDst.configHash != destination.configHash {
+				bc.Infof("Destination config has changed. Finishing this batch.")
+				return
+			}
 		}
 		batchStats, batchState, nextBatch, err2 := bc.processBatch(destination, batchNumber, maxBatchSize, retryBatchSize, highOffset)
 		if err2 != nil {
