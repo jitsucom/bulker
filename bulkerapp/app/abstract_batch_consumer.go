@@ -281,7 +281,8 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.Debugf("Consumer should not consume. offsets: %d-%d", lowOffset, highOffset)
 		return BatchCounters{}, nil
 	}
-	metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(math.Max(float64(highOffset-lowOffset-int64(maxBatchSize)), 0))
+	metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(math.Max(float64(highOffset-lowOffset), 0))
+	lastMetricTime := time.Now()
 	bc.Debugf("Starting consuming messages from topic. Messages in topic: ~%d. ", highOffset-lowOffset)
 	batchNumber := 1
 	for {
@@ -303,6 +304,16 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		}
 		totalState.Merge(batchState)
 		counters.accumulate(batchStats)
+		if time.Since(lastMetricTime) > 5*time.Minute {
+			_, newHighOffset, err := bc.consumer.Load().QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+			if err != nil {
+				bc.Errorf("Failed to query watermark offsets: %v", err)
+				bc.errorMetric("query_watermark_failed")
+			} else {
+				metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(math.Max(float64(newHighOffset-lowOffset-int64(counters.consumed)), 0))
+			}
+			lastMetricTime = time.Now()
+		}
 		if !nextBatch {
 			err = err2
 			return
