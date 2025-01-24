@@ -56,7 +56,7 @@ type Config struct {
 
 	MaxIngestPayloadSize int `mapstructure:"MAX_INGEST_PAYLOAD_SIZE" default:"1000000"`
 
-	WeightedPartitionSelectorLagThreshold int64 `mapstructure:"WEIGHTED_PARTITION_SELECTOR_LAG_THRESHOLD" default:"100"`
+	WeightedPartitionSelectorLagThreshold int64 `mapstructure:"WEIGHTED_PARTITION_SELECTOR_LAG_THRESHOLD" default:"0"`
 	// # GRACEFUL SHUTDOWN
 	//Timeout that give running batch tasks time to finish during shutdown.
 	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`
