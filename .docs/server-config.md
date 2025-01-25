@@ -83,6 +83,14 @@ List of Kafka brokers separated by comma. Each broker should be in format `host:
 
 If SSL should be enabled
 
+### `BULKER_KAFKA_SSL_CA`
+
+CA certificate string (PEM format) for verifying the broker's key.
+
+### `BULKER_KAFKA_SSL_CA_FILE`
+
+File path to CA certificate for verifying the broker's key.
+
 ### `BULKER_KAFKA_SSL_SKIP_VERIFY`
 
 Skip SSL verification of kafka server certificate.
