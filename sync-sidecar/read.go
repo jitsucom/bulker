@@ -114,7 +114,7 @@ func (s *ReadSideCar) Run() {
 				status = "CANCELLED"
 			}
 
-			if allFailed {
+			if allFailed && s.firstErr != nil {
 				s.sendBadStatus("FAILED", "ERROR: "+s.firstErr.Error())
 			} else {
 				processedStreamsJson, _ := jsonorder.Marshal(statusMap)
