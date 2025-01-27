@@ -13,7 +13,10 @@ type KafkaConfig struct {
 	KafkaBootstrapServers string `mapstructure:"KAFKA_BOOTSTRAP_SERVERS"`
 	KafkaSSL              bool   `mapstructure:"KAFKA_SSL" default:"false"`
 	KafkaSSLSkipVerify    bool   `mapstructure:"KAFKA_SSL_SKIP_VERIFY" default:"false"`
-	//Kafka authorization as JSON object {"mechanism": "SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}
+	KafkaSSLCA            string `mapstructure:"KAFKA_SSL_CA"`
+	KafkaSSLCAFile        string `mapstructure:"KAFKA_SSL_CA_FILE"`
+
+	// Kafka authorization as JSON object {"mechanism": "SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}
 	KafkaSASL string `mapstructure:"KAFKA_SASL"`
 
 	KafkaSessionTimeoutMs    int    `mapstructure:"KAFKA_SESSION_TIMEOUT_MS" default:"45000"`
@@ -62,6 +65,12 @@ func (ac *KafkaConfig) GetKafkaConfig() *kafka.ConfigMap {
 		}
 		if ac.KafkaSSLSkipVerify {
 			_ = kafkaConfig.SetKey("enable.ssl.certificate.verification", false)
+		}
+		if ac.KafkaSSLCA != "" {
+			_ = kafkaConfig.SetKey("ssl.ca.pem", ac.KafkaSSLCA)
+		}
+		if ac.KafkaSSLCAFile != "" {
+			_ = kafkaConfig.SetKey("ssl.ca.location", ac.KafkaSSLCAFile)
 		}
 	}
 	if ac.KafkaSASL != "" {
