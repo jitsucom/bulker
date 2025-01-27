@@ -14,6 +14,7 @@ import (
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -57,7 +58,8 @@ type AbstractSideCar struct {
 	startedAt time.Time
 
 	//first error occurred during command
-	firstErr error
+	firstErr         error
+	taskTimeoutHours int
 
 	errPipe   *os.File
 	outPipe   *os.File
@@ -83,6 +85,7 @@ func main() {
 
 	command := os.Getenv("COMMAND")
 	var sidecar SideCar
+	taskTimeoutHours, _ := strconv.Atoi(utils.DefaultString(os.Getenv("TASK_TIMEOUT_HOURS"), "48"))
 	abstract := &AbstractSideCar{
 		syncId:           os.Getenv("SYNC_ID"),
 		taskId:           os.Getenv("TASK_ID"),
@@ -97,6 +100,7 @@ func main() {
 		logLevel:         strings.ToUpper(utils.DefaultString(os.Getenv("LOG_LEVEL"), "INFO")),
 		dbLogLevel:       strings.ToUpper(utils.DefaultString(os.Getenv("DB_LOG_LEVEL"), "INFO")),
 		startedAt:        startedAt,
+		taskTimeoutHours: taskTimeoutHours,
 	}
 	clickhouseHost := os.Getenv("CLICKHOUSE_HOST")
 	if clickhouseHost != "" {
@@ -180,6 +184,7 @@ func (s *AbstractSideCar) registerErr(err error) {
 }
 
 func (s *AbstractSideCar) checkJsonRow(json string) bool {
+	json = strings.TrimSpace(json)
 	if strings.HasPrefix(json, "{") && strings.HasSuffix(json, "}") {
 		return true
 	}

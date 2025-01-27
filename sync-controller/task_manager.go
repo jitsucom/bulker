@@ -43,7 +43,7 @@ func (t *TaskManager) SpecHandler(c *gin.Context) {
 
 	taskStatus := t.jobRunner.CreatePod(taskDescriptor, nil)
 	if taskStatus.Status == StatusCreateFailed {
-		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Description})
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Error})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "startedAt": startedAt.Unix()})
@@ -66,7 +66,7 @@ func (t *TaskManager) CheckHandler(c *gin.Context) {
 
 	taskStatus := t.jobRunner.CreatePod(taskDescriptor, &taskConfig)
 	if taskStatus.Status == StatusCreateFailed {
-		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Description})
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Error})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -89,7 +89,7 @@ func (t *TaskManager) DiscoverHandler(c *gin.Context) {
 
 	taskStatus := t.jobRunner.CreatePod(taskDescriptor, &taskConfig)
 	if taskStatus.Status == StatusCreateFailed {
-		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Description})
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Error})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -133,7 +133,7 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 
 	taskStatus := t.jobRunner.CreatePod(taskDescriptor, &taskConfig)
 	if taskStatus.Status == StatusCreateFailed {
-		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Description})
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Error})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -187,24 +187,24 @@ func (t *TaskManager) listenTaskStatus() {
 			switch st.TaskType {
 			case "spec":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err = db.InsertSpecError(t.dbpool, st.Package, st.PackageVersion, st.StartedAtTime(), st.Description)
+					err = db.InsertSpecError(t.dbpool, st.Package, st.PackageVersion, st.StartedAtTime(), st.Error)
 				}
 			case "discover":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err = db.UpsertRunningCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "FAILED", st.Description)
+					err = db.UpsertRunningCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "FAILED", st.Error)
 				} else if st.Status == StatusCreated {
-					err = db.UpsertCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "RUNNING", st.Description)
+					err = db.UpsertCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "RUNNING", "")
 				}
 			case "check":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
-					err = db.InsertCheckError(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "), st.StartedAtTime())
+					err = db.InsertCheckError(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, "FAILED", strings.Join([]string{string(st.Status), st.Error}, ": "), st.StartedAtTime())
 				}
 			case "read":
 				switch st.Status {
 				case StatusCreateFailed, StatusFailed, StatusInitTimeout:
-					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", strings.Join([]string{string(st.Status), st.Description}, ": "), st.StartedBy)
+					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", strings.Join([]string{string(st.Status), st.Error}, ": "), st.StartedBy)
 				case StatusCreated:
-					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "RUNNING", strings.Join([]string{string(st.Status), st.Description}, ": "), st.StartedBy)
+					err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "RUNNING", "", st.StartedBy)
 				case StatusRunning:
 					if len(st.Metrics) > 0 {
 						err = db.UpdateRunningTaskMetrics(t.dbpool, st.TaskID, st.Metrics)

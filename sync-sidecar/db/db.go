@@ -25,11 +25,14 @@ ON CONFLICT ON CONSTRAINT source_catalog_pkey DO UPDATE SET catalog=$4, timestam
 	upsertStateSQL = `INSERT INTO source_state (sync_id, stream, state, timestamp) VALUES ($1, $2, $3, $4)
 ON CONFLICT ON CONSTRAINT source_state_pkey DO UPDATE SET state=$3, timestamp = $4`
 
-	upsertTaskSQL = `INSERT INTO source_task (sync_id, task_id, package, version, started_at, updated_at, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8 )
+	upsertTaskDescriptionSQL = `INSERT INTO source_task (sync_id, task_id, package, version, started_at, updated_at, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, description=$8`
 
-	upsertRunningTaskSQL = `INSERT INTO source_task as st (sync_id, task_id, package, version, started_at, updated_at, status, description, started_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, description=$8, started_by=$9 where st.status = 'RUNNING'`
+	upsertTaskErrorSQL = `INSERT INTO source_task (sync_id, task_id, package, version, started_at, updated_at, status, error) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, error=$8`
+
+	upsertRunningTaskSQL = `INSERT INTO source_task as st (sync_id, task_id, package, version, started_at, updated_at, status, error, started_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, error=$8, started_by=$9 where st.status = 'RUNNING'`
 
 	updateRunningTaskDateSQL = `UPDATE source_task SET updated_at=$2 where task_id=$1 and status = 'RUNNING'`
 
@@ -78,13 +81,18 @@ func UpsertState(dbpool *pgxpool.Pool, syncId, stream string, state any, timesta
 	return err
 }
 
-func UpsertTask(dbpool *pgxpool.Pool, syncId, taskId, packageName, packageVersion string, startedAt time.Time, status, description string) error {
-	_, err := dbpool.Exec(context.Background(), upsertTaskSQL, syncId, taskId, packageName, packageVersion, startedAt, time.Now(), status, description)
+func UpsertTaskDescription(dbpool *pgxpool.Pool, syncId, taskId, packageName, packageVersion string, startedAt time.Time, status, description string) error {
+	_, err := dbpool.Exec(context.Background(), upsertTaskDescriptionSQL, syncId, taskId, packageName, packageVersion, startedAt, time.Now(), status, description)
 	return err
 }
 
-func UpsertRunningTask(dbpool *pgxpool.Pool, syncId, taskId, packageName, packageVersion string, startedAt time.Time, status, description, startedBy string) error {
-	_, err := dbpool.Exec(context.Background(), upsertRunningTaskSQL, syncId, taskId, packageName, packageVersion, startedAt, time.Now(), status, description, startedBy)
+func UpsertTaskError(dbpool *pgxpool.Pool, syncId, taskId, packageName, packageVersion string, startedAt time.Time, status, error string) error {
+	_, err := dbpool.Exec(context.Background(), upsertTaskErrorSQL, syncId, taskId, packageName, packageVersion, startedAt, time.Now(), status, error)
+	return err
+}
+
+func UpsertRunningTask(dbpool *pgxpool.Pool, syncId, taskId, packageName, packageVersion string, startedAt time.Time, status, error, startedBy string) error {
+	_, err := dbpool.Exec(context.Background(), upsertRunningTaskSQL, syncId, taskId, packageName, packageVersion, startedAt, time.Now(), status, error, startedBy)
 	return err
 }
 

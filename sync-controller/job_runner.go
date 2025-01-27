@@ -101,21 +101,25 @@ func (j *JobRunner) watchPodStatuses() {
 					j.cleanupPod(pod.Name)
 				case v1.PodFailed:
 					taskStatus.Status = StatusFailed
-					taskStatus.Description = j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
+					errors := j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
+					if len(strings.TrimSpace(errors)) == 0 {
+						errors = accumulatePodStatus(status)
+					}
+					taskStatus.Error = errors
 					j.Infof("Pod %s failed. Cleaning up.", pod.Name)
 					j.cleanupPod(pod.Name)
 				case v1.PodRunning:
 					errors := j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
 					if len(errors) > 0 {
 						taskStatus.Status = StatusFailed
-						taskStatus.Description = errors
+						taskStatus.Error = errors
 						j.Infof("Pod %s is running but had errors. Cleaning up.", pod.Name)
 						j.cleanupPod(pod.Name)
 					} else {
 						if timeMark, ok := j.runningPods[pod.Name]; !ok || time.Now().Sub(timeMark) >= time.Minute {
 							if time.Now().Sub(taskStatus.StartedAtTime()) > time.Hour*time.Duration(j.config.TaskTimeoutHours) {
-								taskStatus.Status = StatusFailed
-								taskStatus.Description = fmt.Sprintf("Task timeout: task %s is running for more than %d hours.", taskStatus.TaskID, j.config.TaskTimeoutHours)
+								taskStatus.Status = StatusTimeExceeded
+								taskStatus.Error = fmt.Sprintf("Task timeout: task is running for more than %d hours.", j.config.TaskTimeoutHours)
 								j.Errorf("Pod %s is running for more than %d hours. Deleting", pod.Name, j.config.TaskTimeoutHours)
 								j.cleanupPod(pod.Name)
 							} else {
@@ -136,18 +140,18 @@ func (j *JobRunner) watchPodStatuses() {
 				case v1.PodPending:
 					if time.Now().Sub(taskStatus.StartedAtTime()) > time.Second*time.Duration(j.config.ContainerInitTimeoutSeconds) {
 						taskStatus.Status = StatusInitTimeout
-						taskStatus.Description = accumulatePodStatus(status)
+						taskStatus.Error = accumulatePodStatus(status)
 						j.Errorf("Pod %s is pending for more than %d seconds. Deleting", pod.Name, j.config.ContainerInitTimeoutSeconds)
 						j.cleanupPod(pod.Name)
 					} else {
 						taskStatus.Status = StatusPending
-						taskStatus.Description = accumulatePodStatus(status)
+						taskStatus.Error = accumulatePodStatus(status)
 						j.Debugf("Pod %s is pending", pod.Name)
 						continue
 					}
 				default:
 					taskStatus.Status = StatusUnknown
-					taskStatus.Description = accumulatePodStatus(status)
+					taskStatus.Error = accumulatePodStatus(status)
 					j.SystemErrorf("Pod %s is in unknown state %s", pod.Name, status.Phase)
 				}
 				j.sendStatus(&taskStatus)
@@ -390,7 +394,7 @@ func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *Task
 		_, err := j.clientset.CoreV1().Secrets(j.namespace).Create(context.Background(), secret, metav1.CreateOptions{})
 		if err != nil {
 			taskStatus.Status = StatusCreateFailed
-			taskStatus.Description = err.Error()
+			taskStatus.Error = err.Error()
 			j.sendStatus(&taskStatus)
 			return taskStatus
 		}
@@ -399,10 +403,9 @@ func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *Task
 	pod, err := j.clientset.CoreV1().Pods(j.namespace).Create(context.Background(), pod, metav1.CreateOptions{})
 	if err != nil {
 		taskStatus.Status = StatusCreateFailed
-		taskStatus.Description = err.Error()
+		taskStatus.Error = err.Error()
 	} else {
 		taskStatus.Status = StatusCreated
-		taskStatus.Description = "Starting sync job..."
 		taskStatus.PodName = pod.Name
 	}
 	j.sendStatus(&taskStatus)
@@ -640,21 +643,22 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 	}
 	databaseURL := utils.NvlString(j.config.SidecarDatabaseURL, j.config.DatabaseURL)
 	sideCarEnv := map[string]string{
-		"STDOUT_PIPE_FILE":  "/pipes/stdout",
-		"STDERR_PIPE_FILE":  "/pipes/stderr",
-		"PACKAGE":           task.Package,
-		"PACKAGE_VERSION":   task.PackageVersion,
-		"COMMAND":           task.TaskType,
-		"NAMESPACE":         task.Namespace,
-		"TO_SAME_CASE":      task.ToSameCase,
-		"ADD_META":          task.AddMeta,
-		"TABLE_NAME_PREFIX": task.TableNamePrefix,
-		"FULL_SYNC":         task.FullSync,
-		"DATABASE_URL":      databaseURL,
-		"LOG_LEVEL":         j.config.LogLevel,
-		"DB_LOG_LEVEL":      j.config.DBLogLevel,
-		"STARTED_BY":        task.StartedBy,
-		"STARTED_AT":        task.StartedAt,
+		"STDOUT_PIPE_FILE":   "/pipes/stdout",
+		"STDERR_PIPE_FILE":   "/pipes/stderr",
+		"PACKAGE":            task.Package,
+		"PACKAGE_VERSION":    task.PackageVersion,
+		"COMMAND":            task.TaskType,
+		"NAMESPACE":          task.Namespace,
+		"TO_SAME_CASE":       task.ToSameCase,
+		"ADD_META":           task.AddMeta,
+		"TABLE_NAME_PREFIX":  task.TableNamePrefix,
+		"FULL_SYNC":          task.FullSync,
+		"DATABASE_URL":       databaseURL,
+		"LOG_LEVEL":          j.config.LogLevel,
+		"DB_LOG_LEVEL":       j.config.DBLogLevel,
+		"STARTED_BY":         task.StartedBy,
+		"STARTED_AT":         task.StartedAt,
+		"TASK_TIMEOUT_HOURS": strconv.Itoa(j.config.TaskTimeoutHours),
 	}
 	if task.SyncID != "" {
 		sideCarEnv["SYNC_ID"] = task.SyncID
@@ -779,8 +783,8 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 					Resources: v1.ResourceRequirements{
 						Limits: v1.ResourceList{
 							v1.ResourceCPU: *resource.NewMilliQuantity(int64(500), resource.DecimalSI),
-							// 2Gi
-							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 31)), resource.BinarySI),
+							// 4Gi
+							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 32)), resource.BinarySI),
 						},
 						Requests: v1.ResourceList{
 							v1.ResourceCPU: *resource.NewMilliQuantity(int64(0), resource.DecimalSI),

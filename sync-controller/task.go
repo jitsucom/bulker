@@ -56,6 +56,7 @@ type TaskStatus struct {
 	PodName        string         `json:"podName"`
 	Status         Status         `json:"status"`
 	Description    string         `json:"description"`
+	Error          string         `json:"error"`
 	Metrics        map[string]any `json:"metrics"`
 }
 
@@ -64,6 +65,7 @@ type Status string
 const (
 	StatusRunning      Status = "RUNNING"
 	StatusFailed       Status = "FAILED"
+	StatusTimeExceeded Status = "TIME_EXCEEDED"
 	StatusSuccess      Status = "SUCCESS"
 	StatusCreated      Status = "CREATED"
 	StatusCreateFailed Status = "CREATE_FAILED"

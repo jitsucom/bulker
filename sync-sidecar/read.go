@@ -70,6 +70,7 @@ func (s *ReadSideCar) Run() {
 
 	defer func() {
 		cancelled := s.cancelled.Load()
+		timeExceeded := cancelled && time.Now().Sub(s.startedAt) > time.Hour*time.Duration(s.taskTimeoutHours)
 		if r := recover(); r != nil {
 			s.registerErr(fmt.Errorf("%v", r))
 			s.closeActiveStreams(false)
@@ -82,7 +83,9 @@ func (s *ReadSideCar) Run() {
 				if stream, ok := s.processedStreams[streamName]; ok {
 					statusMap.Set(streamName, stream.StreamStat)
 				} else {
-					if cancelled {
+					if timeExceeded {
+						statusMap.Set(streamName, &StreamStat{Status: "TIME_EXCEEDED"})
+					} else if cancelled {
 						statusMap.Set(streamName, &StreamStat{Status: "CANCELLED"})
 					} else {
 						statusMap.Set(streamName, &StreamStat{Status: "FAILED", Error: "Stream was not processed. Check logs for errors."})
@@ -105,19 +108,27 @@ func (s *ReadSideCar) Run() {
 				status = "SUCCESS"
 			} else if allFailed {
 				status = "FAILED"
+			} else if timeExceeded {
+				status = "TIME_EXCEEDED"
 			} else if cancelled {
 				status = "CANCELLED"
 			}
 
-			processedStreamsJson, _ := jsonorder.Marshal(statusMap)
-			s.sendFinalStatus(status, string(processedStreamsJson))
+			if allFailed {
+				s.sendBadStatus("FAILED", "ERROR: "+s.firstErr.Error())
+			} else {
+				processedStreamsJson, _ := jsonorder.Marshal(statusMap)
+				s.sendGoodStatus(status, string(processedStreamsJson), true)
+			}
 		} else if s.isErr() {
-			s.sendFinalStatus("FAILED", "ERROR: "+s.firstErr.Error())
+			s.sendBadStatus("FAILED", "ERROR: "+s.firstErr.Error())
 			os.Exit(1)
+		} else if timeExceeded {
+			s.sendBadStatus("TIME_EXCEEDED", fmt.Sprintf("Task timeout: task is running for more than %d hours.", s.taskTimeoutHours))
 		} else if cancelled {
-			s.sendFinalStatus("CANCELLED", "")
+			s.sendBadStatus("CANCELLED", "The task was cancelled")
 		} else {
-			s.sendFinalStatus("SUCCESS", "")
+			s.sendGoodStatus("SUCCESS", "", true)
 		}
 	}()
 	s.log("Sidecar. command: read. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
@@ -183,7 +194,7 @@ func (s *ReadSideCar) Run() {
 			s.lastMessageTime.Store(time.Now().Unix())
 			line := scanner.Bytes()
 			lineStr := string(line)
-			ok = s.checkJsonRow(strings.TrimSpace(lineStr))
+			ok = s.checkJsonRow(lineStr)
 			if !ok {
 				continue
 			}
@@ -498,6 +509,8 @@ func (s *ReadSideCar) processTrace(rec *TraceRow, line string) {
 			if ok {
 				stream.RegisterError(fmt.Errorf("%s", r.Message))
 			}
+		} else {
+			s.firstErr = fmt.Errorf("%s", r.Message)
 		}
 	default:
 		s.log("TRACE: %s", line)
@@ -559,22 +572,22 @@ func (s *ReadSideCar) updateRunningStatus() {
 		}
 	})
 	processedStreamsJson, _ := jsonorder.Marshal(statusMap)
-	s._sendStatus("RUNNING", string(processedStreamsJson), false)
+	s.sendGoodStatus("RUNNING", string(processedStreamsJson), false)
 }
 
-func (s *ReadSideCar) sendFinalStatus(status string, description string) {
-	s._sendStatus(status, description, true)
-}
-
-func (s *ReadSideCar) _sendStatus(status string, description string, log bool) {
-	if log {
-		logFunc := s.log
-		if status == "FAILED" {
-			logFunc = s.errprint
-		}
-		logFunc("READ %s", joinStrings(status, description, ": "))
+func (s *ReadSideCar) sendBadStatus(status string, error string) {
+	s.errprint("READ %s", joinStrings(status, error, ": "))
+	err := db.UpsertTaskError(s.dbpool, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt, status, error)
+	if err != nil {
+		s.panic("error updating task: %v", err)
 	}
-	err := db.UpsertTask(s.dbpool, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt, status, description)
+}
+
+func (s *ReadSideCar) sendGoodStatus(status string, description string, log bool) {
+	if log {
+		s.log("READ %s", joinStrings(status, description, ": "))
+	}
+	err := db.UpsertTaskDescription(s.dbpool, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt, status, description)
 	if err != nil {
 		s.panic("error updating task: %v", err)
 	}
