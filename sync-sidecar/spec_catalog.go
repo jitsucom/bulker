@@ -73,7 +73,7 @@ func (s *SpecCatalogSideCar) Run() {
 		for scanner.Scan() {
 			line := scanner.Bytes()
 			//s.log("line: %s", string(line))
-			ok := s.checkJsonRow(string(line))
+			ok := s.checkJsonRow(strings.TrimSpace(string(line)))
 			if !ok {
 				continue
 			}

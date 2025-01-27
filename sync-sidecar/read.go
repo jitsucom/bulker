@@ -183,7 +183,7 @@ func (s *ReadSideCar) Run() {
 			s.lastMessageTime.Store(time.Now().Unix())
 			line := scanner.Bytes()
 			lineStr := string(line)
-			ok = s.checkJsonRow(lineStr)
+			ok = s.checkJsonRow(strings.TrimSpace(lineStr))
 			if !ok {
 				continue
 			}
