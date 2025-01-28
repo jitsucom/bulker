@@ -76,6 +76,22 @@ func TestParseTopicId(t *testing.T) {
 			requireErr:            require.NoError,
 		},
 		{
+			desc:                  "should parse a batch events topic. table with dot",
+			topic:                 "in.id.clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT.m.batch.t.events.com",
+			expectedDestinationId: "clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT",
+			expectedMode:          "batch",
+			expectedTableName:     "events.com",
+			requireErr:            require.NoError,
+		},
+		{
+			desc:                  "should parse a batch events topic. table with spaces",
+			topic:                 "in.id.clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT.m.batch.b64.QWNjb3VudCBEZWFjdGl2YXRlZCBVc2Vy",
+			expectedDestinationId: "clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT",
+			expectedMode:          "batch",
+			expectedTableName:     "Account Deactivated User",
+			requireErr:            require.NoError,
+		},
+		{
 			desc:                  "should parse a batch events topic with prefix",
 			topic:                 "prefix.with.dots.in.id.clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT.m.batch.t.events",
 			expectedDestinationId: "clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT",
@@ -89,7 +105,7 @@ func TestParseTopicId(t *testing.T) {
 			requireErr: require.Error,
 		},
 		{
-			desc:       "should return error when there are too many sub-strings",
+			desc:       "should return error when doesn't match the topic pattern",
 			topic:      "in.id.extra-substring.clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT.m.batch.t.events",
 			requireErr: require.Error,
 		},

@@ -724,11 +724,16 @@ func ParseTopicId(topic string) (destinationId, mode, tableName string, err erro
 	usefulTopicInfo := topicSplit[1]
 
 	// "(.*).m.(.*).(t|b64).(.*)"
-	topicGroups := strings.Split(usefulTopicInfo, ".")
+	topicGroups := strings.SplitN(usefulTopicInfo, ".", 5)
 	if len(topicGroups) == 5 {
+		m := topicGroups[1]
+		tableEncoding := topicGroups[3]
+		if m != "m" || (tableEncoding != "t" && tableEncoding != "b64") {
+			err = fmt.Errorf("topic name %s doesn't match pattern %s", topic, topicPattern.String())
+			return
+		}
 		destinationId = topicGroups[0]
 		mode = topicGroups[2]
-		tableEncoding := topicGroups[3]
 		tableName = topicGroups[4]
 		if tableEncoding == "b64" {
 			b, err := base64.RawURLEncoding.DecodeString(tableName)
