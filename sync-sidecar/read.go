@@ -104,21 +104,26 @@ func (s *ReadSideCar) Run() {
 				}
 			})
 			status := "PARTIAL"
+			errorText := ""
 			if allSuccess {
 				status = "SUCCESS"
 			} else if allFailed {
 				status = "FAILED"
 			} else if timeExceeded {
 				status = "TIME_EXCEEDED"
+				errorText = fmt.Sprintf("Task timeout: task is running for more than %d hours.", s.taskTimeoutHours)
 			} else if cancelled {
 				status = "CANCELLED"
+				errorText = "The task was cancelled"
+			} else if s.firstErr != nil {
+				errorText = "ERROR: " + s.firstErr.Error()
 			}
 
 			if allFailed && s.firstErr != nil {
 				s.sendBadStatus("FAILED", "ERROR: "+s.firstErr.Error())
 			} else {
 				processedStreamsJson, _ := jsonorder.Marshal(statusMap)
-				s.sendGoodStatus(status, string(processedStreamsJson), true)
+				s.sendGoodStatus(status, string(processedStreamsJson), errorText, true)
 			}
 		} else if s.isErr() {
 			s.sendBadStatus("FAILED", "ERROR: "+s.firstErr.Error())
@@ -128,7 +133,7 @@ func (s *ReadSideCar) Run() {
 		} else if cancelled {
 			s.sendBadStatus("CANCELLED", "The task was cancelled")
 		} else {
-			s.sendGoodStatus("SUCCESS", "", true)
+			s.sendGoodStatus("SUCCESS", "", "", true)
 		}
 	}()
 	s.log("Sidecar. command: read. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
@@ -211,7 +216,10 @@ func (s *ReadSideCar) Run() {
 						stream.errorFromLogs = row.Log.Message
 					}
 				}
-				s.sourceLog(row.Log.Level, row.Log.Message)
+				level := strings.ToUpper(row.Log.Level)
+				if shouldLog(level, s.logLevel) || shouldLog(level, s.dbLogLevel) {
+					s.sourceLog(row.Log.Level, row.Log.Message)
+				}
 			case DebugType:
 				message := row.Message
 				if row.Data != nil {
@@ -221,7 +229,9 @@ func (s *ReadSideCar) Run() {
 						message = fmt.Sprintf("%s: %s", message, sData)
 					}
 				}
-				s.sourceLog("DEBUG", message)
+				if shouldLog("DEBUG", s.logLevel) || shouldLog("DEBUG", s.dbLogLevel) {
+					s.sourceLog("DEBUG", message)
+				}
 			case StateType:
 				if s.lastStateMessage != lineStr {
 					s.processState(row.State)
@@ -572,7 +582,7 @@ func (s *ReadSideCar) updateRunningStatus() {
 		}
 	})
 	processedStreamsJson, _ := jsonorder.Marshal(statusMap)
-	s.sendGoodStatus("RUNNING", string(processedStreamsJson), false)
+	s.sendGoodStatus("RUNNING", string(processedStreamsJson), "", false)
 }
 
 func (s *ReadSideCar) sendBadStatus(status string, error string) {
@@ -583,11 +593,11 @@ func (s *ReadSideCar) sendBadStatus(status string, error string) {
 	}
 }
 
-func (s *ReadSideCar) sendGoodStatus(status string, description string, log bool) {
+func (s *ReadSideCar) sendGoodStatus(status string, description, error string, log bool) {
 	if log {
 		s.log("READ %s", joinStrings(status, description, ": "))
 	}
-	err := db.UpsertTaskDescription(s.dbpool, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt, status, description)
+	err := db.UpsertTaskDescriptionAndError(s.dbpool, s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt, status, description, error)
 	if err != nil {
 		s.panic("error updating task: %v", err)
 	}

@@ -25,8 +25,8 @@ ON CONFLICT ON CONSTRAINT source_catalog_pkey DO UPDATE SET catalog=$4, timestam
 	upsertStateSQL = `INSERT INTO source_state (sync_id, stream, state, timestamp) VALUES ($1, $2, $3, $4)
 ON CONFLICT ON CONSTRAINT source_state_pkey DO UPDATE SET state=$3, timestamp = $4`
 
-	upsertTaskDescriptionSQL = `INSERT INTO source_task (sync_id, task_id, package, version, started_at, updated_at, status, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, description=$8`
+	upsertTaskDescriptionAndErrorSQL = `INSERT INTO source_task (sync_id, task_id, package, version, started_at, updated_at, status, description, error) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, description=$8, error=$9`
 
 	upsertTaskErrorSQL = `INSERT INTO source_task (sync_id, task_id, package, version, started_at, updated_at, status, error) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT ON CONSTRAINT source_task_pkey DO UPDATE SET updated_at=$6, status = $7, error=$8`
@@ -81,8 +81,8 @@ func UpsertState(dbpool *pgxpool.Pool, syncId, stream string, state any, timesta
 	return err
 }
 
-func UpsertTaskDescription(dbpool *pgxpool.Pool, syncId, taskId, packageName, packageVersion string, startedAt time.Time, status, description string) error {
-	_, err := dbpool.Exec(context.Background(), upsertTaskDescriptionSQL, syncId, taskId, packageName, packageVersion, startedAt, time.Now(), status, description)
+func UpsertTaskDescriptionAndError(dbpool *pgxpool.Pool, syncId, taskId, packageName, packageVersion string, startedAt time.Time, status, description, error string) error {
+	_, err := dbpool.Exec(context.Background(), upsertTaskDescriptionAndErrorSQL, syncId, taskId, packageName, packageVersion, startedAt, time.Now(), status, description, error)
 	return err
 }
 

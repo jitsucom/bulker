@@ -12,6 +12,8 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -131,6 +133,10 @@ func main() {
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM)
+
+	go func() {
+		_ = http.ListenAndServe("localhost:6060", nil)
+	}()
 
 	go func() {
 		sig := <-sigs
