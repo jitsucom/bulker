@@ -28,8 +28,10 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 
 const forceLeaveResultingTables = false
 
-var allBulkerConfigs = []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_iam", RedshiftBulkerTypeId + "_serverless", SnowflakeBulkerTypeId, PostgresBulkerTypeId,
-	MySQLBulkerTypeId, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards", ClickHouseBulkerTypeId + "_s3"}
+//var allBulkerConfigs = []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_iam", RedshiftBulkerTypeId + "_serverless", SnowflakeBulkerTypeId, PostgresBulkerTypeId,
+//	MySQLBulkerTypeId, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}
+
+var allBulkerConfigs = []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}
 
 var exceptBigquery []string
 
