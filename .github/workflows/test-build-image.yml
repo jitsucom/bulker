@@ -39,7 +39,8 @@ jobs:
 
     - name: Bulker Test
       run: |
-        go test -parallel=10 -timeout 60m ./jitsubase/... ./kafkabase/... ./eventslog/... ./bulkerlib/... ./bulkerapp/... > test_report.json
+        go test -parallel=10 -timeout 60m ./jitsubase/... ./kafkabase/... ./eventslog/... ./bulkerlib/... ./bulkerapp/...
+#        > test_report.json
 
 #    - name: Test Report
 #      if: ${{ always() }}

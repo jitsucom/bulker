@@ -318,6 +318,7 @@ func (a *S3) Type() string {
 // Close returns nil
 func (a *S3) Close() error {
 	a.closed.Store(true)
+	a.presignClient = nil
 	a.client = nil
 	return nil
 }
