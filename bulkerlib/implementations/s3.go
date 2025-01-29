@@ -174,7 +174,7 @@ func (a *S3) GetObjectURL(fileName string) (string, error) {
 				logging.Errorf("[%s] Error presigning URL: %v", a.Type(), err)
 				return "", nil
 			}
-			fmt.Printf("Presigned URL: %s + %s\n", request.URL, time.Since(startedAt))
+			logging.Infof("Presigned URL: %s + %s", request.URL, time.Since(startedAt))
 			return request.URL, nil
 		} else {
 			return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", a.config.Bucket, a.config.Region, fileName), nil
