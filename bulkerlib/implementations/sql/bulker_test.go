@@ -158,14 +158,15 @@ func init() {
 				panic(err)
 			}
 			if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId+"_cluster") {
-				clickhouseContainerS3, err := testcontainers2.NewClickhouseContainer(context.Background())
+				clickhouseClusterContainer, err = clickhouse.NewClickhouseClusterContainer(context.Background())
 				if err != nil {
 					panic(err)
 				}
 				configRegistry[ClickHouseBulkerTypeId+"_cluster"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
-					Hosts:             clickhouseContainerS3.Hosts,
+					Hosts:             clickhouseClusterContainer.Hosts,
 					Username:          "default",
-					Database:          clickhouseContainerS3.Database,
+					Database:          clickhouseClusterContainer.Database,
+					Cluster:           clickhouseClusterContainer.Cluster,
 					LoadAsJSON:        true,
 					S3Bucket:          s3Config.Bucket,
 					S3Region:          s3Config.Region,
