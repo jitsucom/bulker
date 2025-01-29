@@ -326,7 +326,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				BytesProcessed:  int(batchSize),
 				TimeProcessedMs: time.Since(uploadStart).Milliseconds(),
 			})
-			logging.Infof("[%s] Batch file uploaded to s3 in %.2f s.", ps.id, time.Since(loadTime).Seconds())
+			logging.Infof("[%s] Batch file uploaded to s3 in %.2f s. URL: %d", ps.id, time.Since(loadTime).Seconds(), len(url))
 			loadTime = time.Now()
 			loadState, err := ps.tx.LoadTable(ctx, table, &LoadSource{Type: AmazonS3, Path: s3FileName, URL: url, Format: ps.sqlAdapter.GetBatchFileFormat(), S3Config: s3Config})
 			state.Merge(loadState)
