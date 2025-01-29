@@ -149,43 +149,44 @@ func init() {
 			Database: clickhouseContainer.Database,
 		}}
 	}
-	s3Cfg := os.Getenv("BULKER_TEST_S3")
-	if s3Cfg != "" {
-		s3Config := &implementations.S3Config{}
-		if err = utils.ParseObject(s3Cfg, s3Config); err != nil {
-			panic(err)
-		}
-		if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId+"_s3") {
-			clickhouseContainerS3, err := testcontainers2.NewClickhouseContainer(context.Background())
+
+	if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId+"_cluster") {
+		s3Cfg := os.Getenv("BULKER_TEST_S3")
+		if s3Cfg != "" {
+			s3Config := &implementations.S3Config{}
+			if err = utils.ParseObject(s3Cfg, s3Config); err != nil {
+				panic(err)
+			}
+			if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId+"_cluster") {
+				clickhouseContainerS3, err := testcontainers2.NewClickhouseContainer(context.Background())
+				if err != nil {
+					panic(err)
+				}
+				configRegistry[ClickHouseBulkerTypeId+"_cluster"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
+					Hosts:             clickhouseContainerS3.Hosts,
+					Username:          "default",
+					Database:          clickhouseContainerS3.Database,
+					LoadAsJSON:        true,
+					S3Bucket:          s3Config.Bucket,
+					S3Region:          s3Config.Region,
+					S3Folder:          "test-folder",
+					S3AccessKeyID:     s3Config.AccessKeyID,
+					S3SecretAccessKey: s3Config.SecretAccessKey,
+					S3UsePresignedURL: true,
+				}}
+			}
+		} else {
+			clickhouseClusterContainer, err = clickhouse.NewClickhouseClusterContainer(context.Background())
 			if err != nil {
 				panic(err)
 			}
-			configRegistry[ClickHouseBulkerTypeId+"_s3"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
-				Hosts:             clickhouseContainerS3.Hosts,
-				Username:          "default",
-				Database:          clickhouseContainerS3.Database,
-				LoadAsJSON:        true,
-				S3Bucket:          s3Config.Bucket,
-				S3Region:          s3Config.Region,
-				S3Folder:          "test-folder",
-				S3AccessKeyID:     s3Config.AccessKeyID,
-				S3SecretAccessKey: s3Config.SecretAccessKey,
-				S3UsePresignedURL: true,
+			configRegistry[ClickHouseBulkerTypeId+"_cluster"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
+				Hosts:    clickhouseClusterContainer.Hosts,
+				Username: "default",
+				Database: clickhouseClusterContainer.Database,
+				Cluster:  clickhouseClusterContainer.Cluster,
 			}}
 		}
-	}
-
-	if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId+"_cluster") {
-		clickhouseClusterContainer, err = clickhouse.NewClickhouseClusterContainer(context.Background())
-		if err != nil {
-			panic(err)
-		}
-		configRegistry[ClickHouseBulkerTypeId+"_cluster"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
-			Hosts:    clickhouseClusterContainer.Hosts,
-			Username: "default",
-			Database: clickhouseClusterContainer.Database,
-			Cluster:  clickhouseClusterContainer.Cluster,
-		}}
 	}
 	if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId+"_cluster_noshards") {
 		clickhouseClusterContainerNoShards, err = clickhouse_noshards.NewClickHouseClusterContainerNoShards(context.Background())

@@ -356,7 +356,7 @@ func TestTypeOverrideOption(t *testing.T) {
 				With("date1", "Date").
 				With("int_1", "Int64").
 				With("intstring", "Int64"))},
-			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster"}),
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster_noshards"}),
 		},
 	}
 	for _, tt := range tests {
