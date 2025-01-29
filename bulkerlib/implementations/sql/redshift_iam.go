@@ -407,10 +407,6 @@ func (p *RedshiftIAM) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	columnNames := targetTable.MappedColumnNames(p.quotedColumnName)
 	s3Config := loadSource.S3Config
 	fileKey := loadSource.Path
-	//add folder prefix if configured
-	if s3Config.Folder != "" {
-		fileKey = s3Config.Folder + "/" + fileKey
-	}
 	_, _ = p.txOrDb(ctx).ExecContext(ctx, "SET json_parse_truncate_strings=ON")
 	statement := fmt.Sprintf(redshiftCopyTemplateIam, namespace, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, s3Config.RoleARN, s3Config.Region)
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {

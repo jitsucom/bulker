@@ -33,6 +33,7 @@ type S3Config struct {
 	Bucket               string `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
 	Region               string `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
 	Endpoint             string `mapstructure:"endpoint,omitempty" json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	UsePresignedURL      bool   `mapstructure:"usePresignedURL,omitempty" json:"usePresignedURL,omitempty" yaml:"usePresignedURL,omitempty"`
 
 	RoleARN       string        `mapstructure:"roleARN" json:"roleARN" yaml:"roleARN"`
 	RoleARNExpiry time.Duration `json:"roleARNExpiry"` // default: 15m
@@ -85,11 +86,11 @@ func (s3c *S3Config) Sanitize() {
 // S3 is a S3 adapter for uploading/deleting files
 type S3 struct {
 	AbstractFileAdapter
-	config       *S3Config
-	s3ClientFunc func(config *S3Config) (*s3.Client, error)
-	client       *s3.Client
-
-	closed *atomic.Bool
+	config        *S3Config
+	s3ClientFunc  func(config *S3Config) (*s3.Client, error)
+	client        *s3.Client
+	presignClient *s3.PresignClient
+	closed        *atomic.Bool
 }
 
 // NewS3 returns configured S3 adapter
@@ -147,8 +148,38 @@ func NewS3(s3Config *S3Config) (*S3, error) {
 	if err != nil {
 		return nil, err
 	}
+	var presignClient *s3.PresignClient
+	if s3Config.UsePresignedURL {
+		presignClient = s3.NewPresignClient(client)
+	}
+	return &S3{AbstractFileAdapter: AbstractFileAdapter{config: &s3Config.FileConfig}, client: client, presignClient: presignClient, s3ClientFunc: s3ClientFunc, config: s3Config, closed: atomic.NewBool(false)}, nil
+}
 
-	return &S3{AbstractFileAdapter: AbstractFileAdapter{config: &s3Config.FileConfig}, client: client, s3ClientFunc: s3ClientFunc, config: s3Config, closed: atomic.NewBool(false)}, nil
+func (a *S3) GetObjectURL(fileName string) (string, error) {
+	fileName = a.Path(fileName)
+	if a.config.Endpoint != "" {
+		return fmt.Sprintf("%s/%s/%s", a.config.Endpoint, a.config.Bucket, fileName), nil
+	} else {
+		if a.config.UsePresignedURL {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*1)
+			defer cancel()
+			startedAt := time.Now()
+			request, err := a.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+				Bucket: aws.String(a.config.Bucket),
+				Key:    aws.String(fileName),
+			}, func(opts *s3.PresignOptions) {
+				opts.Expires = time.Duration(120 * int64(time.Second))
+			})
+			if err != nil {
+				logging.Errorf("[%s] Error presigning URL: %v", a.Type(), err)
+				return "", nil
+			}
+			fmt.Printf("Presigned URL: %s + %s\n", request.URL, time.Since(startedAt))
+			return request.URL, nil
+		} else {
+			return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", a.config.Bucket, a.config.Region, fileName), nil
+		}
+	}
 }
 
 func (a *S3) UploadBytes(fileName string, fileBytes []byte) error {

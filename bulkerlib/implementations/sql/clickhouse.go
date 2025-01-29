@@ -57,9 +57,10 @@ const (
 	chExchangeTableTemplate = `EXCHANGE TABLES %s%s AND %s%s %s`
 	chRenameTableTemplate   = `RENAME TABLE %s%s TO %s%s %s`
 
-	chSelectFinalStatement = `SELECT %s FROM %s%s FINAL %s%s`
-	chLoadStatement        = `INSERT INTO %s%s (%s) VALUES %s`
-	chLoadJSONStatement    = `INSERT INTO %s%s format JSONEachRow`
+	chSelectFinalStatement     = `SELECT %s FROM %s%s FINAL %s%s`
+	chLoadStatement            = `INSERT INTO %s%s (%s) VALUES %s`
+	chLoadJSONStatement        = `INSERT INTO %s%s format JSONEachRow`
+	chLoadJSONFromURLStatement = `INSERT INTO %s%s SELECT * FROM url('%s', JSONEachRow)`
 
 	chDateFormat = `2006-01-02 15:04:05.000000`
 )
@@ -140,6 +141,14 @@ type ClickHouseConfig struct {
 	TLS        map[string]string  `mapstructure:"tls,omitempty" json:"tls,omitempty" yaml:"tls,omitempty"`
 	Engine     *EngineConfig      `mapstructure:"engine,omitempty" json:"engine,omitempty" yaml:"engine,omitempty"`
 	LoadAsJSON bool               `mapstructure:"loadAsJson,omitempty" json:"loadAsJson,omitempty" yaml:"loadAsJson,omitempty"`
+
+	// S3Config
+	S3AccessKeyID     string `mapstructure:"s3AccessKeyId,omitempty" json:"s3AccessKeyId,omitempty" yaml:"s3AccessKeyId,omitempty"`
+	S3SecretAccessKey string `mapstructure:"s3SecretAccessKey,omitempty" json:"s3SecretAccessKey,omitempty" yaml:"s3SecretAccessKey,omitempty"`
+	S3Bucket          string `mapstructure:"s3Bucket,omitempty" json:"s3Bucket,omitempty" yaml:"s3Bucket,omitempty"`
+	S3Region          string `mapstructure:"s3Region,omitempty" json:"s3Region,omitempty" yaml:"s3Region,omitempty"`
+	S3Folder          string `mapstructure:"s3Folder,omitempty" json:"s3Folder,omitempty" yaml:"s3Folder,omitempty"`
+	S3UsePresignedURL bool   `mapstructure:"s3UsePresignedURL,omitempty" json:"s3UsePresignedURL,omitempty" yaml:"s3UsePresignedURL,omitempty"`
 }
 
 // EngineConfig dto for deserialized clickhouse engine config
@@ -163,6 +172,7 @@ type ClickHouse struct {
 	httpMode              bool
 	distributed           atomic.Bool
 	tableStatementFactory *TableStatementFactory
+	s3Config              *S3OptionConfig
 }
 
 // NewClickHouse returns configured ClickHouse adapter instance
@@ -235,11 +245,28 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, config.Database, dbConnectFunction, clickhouseTypes, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr, false)
 	sqlAdapterBase.batchFileFormat = types.FileFormatNDJSON
+	var s3Config *S3OptionConfig
+	if config.LoadAsJSON && config.S3Bucket != "" {
+		if config.S3UsePresignedURL {
+			sqlAdapterBase.batchFileCompression = types.FileCompressionGZIP
+			s3Config = &S3OptionConfig{
+				AccessKeyID:     config.S3AccessKeyID,
+				SecretAccessKey: config.S3SecretAccessKey,
+				Bucket:          config.S3Bucket,
+				Region:          config.S3Region,
+				Folder:          config.S3Folder,
+				UsePresignedURL: config.S3UsePresignedURL,
+			}
+		} else {
+			logging.Errorf("[%s] ClickHouse adapter only supports S3 with usePresignedURL=true. S3 upload will be disabled", bulkerConfig.Id)
+		}
+	}
 
 	c := &ClickHouse{
 		SQLAdapterBase: sqlAdapterBase,
 		httpMode:       httpMode,
 		distributed:    atomic.Bool{},
+		s3Config:       s3Config,
 	}
 	tableStatementFactory := NewTableStatementFactory(c)
 	c.tableStatementFactory = tableStatementFactory
@@ -291,7 +318,9 @@ func clickhouseDriverConnectionString(config *ClickHouseConfig) string {
 
 func (ch *ClickHouse) CreateStream(id, tableName string, mode bulkerlib.BulkMode, streamOptions ...bulkerlib.StreamOption) (bulkerlib.BulkerStream, error) {
 	streamOptions = append(streamOptions, withLocalBatchFile(fmt.Sprintf("bulker_%s", utils.SanitizeString(id))))
-
+	if ch.s3Config != nil {
+		streamOptions = append(streamOptions, withS3BatchFile(ch.s3Config))
+	}
 	switch mode {
 	case bulkerlib.Stream:
 		return newAutoCommitStream(id, ch, tableName, streamOptions...)
@@ -628,8 +657,8 @@ func (ch *ClickHouse) Insert(ctx context.Context, table *Table, _ bool, objects 
 
 // LoadTable transfer data from local file to ClickHouse table
 func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulkerlib.WarehouseState, err error) {
-	if loadSource.Type != LocalFile {
-		return state, fmt.Errorf("LoadTable: only local file is supported")
+	if loadSource.Type != LocalFile && loadSource.Type != AmazonS3 {
+		return state, fmt.Errorf("LoadTable: only s3 and local file are supported")
 	}
 	if loadSource.Format != ch.batchFileFormat {
 		return state, fmt.Errorf("LoadTable: only %s format is supported", ch.batchFileFormat)
@@ -652,36 +681,58 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		}
 	}()
 
-	file, err := os.Open(loadSource.Path)
-	if err != nil {
-		return state, err
-	}
-	defer func() {
-		_ = file.Close()
-	}()
 	if ch.config.LoadAsJSON {
-		stat, err := file.Stat()
-		if err != nil {
-			return state, err
-		}
-		copyStatement = fmt.Sprintf(chLoadJSONStatement+"\n", namespace, tableName)
-		builder := strings.Builder{}
-		builder.Grow(int(stat.Size()) + len(copyStatement))
-		builder.WriteString(copyStatement)
-		_, err = io.Copy(&builder, file)
-		if err != nil {
-			return state, err
-		}
+		if loadSource.Type == AmazonS3 {
+			if loadSource.URL == "" {
+				return state, fmt.Errorf("Only S3 files with presigned URLs are supported. Please enable s3UsePresignedURL.")
+			}
+			copyStatement = fmt.Sprintf(chLoadJSONFromURLStatement+"\n", namespace, tableName, loadSource.URL)
+			if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement); err != nil {
+				return state, checkErr(err)
+			}
+			state = bulkerlib.WarehouseState{
+				Name:            "clickhouse_load_data",
+				TimeProcessedMs: time.Since(startTime).Milliseconds(),
+			}
+			return state, nil
+		} else {
+			file, err := os.Open(loadSource.Path)
+			if err != nil {
+				return state, err
+			}
+			defer func() {
+				_ = file.Close()
+			}()
+			stat, err := file.Stat()
+			if err != nil {
+				return state, err
+			}
+			copyStatement = fmt.Sprintf(chLoadJSONStatement+"\n", namespace, tableName)
+			builder := strings.Builder{}
+			builder.Grow(int(stat.Size()) + len(copyStatement))
+			builder.WriteString(copyStatement)
+			_, err = io.Copy(&builder, file)
+			if err != nil {
+				return state, err
+			}
 
-		if _, err := ch.txOrDb(ctx).ExecContext(ctx, builder.String()); err != nil {
-			return state, checkErr(err)
+			if _, err := ch.txOrDb(ctx).ExecContext(ctx, builder.String()); err != nil {
+				return state, checkErr(err)
+			}
+			state = bulkerlib.WarehouseState{
+				Name:            "clickhouse_load_data",
+				TimeProcessedMs: time.Since(startTime).Milliseconds(),
+			}
+			return state, nil
 		}
-		state = bulkerlib.WarehouseState{
-			Name:            "clickhouse_load_data",
-			TimeProcessedMs: time.Since(startTime).Milliseconds(),
-		}
-		return state, nil
 	} else {
+		file, err := os.Open(loadSource.Path)
+		if err != nil {
+			return state, err
+		}
+		defer func() {
+			_ = file.Close()
+		}()
 		columnNames := targetTable.MappedColumnNames(ch.quotedColumnName)
 		var placeholdersBuilder strings.Builder
 		args := make([]any, 0, targetTable.ColumnsCount())

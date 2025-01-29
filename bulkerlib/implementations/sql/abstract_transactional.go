@@ -101,7 +101,9 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 			RoleARN:              s3.RoleARN,
 			RoleARNExpiry:        s3.RoleARNExpiry,
 			ExternalID:           s3.ExternalID,
+			UsePresignedURL:      s3.UsePresignedURL,
 			FileConfig: implementations.FileConfig{Format: ps.sqlAdapter.GetBatchFileFormat(),
+				Folder:      s3.Folder,
 				Compression: ps.sqlAdapter.GetBatchFileCompression()}}
 		ps.s3, err = implementations.NewS3(&s3Config)
 		if err != nil {
@@ -308,15 +310,17 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				_ = rFile.Close()
 			}()
 			s3FileName := path.Base(workingFile.Name())
-			if s3Config.Folder != "" {
-				s3FileName = s3Config.Folder + "/" + s3FileName
-			}
 			uploadStart := time.Now()
 			err = ps.s3.Upload(s3FileName, rFile)
 			if err != nil {
 				return state, errorj.Decorate(err, "failed to upload file to s3")
 			}
 			defer ps.s3.DeleteObject(s3FileName)
+			var url string
+			url, err = ps.s3.GetObjectURL(s3FileName)
+			if err != nil {
+				return state, errorj.Decorate(err, "failed to get s3 object url")
+			}
 			state.Merge(bulker.WarehouseState{
 				Name:            "upload_to_s3",
 				BytesProcessed:  int(batchSize),
@@ -324,7 +328,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			})
 			logging.Infof("[%s] Batch file uploaded to s3 in %.2f s.", ps.id, time.Since(loadTime).Seconds())
 			loadTime = time.Now()
-			loadState, err := ps.tx.LoadTable(ctx, table, &LoadSource{Type: AmazonS3, Path: s3FileName, Format: ps.sqlAdapter.GetBatchFileFormat(), S3Config: s3Config})
+			loadState, err := ps.tx.LoadTable(ctx, table, &LoadSource{Type: AmazonS3, Path: s3FileName, URL: url, Format: ps.sqlAdapter.GetBatchFileFormat(), S3Config: s3Config})
 			state.Merge(loadState)
 			if err != nil {
 				return state, errorj.Decorate(err, "failed to flush tmp file to the warehouse")

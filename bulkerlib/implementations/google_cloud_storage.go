@@ -171,6 +171,11 @@ func (gcs *GoogleCloudStorage) Upload(fileName string, fileReader io.ReadSeeker)
 	return nil
 }
 
+func (gcs *GoogleCloudStorage) GetObjectURL(fileName string) (string, error) {
+	fileName = gcs.Path(fileName)
+	return fmt.Sprintf("https://storage.googleapis.com/%s/%s", gcs.config.Bucket, fileName), nil
+}
+
 // Download downloads file from google cloud storage bucket
 func (gcs *GoogleCloudStorage) Download(key string) (fileBytes []byte, err error) {
 	key = gcs.Path(key)

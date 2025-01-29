@@ -23,6 +23,10 @@ type FileAdapter interface {
 	Ping() error
 	UploadBytes(fileName string, fileBytes []byte) error
 	Upload(fileName string, fileReader io.ReadSeeker) error
+	// GetObjectURL returns http URL to uploaded object.
+	// It is short-lived signed URL if the corresponding setting (e.g. S3Config.UsePresignedURL ) is enabled on adapter config
+	// Otherwise, it returns URL build with public URL template which won't work if the object is private
+	GetObjectURL(fileName string) (url string, err error)
 	Download(fileName string) ([]byte, error)
 	DeleteObject(key string) error
 	Path(fileName string) string

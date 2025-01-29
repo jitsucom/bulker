@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/bulkerlib/implementations"
 	testcontainers2 "github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers/clickhouse"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers/clickhouse_noshards"
@@ -28,7 +29,7 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 const forceLeaveResultingTables = false
 
 var allBulkerConfigs = []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_iam", RedshiftBulkerTypeId + "_serverless", SnowflakeBulkerTypeId, PostgresBulkerTypeId,
-	MySQLBulkerTypeId, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}
+	MySQLBulkerTypeId, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards", ClickHouseBulkerTypeId + "_s3"}
 
 var exceptBigquery []string
 
@@ -147,6 +148,31 @@ func init() {
 			Username: "default",
 			Database: clickhouseContainer.Database,
 		}}
+	}
+	s3Cfg := os.Getenv("BULKER_TEST_S3")
+	if s3Cfg != "" {
+		s3Config := &implementations.S3Config{}
+		if err = utils.ParseObject(s3Cfg, s3Config); err != nil {
+			panic(err)
+		}
+		if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId+"_s3") {
+			clickhouseContainerS3, err := testcontainers2.NewClickhouseContainer(context.Background())
+			if err != nil {
+				panic(err)
+			}
+			configRegistry[ClickHouseBulkerTypeId+"_s3"] = TestConfig{BulkerType: ClickHouseBulkerTypeId, Config: ClickHouseConfig{
+				Hosts:             clickhouseContainerS3.Hosts,
+				Username:          "default",
+				Database:          clickhouseContainerS3.Database,
+				LoadAsJSON:        true,
+				S3Bucket:          s3Config.Bucket,
+				S3Region:          s3Config.Region,
+				S3Folder:          "test-folder",
+				S3AccessKeyID:     s3Config.AccessKeyID,
+				S3SecretAccessKey: s3Config.SecretAccessKey,
+				S3UsePresignedURL: true,
+			}}
+		}
 	}
 
 	if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId+"_cluster") {

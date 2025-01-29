@@ -91,6 +91,7 @@ type S3OptionConfig struct {
 	Bucket               string        `mapstructure:"bucket,omitempty" json:"bucket,omitempty" yaml:"bucket,omitempty"`
 	Region               string        `mapstructure:"region,omitempty" json:"region,omitempty" yaml:"region,omitempty"`
 	Folder               string        `mapstructure:"folder,omitempty" json:"folder,omitempty" yaml:"folder,omitempty"`
+	UsePresignedURL      bool          `mapstructure:"usePresignedURL,omitempty" json:"usePresignedURL,omitempty" yaml:"usePresignedURL,omitempty"`
 }
 
 func WithOmitNils() bulker.StreamOption {

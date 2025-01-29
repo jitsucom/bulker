@@ -75,6 +75,7 @@ type LoadSource struct {
 	Type     LoadSourceType
 	Format   types2.FileFormat
 	Path     string
+	URL      string
 	S3Config *S3OptionConfig
 }
 
