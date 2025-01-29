@@ -39,13 +39,13 @@ jobs:
 
     - name: Bulker Test
       run: |
-        go test -parallel=10 -timeout 60m -json ./jitsubase/... ./kafkabase/... ./eventslog/... ./bulkerlib/... ./bulkerapp/... > test_report.json
+        go test -parallel=10 -timeout 60m ./jitsubase/... ./kafkabase/... ./eventslog/... ./bulkerlib/... ./bulkerapp/... > test_report.json
 
-    - name: Test Report
-      if: ${{ always() }}
-      run: |
-        go install github.com/vakenbolt/go-test-report@latest
-        cat test_report.json | ~/go/bin/go-test-report
+#    - name: Test Report
+#      if: ${{ always() }}
+#      run: |
+#        go install github.com/vakenbolt/go-test-report@latest
+#        cat test_report.json | ~/go/bin/go-test-report
 
     - uses: actions/upload-artifact@v3
       if: ${{ always() }}
