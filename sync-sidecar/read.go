@@ -111,7 +111,7 @@ func (s *ReadSideCar) Run() {
 				status = "FAILED"
 			} else if timeExceeded {
 				status = "TIME_EXCEEDED"
-				errorText = fmt.Sprintf("Task timeout: task is running for more than %d hours.", s.taskTimeoutHours)
+				errorText = fmt.Sprintf("Task timeout: The task has been running for more than %d hours. Consider splitting the selected streams into multiple Sync entities.", s.taskTimeoutHours)
 			} else if cancelled {
 				status = "CANCELLED"
 				errorText = "The task was cancelled"

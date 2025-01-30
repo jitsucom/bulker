@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/implementations"
@@ -144,6 +145,10 @@ func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err 
 	if ps.batchFile != nil {
 		_ = ps.batchFile.Close()
 		_ = os.Remove(ps.batchFile.Name())
+	}
+	if ps.merge {
+		ps.batchFileLinesByPK = nil
+		ps.batchFileSkipLines = nil
 	}
 	if err != nil {
 		ps.state.SuccessfulRows = 0
@@ -478,6 +483,9 @@ func (ps *AbstractTransactionalSQLStream) ConsumeMap(ctx context.Context, mp map
 }
 
 func (ps *AbstractTransactionalSQLStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObject types.Object, err error) {
+	if ps.state.Status != bulker.Active {
+		return ps.state, nil, errors.New("stream is not active")
+	}
 	defer func() {
 		err = ps.postConsume(err)
 		state = ps.state
@@ -504,6 +512,10 @@ func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulk
 	if ps.state.Status != bulker.Active {
 		return ps.state
 	}
+	if ps.merge {
+		ps.batchFileLinesByPK = nil
+		ps.batchFileSkipLines = nil
+	}
 	if ps.tx != nil {
 		if ps.tmpTable != nil {
 			_ = ps.tx.Drop(ctx, ps.tmpTable, true)
@@ -514,6 +526,7 @@ func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulk
 		_ = ps.batchFile.Close()
 		_ = os.Remove(ps.batchFile.Name())
 	}
+	ps.state.SuccessfulRows = 0
 	ps.state.Status = bulker.Aborted
 	return ps.state
 }

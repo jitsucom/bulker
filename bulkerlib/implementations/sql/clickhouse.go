@@ -668,6 +668,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	namespace := ch.namespacePrefix(targetTable.Namespace)
 
 	var copyStatement string
+	var redactedStatement string
 	defer func() {
 		if err != nil {
 			err = errorj.LoadError.Wrap(err, "failed to load table").
@@ -676,7 +677,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 					Cluster:     ch.config.Cluster,
 					Table:       targetTable.Name,
 					PrimaryKeys: targetTable.GetPKFields(),
-					Statement:   copyStatement,
+					Statement:   utils.DefaultString(redactedStatement, copyStatement),
 				})
 		}
 	}()
@@ -687,6 +688,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 				return state, fmt.Errorf("Only S3 files with presigned URLs are supported. Please enable s3UsePresignedURL.")
 			}
 			copyStatement = fmt.Sprintf(chLoadJSONFromURLStatement+"\n", namespace, tableName, loadSource.URL)
+			redactedStatement = fmt.Sprintf(chLoadJSONFromURLStatement, namespace, tableName, "*REDACTED*")
 			if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement); err != nil {
 				return state, checkErr(err)
 			}

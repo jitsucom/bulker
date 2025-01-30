@@ -119,7 +119,7 @@ func (j *JobRunner) watchPodStatuses() {
 						if timeMark, ok := j.runningPods[pod.Name]; !ok || time.Now().Sub(timeMark) >= time.Minute {
 							if time.Now().Sub(taskStatus.StartedAtTime()) > time.Hour*time.Duration(j.config.TaskTimeoutHours) {
 								taskStatus.Status = StatusTimeExceeded
-								taskStatus.Error = fmt.Sprintf("Task timeout: task is running for more than %d hours.", j.config.TaskTimeoutHours)
+								taskStatus.Error = fmt.Sprintf("Task timeout: The task has been running for more than %d hours. Consider splitting the selected streams into multiple Sync entities.", j.config.TaskTimeoutHours)
 								j.Errorf("Pod %s is running for more than %d hours. Deleting", pod.Name, j.config.TaskTimeoutHours)
 								j.cleanupPod(pod.Name)
 							} else {
