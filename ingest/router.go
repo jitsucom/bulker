@@ -198,7 +198,8 @@ func (r *Router) CorsMiddleware(c *gin.Context) {
 	if c.Request.Method == "OPTIONS" {
 		c.Header("Access-Control-Allow-Origin", utils.NvlString(origin, "*"))
 		c.Header("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "x-enable-debug, x-write-key, authorization, content-type, x-ip-policy")
+		// x-jitsu-custom - in case client what to add some custom payload via header
+		c.Header("Access-Control-Allow-Headers", "x-enable-debug, x-write-key, authorization, content-type, x-ip-policy, cache-control, x-jitsu-custom")
 		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Max-Age", "86400")
 		c.AbortWithStatus(http.StatusOK)
@@ -206,7 +207,8 @@ func (r *Router) CorsMiddleware(c *gin.Context) {
 	} else if origin != "" {
 		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "x-enable-debug, x-write-key, authorization, content-type, x-ip-policy")
+		// x-jitsu-custom - in case client what to add some custom payload via header
+		c.Header("Access-Control-Allow-Headers", "x-enable-debug, x-write-key, authorization, content-type, x-ip-policy, cache-control, x-jitsu-custom")
 		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Max-Age", "86400")
 	}
