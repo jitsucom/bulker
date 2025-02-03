@@ -95,7 +95,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 
 	stream := r.getStream(&loc, false, false)
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %+v", loc), true, true)
+		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true)
 		return
 	}
 

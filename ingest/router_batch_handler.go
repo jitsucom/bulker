@@ -62,7 +62,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 
 	stream := r.getStream(&loc, true, s2sEndpoint)
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusUnauthorized, "stream not found", false, fmt.Errorf("for: %+v", loc), true, true)
+		rError = r.ResponseError(c, http.StatusUnauthorized, "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true)
 		return
 	}
 	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S

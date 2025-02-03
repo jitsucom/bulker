@@ -64,7 +64,7 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 	var body []byte
 	var ingestMessageBytes []byte
 	var asyncDestinations []string
-	ingestType := IngestTypeWriteKeyDefined
+	ingestType := IngestTypeBrowser
 	var s2sEndpoint bool
 
 	defer func() {
@@ -101,9 +101,10 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true, true)
 		return
 	}
-	if c.FullPath() == "/api/v1/s2s/event" {
+	if strings.HasPrefix(c.FullPath(), "/api/v1/s2s/") {
 		// may still be overridden by write key type
 		s2sEndpoint = true
+		ingestType = IngestTypeS2S
 	}
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
@@ -145,9 +146,9 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 	c.Set(appbase.ContextDomain, domain)
 	c.Set("_classic_api_key", loc.WriteKey)
 
-	stream := r.getStream(&loc, false, s2sEndpoint)
+	stream := r.getStream(&loc, true, s2sEndpoint)
 	if stream == nil {
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %+v", loc), true, true)
+		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true)
 		return
 	}
 	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S

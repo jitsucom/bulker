@@ -103,7 +103,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		messageId = utils.ShortenString(messageIdUnsupportedChars.ReplaceAllString(messageId, "_"), 64)
 	}
 	c.Set(appbase.ContextMessageId, messageId)
-	//func() string { wk, _ := message["writeKey"].(string); return wk }
+	//loc, err := r.getDataLocator(c, ingestType, func() string { return message.GetS("writeKey") })
 	loc, err := r.getDataLocator(c, ingestType, nil)
 	if err != nil {
 		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error processing message", false, fmt.Errorf("%v: %s", err, string(body)), true, true)
@@ -115,7 +115,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 
 	stream := r.getStream(&loc, false, s2sEndpoint)
 	if stream == nil {
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %+v", loc), true, true)
+		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true)
 		return
 	}
 	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S

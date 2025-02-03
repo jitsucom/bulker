@@ -198,7 +198,7 @@ func (r *Router) CorsMiddleware(c *gin.Context) {
 	if c.Request.Method == "OPTIONS" {
 		c.Header("Access-Control-Allow-Origin", utils.NvlString(origin, "*"))
 		c.Header("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS")
-		// x-jitsu-custom - in case client what to add some custom payload via header
+		// x-jitsu-custom - in case client want to add some custom payload via header
 		c.Header("Access-Control-Allow-Headers", "x-enable-debug, x-write-key, authorization, content-type, x-ip-policy, cache-control, x-jitsu-custom")
 		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Max-Age", "86400")
@@ -207,7 +207,7 @@ func (r *Router) CorsMiddleware(c *gin.Context) {
 	} else if origin != "" {
 		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS")
-		// x-jitsu-custom - in case client what to add some custom payload via header
+		// x-jitsu-custom - in case client want to add some custom payload via header
 		c.Header("Access-Control-Allow-Headers", "x-enable-debug, x-write-key, authorization, content-type, x-ip-policy, cache-control, x-jitsu-custom")
 		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Max-Age", "86400")
@@ -591,7 +591,11 @@ func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials, s2sEndpoint bool)
 		parts := strings.Split(loc.WriteKey, ":")
 		if len(parts) == 1 {
 			loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
-			return r.repository.GetData().GetStreamById(loc.WriteKey)
+			if s2sEndpoint {
+				return r.repository.GetData().GetS2SStreamByPlainKeyOrId(loc.WriteKey)
+			} else {
+				return r.repository.GetData().GetStreamByPlainKeyOrId(loc.WriteKey)
+			}
 		} else {
 			binding := r.repository.GetData().getStreamByKeyId(parts[0])
 			if binding != nil {
@@ -600,7 +604,7 @@ func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials, s2sEndpoint bool)
 				} else if !r.checkHash(binding.Hash, parts[1]) {
 					r.Errorf("[stream: %s]%s invalid key secret", binding.StreamId, loc.String())
 				} else {
-					stream := r.repository.GetData().GetStreamById(binding.StreamId)
+					stream := r.repository.GetData().GetStreamByPlainKeyOrId(binding.StreamId)
 					if stream != nil {
 						loc.IngestType = IngestType(binding.KeyType)
 						return stream
@@ -614,7 +618,7 @@ func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials, s2sEndpoint bool)
 
 func (r *Router) SlugStreamLocator(loc *StreamCredentials, s2sEndpoint bool) *StreamWithDestinations {
 	if loc.Slug != "" {
-		stream := r.repository.GetData().GetStreamById(loc.Slug)
+		stream := r.repository.GetData().GetStreamByPlainKeyOrId(loc.Slug)
 		if stream != nil && !stream.Stream.Strict {
 			loc.IngestType = utils.Ternary(s2sEndpoint, IngestTypeS2S, IngestTypeBrowser)
 			return stream
@@ -677,7 +681,7 @@ func maskWriteKey(writeKey string) string {
 		if len(parts) > 1 {
 			return parts[0] + ":***"
 		} else {
-			return "***"
+			return writeKey[0:1] + "***" + writeKey[len(writeKey)-1:]
 		}
 	}
 	return writeKey

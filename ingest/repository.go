@@ -21,19 +21,24 @@ func (r *RepositoryConfig) PostInit(settings *appbase.AppSettings) error {
 }
 
 type Streams struct {
-	streams          []*StreamWithDestinations
-	apiKeyBindings   map[string]*ApiKeyBinding
-	streamsByIds     map[string]*StreamWithDestinations
-	streamsByDomains map[string][]*StreamWithDestinations
-	lastModified     time.Time
+	streams                   []*StreamWithDestinations
+	apiKeyBindings            map[string]*ApiKeyBinding
+	streamsByPlainKeyOrIds    map[string]*StreamWithDestinations
+	s2sStreamsByPlainKeyOrIds map[string]*StreamWithDestinations
+	streamsByDomains          map[string][]*StreamWithDestinations
+	lastModified              time.Time
 }
 
 func (s *Streams) getStreamByKeyId(keyId string) *ApiKeyBinding {
 	return s.apiKeyBindings[keyId]
 }
 
-func (s *Streams) GetStreamById(slug string) *StreamWithDestinations {
-	return s.streamsByIds[slug]
+func (s *Streams) GetStreamByPlainKeyOrId(plainKeyOrSlug string) *StreamWithDestinations {
+	return s.streamsByPlainKeyOrIds[plainKeyOrSlug]
+}
+
+func (s *Streams) GetS2SStreamByPlainKeyOrId(plainKeyOrSlug string) *StreamWithDestinations {
+	return s.s2sStreamsByPlainKeyOrIds[plainKeyOrSlug]
 }
 
 func (s *Streams) GetStreamsByDomain(domain string) []*StreamWithDestinations {
@@ -57,7 +62,8 @@ func (s *StreamsRepositoryData) Init(reader io.Reader, tag any) error {
 	}
 	streams := make([]*StreamWithDestinations, 0)
 	apiKeyBindings := map[string]*ApiKeyBinding{}
-	streamsByIds := map[string]*StreamWithDestinations{}
+	streamsByPlainKeyOrIds := map[string]*StreamWithDestinations{}
+	s2sStreamsByPlainKeyOrIds := map[string]*StreamWithDestinations{}
 	streamsByDomains := map[string][]*StreamWithDestinations{}
 	// while the array contains values
 	for dec.More() {
@@ -68,7 +74,8 @@ func (s *StreamsRepositoryData) Init(reader io.Reader, tag any) error {
 		}
 		swd.init()
 		streams = append(streams, &swd)
-		streamsByIds[swd.Stream.Id] = &swd
+		streamsByPlainKeyOrIds[swd.Stream.Id] = &swd
+		s2sStreamsByPlainKeyOrIds[swd.Stream.Id] = &swd
 		for _, domain := range swd.Stream.Domains {
 			domainStreams, ok := streamsByDomains[domain]
 			if !ok {
@@ -77,17 +84,27 @@ func (s *StreamsRepositoryData) Init(reader io.Reader, tag any) error {
 			streamsByDomains[domain] = append(domainStreams, &swd)
 		}
 		for _, key := range swd.Stream.PublicKeys {
-			apiKeyBindings[key.Id] = &ApiKeyBinding{
-				Hash:     key.Hash,
-				KeyType:  "browser",
-				StreamId: swd.Stream.Id,
+			if key.Plaintext != "" {
+				streamsByPlainKeyOrIds[key.Plaintext] = &swd
+			}
+			if key.Id != "" && key.Hash != "" {
+				apiKeyBindings[key.Id] = &ApiKeyBinding{
+					Hash:     key.Hash,
+					KeyType:  "browser",
+					StreamId: swd.Stream.Id,
+				}
 			}
 		}
 		for _, key := range swd.Stream.PrivateKeys {
-			apiKeyBindings[key.Id] = &ApiKeyBinding{
-				Hash:     key.Hash,
-				KeyType:  "s2s",
-				StreamId: swd.Stream.Id,
+			if key.Plaintext != "" {
+				s2sStreamsByPlainKeyOrIds[key.Plaintext] = &swd
+			}
+			if key.Id != "" && key.Hash != "" {
+				apiKeyBindings[key.Id] = &ApiKeyBinding{
+					Hash:     key.Hash,
+					KeyType:  "s2s",
+					StreamId: swd.Stream.Id,
+				}
 			}
 		}
 	}
@@ -99,10 +116,11 @@ func (s *StreamsRepositoryData) Init(reader io.Reader, tag any) error {
 	}
 
 	data := Streams{
-		streams:          streams,
-		apiKeyBindings:   apiKeyBindings,
-		streamsByIds:     streamsByIds,
-		streamsByDomains: streamsByDomains,
+		streams:                   streams,
+		apiKeyBindings:            apiKeyBindings,
+		streamsByPlainKeyOrIds:    streamsByPlainKeyOrIds,
+		s2sStreamsByPlainKeyOrIds: s2sStreamsByPlainKeyOrIds,
+		streamsByDomains:          streamsByDomains,
 	}
 	if tag != nil {
 		data.lastModified = tag.(time.Time)
