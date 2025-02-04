@@ -101,7 +101,7 @@ func (j *JobRunner) watchPodStatuses() {
 					j.cleanupPod(pod.Name)
 				case v1.PodFailed:
 					taskStatus.Status = StatusFailed
-					errors := j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
+					errors, _ := j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
 					if len(strings.TrimSpace(errors)) == 0 {
 						errors = accumulatePodStatus(status)
 					}
@@ -109,8 +109,11 @@ func (j *JobRunner) watchPodStatuses() {
 					j.Infof("Pod %s failed. Cleaning up.", pod.Name)
 					j.cleanupPod(pod.Name)
 				case v1.PodRunning:
-					errors := j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
-					if len(errors) > 0 {
+					errors, sourceFailed := j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
+					if len(strings.TrimSpace(errors)) == 0 && sourceFailed {
+						errors = accumulatePodStatus(status)
+					}
+					if len(errors) > 0 || sourceFailed {
 						taskStatus.Status = StatusFailed
 						taskStatus.Error = errors
 						j.Infof("Pod %s is running but had errors. Cleaning up.", pod.Name)
@@ -207,13 +210,12 @@ func accumulatePodStatus(status v1.PodStatus) string {
 	return stb.String()
 }
 
-func (j *JobRunner) accumulateErrorLogs(podName string, taskType string, status v1.PodStatus) string {
+func (j *JobRunner) accumulateErrorLogs(podName string, taskType string, status v1.PodStatus) (logs string, sourceFailed bool) {
 	stb := strings.Builder{}
 	//gather status from all containers
 	c := make([]v1.ContainerStatus, 0, len(status.ContainerStatuses)+len(status.InitContainerStatuses))
 	c = append(c, status.InitContainerStatuses...)
 	c = append(c, status.ContainerStatuses...)
-	var sourceFailed bool
 	for _, s := range c {
 		state := s.State
 		if state.Terminated != nil && state.Terminated.ExitCode != 0 {
@@ -221,10 +223,11 @@ func (j *JobRunner) accumulateErrorLogs(podName string, taskType string, status 
 				if taskType == "read" {
 					// if read command fails for source container we expect that the sidecar will
 					// handle all error status reporting because some streams could be already synced
+					//so we don't mark source as failed here
 					continue
 				}
-				sourceFailed = true
 			}
+			sourceFailed = true
 			logs := j.getPodLogs(podName, "source", true, 50)
 			if len(logs) > 0 {
 				stb.WriteString(logs)
@@ -248,7 +251,7 @@ func (j *JobRunner) accumulateErrorLogs(podName string, taskType string, status 
 			}
 		}
 	}
-	return stb.String()
+	return stb.String(), sourceFailed
 }
 
 func (j *JobRunner) getPodLogs(podName, container string, onlyErrors bool, tailLines int64) string {
