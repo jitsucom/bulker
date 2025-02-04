@@ -38,7 +38,7 @@ const (
 var ids = sync.Map{}
 
 func init() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(60 * time.Minute)
 	go func() {
 		for range ticker.C {
 			arr := make([]string, 0)

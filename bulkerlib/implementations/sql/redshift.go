@@ -2,6 +2,7 @@ package sql
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	driver "github.com/jitsucom/bulker/bulkerlib/implementations/sql/redshift_driver"
@@ -228,6 +229,20 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	_, _ = p.txOrDb(ctx).ExecContext(ctx, "SET json_parse_truncate_strings=ON")
 	statement := fmt.Sprintf(redshiftCopyTemplate, namespace, quotedTableName, strings.Join(columnNames, ","), s3Config.Bucket, fileKey, s3Config.AccessKeyID, s3Config.SecretAccessKey, s3Config.Region)
 	if _, err := p.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
+		var res *sql.Rows
+		if strings.Contains(err.Error(), "Check 'sys_load_error_detail' system table for details.") {
+			res, _ = p.dataSource.Query("SELECT error_code, error_message, column_name, column_type, column_length, '' as raw_field_value  FROM sys_load_error_detail where file_name=$1 ORDER BY start_time DESC LIMIT 1", fmt.Sprintf("s3://%s/%s", s3Config.Bucket, fileKey))
+		} else if strings.Contains(err.Error(), "Check 'stl_load_errors' system table for details.") {
+			res, _ = p.dataSource.Query("SELECT err_code, err_reason, colname, type, col_length, raw_field_value FROM stl_load_errors WHERE filename=$1 ORDER BY starttime DESC LIMIT 1", fmt.Sprintf("s3://%s/%s", s3Config.Bucket, fileKey))
+		}
+		if res != nil && res.Next() {
+			var errorCode, errorMessage, columnName, columnType, columnLength, rawFieldValue string
+			if err1 := res.Scan(&errorCode, &errorMessage, &columnName, &columnType, &columnLength, &rawFieldValue); err1 == nil {
+				err = fmt.Errorf("Error code %s: %s. Column: '%s' type: %s(%s)%s", strings.TrimSpace(errorCode),
+					strings.TrimSpace(errorMessage), strings.TrimSpace(columnName), strings.TrimSpace(columnType), strings.TrimSpace(columnLength),
+					utils.Ternary(strings.TrimSpace(rawFieldValue) != "", fmt.Sprintf(" Raw value: %s", strings.TrimSpace(rawFieldValue)), ""))
+			}
+		}
 		return state, errorj.CopyError.Wrap(err, "failed to copy data from s3").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    p.config.Schema,
