@@ -48,7 +48,7 @@ jobs:
         go install github.com/vakenbolt/go-test-report@latest
         cat test_report.json | ~/go/bin/go-test-report
 
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       if: ${{ always() }}
       with:
         name: test-report
