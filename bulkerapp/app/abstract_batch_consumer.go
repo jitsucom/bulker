@@ -93,10 +93,11 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		return nil, abstract.NewError("Error creating consumer: %v", err)
 	}
 	producerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
-		"transactional.id": fmt.Sprintf("%s_failed_%s", topicId, config.InstanceId),
-		"batch.size":       config.ProducerBatchSize,
-		"linger.ms":        config.ProducerLingerMs,
-		"compression.type": config.KafkaTopicCompression,
+		"transactional.id":             fmt.Sprintf("%s_failed_%s", topicId, config.InstanceId),
+		"queue.buffering.max.messages": config.ProducerQueueSize,
+		"batch.size":                   config.ProducerBatchSize,
+		"linger.ms":                    config.ProducerLingerMs,
+		"compression.type":             config.KafkaTopicCompression,
 	}, *kafkaConfig))
 
 	bc := &AbstractBatchConsumer{

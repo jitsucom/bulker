@@ -269,6 +269,11 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 			Headers:        headers,
 			Value:          message.Value,
 		}, nil)
+
+		if counters.consumed%bc.config.ProducerQueueSize == 0 {
+			producer.Flush(bc.config.ProducerLingerMs)
+		}
+
 		if err != nil {
 			return counters, fmt.Errorf("failed to put message to producer: %v", err)
 		}
