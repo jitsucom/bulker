@@ -270,8 +270,12 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 			Value:          message.Value,
 		}, nil)
 
-		if counters.consumed%bc.config.ProducerQueueSize == 0 {
-			producer.Flush(bc.config.ProducerLingerMs)
+		if counters.consumed%100000 == 0 {
+			l := producer.Len()
+			if l > 0 {
+				remains := producer.Flush(10000)
+				bc.Infof("Flushed %d messages. Remains: %d", l, remains)
+			}
 		}
 
 		if err != nil {
