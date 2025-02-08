@@ -25,6 +25,7 @@ func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodS
 		AbstractBatchConsumer: base,
 	}
 	rc.batchFunc = rc.processBatchImpl
+	rc.batchSizeFunc = rc.batchSizes
 	rc.shouldConsumeFunc = rc.shouldConsumeFuncImpl
 	rc.pause(false)
 	return &rc, nil
@@ -71,6 +72,11 @@ func (rc *RetryConsumer) shouldConsumeFuncImpl(committedOffset, highOffset int64
 	}
 	rc.Debugf("No messages to retry. %d-%d", committedOffset, highOffset)
 	return false
+}
+
+func (rc *RetryConsumer) batchSizes(_ *bulker.StreamOptions) (_, retryBatchSize int) {
+	return rc.config.BatchRunnerDefaultBatchSize, rc.config.RetryConsumerBatchSize
+
 }
 
 func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize int, highOffset int64) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {

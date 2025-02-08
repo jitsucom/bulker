@@ -58,8 +58,9 @@ type Config struct {
 	BatchRunnerWaitForMessagesSec int `mapstructure:"BATCH_RUNNER_WAIT_FOR_MESSAGES_SEC" default:"5"`
 
 	// # ERROR RETRYING
-
-	BatchRunnerRetryPeriodSec            int     `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC" default:"300"`
+	RetryConsumerBatchSize    int `mapstructure:"RETRY_CONSUMER_BATCH_SIZE" default:"10000"`
+	BatchRunnerRetryPeriodSec int `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC" default:"300"`
+	// When batch contains retried messages we split it to fractions. To increase chances to succeed. Because we don't know which messages are problematic.
 	BatchRunnerDefaultRetryBatchFraction float64 `mapstructure:"BATCH_RUNNER_DEFAULT_RETRY_BATCH_FRACTION" default:"0.1"`
 	MessagesRetryCount                   int     `mapstructure:"MESSAGES_RETRY_COUNT" default:"5"`
 	// MessagesRetryBackoffBase defines base for exponential backoff in minutes.

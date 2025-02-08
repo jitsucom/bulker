@@ -184,6 +184,7 @@ func TestEventsRetry(t *testing.T) {
 	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "20",
 		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC":     "5",
 		"BULKER_BATCH_RUNNER_DEFAULT_RETRY_BATCH_FRACTION": "1",
+		"BULKER_RETRY_CONSUMER_BATCH_SIZE":                 "1",
 		"BULKER_MESSAGES_RETRY_BACKOFF_BASE":               "0",
 		"BULKER_TOPIC_MANAGER_REFRESH_PERIOD_SEC":          "1",
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC":           "1"})

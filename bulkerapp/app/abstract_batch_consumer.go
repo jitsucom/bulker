@@ -24,6 +24,7 @@ const errorHeader = "error"
 
 const pauseHeartBeatInterval = 120 * time.Second
 
+type BatchSizesFunction func(*bulker.StreamOptions) (batchSize int, retryBatchSize int)
 type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, state bulker.State, nextBatch bool, err error)
 type ShouldConsumeFunction func(committedOffset, highOffset int64) bool
 
@@ -60,6 +61,7 @@ type AbstractBatchConsumer struct {
 	paused        atomic.Bool
 	resumeChannel chan struct{}
 
+	batchSizeFunc     BatchSizesFunction
 	batchFunc         BatchFunction
 	shouldConsumeFunc ShouldConsumeFunction
 }
@@ -260,15 +262,8 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		}()
 	}
 
-	maxBatchSize := bulker.BatchSizeOption.Get(streamOptions)
-	if maxBatchSize <= 0 {
-		maxBatchSize = bc.config.BatchRunnerDefaultBatchSize
-	}
+	maxBatchSize, retryBatchSize := bc.batchSizeFunc(streamOptions)
 
-	retryBatchSize := bulker.RetryBatchSizeOption.Get(streamOptions)
-	if retryBatchSize <= 0 {
-		retryBatchSize = int(float64(maxBatchSize) * bc.config.BatchRunnerDefaultRetryBatchFraction)
-	}
 	_, highOffset, err = bc.consumer.Load().QueryWatermarkOffsets(bc.topicId, 0, 10_000)
 	offsets, _ := bc.consumer.Load().Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: 0}}, 1000)
 	if len(offsets) > 0 {

@@ -23,7 +23,6 @@ type BatchConsumerImpl struct {
 }
 
 func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService eventslog.EventsLogService) (*BatchConsumerImpl, error) {
-
 	base, err := NewAbstractBatchConsumer(repository, destinationId, batchPeriodSec, topicId, "batch", config, kafkaConfig, bulkerProducer)
 	if err != nil {
 		return nil, err
@@ -32,9 +31,23 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 		AbstractBatchConsumer: base,
 		eventsLogService:      eventsLogService,
 	}
+	bc.batchSizeFunc = bc.batchSizes
 	bc.batchFunc = bc.processBatchImpl
 	bc.pause(false)
 	return &bc, nil
+}
+
+func (bc *BatchConsumerImpl) batchSizes(streamOptions *bulker.StreamOptions) (maxBatchSize, retryBatchSize int) {
+	maxBatchSize = bulker.BatchSizeOption.Get(streamOptions)
+	if maxBatchSize <= 0 {
+		maxBatchSize = bc.config.BatchRunnerDefaultBatchSize
+	}
+
+	retryBatchSize = bulker.RetryBatchSizeOption.Get(streamOptions)
+	if retryBatchSize <= 0 {
+		retryBatchSize = int(float64(maxBatchSize) * bc.config.BatchRunnerDefaultRetryBatchFraction)
+	}
+	return
 }
 
 func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
@@ -187,18 +200,29 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 // processFailed consumes the latest failed batch of messages and sends them to the 'failed' topic
 func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, failedPosition *kafka.TopicPartition, originalErr error) (counters BatchCounters, err error) {
 	var producer *kafka.Producer
+	var commitedPosition = *firstPosition
+
+	retryBatchSize := bc.config.RetryConsumerBatchSize
+
 	defer func() {
 		//recover
 		if r := recover(); r != nil {
 			err = bc.NewError("Recovered from panic: %v", r)
 			bc.SystemErrorf("Recovered from panic: %v", r)
 		}
-		if err != nil {
-			err = bc.NewError("Failed to put unsuccessful batch to 'failed' producer: %v", err)
-		}
 		if producer != nil {
+			_ = producer.AbortTransaction(context.Background())
 			producer.Close()
 		}
+		if err != nil {
+			err = bc.NewError("Failed to put unsuccessful batch to 'failed' producer: %v", err)
+			//cleanup
+			_, err2 := bc.consumer.Load().SeekPartitions([]kafka.TopicPartition{commitedPosition})
+			if err2 != nil {
+				bc.errorMetric("SEEK_ERROR")
+			}
+		}
+
 	}()
 	producer, err = bc.initTransactionalProducer()
 	if err != nil {
@@ -214,100 +238,90 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		bc.errorMetric("SEEK_ERROR")
 		return BatchCounters{}, fmt.Errorf("failed to rollback kafka consumer offset: %v", err)
 	}
-	err = producer.BeginTransaction()
-	if err != nil {
-		return BatchCounters{}, fmt.Errorf("failed to begin kafka transaction: %v", err)
-	}
-	defer func() {
-		if err != nil {
-			//cleanup
-			_ = producer.AbortTransaction(context.Background())
-			_, err2 := bc.consumer.Load().SeekPartitions([]kafka.TopicPartition{*firstPosition})
-			if err2 != nil {
-				bc.errorMetric("SEEK_ERROR")
-			}
-		}
-	}()
-	for {
-		var message *kafka.Message
-		message, err = bc.consumer.Load().ReadMessage(bc.waitForMessages)
-		if err != nil {
-			kafkaErr := err.(kafka.Error)
-			if kafkaErr.Code() == kafka.ErrTimedOut {
-				err = fmt.Errorf("failed to consume message: %v", err)
-				return
-			}
-			if kafkaErr.IsRetriable() {
-				time.Sleep(10 * time.Second)
-				continue
-			} else {
-				bc.restartConsumer()
-				err = fmt.Errorf("failed to consume message: %v", err)
-				return
-			}
-		}
-		counters.consumed++
-		deadLettered := false
-		failedTopic, _ := MakeTopicId(bc.destinationId, retryTopicMode, allTablesToken, bc.config.KafkaTopicPrefix, false)
-		retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
-		if err != nil {
-			bc.Errorf("failed to read retry header: %v", err)
-		}
-		if retries >= bc.config.MessagesRetryCount {
-			//no attempts left - send to dead-letter topic
-			deadLettered = true
-			failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, bc.config.KafkaTopicPrefix, false)
-		}
-		headers := message.Headers
-		kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenStringWithEllipsis(originalErr.Error(), 256))
-		kafkabase.PutKafkaHeader(&headers, originalTopicHeader, bc.topicId)
-		kafkabase.PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
-		kafkabase.PutKafkaHeader(&headers, retryTimeHeader, timestamp.ToISOFormat(RetryBackOffTime(bc.config, retries+1).UTC()))
-		err = producer.Produce(&kafka.Message{
-			Key:            message.Key,
-			TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
-			Headers:        headers,
-			Value:          message.Value,
-		}, nil)
-
-		if counters.consumed%100000 == 0 {
-			l := producer.Len()
-			if l > 0 {
-				remains := producer.Flush(10000)
-				bc.Infof("Flushed %d messages. Remains: %d", l, remains)
-			}
-		}
-
-		if err != nil {
-			return counters, fmt.Errorf("failed to put message to producer: %v", err)
-		}
-		if deadLettered {
-			counters.deadLettered++
-		} else {
-			counters.retryScheduled++
-		}
-		//stop consuming on the latest message before failure
-		if message.TopicPartition.Offset == failedPosition.Offset {
-			break
-		}
-	}
-	groupMetadata, err := bc.consumer.Load().GetConsumerGroupMetadata()
+	var groupMetadata *kafka.ConsumerGroupMetadata
+	groupMetadata, err = bc.consumer.Load().GetConsumerGroupMetadata()
 	if err != nil {
 		err = fmt.Errorf("failed to get consumer group metadata: %v", err)
 		return
 	}
-	offset := *failedPosition
-	offset.Offset++
-	//set consumer offset to the next message after failure. that happens atomically with whole producer transaction
-	err = producer.SendOffsetsToTransaction(context.Background(), []kafka.TopicPartition{offset}, groupMetadata)
-	if err != nil {
-		err = fmt.Errorf("failed to send consumer offset to producer transaction: %v", err)
-		return
-	}
-	err = producer.CommitTransaction(context.Background())
-	if err != nil {
-		err = fmt.Errorf("failed to commit kafka transaction for producer: %v", err)
-		return
+
+	reachedEnd := false
+	var message *kafka.Message
+	for !reachedEnd {
+		err = producer.BeginTransaction()
+		if err != nil {
+			return BatchCounters{}, fmt.Errorf("failed to begin kafka transaction: %v", err)
+		}
+
+		for i := 0; i < retryBatchSize; i++ {
+			message, err = bc.consumer.Load().ReadMessage(bc.waitForMessages)
+			if err != nil {
+				kafkaErr := err.(kafka.Error)
+				if kafkaErr.Code() == kafka.ErrTimedOut {
+					err = fmt.Errorf("failed to consume message: %v", err)
+					return
+				}
+				if kafkaErr.IsRetriable() {
+					time.Sleep(10 * time.Second)
+					continue
+				} else {
+					bc.restartConsumer()
+					err = fmt.Errorf("failed to consume message: %v", err)
+					return
+				}
+			}
+			counters.consumed++
+			deadLettered := false
+			failedTopic, _ := MakeTopicId(bc.destinationId, retryTopicMode, allTablesToken, bc.config.KafkaTopicPrefix, false)
+			retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
+			if err != nil {
+				bc.Errorf("failed to read retry header: %v", err)
+			}
+			if retries >= bc.config.MessagesRetryCount {
+				//no attempts left - send to dead-letter topic
+				deadLettered = true
+				failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, bc.config.KafkaTopicPrefix, false)
+			}
+			headers := message.Headers
+			kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenStringWithEllipsis(originalErr.Error(), 256))
+			kafkabase.PutKafkaHeader(&headers, originalTopicHeader, bc.topicId)
+			kafkabase.PutKafkaHeader(&headers, retriesCountHeader, strconv.Itoa(retries))
+			kafkabase.PutKafkaHeader(&headers, retryTimeHeader, timestamp.ToISOFormat(RetryBackOffTime(bc.config, retries+1).UTC()))
+			err = producer.Produce(&kafka.Message{
+				Key:            message.Key,
+				TopicPartition: kafka.TopicPartition{Topic: &failedTopic, Partition: kafka.PartitionAny},
+				Headers:        headers,
+				Value:          message.Value,
+			}, nil)
+
+			if err != nil {
+				return counters, fmt.Errorf("failed to put message to producer: %v", err)
+			}
+			if deadLettered {
+				counters.deadLettered++
+			} else {
+				counters.retryScheduled++
+			}
+			//stop consuming after the message caused failure
+			if message.TopicPartition.Offset == failedPosition.Offset {
+				reachedEnd = true
+				break
+			}
+		}
+		offset := message.TopicPartition
+		offset.Offset++
+		//set consumer offset to the next message after failure. that happens atomically with whole producer transaction
+		err = producer.SendOffsetsToTransaction(context.Background(), []kafka.TopicPartition{offset}, groupMetadata)
+		if err != nil {
+			err = fmt.Errorf("failed to send consumer offset to producer transaction: %v", err)
+			return
+		}
+		err = producer.CommitTransaction(context.Background())
+		if err != nil {
+			err = fmt.Errorf("failed to commit kafka transaction for producer: %v", err)
+			return
+		}
+		commitedPosition = offset
 	}
 	return
 }
