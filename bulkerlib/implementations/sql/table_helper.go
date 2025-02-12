@@ -387,7 +387,7 @@ func (th *TableHelper) adaptSqlIdentifier(identifier string, kind string, idFunc
 		}
 		var shortened bool
 		result, shortened = utils.ShortenString2(result, th.maxIdentifierLength)
-		if !alphanumeric && shortened {
+		if !alphanumeric && (shortened || result != identifier) {
 			// shortening or cleaning might remove all non-alphanumeric characters
 			alphanumeric = utils.IsAlphanumeric(result)
 		}
