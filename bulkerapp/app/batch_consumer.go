@@ -61,7 +61,12 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 	var failedPosition *kafka.TopicPartition
 	var firstPosition *kafka.TopicPartition
 	var latestMessage *kafka.Message
+	var processedObjectSample types.Object
+
 	defer func() {
+		if counters.consumed > 0 {
+			bc.postEventsLog(state, processedObjectSample, err)
+		}
 		if err != nil {
 			nextBatch = false
 			counters.failed = counters.consumed - counters.processed
@@ -87,7 +92,6 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			bc.SendMetrics(kafkabase.GetKafkaHeader(latestMessage, MetricsMetaHeader), "success", counters.processed)
 		}
 	}()
-	var processedObjectSample types.Object
 	processed := 0
 	for i := 0; i < batchSize; i++ {
 		if bc.retired.Load() {
@@ -157,7 +161,6 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			//treat failed message as processed
 			state.ProcessedRows++
 			state.ProcessingTimeSec = time.Since(startTime).Seconds()
-			bc.postEventsLog(state, processedObjectSample, err)
 			return counters, state, false, bc.NewError("Failed to process event to bulker stream: %v", err)
 		} else {
 			processed++
@@ -178,7 +181,6 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		state, err = bulkerStream.Complete(ctx)
 		pauseTimer.Stop()
 		state.ProcessingTimeSec = time.Since(startTime).Seconds()
-		bc.postEventsLog(state, processedObjectSample, err)
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition
 			return counters, state, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.config.BulkerType, err)

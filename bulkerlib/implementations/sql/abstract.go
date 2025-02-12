@@ -98,7 +98,9 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 
 	ps.unmappedDataColumn = p.ColumnName(unmappedDataColumn)
 
-	ps.state = bulker.State{Status: bulker.Active, Mode: mode}
+	ps.state = bulker.State{Status: bulker.Active, Mode: mode, Representation: RepresentationTable{
+		Name: p.TableName(ps.tableName),
+	}}
 	ps.customTypes = customFields
 	ps.startTime = time.Now()
 	return &ps, nil

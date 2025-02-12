@@ -11,6 +11,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/joomcode/errorx"
+	"math/rand"
 	"time"
 )
 
@@ -29,7 +30,7 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		tmpTable := &Table{
 			Namespace:      ps.namespace,
-			Name:           fmt.Sprintf("%s_tmp%s", utils.ShortenString(ps.tableName, 47), time.Now().Format("060102150405")),
+			Name:           fmt.Sprintf("%s_tmp%d%03d", utils.ShortenString(ps.tableName, 43), time.Now().UnixMilli(), rand.Intn(1000)),
 			PrimaryKeyName: tableForObject.PrimaryKeyName,
 			//PrimaryKeyName: fmt.Sprintf("%s_%s", tableForObject.PrimaryKeyName, time.Now().Format("060102_150405")),
 			PKFields:        tableForObject.PKFields,

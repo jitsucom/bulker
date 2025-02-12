@@ -8,6 +8,7 @@ import (
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"math/rand"
 	"time"
 )
 
@@ -31,7 +32,7 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 		if ps.schemaFromOptions != nil {
 			ps.adjustTableColumnTypes(tmpTable, ps.existingTable, ps.schemaFromOptions, object)
 		}
-		tmpTableName := fmt.Sprintf("%s_tmp%s", utils.ShortenString(ps.tableName, 47), time.Now().Format("060102150405"))
+		tmpTableName := fmt.Sprintf("%s_tmp%d%03d", utils.ShortenString(ps.tableName, 43), time.Now().UnixMilli(), rand.Intn(1000))
 		return &Table{
 			Namespace:       p.TmpNamespace(ps.namespace),
 			Name:            tmpTableName,
