@@ -10,7 +10,6 @@ import (
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers/clickhouse"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers/clickhouse_noshards"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
@@ -59,7 +58,7 @@ var clickhouseClusterContainerNoShards *clickhouse_noshards.ClickHouseClusterCon
 
 func init() {
 	//uncomment to run tests locally with just one bulker type
-	//allBulkerConfigs = []string{PostgresBulkerTypeId}
+	allBulkerConfigs = []string{PostgresBulkerTypeId}
 
 	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {
 		bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
@@ -508,6 +507,22 @@ func TestBasics(t *testing.T) {
 			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 			configIds:      allBulkerConfigs,
 		},
+		{
+			name:              "emoji",
+			modes:             []bulker.BulkMode{bulker.Batch},
+			expectPartitionId: true,
+			dataFile:          "test_data/emoji.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("_timestamp", "id", "name"),
+			},
+			expectedRowsCount: 3,
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "test"},
+				{"_timestamp": constantTime, "id": 2, "name": "test 😆"},
+				{"_timestamp": constantTime, "id": 3, "name": "test2"},
+			},
+			configIds: allBulkerConfigs,
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -615,10 +630,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				return
 			}
 		}
-		var obj types2.Object
-		err = jsonorder.Unmarshal(scanner.Bytes(), &obj)
-		PostStep("decode_json", testConfig, mode, reqr, err)
-		_, _, err = stream.Consume(ctx, obj)
+		_, _, err = stream.ConsumeJSON(ctx, scanner.Bytes())
 		PostStep(fmt.Sprintf("consume_object_%d", i), testConfig, mode, reqr, err)
 		if err != nil && !testConfig.ignoreConsumeErrors {
 			break

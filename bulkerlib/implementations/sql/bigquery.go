@@ -150,7 +150,7 @@ func NewBigquery(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	b := &BigQuery{
 		Service: appbase.NewServiceBase(bulkerConfig.Id),
 		client:  client, config: config, queryLogger: queryLogger}
-	b.tableHelper = NewTableHelper(1024, '`')
+	b.tableHelper = NewTableHelper(BigqueryBulkerTypeId, 1024, '`')
 	b.tableHelper.columnNameFunc = columnNameFunc
 	b.tableHelper.tableNameFunc = tableNameFunc
 	return b, err

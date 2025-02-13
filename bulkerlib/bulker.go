@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"reflect"
 	"strconv"
@@ -15,6 +16,7 @@ type InitFunction func(Config) (Bulker, error)
 
 // BulkerRegistry registry of init functions for bulker implementations. Used By CreateBulker factory method
 var BulkerRegistry = make(map[string]InitFunction)
+var ColumnNameCache = map[string]*utils.SyncMapCache[ColumnName]{} //cache for column names by bulker type
 
 type BulkMode string
 
@@ -109,9 +111,15 @@ type StreamConfig struct {
 	Options map[string]any `mapstructure:"options" json:"options"`
 }
 
+type ColumnName struct {
+	QuotedIfNeeded string
+	Unquoted       string
+}
+
 // RegisterBulker registers function to create new bulker instance
 func RegisterBulker(bulkerType string, initFunc InitFunction) {
 	BulkerRegistry[bulkerType] = initFunc
+	ColumnNameCache[bulkerType] = utils.NewSyncMapCache[ColumnName](100000)
 }
 
 func CreateBulker(config Config) (Bulker, error) {

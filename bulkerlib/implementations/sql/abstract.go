@@ -31,8 +31,8 @@ type AbstractSQLStream struct {
 	omitNils          bool
 	schemaFreeze      bool
 	maxColumnsCount   int
-	schemaOptions     types.Schema
 	schemaFromOptions *Table
+	notFlatteningKeys types2.Set[string]
 
 	state  bulker.State
 	inited bool
@@ -92,8 +92,12 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 
 	schema := bulker.SchemaOption.Get(&ps.options)
 	if !schema.IsEmpty() {
-		ps.schemaOptions = schema
 		ps.schemaFromOptions = ps.sqlAdapter.TableHelper().MapSchema(ps.sqlAdapter, schema, ps.nameTransformer)
+		notFlatteningKeys := types2.NewSet[string]()
+		for _, field := range schema.Fields {
+			notFlatteningKeys.Put(field.Name)
+		}
+		ps.notFlatteningKeys = notFlatteningKeys
 	}
 
 	ps.unmappedDataColumn = p.ColumnName(unmappedDataColumn)
@@ -106,18 +110,12 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	return &ps, nil
 }
 
-func (ps *AbstractSQLStream) preprocess(object types.Object) (*Table, types.Object, error) {
+func (ps *AbstractSQLStream) preprocess(object types.Object, skipTypeHints bool) (*Table, types.Object, error) {
 	if ps.state.Status != bulker.Active {
 		return nil, nil, fmt.Errorf("stream is not active. Status: %s", ps.state.Status)
 	}
-	var notFlatteningKeys types2.Set[string]
-	if !ps.schemaOptions.IsEmpty() {
-		notFlatteningKeys = types2.NewSet[string]()
-		for _, field := range ps.schemaOptions.Fields {
-			notFlatteningKeys.Put(field.Name)
-		}
-	}
-	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.nameTransformer, ps.omitNils, ps.sqlAdapter.StringifyObjects(), notFlatteningKeys)
+
+	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.nameTransformer, ps.omitNils, ps.sqlAdapter.StringifyObjects(), ps.notFlatteningKeys, skipTypeHints)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -132,7 +132,7 @@ func NewRedshiftClassic(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	r._columnDDLFunc = redshiftColumnDDL
 	r.typecastFunc = typecastFunc
 	r.typesMapping, r.reverseTypesMapping = InitTypes(redshiftTypes, true)
-	r.tableHelper = NewTableHelper(127, '"')
+	r.tableHelper = NewTableHelper(RedshiftBulkerTypeId, 127, '"')
 	r.temporaryTables = true
 	r.renameToSchemaless = true
 	//// Redshift is case insensitive by default

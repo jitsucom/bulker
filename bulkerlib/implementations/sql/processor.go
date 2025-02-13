@@ -12,24 +12,33 @@ import (
 // ProcessEvents processes events objects without applying mapping rules
 // returns table headerm array of processed objects
 // or error if at least 1 was occurred
-func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTypes, nameTransformer func(string) string, omitNils bool, stringifyObjects bool, notFlatteningKeys types2.Set[string]) (*TypesHeader, types.Object, error) {
+func ProcessEvents(tableName string, event types.Object, customTypes types.SQLTypes, nameTransformer func(string) string, omitNils bool, stringifyObjects bool, notFlatteningKeys types2.Set[string], skipTypeHints bool) (*TypesHeader, types.Object, error) {
 	_ = event.Delete("JITSU_TABLE_NAME")
-	sqlTypesHints, err := extractSQLTypesHints(event)
-	if err != nil {
-		return nil, nil, err
+	notFlatKeys := notFlatteningKeys
+	var sqlTypesHints types.SQLTypes
+	var err error
+	if !skipTypeHints {
+		sqlTypesHints, err = extractSQLTypesHints(event)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
-	for k, v := range customTypes {
-		sqlTypesHints[k] = v
+	if len(customTypes) > 0 {
+		if sqlTypesHints == nil {
+			sqlTypesHints = types.SQLTypes{}
+		}
+		for k, v := range customTypes {
+			sqlTypesHints[k] = v
+		}
 	}
 	if len(sqlTypesHints) > 0 {
-		if notFlatteningKeys == nil {
-			notFlatteningKeys = types2.NewSet[string]()
-		}
+		notFlatKeys = types2.NewSet[string]()
 		for key := range sqlTypesHints {
-			notFlatteningKeys.Put(key)
+			notFlatKeys.Put(key)
 		}
+		notFlatKeys.PutSet(notFlatteningKeys)
 	}
-	flatObject, err := implementations.NewFlattener(nameTransformer, omitNils, stringifyObjects).FlattenObject(event, notFlatteningKeys)
+	flatObject, err := implementations.NewFlattener(nameTransformer, omitNils, stringifyObjects).FlattenObject(event, notFlatKeys)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -2,6 +2,7 @@ package utils
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -41,4 +42,36 @@ func (c *Cache[T]) Set(key string, value T) {
 	c.Lock()
 	defer c.Unlock()
 	c.entries[key] = &CacheEntry[T]{addedAt: time.Now().Unix(), value: value}
+}
+
+type SyncMapCache[T any] struct {
+	maxSize int64
+	entries sync.Map
+	length  atomic.Int64
+}
+
+func NewSyncMapCache[T any](maxSize int) *SyncMapCache[T] {
+	return &SyncMapCache[T]{
+		maxSize: int64(maxSize),
+		entries: sync.Map{},
+		length:  atomic.Int64{},
+	}
+}
+
+func (s *SyncMapCache[T]) Get(key string) (*T, bool) {
+	entry, ok := s.entries.Load(key)
+	if !ok {
+		return nil, false
+	}
+	return entry.(*T), true
+}
+
+func (s *SyncMapCache[T]) Set(key string, value *T) {
+	if s.length.Load() >= s.maxSize {
+		s.entries.Clear()
+	}
+	_, ok := s.entries.Swap(key, value)
+	if !ok {
+		s.length.Add(1)
+	}
 }

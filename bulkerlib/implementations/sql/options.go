@@ -11,7 +11,7 @@ import (
 var (
 	ColumnTypesOption = bulker.ImplementationOption[types.SQLTypes]{
 		Key:          "columnTypes",
-		DefaultValue: types.SQLTypes{},
+		DefaultValue: nil,
 		AdvancedParseFunc: func(o *bulker.ImplementationOption[types.SQLTypes], serializedValue any) (bulker.StreamOption, error) {
 			switch v := serializedValue.(type) {
 			case map[string]any:

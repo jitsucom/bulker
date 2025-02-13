@@ -11,7 +11,6 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/eventslog"
-	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
@@ -131,26 +130,20 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			firstPosition = &message.TopicPartition
 			counters.firstOffset = int64(message.TopicPartition.Offset)
 		}
-		var obj types.Object
-		err = jsonorder.Unmarshal(message.Value, &obj)
+		if bulkerStream == nil {
+			destination.InitBulkerInstance()
+			bulkerStream, err = destination.bulker.CreateStream(bc.topicId, bc.tableName, bulker.Batch, destination.streamOptions.Options...)
+			if err != nil {
+				bc.errorMetric("failed to create bulker stream")
+				err = bc.NewError("Failed to create bulker stream: %v", err)
+			}
+		}
 		if err == nil {
-			if bulkerStream == nil {
-				destination.InitBulkerInstance()
-				bulkerStream, err = destination.bulker.CreateStream(bc.topicId, bc.tableName, bulker.Batch, destination.streamOptions.Options...)
-				if err != nil {
-					bc.errorMetric("failed to create bulker stream")
-					err = bc.NewError("Failed to create bulker stream: %v", err)
-				}
+			//bc.Debugf("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), kafkabase.GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
+			_, processedObjectSample, err = bulkerStream.ConsumeJSON(ctx, message.Value)
+			if err != nil {
+				bc.errorMetric("bulker_stream_error")
 			}
-			if err == nil {
-				//bc.Debugf("%d. Consumed Message ID: %s Offset: %s (Retries: %s) for: %s", i, obj.Id(), message.TopicPartition.Offset.String(), kafkabase.GetKafkaHeader(message, retriesCountHeader), destination.config.BulkerType)
-				_, processedObjectSample, err = bulkerStream.Consume(ctx, obj)
-				if err != nil {
-					bc.errorMetric("bulker_stream_error")
-				}
-			}
-		} else {
-			bc.errorMetric("parse_event_error")
 		}
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition

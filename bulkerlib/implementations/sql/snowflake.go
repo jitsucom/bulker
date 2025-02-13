@@ -182,7 +182,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		return value
 	}
 
-	s.tableHelper = NewTableHelper(255, '"')
+	s.tableHelper = NewTableHelper(SnowflakeBulkerTypeId, 255, '"')
 	s.tableHelper.tableNameFunc = sfIdentifierFunction
 	s.tableHelper.columnNameFunc = sfIdentifierFunction
 	return s, err

@@ -85,6 +85,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	utils.MapPutIfAbsent(config.Parameters, "timeout", "60s")
 	utils.MapPutIfAbsent(config.Parameters, "writeTimeout", "60s")
 	utils.MapPutIfAbsent(config.Parameters, "readTimeout", "60s")
+	utils.MapPutIfAbsent(config.Parameters, "charset", "utf8mb4,utf8")
 
 	dbConnectFunction := func(cfg *DataSourceConfig) (*sql.DB, error) {
 		connectionString := mySQLDriverConnectionString(config)
@@ -136,7 +137,7 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	} else {
 		m.batchFileFormat = types2.FileFormatNDJSON
 	}
-	m.tableHelper = NewTableHelper(63, '`')
+	m.tableHelper = NewTableHelper(MySQLBulkerTypeId, 63, '`')
 	return m, err
 }
 

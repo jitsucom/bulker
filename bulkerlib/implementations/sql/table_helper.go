@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/coordination"
 	"github.com/jitsucom/bulker/jitsubase/locks"
@@ -40,11 +41,13 @@ type TableHelper struct {
 
 	tableNameFunc  IdentifierFunction
 	columnNameFunc IdentifierFunction
+
+	columnNameCache *utils.SyncMapCache[bulkerlib.ColumnName]
 }
 
 // NewTableHelper returns configured TableHelper instance
 // Note: columnTypesMapping must be not empty (or fields will be ignored)
-func NewTableHelper(maxIdentifierLength int, identifierQuoteChar rune) TableHelper {
+func NewTableHelper(bulkerTypeId string, maxIdentifierLength int, identifierQuoteChar rune) TableHelper {
 	return TableHelper{
 		coordinationService: coordination.DummyCoordinationService{},
 		tablesCache:         map[string]*Table{},
@@ -52,6 +55,8 @@ func NewTableHelper(maxIdentifierLength int, identifierQuoteChar rune) TableHelp
 		maxIdentifierLength: maxIdentifierLength,
 		identifierQuoteStr:  string(identifierQuoteChar),
 		useQuoting:          identifierQuoteChar != 0,
+
+		columnNameCache: bulkerlib.ColumnNameCache[bulkerTypeId],
 	}
 }
 
@@ -363,7 +368,14 @@ func (th *TableHelper) adaptTableName(tableName string) (quotedIfNeeded string, 
 }
 
 func (th *TableHelper) adaptColumnName(columnName string) (quotedIfNeeded string, unquoted string) {
-	return th.adaptSqlIdentifier(columnName, "column", th.columnNameFunc)
+	colName, ok := th.columnNameCache.Get(columnName)
+	if ok {
+		return colName.QuotedIfNeeded, colName.Unquoted
+	} else {
+		quotedIfNeeded, unquoted = th.adaptSqlIdentifier(columnName, "column", th.columnNameFunc)
+		th.columnNameCache.Set(columnName, &bulkerlib.ColumnName{QuotedIfNeeded: quotedIfNeeded, Unquoted: unquoted})
+		return quotedIfNeeded, unquoted
+	}
 }
 
 // adaptSqlIdentifier adapts the given identifier to basic rules derived from the SQL standard and injection protection:

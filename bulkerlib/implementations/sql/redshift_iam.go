@@ -104,7 +104,7 @@ func NewRedshiftIAM(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	// some clients have no permission to create tmp tables
 	p.batchFileFormat = types2.FileFormatCSV
 	p.batchFileCompression = types2.FileCompressionGZIP
-	p.tableHelper = NewTableHelper(127, '"')
+	p.tableHelper = NewTableHelper(RedshiftBulkerTypeId, 127, '"')
 	p.temporaryTables = false
 	p.renameToSchemaless = true
 	return p, err

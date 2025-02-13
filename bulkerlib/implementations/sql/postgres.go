@@ -162,7 +162,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	p := &Postgres{sqlAdapterBase, tmpDir}
 	// some clients have no permission to create tmp tables
 	p.temporaryTables = false
-	p.tableHelper = NewTableHelper(63, '"')
+	p.tableHelper = NewTableHelper(PostgresBulkerTypeId, 63, '"')
 	return p, err
 }
 

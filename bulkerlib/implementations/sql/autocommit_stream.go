@@ -45,7 +45,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	if err = ps.init(ctx); err != nil {
 		return
 	}
-	table, processedObject, err := ps.preprocess(object)
+	table, processedObject, err := ps.preprocess(object, false)
 	if err != nil {
 		return
 	}

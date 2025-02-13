@@ -162,7 +162,7 @@ func TestSQLTypeHints(t *testing.T) {
 	tests := []bulkerTestConfig{
 		{
 			name:                      "sql_types_hints_postgres",
-			modes:                     []bulker.BulkMode{bulker.Stream},
+			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch},
 			expectPartitionId:         true,
 			dataFile:                  "test_data/type_hints.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,

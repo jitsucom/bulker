@@ -2,6 +2,7 @@ package sql
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -188,6 +189,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		ps.eventsInBatch = 0
 	}()
 	if ps.batchFile != nil && ps.eventsInBatch > 0 {
+		ps.updateRepresentationTable(table)
 		err = ps.initTx(ctx)
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to init transaction")
@@ -403,7 +405,6 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 		}
 	}
 	ps.adjustTables(ctx, targetTable, processedObject)
-	ps.updateRepresentationTable(ps.tmpTable)
 	err := ps.marshaller.InitSchema(ps.batchFile, nil, nil)
 	if err != nil {
 		return err
@@ -472,17 +473,22 @@ func (ps *AbstractTransactionalSQLStream) adjustTables(ctx context.Context, targ
 func (ps *AbstractTransactionalSQLStream) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types.Object, err error) {
 	var obj types.Object
 	err = jsonorder.Unmarshal(json, &obj)
+	hasTypeHints := bytes.Contains(json, []byte(implementations.SqlTypePrefix))
 	if err != nil {
 		return ps.state, nil, fmt.Errorf("Error parsing JSON: %v", err)
 	}
-	return ps.Consume(ctx, obj)
+	return ps.consume(ctx, obj, !hasTypeHints)
 }
 
 func (ps *AbstractTransactionalSQLStream) ConsumeMap(ctx context.Context, mp map[string]any) (state bulker.State, processedObject types.Object, err error) {
-	return ps.Consume(ctx, types.ObjectFromMap(mp))
+	return ps.consume(ctx, types.ObjectFromMap(mp), false)
 }
 
 func (ps *AbstractTransactionalSQLStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObject types.Object, err error) {
+	return ps.consume(ctx, object, false)
+}
+
+func (ps *AbstractTransactionalSQLStream) consume(ctx context.Context, object types.Object, skipTypeHints bool) (state bulker.State, processedObject types.Object, err error) {
 	if ps.state.Status != bulker.Active {
 		return ps.state, nil, errors.New("stream is not active")
 	}
@@ -494,8 +500,9 @@ func (ps *AbstractTransactionalSQLStream) Consume(ctx context.Context, object ty
 		return
 	}
 
+	//logging.Infof("[%s] skipTypeHints: %t", ps.id, skipTypeHints)
 	//type mapping, flattening => table schema
-	tableForObject, processedObject, err := ps.preprocess(object)
+	tableForObject, processedObject, err := ps.preprocess(object, skipTypeHints)
 	if err != nil {
 		return
 	}
