@@ -124,13 +124,6 @@ func (m *OrderedMap[K, V]) Set(key K, value V) bool {
 	return true
 }
 
-// AddUnsafe set a value for a key omitting any checks. Use only when you are sure that the key does not exist.
-func (m *OrderedMap[K, V]) AddUnsafe(key K, value V) bool {
-	element := m.ll.PushBack(key, value)
-	m.kv[key] = element
-	return true
-}
-
 func (m *OrderedMap[K, V]) SetPath(path K, value V) {
 	p := strings.Split(any(path).(string), ".")
 	obj := m
@@ -304,7 +297,7 @@ func (m *OrderedMap[K, V]) Back() *Element[K, V] {
 func (m *OrderedMap[K, V]) Copy() *OrderedMap[K, V] {
 	m2 := NewOrderedMap[K, V]()
 	for el := m.Front(); el != nil; el = el.Next() {
-		m2.AddUnsafe(el.Key, el.Value)
+		m2.Set(el.Key, el.Value)
 	}
 	return m2
 }
