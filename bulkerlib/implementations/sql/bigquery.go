@@ -978,7 +978,8 @@ func (bq *BigQuery) toWhenConditions(conditions *WhenConditions) (string, []bigq
 			queryConditions = append(queryConditions, bq.quotedColumnName(condition.Field)+" "+condition.Clause)
 		default:
 			queryConditions = append(queryConditions, bq.quotedColumnName(condition.Field)+" "+condition.Clause+" @when_"+condition.Field)
-			values = append(values, bigquery.QueryParameter{Name: "when_" + condition.Field, Value: types2.ReformatValue(condition.Value)})
+			v, _ := types2.ReformatValue(condition.Value)
+			values = append(values, bigquery.QueryParameter{Name: "when_" + condition.Field, Value: v})
 		}
 	}
 

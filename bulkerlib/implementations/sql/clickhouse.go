@@ -952,7 +952,7 @@ func (ch *ClickHouse) localTableName(tableName string) string {
 }
 
 func convertType(value any, column types.SQLColumn) (any, error) {
-	v := types.ReformatValue(value)
+	v, _ := types.ReformatValue(value)
 	lt := strings.ToLower(column.Type)
 	switch lt {
 	case "float64":

@@ -767,7 +767,8 @@ func (b *SQLAdapterBase[T]) ToWhenConditions(conditions *WhenConditions, paramEx
 			queryConditions = append(queryConditions, b.quotedColumnName(condition.Field)+" "+condition.Clause)
 		default:
 			queryConditions = append(queryConditions, b.quotedColumnName(condition.Field)+" "+condition.Clause+" "+paramExpression(i+valuesShift+1, condition.Field))
-			values = append(values, types2.ReformatValue(condition.Value))
+			v, _ := types2.ReformatValue(condition.Value)
+			values = append(values, v)
 		}
 	}
 

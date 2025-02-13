@@ -175,12 +175,13 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 	columnsAdded := 0
 	current := currentTable.Columns
 	unmappedObj := map[string]any{}
+	exists := existingTable.Exists()
 	for el := desiredTable.Columns.Front(); el != nil; el = el.Next() {
 		name := el.Key
 		newCol := el.Value
 		var existingCol types.SQLColumn
 		ok := false
-		if existingTable.Exists() {
+		if exists {
 			existingCol, ok = existingTable.Columns.Get(name)
 		}
 		if !ok {
@@ -261,7 +262,7 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 	if len(unmappedObj) > 0 {
 		var existingCol types.SQLColumn
 		ok := false
-		if existingTable.Exists() {
+		if exists {
 			existingCol, ok = existingTable.Columns.Get(ps.unmappedDataColumn)
 		}
 		if !ok {

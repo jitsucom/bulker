@@ -85,9 +85,8 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 		table.PrimaryKeyName = sqlAdapter.BuildConstraintName(table.Name)
 	}
 
-	for el := batchHeader.Fields.Front(); el != nil; el = el.Next() {
-		fieldName := el.Key
-		field := el.Value
+	for _, field := range batchHeader.Fields {
+		fieldName := field.Name
 		colName := th.ColumnName(fieldName)
 		if colName != fieldName {
 			object.Rename(fieldName, colName)

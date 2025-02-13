@@ -56,19 +56,21 @@ func (f *FlattenerImpl) FlattenObject(object types.Object, notFlatteningKeys typ
 // recursive function for flatten key (if value is inner object -> recursion call)
 // Reformat key
 func (f *FlattenerImpl) flatten(key string, value types.Object, destination types.Object, notFlatteningKeys types2.Set[string]) error {
-	if _, ok := notFlatteningKeys[key]; ok {
-		if f.stringifyObjects {
-			// if there is sql type hint for nested object - we don't flatten it.
-			// Instead, we marshal it to json string hoping that database cast function will do the job
-			b, err := jsonorder.MarshalToString(value)
-			if err != nil {
-				return fmt.Errorf("error marshaling json object with key %s: %v", key, err)
+	if notFlatteningKeys != nil {
+		if _, ok := notFlatteningKeys[key]; ok {
+			if f.stringifyObjects {
+				// if there is sql type hint for nested object - we don't flatten it.
+				// Instead, we marshal it to json string hoping that database cast function will do the job
+				b, err := jsonorder.MarshalToString(value)
+				if err != nil {
+					return fmt.Errorf("error marshaling json object with key %s: %v", key, err)
+				}
+				destination.Set(key, b)
+			} else {
+				destination.Set(key, types.ObjectToMap(value))
 			}
-			destination.Set(key, b)
-		} else {
-			destination.Set(key, types.ObjectToMap(value))
+			return nil
 		}
-		return nil
 	}
 	for el := value.Front(); el != nil; el = el.Next() {
 		var newKey string

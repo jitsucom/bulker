@@ -118,16 +118,16 @@ func StringFromType(dataType DataType) (string, error) {
 //	we have to check does json number have dot in string representation
 //
 // if have -> return float64 otherwise int64
-func ReformatValue(v any) any {
+func ReformatValue(v any) (any, bool) {
 	n, ok := ReformatNumberValue(v)
 	if ok {
-		return n
+		return n, true
 	}
 	ts, ok := ReformatTimeValue(v, false)
 	if ok {
-		return ts
+		return ts, true
 	} else {
-		return v
+		return v, false
 	}
 }
 

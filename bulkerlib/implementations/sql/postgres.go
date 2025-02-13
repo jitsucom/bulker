@@ -373,7 +373,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		targetTable.Columns.ForEachIndexed(func(i int, v string, col types2.SQLColumn) {
 			val, ok := object[v]
 			if ok {
-				val = types2.ReformatValue(val)
+				val, _ = types2.ReformatValue(val)
 			}
 			args[i] = p.valueMappingFunction(val, ok, col)
 		})

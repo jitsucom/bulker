@@ -307,7 +307,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 			targetTable.Columns.ForEachIndexed(func(i int, name string, col types2.SQLColumn) {
 				val, ok := object[name]
 				if ok {
-					val = types2.ReformatValue(val)
+					val, _ = types2.ReformatValue(val)
 				}
 				args[i] = m.valueMappingFunction(val, ok, col)
 			})

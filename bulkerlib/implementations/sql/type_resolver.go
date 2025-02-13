@@ -3,7 +3,6 @@ package sql
 import (
 	"fmt"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/types"
 )
 
 var DefaultTypeResolver = NewTypeResolver()
@@ -24,9 +23,7 @@ func NewDummyTypeResolver() *DummyTypeResolver {
 
 // Resolve return one dummy field and types.Fields becomes not empty. (it is used in Facebook destination)
 func (dtr *DummyTypeResolver) Resolve(object map[string]any, sqlTypeHints types2.SQLTypes) (Fields, error) {
-	fields := types.NewOrderedMap[string, Field]()
-	fields.Set("dummy", NewField(types2.UNKNOWN))
-	return fields, nil
+	return []Field{NewField("dummy", types2.UNKNOWN)}, nil
 }
 
 // TypeResolverImpl resolves types based on converter.go rules
@@ -43,12 +40,14 @@ func NewTypeResolver() *TypeResolverImpl {
 // reformat from json.Number into int64 or float64 and put back
 // reformat from string with timestamp into time.Time and put back
 func (tr *TypeResolverImpl) Resolve(object types2.Object, sqlTypeHints types2.SQLTypes) (Fields, error) {
-	fields := types.NewOrderedMap[string, Field]()
+	fields := make(Fields, 0, object.Len())
 	//apply default typecast and define column types
 	for el := object.Front(); el != nil; el = el.Next() {
-		v := types2.ReformatValue(el.Value)
+		v, ok := types2.ReformatValue(el.Value)
 		k := el.Key
-		el.Value = v
+		if ok {
+			el.Value = v
+		}
 		//value type
 		resultColumnType, err := types2.TypeFromValue(v)
 		if err != nil {
@@ -65,10 +64,14 @@ func (tr *TypeResolverImpl) Resolve(object types2.Object, sqlTypeHints types2.SQ
 		//	resultColumnType = defaultType
 		//	object[k] = converted
 		//}
-		if sqlType, ok := sqlTypeHints[k]; ok {
-			fields.Set(k, NewFieldWithSQLType(resultColumnType, &sqlType))
+		if sqlTypeHints == nil {
+			fields = append(fields, NewField(k, resultColumnType))
 		} else {
-			fields.Set(k, NewField(resultColumnType))
+			if sqlType, ok := sqlTypeHints[k]; ok {
+				fields = append(fields, NewFieldWithSQLType(k, resultColumnType, &sqlType))
+			} else {
+				fields = append(fields, NewField(k, resultColumnType))
+			}
 		}
 	}
 

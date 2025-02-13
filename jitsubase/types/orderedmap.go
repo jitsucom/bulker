@@ -35,13 +35,13 @@ func (m *OrderedMap[K, V]) Get(key K) (value V, ok bool) {
 
 // GetN returns the value for a key. If the key does not exist, it returns the zero value for type V, such as 0 for int or an empty string for string.
 func (m *OrderedMap[K, V]) GetN(key K) V {
-	var empty V
 	v, ok := m.kv[key]
 	if ok {
 		return v.Value
+	} else {
+		var empty V
+		return empty
 	}
-
-	return empty
 }
 
 // GetS returns the value for a key if it exists and has string type. Otherwise, it returns an empty string.
@@ -87,6 +87,9 @@ func (m *OrderedMap[K, V]) GetPathS(path K) string {
 }
 
 func (m *OrderedMap[K, V]) GetPathN(path []K) any {
+	if len(path) == 1 {
+		return m.GetN(path[0])
+	}
 	obj := m
 	for i, key := range path {
 		if i == len(path)-1 {
@@ -110,9 +113,9 @@ func (m *OrderedMap[K, V]) GetPathN(path []K) any {
 // will be returned. The returned value will be false if the value was replaced
 // (even if the value was the same).
 func (m *OrderedMap[K, V]) Set(key K, value V) bool {
-	_, alreadyExist := m.kv[key]
+	v, alreadyExist := m.kv[key]
 	if alreadyExist {
-		m.kv[key].Value = value
+		v.Value = value
 		return false
 	}
 
