@@ -65,9 +65,9 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 				if err != nil {
 					return fmt.Errorf("error marshaling json object with key %s: %v", key, err)
 				}
-				destination.Set(key, b)
+				destination.AddUnsafe(key, b)
 			} else {
-				destination.Set(key, types.ObjectToMap(value))
+				destination.AddUnsafe(key, types.ObjectToMap(value))
 			}
 			return nil
 		}
@@ -82,7 +82,7 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 		elv := el.Value
 		if elv == nil {
 			if !f.omitNilValues {
-				destination.Set(newKey, elv)
+				destination.AddUnsafe(newKey, elv)
 			} else {
 				continue
 			}
@@ -95,15 +95,15 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 					if err != nil {
 						return fmt.Errorf("error marshaling array with key %s: %v", key, err)
 					}
-					destination.Set(newKey, string(b))
+					destination.AddUnsafe(newKey, string(b))
 				} else {
 					switch vv := elv.(type) {
 					case []types.Object:
-						destination.Set(newKey, utils.ArrayMap(vv, func(obj types.Object) map[string]any {
+						destination.AddUnsafe(newKey, utils.ArrayMap(vv, func(obj types.Object) map[string]any {
 							return types.ObjectToMap(obj)
 						}))
 					case []any:
-						destination.Set(newKey, utils.ArrayMap(vv, func(obj any) any {
+						destination.AddUnsafe(newKey, utils.ArrayMap(vv, func(obj any) any {
 							o, ok := obj.(types.Object)
 							if ok {
 								return types.ObjectToMap(o)
@@ -111,7 +111,7 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 							return obj
 						}))
 					default:
-						destination.Set(newKey, elv)
+						destination.AddUnsafe(newKey, elv)
 					}
 				}
 			case reflect.Map:
@@ -123,7 +123,7 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 						return err
 					}
 				} else {
-					destination.Set(newKey, elv)
+					destination.AddUnsafe(newKey, elv)
 				}
 			}
 		}

@@ -97,14 +97,14 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 			if ok {
 				suggestedSQLType.DataType = dt
 			}
-			table.Columns.Set(colName, suggestedSQLType)
+			table.Columns.AddUnsafe(colName, suggestedSQLType)
 			continue
 		}
 
 		//map Jitsu type -> SQL type
 		sqlType, ok := sqlAdapter.GetSQLType(field.GetType())
 		if ok {
-			table.Columns.Set(colName, types2.SQLColumn{DataType: field.GetType(), Type: sqlType, New: true})
+			table.Columns.AddUnsafe(colName, types2.SQLColumn{DataType: field.GetType(), Type: sqlType, New: true})
 		} else {
 			logging.SystemErrorf("Unknown column type %s mapping for %s", field.GetType(), sqlAdapter.Type())
 		}
@@ -124,7 +124,7 @@ func (th *TableHelper) MapSchema(sqlAdapter SQLAdapter, schema types2.Schema, na
 		//map Jitsu type -> SQL type
 		sqlType, ok := sqlAdapter.GetSQLType(field.Type)
 		if ok {
-			table.Columns.Set(colName, types2.SQLColumn{DataType: field.Type, Type: sqlType, Important: true})
+			table.Columns.AddUnsafe(colName, types2.SQLColumn{DataType: field.Type, Type: sqlType, Important: true})
 		} else {
 			logging.SystemErrorf("Unknown column type %s mapping for %s", field.Type, sqlAdapter.Type())
 		}
