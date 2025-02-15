@@ -92,6 +92,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		}
 	}()
 	processed := 0
+	consumer := bc.consumer.Load()
 	for i := 0; i < batchSize; i++ {
 		if bc.retired.Load() {
 			if bulkerStream != nil {
@@ -105,7 +106,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			// we reached the end of the topic
 			break
 		}
-		message, err := bc.consumer.Load().ReadMessage(bc.waitForMessages)
+		message, err := consumer.ReadMessage(bc.waitForMessages)
 		if err != nil {
 			kafkaErr := err.(kafka.Error)
 			if kafkaErr.Code() == kafka.ErrTimedOut {
@@ -179,7 +180,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			return counters, state, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.config.BulkerType, err)
 		}
 		counters.processed = processed
-		_, err = bc.consumer.Load().CommitMessage(latestMessage)
+		_, err = consumer.CommitMessage(latestMessage)
 		if err != nil {
 			bc.errorMetric("KAFKA_COMMIT_ERR:" + metrics.KafkaErrorCode(err))
 			bc.SystemErrorf("Failed to commit kafka consumer after batch was successfully committed to the destination: %v", err)
@@ -198,6 +199,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 	var commitedPosition = *firstPosition
 
 	retryBatchSize := bc.config.RetryConsumerBatchSize
+	consumer := bc.consumer.Load()
 
 	defer func() {
 		//recover
@@ -212,7 +214,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		if err != nil {
 			err = bc.NewError("Failed to put unsuccessful batch to 'failed' producer: %v", err)
 			//cleanup
-			_, err2 := bc.consumer.Load().SeekPartitions([]kafka.TopicPartition{commitedPosition})
+			_, err2 := consumer.SeekPartitions([]kafka.TopicPartition{commitedPosition})
 			if err2 != nil {
 				bc.errorMetric("SEEK_ERROR")
 			}
@@ -228,13 +230,13 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 
 	bc.Infof("Rolling back to first offset %d (failed at %d)", firstPosition.Offset, failedPosition.Offset)
 	//Rollback consumer to committed offset
-	_, err = bc.consumer.Load().SeekPartitions([]kafka.TopicPartition{*firstPosition})
+	_, err = consumer.SeekPartitions([]kafka.TopicPartition{*firstPosition})
 	if err != nil {
 		bc.errorMetric("SEEK_ERROR")
 		return BatchCounters{}, fmt.Errorf("failed to rollback kafka consumer offset: %v", err)
 	}
 	var groupMetadata *kafka.ConsumerGroupMetadata
-	groupMetadata, err = bc.consumer.Load().GetConsumerGroupMetadata()
+	groupMetadata, err = consumer.GetConsumerGroupMetadata()
 	if err != nil {
 		err = fmt.Errorf("failed to get consumer group metadata: %v", err)
 		return
@@ -249,7 +251,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		}
 
 		for i := 0; i < retryBatchSize; i++ {
-			message, err = bc.consumer.Load().ReadMessage(bc.waitForMessages)
+			message, err = consumer.ReadMessage(bc.waitForMessages)
 			if err != nil {
 				kafkaErr := err.(kafka.Error)
 				if kafkaErr.Code() == kafka.ErrTimedOut {

@@ -19,12 +19,13 @@ type KafkaConfig struct {
 	// Kafka authorization as JSON object {"mechanism": "SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}
 	KafkaSASL string `mapstructure:"KAFKA_SASL"`
 
-	KafkaSessionTimeoutMs    int    `mapstructure:"KAFKA_SESSION_TIMEOUT_MS" default:"45000"`
-	KafkaMaxPollIntervalMs   int    `mapstructure:"KAFKA_MAX_POLL_INTERVAL_MS" default:"300000"`
-	KafkaTopicCompression    string `mapstructure:"KAFKA_TOPIC_COMPRESSION" default:"snappy"`
-	KafkaTopicRetentionHours int    `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"48"`
-	KafkaTopicSegmentHours   int    `mapstructure:"KAFKA_TOPIC_SEGMENT_HOURS" default:"24"`
-	KafkaTopicPrefix         string `mapstructure:"KAFKA_TOPIC_PREFIX" default:""`
+	KafkaSessionTimeoutMs     int    `mapstructure:"KAFKA_SESSION_TIMEOUT_MS" default:"45000"`
+	KafkaMaxPollIntervalMs    int    `mapstructure:"KAFKA_MAX_POLL_INTERVAL_MS" default:"300000"`
+	KafkaTopicCompression     string `mapstructure:"KAFKA_TOPIC_COMPRESSION" default:"snappy"`
+	KafkaTopicRetentionHours  int    `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"48"`
+	KafkaTopicSegmentHours    int    `mapstructure:"KAFKA_TOPIC_SEGMENT_HOURS" default:"24"`
+	KafkaTopicPrefix          string `mapstructure:"KAFKA_TOPIC_PREFIX" default:""`
+	KafkaFetchMessageMaxBytes int    `mapstructure:"KAFKA_FETCH_MESSAGE_MAX_BYTES" default:"1048576"`
 
 	KafkaRetryTopicSegmentBytes              int    `mapstructure:"KAFKA_RETRY_TOPIC_SEGMENT_BYTES" default:"104857600"`
 	KafkaDeadTopicRetentionHours             int    `mapstructure:"KAFKA_DEAD_TOPIC_RETENTION_HOURS" default:"168"`

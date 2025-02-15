@@ -363,32 +363,62 @@ func (th *TableHelper) quotedColumnName(columnName string) string {
 }
 
 func (th *TableHelper) adaptTableName(tableName string) (quotedIfNeeded string, unquoted string) {
-	return th.adaptSqlIdentifier(tableName, "table", th.tableNameFunc)
+	unquoted, useQuoting := th.adaptSqlIdentifier(tableName, "table", th.tableNameFunc, utils.IsAlphanumeric(tableName))
+	if useQuoting {
+		return th.identifierQuoteStr + unquoted + th.identifierQuoteStr, unquoted
+	} else {
+		return unquoted, unquoted
+	}
 }
 
 func (th *TableHelper) adaptColumnName(columnName string) (quotedIfNeeded string, unquoted string) {
-	colName, ok := th.columnNameCache.Get(columnName)
-	if ok {
-		return colName.QuotedIfNeeded, colName.Unquoted
+	unquoted, useQuoting := th._adaptColumnName(columnName)
+	if useQuoting {
+		return th.identifierQuoteStr + unquoted + th.identifierQuoteStr, unquoted
 	} else {
-		quotedIfNeeded, unquoted = th.adaptSqlIdentifier(columnName, "column", th.columnNameFunc)
-		th.columnNameCache.Set(columnName, &bulkerlib.ColumnName{QuotedIfNeeded: quotedIfNeeded, Unquoted: unquoted})
-		return quotedIfNeeded, unquoted
+		return unquoted, unquoted
 	}
+}
+
+func (th *TableHelper) _adaptColumnName(columnName string) (unquoted string, useQuoting bool) {
+	var alphanumeric int
+	useCache := th.columnNameFunc != nil
+	if !useCache {
+		a := utils.IsAlphanumeric(columnName)
+		if a {
+			alphanumeric = 1
+		} else {
+			useCache = true
+			alphanumeric = -1
+		}
+	}
+	if useCache {
+		colName, ok := th.columnNameCache.Get(columnName)
+		if ok {
+			return colName.Unquoted, colName.UseQuoting
+		}
+	}
+	if alphanumeric == 0 && utils.IsAlphanumeric(columnName) {
+		alphanumeric = 1
+	}
+	unquoted, useQuoting = th.adaptSqlIdentifier(columnName, "column", th.columnNameFunc, alphanumeric == 1)
+	if useCache {
+		th.columnNameCache.Set(columnName, &bulkerlib.ColumnName{Unquoted: unquoted, UseQuoting: useQuoting})
+	}
+	return unquoted, useQuoting
+
 }
 
 // adaptSqlIdentifier adapts the given identifier to basic rules derived from the SQL standard and injection protection:
 // - must only contain letters, numbers, underscores, hyphen, and spaces - all other characters are removed
 // - identifiers are that use different character cases, space, hyphen or don't begin with letter or underscore get quoted
-func (th *TableHelper) adaptSqlIdentifier(identifier string, kind string, idFunc IdentifierFunction) (quotedIfNeeded string, unquoted string) {
-	useQuoting := th.useQuoting
-	alphanumeric := true
+func (th *TableHelper) adaptSqlIdentifier(identifier string, kind string, idFunc IdentifierFunction, alphanumeric bool) (unquoted string, useQuoting bool) {
+	useQuoting = th.useQuoting
 	var result string
 	if identifier == "" {
 		result = "_unnamed"
 	} else {
 		result = identifier
-		alphanumeric = utils.IsAlphanumeric(identifier)
 		if !alphanumeric {
 			result = sqlIdentifierUnsupportedCharacters.ReplaceAllString(identifier, "_")
 			if result == "" || result == "_" {
@@ -396,30 +426,31 @@ func (th *TableHelper) adaptSqlIdentifier(identifier string, kind string, idFunc
 				alphanumeric = true
 			}
 		}
-		var shortened bool
-		result, shortened = utils.ShortenString2(result, th.maxIdentifierLength)
-		if !alphanumeric && (shortened || result != identifier) {
-			// shortening or cleaning might remove all non-alphanumeric characters
-			alphanumeric = utils.IsAlphanumeric(result)
+		if alphanumeric && len(result) > th.maxIdentifierLength {
+			result = result[:th.maxIdentifierLength]
+		} else if !alphanumeric {
+			runes := []rune(result)
+			if len(runes) > th.maxIdentifierLength {
+				result = string(runes[:th.maxIdentifierLength])
+				if idFunc != nil {
+					alphanumeric = utils.IsAlphanumeric(result)
+				}
+			}
 		}
 	}
 	if idFunc != nil {
 		result, useQuoting = idFunc(result, alphanumeric)
 	}
 
-	if useQuoting {
-		return th.identifierQuoteStr + result + th.identifierQuoteStr, result
-	} else {
-		return result, result
-	}
+	return result, useQuoting
 }
 
 func (th *TableHelper) TableName(tableName string) string {
-	_, unquoted := th.adaptTableName(tableName)
+	unquoted, _ := th.adaptSqlIdentifier(tableName, "table", th.tableNameFunc, utils.IsAlphanumeric(tableName))
 	return unquoted
 }
 
 func (th *TableHelper) ColumnName(columnName string) string {
-	_, unquoted := th.adaptColumnName(columnName)
+	unquoted, _ := th._adaptColumnName(columnName)
 	return unquoted
 }

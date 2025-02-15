@@ -87,8 +87,10 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		"partition.assignment.strategy": config.KafkaConsumerPartitionsAssigmentStrategy,
 		"isolation.level":               "read_committed",
 		"session.timeout.ms":            config.KafkaSessionTimeoutMs,
+		"fetch.message.max.bytes":       config.KafkaFetchMessageMaxBytes,
 		"max.poll.interval.ms":          config.KafkaMaxPollIntervalMs,
 	}, *kafkaConfig))
+
 	consumer, err := kafka.NewConsumer(&consumerConfig)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
@@ -264,8 +266,9 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 
 	maxBatchSize, retryBatchSize := bc.batchSizeFunc(streamOptions)
 
-	_, highOffset, err = bc.consumer.Load().QueryWatermarkOffsets(bc.topicId, 0, 10_000)
-	offsets, _ := bc.consumer.Load().Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: 0}}, 1000)
+	consumer := bc.consumer.Load()
+	_, highOffset, err = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+	offsets, _ := consumer.Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: 0}}, 1000)
 	if len(offsets) > 0 {
 		lowOffset = int64(offsets[0].Offset)
 	}
@@ -302,7 +305,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		totalState.Merge(batchState)
 		counters.accumulate(batchStats)
 		if time.Since(lastMetricTime) > 5*time.Minute {
-			_, newHighOffset, err := bc.consumer.Load().QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+			_, newHighOffset, err := consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
 			if err != nil {
 				bc.Errorf("Failed to query watermark offsets: %v", err)
 				bc.errorMetric("query_watermark_failed")
@@ -458,9 +461,10 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 }
 
 func (bc *AbstractBatchConsumer) pauseKafkaConsumer() {
-	partitions, err := bc.consumer.Load().Assignment()
+	consumer := bc.consumer.Load()
+	partitions, err := consumer.Assignment()
 	if len(partitions) > 0 {
-		err = bc.consumer.Load().Pause(partitions)
+		err = consumer.Pause(partitions)
 	}
 	if err != nil {
 		bc.errorMetric("pause_error")

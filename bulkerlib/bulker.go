@@ -112,8 +112,8 @@ type StreamConfig struct {
 }
 
 type ColumnName struct {
-	QuotedIfNeeded string
-	Unquoted       string
+	Unquoted   string
+	UseQuoting bool
 }
 
 // RegisterBulker registers function to create new bulker instance
