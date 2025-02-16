@@ -223,6 +223,8 @@ func TypeFromValue(v any) (DataType, error) {
 		return TIMESTAMP, nil
 	case bool:
 		return BOOL, nil
+	case map[string]any, []any, []map[string]any:
+		return JSON, nil
 	case nil:
 		return UNKNOWN, fmt.Errorf("Unknown DataType for value: %v type: %t", v, v)
 	default:

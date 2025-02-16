@@ -1,12 +1,14 @@
 package implementations
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"reflect"
+	"time"
 )
 
 const SqlTypePrefix = "__sql_type"
@@ -87,9 +89,14 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 				continue
 			}
 		} else {
-			k := reflect.TypeOf(elv).Kind()
-			switch k {
-			case reflect.Slice, reflect.Array:
+			switch o := elv.(type) {
+			case types.Object:
+				if err := f.flatten(newKey, o, destination, notFlatteningKeys); err != nil {
+					return err
+				}
+			case string, int, int64, float64, bool, json.Number, time.Time:
+				destination.Set(newKey, o)
+			case []any:
 				if f.stringifyObjects {
 					b, err := jsonorder.Marshal(elv)
 					if err != nil {
@@ -97,32 +104,44 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 					}
 					destination.Set(newKey, string(b))
 				} else {
-					switch vv := elv.(type) {
-					case []types.Object:
-						destination.Set(newKey, utils.ArrayMap(vv, func(obj types.Object) map[string]any {
-							return types.ObjectToMap(obj)
-						}))
-					case []any:
-						destination.Set(newKey, utils.ArrayMap(vv, func(obj any) any {
-							o, ok := obj.(types.Object)
-							if ok {
-								return types.ObjectToMap(o)
-							}
-							return obj
-						}))
-					default:
+					destination.Set(newKey, utils.ArrayMap(o, func(obj any) any {
+						o, ok := obj.(types.Object)
+						if ok {
+							return types.ObjectToMap(o)
+						}
+						return obj
+					}))
+				}
+			case []types.Object:
+				// not really the case. because it is hiding behind []any type
+				if f.stringifyObjects {
+					b, err := jsonorder.Marshal(elv)
+					if err != nil {
+						return fmt.Errorf("error marshaling array with key %s: %v", key, err)
+					}
+					destination.Set(newKey, string(b))
+				} else {
+					destination.Set(newKey, utils.ArrayMap(o, func(obj types.Object) map[string]any {
+						return types.ObjectToMap(obj)
+					}))
+				}
+			default:
+				// just in case. but we never should reach this point
+				k := reflect.TypeOf(elv).Kind()
+				switch k {
+				case reflect.Slice, reflect.Array:
+					if f.stringifyObjects {
+						b, err := jsonorder.Marshal(elv)
+						if err != nil {
+							return fmt.Errorf("error marshaling array with key %s: %v", key, err)
+						}
+						destination.Set(newKey, string(b))
+					} else {
 						destination.Set(newKey, elv)
 					}
-				}
-			case reflect.Map:
-				return fmt.Errorf("flattener doesn't support map. Object is required")
-			default:
-				obj, ok := elv.(types.Object)
-				if ok {
-					if err := f.flatten(newKey, obj, destination, notFlatteningKeys); err != nil {
-						return err
-					}
-				} else {
+				case reflect.Map:
+					return fmt.Errorf("flattener doesn't support map. Object is required")
+				default:
 					destination.Set(newKey, elv)
 				}
 			}
