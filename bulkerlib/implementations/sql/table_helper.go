@@ -432,9 +432,9 @@ func (th *TableHelper) adaptSqlIdentifier(identifier string, kind string, idFunc
 			runes := []rune(result)
 			if len(runes) > th.maxIdentifierLength {
 				result = string(runes[:th.maxIdentifierLength])
-				if idFunc != nil {
-					alphanumeric = utils.IsAlphanumeric(result)
-				}
+			}
+			if idFunc != nil {
+				alphanumeric = utils.IsAlphanumeric(result)
 			}
 		}
 	}

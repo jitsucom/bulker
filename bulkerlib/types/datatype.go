@@ -215,14 +215,14 @@ func TypeFromValue(v any) (DataType, error) {
 	switch v.(type) {
 	case string:
 		return STRING, nil
-	case float32, float64:
-		return FLOAT64, nil
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return INT64, nil
 	case time.Time:
 		return TIMESTAMP, nil
+	case float32, float64:
+		return FLOAT64, nil
 	case bool:
 		return BOOL, nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return INT64, nil
 	case map[string]any, []any, []map[string]any:
 		return JSON, nil
 	case nil:

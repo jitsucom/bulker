@@ -90,12 +90,12 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 			}
 		} else {
 			switch o := elv.(type) {
+			case string, json.Number, bool:
+				destination.Set(newKey, o)
 			case types.Object:
 				if err := f.flatten(newKey, o, destination, notFlatteningKeys); err != nil {
 					return err
 				}
-			case string, int, int64, float64, bool, json.Number, time.Time:
-				destination.Set(newKey, o)
 			case []any:
 				if f.stringifyObjects {
 					b, err := jsonorder.Marshal(elv)
@@ -125,6 +125,8 @@ func (f *FlattenerImpl) flatten(key string, value types.Object, destination type
 						return types.ObjectToMap(obj)
 					}))
 				}
+			case int, int64, float64, time.Time:
+				destination.Set(newKey, o)
 			default:
 				// just in case. but we never should reach this point
 				k := reflect.TypeOf(elv).Kind()
