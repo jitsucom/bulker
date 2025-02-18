@@ -9,7 +9,6 @@ import (
 func TestNaming(t *testing.T) {
 	t.Parallel()
 	tests := []bulkerTestConfig{
-		//TODO: enable back ReplaceTable mode when clickhouse driver be patched
 		{
 			name:                      "naming_test1",
 			tableName:                 "Strange Table Name; DROP DATABASE public;",
@@ -19,9 +18,22 @@ func TestNaming(t *testing.T) {
 			expectedRowsCount:         1,
 			expectedTableCaseChecking: true,
 			expectedTable: ExpectedTable{
+				Columns: justColumns("id", "name", "_timestamp", "column_c16da609b86c01f16a2c609eac4ccb0c", "column_12b241e808ae6c964a5bb9f1c012e63d", "秒速_センチメートル", "Université Français", "Странное Имя", "Test Name_ DROP DATABASE public_ SELECT 1 from DUAL_", "Test Name", "1test_name", "2", "lorem_ipsum_dolor_sit_amet_consectetur_adipiscing_elit_sed_do_e", "camelCase", "int", "user", "select", "__ROOT__", "hash", "default", "_unnamed"),
+			},
+			configIds: utils.ArrayExcluding(allBulkerConfigs, RedshiftBulkerTypeId+"_serverless", RedshiftBulkerTypeId+"_iam", RedshiftBulkerTypeId, SnowflakeBulkerTypeId, BigqueryBulkerTypeId, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId+"_cluster", ClickHouseBulkerTypeId+"_cluster_noshards"),
+		},
+		{
+			name:                      "naming_test1_clickhouse",
+			tableName:                 "Strange Table Name; DROP DATABASE public;",
+			modes:                     []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			dataFile:                  "test_data/identifiers.ndjson",
+			expectPartitionId:         true,
+			expectedRowsCount:         1,
+			expectedTableCaseChecking: true,
+			expectedTable: ExpectedTable{
 				Columns: justColumns("id", "name", "_timestamp", "column_c16da609b86c01f16a2c609eac4ccb0c", "column_12b241e808ae6c964a5bb9f1c012e63d", "秒速_センチメートル", "Université Français", "Странное Имя", "Test Name_ DROP DATABASE public_ SELECT 1 from DUAL_", "Test Name", "1test_name", "2", "lorem_ipsum_dolor_sit_amet_consectetur_adipiscing_elit_sed_do_eiusmod_tempor_incididunt_ut_labore_et_dolore_magna_aliqua_ut_eni", "camelCase", "int", "user", "select", "__ROOT__", "hash", "default", "_unnamed"),
 			},
-			configIds: utils.ArrayExcluding(allBulkerConfigs, RedshiftBulkerTypeId+"_serverless", RedshiftBulkerTypeId+"_iam", RedshiftBulkerTypeId, SnowflakeBulkerTypeId, BigqueryBulkerTypeId),
+			configIds: []string{ClickHouseBulkerTypeId},
 		},
 		{
 			name:              "naming_test1_case_redshift",
