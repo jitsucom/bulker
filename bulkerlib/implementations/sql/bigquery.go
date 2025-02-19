@@ -756,11 +756,11 @@ func (bq *BigQuery) TruncateTable(ctx context.Context, namespace string, tableNa
 	query := fmt.Sprintf(bigqueryTruncateTemplate, bq.fullTableName(namespace, tableName))
 	bq.logQuery(query, nil, nil)
 	if _, err := bq.client.Query(query).Read(ctx); err != nil {
-		extraText := ""
-		if strings.Contains(err.Error(), "Not found") {
-			extraText = ": " + ErrTableNotExist.Error()
-		}
-		return errorj.TruncateError.Wrap(err, "failed to truncate table"+extraText).
+		//extraText := ""
+		//if strings.Contains(err.Error(), "Not found") {
+		//	extraText = ": " + ErrTableNotExist.Error()
+		//}
+		return errorj.TruncateError.Wrap(err, "failed to truncate table").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Dataset: bq.config.Dataset,
 				Bucket:  bq.config.Bucket,
