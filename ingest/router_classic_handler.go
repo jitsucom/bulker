@@ -77,18 +77,105 @@ func (r *Router) ClassicScriptHandler(c *gin.Context) {
 
 func (r *Router) ClassicHandler(c *gin.Context) {
 	domain := ""
-	var eventsLogId string
 	var rError *appbase.RouterError
-	var body []byte
-	var ingestMessageBytes []byte
-	var asyncDestinations []string
 	ingestType := IngestTypeBrowser
 	var s2sEndpoint bool
 
 	defer func() {
-		if len(ingestMessageBytes) == 0 {
-			ingestMessageBytes = body
+		if rError != nil {
+			IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
 		}
+	}()
+	defer func() {
+		if rerr := recover(); rerr != nil {
+			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), true, true)
+		}
+	}()
+	c.Set(appbase.ContextLoggerName, "ingest")
+	if !strings.HasSuffix(c.ContentType(), "application/json") && !strings.HasSuffix(c.ContentType(), "text/plain") {
+		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true, true)
+		return
+	}
+	if strings.HasPrefix(c.FullPath(), "/api/v1/s2s/") {
+		// may still be overridden by write key type
+		s2sEndpoint = true
+		ingestType = IngestTypeS2S
+	}
+
+	loc, err := r.getDataLocator(c, ingestType, func() (token string) {
+		token = utils.NvlString(c.Query(TokenName), c.GetHeader(TokenHeaderName), c.GetHeader(APIKeyName))
+		if token != "" {
+			return
+		}
+		for k, v := range c.Request.URL.Query() {
+			if strings.HasPrefix(k, "p_") && len(v) > 0 {
+				return v[0]
+			}
+		}
+		return
+	})
+	if err != nil {
+		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error processing message", false, err, true, true)
+		return
+	}
+
+	domain = utils.DefaultString(loc.Slug, loc.Domain)
+	c.Set(appbase.ContextDomain, domain)
+	c.Set("_classic_api_key", loc.WriteKey)
+
+	stream := r.getStream(&loc, true, s2sEndpoint)
+	if stream == nil {
+		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true)
+		return
+	}
+	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S
+
+	eventsLogId := stream.Stream.Id
+	ids.Store(stream.Stream.Id, stream.Stream.WorkspaceId)
+	var body []byte
+	body, err = io.ReadAll(c.Request.Body)
+	if err != nil {
+		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
+		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error reading HTTP body", false, err, true, true)
+		return
+	}
+
+	//if body is array, parse as array of messages
+	messages := make([]types.Json, 0)
+	if body[0] == '[' {
+		err = jsonorder.Unmarshal(body, &messages)
+		if err != nil {
+			rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true, true)
+			return
+		}
+	} else {
+		var message types.Json
+		err = jsonorder.Unmarshal(body, &message)
+		if err != nil {
+			rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true, true)
+			return
+		}
+		messages = append(messages, message)
+	}
+	for _, message := range messages {
+		messageId := message.GetS("eventn_ctx_event_id")
+		if messageId == "" {
+			messageId = uuid.New()
+		} else {
+			messageId = utils.ShortenString(messageIdUnsupportedChars.ReplaceAllString(messageId, "_"), 64)
+		}
+		c.Set(appbase.ContextMessageId, messageId)
+
+		var ingestMessageBytes []byte
+		_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, message, nil, "classic", loc, stream, patchClassicEvent)
+		if err != nil {
+			rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "event error", false, err, true, true)
+		}
+		if len(stream.AsynchronousDestinations) == 0 {
+			rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true, false)
+		}
+		var asyncDestinations []string
+		asyncDestinations, _, rError = r.sendToRotor(c, ingestMessageBytes, stream, true)
 		if len(ingestMessageBytes) > 0 {
 			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
 		}
@@ -108,86 +195,6 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelInfo, ActorId: eventsLogId, Event: obj})
 			IngestHandlerRequests(domain, "success", "").Inc()
 		}
-	}()
-	defer func() {
-		if rerr := recover(); rerr != nil {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), true, true)
-		}
-	}()
-	c.Set(appbase.ContextLoggerName, "ingest")
-	if !strings.HasSuffix(c.ContentType(), "application/json") && !strings.HasSuffix(c.ContentType(), "text/plain") {
-		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true, true)
-		return
-	}
-	if strings.HasPrefix(c.FullPath(), "/api/v1/s2s/") {
-		// may still be overridden by write key type
-		s2sEndpoint = true
-		ingestType = IngestTypeS2S
-	}
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error reading HTTP body", false, err, true, true)
-		return
-	}
-	var message types.Json
-	err = jsonorder.Unmarshal(body, &message)
-	if err != nil {
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true, true)
-		return
-	}
-	messageId := message.GetS("eventn_ctx_event_id")
-	if messageId == "" {
-		messageId = uuid.New()
-	} else {
-		messageId = utils.ShortenString(messageIdUnsupportedChars.ReplaceAllString(messageId, "_"), 64)
-	}
-	c.Set(appbase.ContextMessageId, messageId)
-	loc, err := r.getDataLocator(c, ingestType, func() (token string) {
-		token = utils.NvlString(c.Query(TokenName), c.GetHeader(TokenHeaderName), c.GetHeader(APIKeyName))
-		if token != "" {
-			return
-		}
-		for k, v := range c.Request.URL.Query() {
-			if strings.HasPrefix(k, "p_") && len(v) > 0 {
-				return v[0]
-			}
-		}
-		return
-	})
-	if err != nil {
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error processing message", false, fmt.Errorf("%v: %s", err, string(body)), true, true)
-		return
-	}
-
-	domain = utils.DefaultString(loc.Slug, loc.Domain)
-	c.Set(appbase.ContextDomain, domain)
-	c.Set("_classic_api_key", loc.WriteKey)
-
-	stream := r.getStream(&loc, true, s2sEndpoint)
-	if stream == nil {
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true)
-		return
-	}
-	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S
-
-	eventsLogId = stream.Stream.Id
-	ids.Store(stream.Stream.Id, stream.Stream.WorkspaceId)
-	//if err = r.checkOrigin(c, &loc, stream); err != nil {
-	//	r.Warnf("%v", err)
-	//}
-	_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, message, nil, "classic", loc, stream, patchClassicEvent)
-	if err != nil {
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "event error", false, err, true, true)
-		return
-	}
-	if len(stream.AsynchronousDestinations) == 0 {
-		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true, false)
-		return
-	}
-	asyncDestinations, _, rError = r.sendToRotor(c, ingestMessageBytes, stream, true)
-	if rError != nil {
-		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 	return
