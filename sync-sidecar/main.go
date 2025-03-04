@@ -123,6 +123,7 @@ func main() {
 	if command == "read" {
 		sidecar = &ReadSideCar{AbstractSideCar: abstract,
 			namespace:       os.Getenv("NAMESPACE"),
+			functionsEnv:    os.Getenv("FUNCTIONS_ENV"),
 			tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX"),
 			toSameCase:      os.Getenv("TO_SAME_CASE") == "true",
 			addMeta:         os.Getenv("ADD_META") == "true",

@@ -35,6 +35,7 @@ var forceTemporaryBatchesDestinations = map[string]int{
 type ReadSideCar struct {
 	*AbstractSideCar
 	namespace       string
+	functionsEnv    string
 	tableNamePrefix string
 	toSameCase      bool
 	addMeta         bool
@@ -478,6 +479,13 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	}
 	if s.toSameCase {
 		streamOptions = append(streamOptions, bulker.WithToSameCase())
+	}
+	if s.functionsEnv != "" {
+		opt, err := bulker.FunctionsEnvOption.Parse(s.functionsEnv)
+		if err != nil {
+			return stream, fmt.Errorf("error parsing functionsEnv: %v", err)
+		}
+		streamOptions = append(streamOptions, opt)
 	}
 	bulkerStream, err := s.blk.CreateStream(jobId, tableName, mode, streamOptions...)
 	if err != nil {
