@@ -156,7 +156,7 @@ func (ps *ApiBasedStream) flushBatchFile(ctx context.Context) (err error) {
 		loadTime := time.Now()
 		status, resp, err := ps.implementation.Upload(batch, ps.eventsName, ps.eventsInBatch, ps.env)
 		if err != nil {
-			return errorj.Decorate(err, fmt.Sprintf("failed to upload data to %s code: %d resp: %s", ps.implementation.Type(), status, resp))
+			return fmt.Errorf("failed to upload data to %s code: %d resp: %s error: %v", ps.implementation.Type(), status, resp, err)
 		} else {
 			ps.state.Representation = map[string]any{
 				"name":     ps.implementation.Type(),

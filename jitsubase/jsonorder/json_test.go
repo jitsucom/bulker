@@ -53,7 +53,7 @@ func TestOrderedJSON(t *testing.T) {
 	//iter1.ReadVal(&m)
 	var obj *types.OrderedMap[string, any]
 	_ = Unmarshal([]byte(j), &obj)
-	t.Logf(obj.GetS("type"))
+	t.Log(obj.GetS("type"))
 	ja, err := Marshal(obj)
 	require.NoError(t, err)
 	t.Logf("JSON: %s", ja)

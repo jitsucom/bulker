@@ -2,6 +2,7 @@ package app
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -226,7 +227,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 		eventBytes := scanner.Bytes()
 		if len(eventBytes) >= 5 && string(eventBytes[:5]) == "ABORT" {
 			state = bulkerStream.Abort(c)
-			rError = r.ResponseError(c, http.StatusBadRequest, "aborted", false, fmt.Errorf(string(eventBytes)), true, true)
+			rError = r.ResponseError(c, http.StatusBadRequest, "aborted", false, errors.New(string(eventBytes)), true, true)
 			return
 		}
 		bytesRead += len(eventBytes)

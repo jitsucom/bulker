@@ -21,7 +21,7 @@ import (
 const WebhookBulkerTypeId = "webhook"
 const WebhookUnsupported = "Only 'batch' mode is supported"
 
-var MacrosRegex = regexp.MustCompile(`\{\{\s*(\w+)\s*}}`)
+var MacrosRegex = regexp.MustCompile(`\{\{\s*([\w.-]+)\s*}}`)
 
 func init() {
 	bulker.RegisterBulker(WebhookBulkerTypeId, NewWebhookBulker)

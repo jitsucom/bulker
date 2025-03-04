@@ -123,7 +123,7 @@ func (gcs *GoogleCloudStorage) Upload(fileName string, fileReader io.ReadSeeker)
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic while uploading file: %s to GCC project: %s bucket: %s dataset: %s : %v", fileName, gcs.config.Project, gcs.config.Bucket, gcs.config.Dataset, r)
-			logging.SystemErrorf(err.Error())
+			logging.SystemError(err.Error())
 		}
 	}()
 	if gcs.closed.Load() {
@@ -183,7 +183,7 @@ func (gcs *GoogleCloudStorage) Download(key string) (fileBytes []byte, err error
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic while downloading file: %s from GCC project: %s bucket: %s dataset: %s : %v", key, gcs.config.Project, gcs.config.Bucket, gcs.config.Dataset, r)
-			logging.SystemErrorf(err.Error())
+			logging.SystemError(err.Error())
 		}
 	}()
 	if gcs.closed.Load() {
@@ -221,7 +221,7 @@ func (gcs *GoogleCloudStorage) DeleteObject(key string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic while deleting file: %s to GCC project: %s bucket: %s dataset: %s : %v", key, gcs.config.Project, gcs.config.Bucket, gcs.config.Dataset, r)
-			logging.SystemErrorf(err.Error())
+			logging.SystemError(err.Error())
 		}
 	}()
 	if gcs.closed.Load() {
