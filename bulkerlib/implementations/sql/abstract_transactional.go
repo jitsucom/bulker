@@ -67,7 +67,7 @@ func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, m
 		}
 	}
 	ps.localBatchFileName = localBatchFileOption.Get(&ps.options)
-	ps.temporaryBatchSize = TemporaryBatchSizeOption.Get(&ps.options)
+	ps.temporaryBatchSize = bulker.TemporaryBatchSizeOption.Get(&ps.options)
 	return &ps, nil
 }
 

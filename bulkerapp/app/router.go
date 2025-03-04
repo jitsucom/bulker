@@ -98,6 +98,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	tableName := c.Query("tableName")
 	modeOverride := c.Query("modeOverride")
 	metricsMeta := utils.NvlString(c.GetHeader("metricsMeta"), c.Query("metricsMeta"))
+	streamOptions := utils.NvlString(c.GetHeader("streamOptions"), c.Query("streamOptions"))
 	mode := ""
 	bytesRead := 0
 	var rError *appbase.RouterError
@@ -146,7 +147,11 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		return
 	}
 	bytesRead = len(body)
-	err = r.producer.ProduceAsync(topicId, uuid.New(), body, map[string]string{MetricsMetaHeader: metricsMeta}, kafka.PartitionAny)
+	headers := map[string]string{MetricsMetaHeader: metricsMeta}
+	if streamOptions != "" {
+		headers[streamOptionsKeyHeader] = streamOptions
+	}
+	err = r.producer.ProduceAsync(topicId, uuid.New(), body, headers, kafka.PartitionAny)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true)
 		return

@@ -112,6 +112,10 @@ type Snowflake struct {
 	*SQLAdapterBase[SnowflakeConfig]
 }
 
+func (s *Snowflake) Type() string {
+	return SnowflakeBulkerTypeId
+}
+
 // NewSnowflake returns configured Snowflake adapter instance
 func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &SnowflakeConfig{}

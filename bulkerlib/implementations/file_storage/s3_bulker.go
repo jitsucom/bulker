@@ -18,6 +18,10 @@ type S3Bulker struct {
 	implementations.S3
 }
 
+func (s3 *S3Bulker) Type() string {
+	return implementations.S3BulkerTypeId
+}
+
 func NewS3Bulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	s3Config := &implementations.S3Config{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, s3Config); err != nil {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
-	"github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/pg"
@@ -24,11 +23,14 @@ import (
 const interruptError = "Stream was interrupted. Check logs for errors."
 const cancelledError = "Sync job was cancelled"
 
-var forceTemporaryBatchesSources = types2.NewSet(
-	"airbyte/source-sftp-bulk",
-	"airbyte/source-file",
-	"airbyte/source-sftp",
-)
+var forceTemporaryBatchesSources = map[string]int{
+	"airbyte/source-sftp-bulk": 100000,
+	"airbyte/source-file":      100000,
+	"airbyte/source-sftp":      100000,
+}
+var forceTemporaryBatchesDestinations = map[string]int{
+	"webhook": 100,
+}
 
 type ReadSideCar struct {
 	*AbstractSideCar
@@ -465,9 +467,12 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	} else if len(str.DefaultCursorField) > 0 {
 		streamOptions = append(streamOptions, bulker.WithDiscriminatorField(str.DefaultCursorField))
 	}
-	if forceTemporaryBatchesSources.Contains(s.packageName) {
-		streamOptions = append(streamOptions, sql.WithTemporaryBatchSize(100000))
+	if size, ok := forceTemporaryBatchesDestinations[s.blk.Type()]; ok {
+		streamOptions = append(streamOptions, bulker.WithTemporaryBatchSize(size))
+	} else if size, ok := forceTemporaryBatchesSources[s.packageName]; ok {
+		streamOptions = append(streamOptions, bulker.WithTemporaryBatchSize(size))
 	}
+
 	if namespace != "" {
 		streamOptions = append(streamOptions, bulker.WithNamespace(namespace))
 	}

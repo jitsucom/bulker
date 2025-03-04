@@ -42,6 +42,8 @@ func NewMarshaller(format FileFormat, compression FileCompression) (Marshaller, 
 		return &JSONMarshaller{AbstractMarshaller: AbstractMarshaller{format: format, compression: compression}}, nil
 	case FileFormatAVRO:
 		return &AvroMarshaller{AbstractMarshaller: AbstractMarshaller{format: format, compression: compression}}, nil
+	case FileFormatJSONArray:
+		return &JSONArrayMarshaller{AbstractMarshaller: AbstractMarshaller{format: format, compression: compression}}, nil
 	default:
 		return nil, fmt.Errorf("Unknown file format: %s", format)
 	}
@@ -117,6 +119,86 @@ func (jm *JSONMarshaller) FileExtension() string {
 		return ".ndjson.gz"
 	}
 	return ".ndjson"
+}
+
+type JSONArrayMarshaller struct {
+	AbstractMarshaller
+	writer    io.Writer
+	bufWriter *bufio.Writer
+	needComma bool
+}
+
+func (ja *JSONArrayMarshaller) Init(writer io.Writer, _ []string) error {
+	if ja.writer == nil {
+		if ja.compression == FileCompressionGZIP {
+			ja.writer = gzip.NewWriter(writer)
+		} else {
+			ja.writer = writer
+		}
+		ja.bufWriter = bufio.NewWriterSize(ja.writer, 100*1024)
+		_, _ = ja.bufWriter.WriteString("[")
+	}
+	return nil
+}
+
+func (ja *JSONArrayMarshaller) InitSchema(writer io.Writer, columns []string, table *AvroSchema) error {
+	return ja.Init(writer, nil)
+}
+
+// Marshal object as json
+func (ja *JSONArrayMarshaller) Marshal(object ...Object) error {
+	if ja.writer == nil {
+		return fmt.Errorf("marshaller wasn't initialized. Run Init() first")
+	}
+	for _, obj := range object {
+		if ja.needComma {
+			_ = ja.bufWriter.WriteByte(',')
+		}
+		b, err := jsonorder.Marshal(obj)
+		if err != nil {
+			return err
+		}
+		_, err = ja.bufWriter.Write(b)
+		if err != nil {
+			return err
+		}
+		ja.needComma = true
+	}
+	return nil
+}
+
+func (ja *JSONArrayMarshaller) Flush() error {
+	if ja.writer == nil {
+		return fmt.Errorf("marshaller wasn't initialized. Run Init() first")
+	}
+	_ = ja.bufWriter.WriteByte(']')
+	err := ja.bufWriter.Flush()
+	if err != nil {
+		return err
+	}
+	if ja.compression == FileCompressionGZIP {
+		return ja.writer.(*gzip.Writer).Close()
+	}
+	return nil
+}
+
+func (ja *JSONArrayMarshaller) NeedHeader() bool {
+	return false
+}
+
+func (ja *JSONArrayMarshaller) Format() FileFormat {
+	return ja.format
+}
+
+func (ja *JSONArrayMarshaller) Compression() FileCompression {
+	return ja.compression
+}
+
+func (ja *JSONArrayMarshaller) FileExtension() string {
+	if ja.compression == FileCompressionGZIP {
+		return ".json.gz"
+	}
+	return ".json"
 }
 
 type CSVMarshaller struct {
@@ -231,6 +313,7 @@ const (
 	FileFormatAVRO       FileFormat = "avro"
 	FileFormatNDJSON     FileFormat = "ndjson"
 	FileFormatNDJSONFLAT FileFormat = "ndjson_flat"
+	FileFormatJSONArray  FileFormat = "json"
 )
 
 type FileCompression string

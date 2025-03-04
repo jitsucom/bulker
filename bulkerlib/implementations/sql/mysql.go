@@ -70,6 +70,10 @@ type MySQL struct {
 	infileEnabled bool
 }
 
+func (m *MySQL) Type() string {
+	return MySQLBulkerTypeId
+}
+
 // NewMySQL returns configured MySQL adapter instance
 func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &DataSourceConfig{}

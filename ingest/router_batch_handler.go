@@ -81,7 +81,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 			messageId = utils.ShortenString(messageIdUnsupportedChars.ReplaceAllString(messageId, "_"), 64)
 		}
 		c.Set(appbase.ContextMessageId, messageId)
-		_, ingestMessageBytes, err1 := r.buildIngestMessage(c, messageId, event, payload.Context, "event", loc, stream, patchEvent)
+		_, ingestMessageBytes, err1 := r.buildIngestMessage(c, messageId, event, payload.Context, "event", loc, stream, patchEvent, payload.EventsName)
 		var asyncDestinations, tagsDestinations []string
 		if err1 == nil {
 			if len(stream.AsynchronousDestinations) == 0 {
