@@ -23,6 +23,10 @@ type GCSBulker struct {
 	implementations2.GoogleCloudStorage
 }
 
+func (gcs *GCSBulker) Type() string {
+	return implementations2.GCSBulkerTypeId
+}
+
 func NewGCSBulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	gcsConfig := &GCSConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, gcsConfig); err != nil {

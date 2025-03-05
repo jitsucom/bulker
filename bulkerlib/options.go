@@ -14,11 +14,17 @@ type StreamOption func(*StreamOptions)
 var optionsRegistry = make(map[string]ParseableOption)
 
 // Not used by bulker. Just added here to be treated as known options and don't print errors
-var ignoredOptions = []string{"functions", "streams", "dataLayout", "events", "debugTill", "hosts", "schedule", "timezone", "storageKey", "tableNamePrefix", "multithreading", "keepOriginalNames", "functionsEnv", "addMeta"}
+var ignoredOptions = []string{"functions", "streams", "dataLayout", "events", "debugTill", "hosts", "schedule", "timezone", "storageKey", "tableNamePrefix", "multithreading", "keepOriginalNames", "addMeta"}
 
 var (
 	BatchSizeOption = ImplementationOption[int]{
 		Key:          "batchSize",
+		DefaultValue: 0,
+		ParseFunc:    utils.ParseInt,
+	}
+
+	TemporaryBatchSizeOption = ImplementationOption[int]{
+		Key:          "temporaryBatchSize",
 		DefaultValue: 0,
 		ParseFunc:    utils.ParseInt,
 	}
@@ -144,11 +150,28 @@ var (
 			}
 		},
 	}
+
+	FunctionsEnvOption = ImplementationOption[map[string]any]{Key: "functionsEnv", ParseFunc: func(serialized any) (map[string]any, error) {
+		switch v := serialized.(type) {
+		case map[string]any:
+			return v, nil
+		case string:
+			var env map[string]any
+			err := jsoniter.Unmarshal([]byte(v), &env)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse functionsEnv: %v", err)
+			}
+			return env, nil
+		default:
+			return nil, fmt.Errorf("invalid value type of functionsEnv option: %T", v)
+		}
+	}}
 )
 
 func init() {
 	RegisterOption(&ModeOption)
 	RegisterOption(&BatchSizeOption)
+	RegisterOption(&TemporaryBatchSizeOption)
 	RegisterOption(&BatchFrequencyOption)
 	RegisterOption(&RetryFrequencyOption)
 	RegisterOption(&RetryBatchSizeOption)
@@ -159,6 +182,7 @@ func init() {
 	RegisterOption(&SchemaOption)
 	RegisterOption(&NamespaceOption)
 	RegisterOption(&ToSameCaseOption)
+	RegisterOption(&FunctionsEnvOption)
 
 	dummyParse := func(_ any) (any, error) { return nil, nil }
 	for _, ignoredOption := range ignoredOptions {
@@ -285,4 +309,10 @@ func WithNamespace(namespace string) StreamOption {
 
 func WithToSameCase() StreamOption {
 	return WithOption(&ToSameCaseOption, true)
+}
+
+func WithTemporaryBatchSize(temporaryBatchSize int) StreamOption {
+	return func(options *StreamOptions) {
+		TemporaryBatchSizeOption.Set(options, temporaryBatchSize)
+	}
 }

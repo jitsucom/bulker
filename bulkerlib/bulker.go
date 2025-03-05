@@ -62,10 +62,15 @@ type Bulker interface {
 	// bulker BulkerStream will add new column to a table on the fly if new properties appear in object and table schema is not overridden.
 	// TODO: escape special symbols in table names
 	CreateStream(id, tableName string, mode BulkMode, streamOptions ...StreamOption) (BulkerStream, error)
+	Type() string
 }
 
 type DummyBulker struct {
 	Error error
+}
+
+func (d *DummyBulker) Type() string {
+	return "dummy"
 }
 
 func (d *DummyBulker) Close() error {

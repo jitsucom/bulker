@@ -52,7 +52,7 @@ func (mp *MixpanelBulker) CreateStream(id, tableName string, mode bulker.BulkMod
 	case bulker.Stream:
 		return nil, errors.New(MixpanelUnsupported)
 	case bulker.Batch:
-		return NewTransactionalStream(id, mp, streamOptions...)
+		return NewTransactionalStream(id, mp, tableName, streamOptions...)
 	case bulker.ReplaceTable:
 		return nil, errors.New(MixpanelUnsupported)
 	case bulker.ReplacePartition:
@@ -65,7 +65,7 @@ func (mp *MixpanelBulker) Type() string {
 	return MixpanelBulkerTypeId
 }
 
-func (mp *MixpanelBulker) Upload(reader io.Reader) (int, string, error) {
+func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ map[string]any) (int, string, error) {
 	if mp.closed.Load() {
 		return 0, "", fmt.Errorf("attempt to use closed Mixpanel instance")
 	}

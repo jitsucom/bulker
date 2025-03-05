@@ -3,6 +3,7 @@ package appbase
 import (
 	"crypto/sha512"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/jitsubase/types"
@@ -128,7 +129,7 @@ func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskE
 			routerError.PublicError = err
 		}
 	} else {
-		err = fmt.Errorf(errorType)
+		err = errors.New(errorType)
 		routerError.PublicError = err
 	}
 	routerError.Error = err

@@ -19,7 +19,7 @@ import (
 type ApiImplementation interface {
 	io.Closer
 	Type() string
-	Upload(reader io.Reader) (int, string, error)
+	Upload(reader io.Reader, eventsName string, eventsCount int, env map[string]any) (int, string, error)
 	GetBatchFileFormat() types2.FileFormat
 	GetBatchFileCompression() types2.FileCompression
 	InmemoryBatch() bool
@@ -30,11 +30,15 @@ type ApiBasedStream struct {
 	options        bulker.StreamOptions
 	implementation ApiImplementation
 
-	batchFile     *os.File
-	batchBuffer   *bytes.Buffer
-	inmemoryBatch bool
+	eventsName         string
+	batchFile          *os.File
+	batchBuffer        *bytes.Buffer
+	inmemoryBatch      bool
+	temporaryBatchSize int
+
 	marshaller    types2.Marshaller
 	eventsInBatch int
+	env           map[string]any
 
 	state  bulker.State
 	inited bool
@@ -42,7 +46,7 @@ type ApiBasedStream struct {
 	startTime time.Time
 }
 
-func NewTransactionalStream(id string, impl ApiImplementation, streamOptions ...bulker.StreamOption) (*ApiBasedStream, error) {
+func NewTransactionalStream(id string, impl ApiImplementation, eventsName string, streamOptions ...bulker.StreamOption) (*ApiBasedStream, error) {
 	ps := ApiBasedStream{id: id, implementation: impl}
 	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {
@@ -51,6 +55,9 @@ func NewTransactionalStream(id string, impl ApiImplementation, streamOptions ...
 	ps.state = bulker.State{Status: bulker.Active, Representation: map[string]string{
 		"name": impl.Type(),
 	}}
+	ps.env = bulker.FunctionsEnvOption.Get(&ps.options)
+	ps.temporaryBatchSize = bulker.TemporaryBatchSizeOption.Get(&ps.options)
+	ps.eventsName = eventsName
 	ps.startTime = time.Now()
 	ps.inmemoryBatch = impl.InmemoryBatch()
 	return &ps, nil
@@ -61,16 +68,10 @@ func (ps *ApiBasedStream) init(ctx context.Context) error {
 		return nil
 	}
 
-	if ps.inmemoryBatch {
-		ps.batchBuffer = &bytes.Buffer{}
-	} else if ps.batchFile == nil {
-		var err error
-		ps.batchFile, err = os.CreateTemp("", fmt.Sprintf("bulker_%s", utils.SanitizeString(ps.id)))
-		if err != nil {
-			return err
-		}
+	err := ps.initBatch(ctx)
+	if err != nil {
+		return err
 	}
-	ps.marshaller, _ = types2.NewMarshaller(ps.implementation.GetBatchFileFormat(), ps.implementation.GetBatchFileCompression())
 	ps.inited = true
 	return nil
 }
@@ -96,6 +97,9 @@ func (ps *ApiBasedStream) postComplete(err error) (bulker.State, error) {
 		_ = ps.batchFile.Close()
 		_ = os.Remove(ps.batchFile.Name())
 	}
+	if ps.batchBuffer != nil {
+		ps.batchBuffer = nil
+	}
 	if err != nil {
 		ps.state.SetError(err)
 		ps.state.Status = bulker.Failed
@@ -112,7 +116,12 @@ func (ps *ApiBasedStream) flushBatchFile(ctx context.Context) (err error) {
 		if ps.batchFile != nil {
 			_ = ps.batchFile.Close()
 			_ = os.Remove(ps.batchFile.Name())
+			ps.batchFile = nil
 		}
+		if ps.batchBuffer != nil {
+			ps.batchBuffer = nil
+		}
+		ps.eventsInBatch = 0
 	}()
 	if ps.eventsInBatch > 0 {
 		err = ps.marshaller.Flush()
@@ -145,9 +154,9 @@ func (ps *ApiBasedStream) flushBatchFile(ctx context.Context) (err error) {
 		}
 
 		loadTime := time.Now()
-		status, resp, err := ps.implementation.Upload(batch)
+		status, resp, err := ps.implementation.Upload(batch, ps.eventsName, ps.eventsInBatch, ps.env)
 		if err != nil {
-			return errorj.Decorate(err, fmt.Sprintf("failed to upload data to %s code: %d resp: %s", ps.implementation.Type(), status, resp))
+			return fmt.Errorf("failed to upload data to %s code: %d resp: %s error: %v", ps.implementation.Type(), status, resp, err)
 		} else {
 			ps.state.Representation = map[string]any{
 				"name":     ps.implementation.Type(),
@@ -164,11 +173,35 @@ func (ps *ApiBasedStream) flushBatchFile(ctx context.Context) (err error) {
 	return nil
 }
 
-func (ps *ApiBasedStream) writeToBatch(ctx context.Context, processedObject types2.Object) error {
+func (ps *ApiBasedStream) initBatch(ctx context.Context) (err error) {
 	if ps.inmemoryBatch {
-		ps.marshaller.Init(ps.batchBuffer, nil)
+		ps.batchBuffer = &bytes.Buffer{}
+	} else if ps.batchFile == nil {
+		var err error
+		ps.batchFile, err = os.CreateTemp("", fmt.Sprintf("bulker_%s", utils.SanitizeString(ps.id)))
+		if err != nil {
+			return err
+		}
+	}
+	ps.marshaller, _ = types2.NewMarshaller(ps.implementation.GetBatchFileFormat(), ps.implementation.GetBatchFileCompression())
+	return nil
+}
+
+func (ps *ApiBasedStream) writeToBatch(ctx context.Context, processedObject types2.Object) error {
+	if ps.temporaryBatchSize > 0 && ps.eventsInBatch >= ps.temporaryBatchSize {
+		err := ps.flushBatchFile(ctx)
+		if err != nil {
+			return err
+		}
+		err = ps.initBatch(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	if ps.inmemoryBatch {
+		_ = ps.marshaller.Init(ps.batchBuffer, nil)
 	} else {
-		ps.marshaller.Init(ps.batchFile, nil)
+		_ = ps.marshaller.Init(ps.batchFile, nil)
 	}
 	err := ps.marshaller.Marshal(processedObject)
 	if err != nil {
@@ -218,6 +251,9 @@ func (ps *ApiBasedStream) Abort(ctx context.Context) (state bulker.State) {
 	if ps.batchFile != nil {
 		_ = ps.batchFile.Close()
 		_ = os.Remove(ps.batchFile.Name())
+	}
+	if ps.batchBuffer != nil {
+		ps.batchBuffer = nil
 	}
 	ps.state.Status = bulker.Aborted
 	return ps.state

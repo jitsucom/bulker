@@ -98,7 +98,7 @@ func TestMillionRowsTmpBatches(t *testing.T) {
 			batchSize:         eventsCount + 1,
 			expectedRowsCount: eventsCount,
 			configIds:         configIds,
-			streamOptions:     []bulker.StreamOption{WithTemporaryBatchSize(34000)},
+			streamOptions:     []bulker.StreamOption{bulker.WithTemporaryBatchSize(34000)},
 		},
 	}
 	for _, tt := range tests {

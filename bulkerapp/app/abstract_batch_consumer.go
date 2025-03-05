@@ -19,6 +19,7 @@ import (
 // retryTimeHeader - time of scheduled retry
 const retryTimeHeader = "retry_time"
 const retriesCountHeader = "retries"
+const streamOptionsKeyHeader = "stream_options"
 const originalTopicHeader = "original_topic"
 const errorHeader = "error"
 

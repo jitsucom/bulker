@@ -71,8 +71,9 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			counters.failed = counters.consumed - counters.processed
 			if counters.failed > 0 {
 				// we separate original errors from retry errors
-				bc.SendMetrics(kafkabase.GetKafkaHeader(latestMessage, MetricsMetaHeader), "error", counters.failed-counters.retried)
-				bc.SendMetrics(kafkabase.GetKafkaHeader(latestMessage, MetricsMetaHeader), "retry_error", counters.retried)
+				metricsMeta := kafkabase.GetKafkaHeader(latestMessage, MetricsMetaHeader)
+				bc.SendMetrics(metricsMeta, "error", counters.failed-counters.retried)
+				bc.SendMetrics(metricsMeta, "retry_error", counters.retried)
 			}
 			if failedPosition != nil {
 				cnts, err2 := bc.processFailed(firstPosition, failedPosition, err)
@@ -133,7 +134,26 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		}
 		if bulkerStream == nil {
 			destination.InitBulkerInstance()
-			bulkerStream, err = destination.bulker.CreateStream(bc.topicId, bc.tableName, bulker.Batch, destination.streamOptions.Options...)
+			streamOptions := destination.streamOptions.Options
+			opts, err1 := kafkabase.GetKafkaObjectHeader(message, streamOptionsKeyHeader)
+			if err1 != nil {
+				bc.errorMetric("parse options error")
+				bc.Errorf("%v", err1)
+			}
+			if len(opts) > 0 {
+				streamOptions = make([]bulker.StreamOption, 0, len(streamOptions)+2)
+				streamOptions = append(streamOptions, destination.streamOptions.Options...)
+				for name, serializedOption := range opts {
+					opt, err2 := bulker.ParseOption(name, serializedOption)
+					if err2 != nil {
+						bc.Errorf("Failed to parse stream option: %s=%s: %v", name, serializedOption, err2)
+						bc.errorMetric("parse options error")
+						continue
+					}
+					streamOptions = append(streamOptions, opt)
+				}
+			}
+			bulkerStream, err = destination.bulker.CreateStream(bc.topicId, bc.tableName, bulker.Batch, streamOptions...)
 			if err != nil {
 				bc.errorMetric("failed to create bulker stream")
 				err = bc.NewError("Failed to create bulker stream: %v", err)

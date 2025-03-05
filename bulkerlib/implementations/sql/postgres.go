@@ -87,6 +87,10 @@ type Postgres struct {
 	tmpDir string
 }
 
+func (p *Postgres) Type() string {
+	return PostgresBulkerTypeId
+}
+
 // NewPostgres return configured Postgres bulker.Bulker instance
 func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &PostgresConfig{}

@@ -1,6 +1,8 @@
 package kafkabase
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"strconv"
@@ -44,5 +46,19 @@ func GetKafkaTimeHeader(message *kafka.Message, name string) (time.Time, error) 
 		return timestamp.ParseISOFormat(v)
 	} else {
 		return time.Time{}, nil
+	}
+}
+
+func GetKafkaObjectHeader(message *kafka.Message, name string) (map[string]any, error) {
+	v := GetKafkaHeader(message, name)
+	if len(v) > 0 {
+		var obj map[string]any
+		err := json.Unmarshal([]byte(v), &obj)
+		if err != nil {
+			return nil, fmt.Errorf("Error unmarshalling object header %s=%s: %v", name, v, err)
+		}
+		return obj, nil
+	} else {
+		return nil, nil
 	}
 }

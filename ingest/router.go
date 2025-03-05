@@ -41,7 +41,7 @@ var eventTypesSet = types.NewSet("page", "identify", "track", "group", "alias", 
 
 var messageIdUnsupportedChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 
-type eventPatchFunc func(c *gin.Context, messageId string, event types.Json, tp string, ingestType IngestType, analyticContext types.Json) error
+type eventPatchFunc func(c *gin.Context, messageId string, event types.Json, tp string, ingestType IngestType, analyticContext types.Json, defaultEventName string) error
 
 type Router struct {
 	*appbase.Router
@@ -216,9 +216,10 @@ func (r *Router) CorsMiddleware(c *gin.Context) {
 }
 
 type BatchPayload struct {
-	Batch    []types.Json `json:"batch"`
-	Context  types.Json   `json:"context"`
-	WriteKey string       `json:"writeKey"`
+	Batch      []types.Json `json:"batch"`
+	EventsName string       `json:"eventsName"`
+	Context    types.Json   `json:"context"`
+	WriteKey   string       `json:"writeKey"`
 }
 
 func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *StreamWithDestinations, sendResponse bool) (asyncDestinations []string, tagsDestinations []string, rError *appbase.RouterError) {
@@ -264,13 +265,17 @@ func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *
 	return
 }
 
-func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, ingestType IngestType, analyticContext types.Json) error {
+func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, ingestType IngestType, analyticContext types.Json, defaultEventName string) error {
 	typeFixed := utils.MapNVL(eventTypesDict, tp, tp)
 	ev := event
 	if typeFixed == "event" {
-		typeFixed = event.GetS("type")
-		if typeFixed == "" {
-			return fmt.Errorf("type property of event is required")
+		if defaultEventName != "" {
+			typeFixed = "track"
+		} else {
+			typeFixed = event.GetS("type")
+			if typeFixed == "" {
+				return fmt.Errorf("type property of event is required")
+			}
 		}
 	}
 	if !eventTypesSet.Contains(typeFixed) {
@@ -278,7 +283,7 @@ func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, i
 	}
 	if typeFixed == "track" {
 		//check event name
-		eventName := event.GetS("event")
+		eventName := utils.DefaultString(event.GetS("event"), defaultEventName)
 		if eventName == "" {
 			return fmt.Errorf("'event' property is required for 'track' event")
 		}
@@ -287,6 +292,9 @@ func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, i
 		}
 		if len(eventName) > 64 {
 			return fmt.Errorf("Invalid track event name '%s'. Max length is 64 characters.", eventName)
+		}
+		if defaultEventName != "" {
+			ev.SetIfAbsent("event", eventName)
 		}
 	}
 	ip := strings.TrimSpace(strings.Split(utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), ",")[0])
@@ -461,8 +469,8 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 	return &SyncDestinationsResponse{Destinations: data, OK: true}
 }
 
-func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event types.Json, analyticContext types.Json, tp string, loc StreamCredentials, stream *StreamWithDestinations, patchFunc eventPatchFunc) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
-	err = patchFunc(c, messageId, event, tp, loc.IngestType, analyticContext)
+func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event types.Json, analyticContext types.Json, tp string, loc StreamCredentials, stream *StreamWithDestinations, patchFunc eventPatchFunc, defaultEventName string) (ingestMessage *IngestMessage, ingestMessageBytes []byte, err error) {
+	err = patchFunc(c, messageId, event, tp, loc.IngestType, analyticContext, defaultEventName)
 	headers := utils.MapMap(utils.MapFilter(c.Request.Header, func(k string, v []string) bool {
 		return len(v) > 0 && !isInternalHeader(k)
 	}), func(k string, v []string) string {
@@ -479,10 +487,11 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event type
 		WriteKey:       maskWriteKey(loc.WriteKey),
 		Type:           utils.NvlString(bodyType, tp),
 		Origin: IngestMessageOrigin{
-			BaseURL:  fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host),
-			Slug:     loc.Slug,
-			SourceId: stream.Stream.Id,
-			Domain:   loc.Domain,
+			BaseURL:    fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host),
+			Slug:       loc.Slug,
+			SourceId:   stream.Stream.Id,
+			SourceName: stream.Stream.Name,
+			Domain:     loc.Domain,
 		},
 		HttpHeaders: headers,
 		HttpPayload: event,
@@ -525,11 +534,12 @@ func (r *Router) checkHash(hash string, secret string) bool {
 }
 
 type IngestMessageOrigin struct {
-	BaseURL  string `json:"baseUrl,omitempty"`
-	Slug     string `json:"slug,omitempty"`
-	SourceId string `json:"sourceId,omitempty"`
-	Domain   string `json:"domain,omitempty"`
-	Classic  bool   `json:"classic,omitempty"`
+	BaseURL    string `json:"baseUrl,omitempty"`
+	Slug       string `json:"slug,omitempty"`
+	SourceId   string `json:"sourceId,omitempty"`
+	SourceName string `json:"sourceName,omitempty"`
+	Domain     string `json:"domain,omitempty"`
+	Classic    bool   `json:"classic,omitempty"`
 }
 
 type IngestMessage struct {

@@ -79,6 +79,7 @@ type TaskConfiguration struct {
 	Catalog           *types2.OrderedMap[string, any] `json:"catalog"`
 	State             any                             `json:"state"`
 	DestinationConfig map[string]any                  `json:"destinationConfig"`
+	FunctionsEnv      map[string]any                  `json:"functionsEnv"`
 }
 
 func (t *TaskConfiguration) IsEmpty() bool {
