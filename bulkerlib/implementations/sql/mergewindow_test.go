@@ -21,7 +21,7 @@ func TestMergeWindow(t *testing.T) {
 			tableName: "merge_window",
 			modes:     []bulker.BulkMode{bulker.Batch},
 			dataFile:  "test_data/empty.ndjson",
-			configIds: []string{BigqueryBulkerTypeId},
+			configIds: []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless", RedshiftBulkerTypeId + "_iam"},
 		},
 		{
 			name:                "merge_window_first_run",
@@ -30,7 +30,7 @@ func TestMergeWindow(t *testing.T) {
 			leaveResultingTable: true,
 			dataFile:            "test_data/merge_window1.ndjson",
 			expectedRowsCount:   10,
-			configIds:           []string{BigqueryBulkerTypeId},
+			configIds:           []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless", RedshiftBulkerTypeId + "_iam"},
 			frozenTime:          mergeWindowTestTime,
 			streamOptions:       []bulker.StreamOption{bulker.WithTimestamp("_timestamp"), bulker.WithPrimaryKey("id"), bulker.WithDeduplicate()},
 		},
@@ -40,7 +40,7 @@ func TestMergeWindow(t *testing.T) {
 			modes:               []bulker.BulkMode{bulker.Batch},
 			leaveResultingTable: true,
 			dataFile:            "test_data/merge_window2.ndjson",
-			configIds:           []string{BigqueryBulkerTypeId},
+			configIds:           []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless", RedshiftBulkerTypeId + "_iam"},
 			frozenTime:          mergeWindowTestTime,
 			orderBy:             []string{"_timestamp", "name"},
 			expectedRows: []map[string]any{
@@ -66,7 +66,7 @@ func TestMergeWindow(t *testing.T) {
 			leaveResultingTable: true,
 			dataFile:            "test_data/merge_window3.ndjson",
 			frozenTime:          mergeWindowTestTime,
-			configIds:           []string{BigqueryBulkerTypeId},
+			configIds:           []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless", RedshiftBulkerTypeId + "_iam"},
 			orderBy:             []string{"_timestamp", "name"},
 			expectedRows: []map[string]any{
 				{"_timestamp": timestamp.MustParseTime(time.RFC3339Nano, "2023-01-01T00:00:00.000Z"), "id": 1, "name": "test1"},
@@ -91,7 +91,7 @@ func TestMergeWindow(t *testing.T) {
 			tableName: "merge_window",
 			modes:     []bulker.BulkMode{bulker.Batch},
 			dataFile:  "test_data/empty.ndjson",
-			configIds: []string{BigqueryBulkerTypeId},
+			configIds: []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless", RedshiftBulkerTypeId + "_iam"},
 		},
 	}
 	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {

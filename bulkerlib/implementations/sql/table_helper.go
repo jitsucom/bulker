@@ -279,6 +279,7 @@ func (th *TableHelper) getOrCreate(ctx context.Context, sqlAdapter SQLAdapter, d
 		dbTableSchema.Columns = dataSchema.Columns
 		dbTableSchema.PKFields = dataSchema.PKFields
 		dbTableSchema.PrimaryKeyName = dataSchema.PrimaryKeyName
+		dbTableSchema.TimestampColumn = dataSchema.TimestampColumn
 	}
 
 	return dbTableSchema, nil

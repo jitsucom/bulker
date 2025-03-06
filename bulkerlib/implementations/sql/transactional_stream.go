@@ -70,6 +70,13 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 			ps.updateRepresentationTable(ps.dstTable)
 			return ps.state, errorj.Decorate(err, "failed to ensure destination table")
 		}
+		// TODO: workaround: we cannot currently get sort key column from system table in redshift IAM driver
+		if ps.timestampColumn != "" && dstTable.TimestampColumn == "" {
+			c, ok := dstTable.Columns.Get(ps.timestampColumn)
+			if ok && c.DataType == types.TIMESTAMP {
+				dstTable.TimestampColumn = ps.timestampColumn
+			}
+		}
 		ps.dstTable = dstTable
 		ps.updateRepresentationTable(ps.dstTable)
 		//copy data from tmp table to destination table

@@ -8,6 +8,7 @@ import (
 	driver "github.com/jitsucom/bulker/bulkerlib/implementations/sql/redshift_driver"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	_ "github.com/lib/pq"
@@ -47,6 +48,7 @@ const (
  										  and kcu.constraint_name = tco.constraint_name
 				                     where tco.table_schema ilike $1 and tco.table_name = $2 and tco.constraint_type = 'PRIMARY KEY'
                                      order by kcu.ordinal_position`
+	redshiftGetSortKeyQuery = `SELECT "column" FROM pg_table_def WHERE schemaname ilike $1 AND tablename = $2 and sortkey = 1 and "type" ilike '%timestamp%'`
 
 	redshiftTxIsolationError = "Serializable isolation violation on table"
 
@@ -277,6 +279,10 @@ func (p *Redshift) deleteThenCopy(ctx context.Context, targetTable *Table, sourc
 		}
 		pkMatchConditions += fmt.Sprintf(`%s.%s = %s.%s`, quotedTargetTableName, pkColumn, quotedSourceTableName, pkColumn)
 	}
+	if targetTable.TimestampColumn != "" {
+		monthBefore := timestamp.Now().AddDate(0, 0, -mergeWindow).UTC()
+		pkMatchConditions += " AND " + fmt.Sprintf(`%s.%s >= '%s'`, quotedTargetTableName, p.quotedColumnName(targetTable.TimestampColumn), monthBefore.Format(time.RFC3339))
+	}
 	deleteStatement := fmt.Sprintf(redshiftDeleteBeforeBulkMergeUsing, namespace, quotedTargetTableName, sourceNamespace, quotedSourceTableName, pkMatchConditions)
 
 	if _, err = tx.tx.ExecContext(ctx, deleteStatement); err != nil {
@@ -364,7 +370,44 @@ func (p *Redshift) GetTableSchema(ctx context.Context, namespace string, tableNa
 	if primaryKeyName != "" && !strings.HasPrefix(primaryKeyName, BulkerManagedPkConstraintPrefix) {
 		p.Infof("table: %s.%s has a primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key configuration provided in Jitsu config will be ignored.", p.config.Schema, table.Name, primaryKeyName)
 	}
+	sortKey, err := p.getSortKey(ctx, table.Namespace, table.Name)
+	if err != nil {
+		p.Errorf("Failed to get sort key for table %s.%s: %v", table.Namespace, table.Name, err)
+	}
+	table.TimestampColumn = sortKey
+
 	return table, nil
+}
+
+func (p *Redshift) getSortKey(ctx context.Context, namespace, tableName string) (string, error) {
+	tableName = p.TableName(tableName)
+	namespace = p.namespaceName(namespace)
+	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftGetSortKeyQuery, namespace, tableName)
+	if err != nil {
+		return "", errorj.GetPrimaryKeysError.Wrap(err, "failed to get sort key").
+			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
+				Schema:    namespace,
+				Table:     tableName,
+				Statement: redshiftGetSortKeyQuery,
+				Values:    []any{p.config.Schema, tableName},
+			})
+	}
+
+	defer pkFieldsRows.Close()
+	if pkFieldsRows.Next() {
+		var sortKey string
+		if err := pkFieldsRows.Scan(&sortKey); err != nil {
+			return "", errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
+				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
+					Schema:    namespace,
+					Table:     tableName,
+					Statement: redshiftGetSortKeyQuery,
+					Values:    []any{p.config.Schema, tableName},
+				})
+		}
+		return sortKey, nil
+	}
+	return "", nil
 }
 
 func (p *Redshift) getPrimaryKeys(ctx context.Context, namespace, tableName string) (string, types.OrderedSet[string], error) {
