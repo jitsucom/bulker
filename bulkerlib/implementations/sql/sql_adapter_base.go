@@ -55,6 +55,9 @@ type DbConnectFunction[T any] func(config *T) (*sql.DB, error)
 // ColumnDDLFunction generate column DDL for CREATE TABLE statement based on type (SQLColumn) and whether it is used for PK
 type ColumnDDLFunction func(quotedName, name string, table *Table, column types2.SQLColumn) string
 
+// TableFunction type for all table operations
+type TableFunction func(ctx context.Context, table *Table) error
+
 // ValueMappingFunction maps object value to database value. For cases such default value substitution for null or missing values
 type ValueMappingFunction func(value any, valuePresent bool, column types2.SQLColumn) any
 
@@ -89,6 +92,8 @@ type SQLAdapterBase[T any] struct {
 	_columnDDLFunc       ColumnDDLFunction
 	tableHelper          TableHelper
 	checkErrFunc         ErrorAdapter
+	createPKFunc         TableFunction
+	dropPKFunc           TableFunction
 }
 
 func newSQLAdapterBase[T any](id string, typeId string, config *T, namespace string, dbConnectFunction DbConnectFunction[T], dataTypes map[types2.DataType][]string, queryLogger *logging.QueryLogger, typecastFunc TypeCastFunction, parameterPlaceholder ParameterPlaceholder, columnDDLFunc ColumnDDLFunction, valueMappingFunction ValueMappingFunction, checkErrFunc ErrorAdapter, supportsJSON bool) (*SQLAdapterBase[T], error) {
@@ -550,6 +555,18 @@ func (b *SQLAdapterBase[T]) copyOrMerge(ctx context.Context, targetTable *Table,
 // override input table sql type with configured cast type
 // make fields from Table PkFields - 'not null'
 func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+	if err := b.createTableOnly(ctx, schemaToCreate); err != nil {
+		return err
+	}
+
+	if err := b.createPrimaryKey(ctx, schemaToCreate); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (b *SQLAdapterBase[T]) createTableOnly(ctx context.Context, schemaToCreate *Table) error {
 	quotedTableName := b.quotedTableName(schemaToCreate.Name)
 	quotedSchema := b.namespacePrefix(schemaToCreate.Namespace)
 
@@ -571,11 +588,6 @@ func (b *SQLAdapterBase[T]) CreateTable(ctx context.Context, schemaToCreate *Tab
 				Statement:   query,
 			})
 	}
-
-	if err := b.createPrimaryKey(ctx, schemaToCreate); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -606,7 +618,7 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 
 	//patch primary keys - delete old
 	if patchTable.DeletePrimaryKeyNamed != "" {
-		err := b.deletePrimaryKey(ctx, patchTable, patchTable.DeletePrimaryKeyNamed)
+		err := b.deletePrimaryKey(ctx, patchTable)
 		if err != nil {
 			return err
 		}
@@ -627,6 +639,9 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) error {
 	if table.PKFields.Empty() {
 		return nil
+	}
+	if b.createPKFunc != nil {
+		return b.createPKFunc(ctx, table)
 	}
 
 	quotedTableName := b.quotedTableName(table.Name)
@@ -653,11 +668,18 @@ func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) 
 }
 
 // delete primary key
-func (b *SQLAdapterBase[T]) deletePrimaryKey(ctx context.Context, table *Table, pkName string) error {
+func (b *SQLAdapterBase[T]) deletePrimaryKey(ctx context.Context, table *Table) error {
+	if table.DeletePrimaryKeyNamed == "" {
+		return nil
+	}
+	if b.dropPKFunc != nil {
+		return b.dropPKFunc(ctx, table)
+	}
+
 	quotedTableName := b.quotedTableName(table.Name)
 	quotedSchema := b.namespacePrefix(table.Namespace)
 
-	query := fmt.Sprintf(dropPrimaryKeyTemplate, quotedSchema, quotedTableName, b.quotedTableName(pkName))
+	query := fmt.Sprintf(dropPrimaryKeyTemplate, quotedSchema, quotedTableName, b.quotedTableName(table.DeletePrimaryKeyNamed))
 
 	if _, err := b.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 		return errorj.DeletePrimaryKeysError.Wrap(err, "failed to delete primary key").

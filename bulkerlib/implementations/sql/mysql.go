@@ -36,6 +36,8 @@ const (
 									column_name AS name
 								FROM information_schema.KEY_COLUMN_USAGE
 								WHERE table_schema = ? AND table_name = ? AND CONSTRAINT_NAME = 'PRIMARY' order by ORDINAL_POSITION`
+	mySQLDropPrimaryKeyTemplate      = `ALTER TABLE %s%s DROP PRIMARY KEY`
+	mySQLAlterPrimaryKeyTemplate     = `ALTER TABLE %s%s ADD PRIMARY KEY (%s)`
 	mySQLCreateDBIfNotExistsTemplate = "CREATE DATABASE IF NOT EXISTS %s"
 	mySQLAllowLocalFile              = "SET GLOBAL local_infile = 1"
 	mySQLIndexTemplate               = `CREATE INDEX %s ON %s%s (%s);`
@@ -142,6 +144,8 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		m.batchFileFormat = types2.FileFormatNDJSON
 	}
 	m.tableHelper = NewTableHelper(MySQLBulkerTypeId, 63, '`')
+	m.createPKFunc = m.createPrimaryKey
+	m.dropPKFunc = m.deletePrimaryKey
 	return m, err
 }
 
@@ -535,6 +539,55 @@ func (m *MySQL) CreateTable(ctx context.Context, schemaToCreate *Table) error {
 			return fmt.Errorf("failed to create sort key: %v", err)
 		}
 	}
+	return nil
+}
+
+func (m *MySQL) createPrimaryKey(ctx context.Context, table *Table) error {
+	if table.PKFields.Empty() {
+		return nil
+	}
+
+	quotedTableName := m.quotedTableName(table.Name)
+	quotedSchema := m.namespacePrefix(table.Namespace)
+
+	columnNames := make([]string, table.PKFields.Size())
+	for i, column := range table.GetPKFields() {
+		columnNames[i] = m.quotedColumnName(column)
+	}
+
+	statement := fmt.Sprintf(mySQLAlterPrimaryKeyTemplate, quotedSchema,
+		quotedTableName, strings.Join(columnNames, ","))
+
+	if _, err := m.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
+		return errorj.CreatePrimaryKeysError.Wrap(err, "failed to set primary key").
+			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
+				Table:       quotedTableName,
+				PrimaryKeys: table.GetPKFields(),
+				Statement:   statement,
+			})
+	}
+	return nil
+}
+
+func (m *MySQL) deletePrimaryKey(ctx context.Context, table *Table) error {
+	if table.DeletePrimaryKeyNamed == "" {
+		return nil
+	}
+
+	quotedTableName := m.quotedTableName(table.Name)
+	quotedSchema := m.namespacePrefix(table.Namespace)
+
+	query := fmt.Sprintf(mySQLDropPrimaryKeyTemplate, quotedSchema, quotedTableName)
+
+	if _, err := m.txOrDb(ctx).ExecContext(ctx, query); err != nil {
+		return errorj.DeletePrimaryKeysError.Wrap(err, "failed to delete primary key").
+			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
+				Table:       quotedTableName,
+				PrimaryKeys: table.GetPKFields(),
+				Statement:   query,
+			})
+	}
+
 	return nil
 }
 
