@@ -219,6 +219,9 @@ func patchClassicEvent(c *gin.Context, messageId string, ev types.Json, _ string
 		ev.SetIfAbsentFunc("user_language", func() any {
 			return strings.TrimSpace(strings.Split(c.GetHeader("Accept-Language"), ",")[0])
 		})
+		// remove any jitsu special properties from ingested events
+		// it is only allowed to be set via functions
+		types.FilterEvent(ev)
 	}
 	nowIsoDate := time.Now().UTC().Format(timestamp.JsonISO)
 	ev.Set("_timestamp", nowIsoDate)

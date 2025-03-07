@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-const SqlTypePrefix = "__sql_type"
-
 type Flattener interface {
 	FlattenObject(object types.Object, notFlatteningKeys types2.Set[string]) (types.Object, error)
 }

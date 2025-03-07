@@ -65,9 +65,9 @@ func _extractSQLTypesHints(key string, object types.Object, result types.SQLType
 		// move to the next element before deleting the current one. otherwise iteration will be broken
 		el = el.Next()
 		//if column has __sql_type_ prefix
-		if strings.HasPrefix(k, implementations.SqlTypePrefix) {
+		if strings.HasPrefix(k, types2.SqlTypePrefix) {
 			object.DeleteElement(curEl)
-			columnName := strings.TrimPrefix(k[len(implementations.SqlTypePrefix):], "_")
+			columnName := strings.TrimPrefix(k[len(types2.SqlTypePrefix):], "_")
 			//when columnName is empty it means that provided sql type is meant for the whole object
 			//e.g. to map nested object to sql JSON type you can add the following property to nested object: "__sql_type_": "JSON" )
 			mappedColumnName := utils.JoinNonEmptyStrings("_", key, columnName)

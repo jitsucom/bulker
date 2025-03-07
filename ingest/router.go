@@ -265,14 +265,13 @@ func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *
 	return
 }
 
-func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, ingestType IngestType, analyticContext types.Json, defaultEventName string) error {
+func patchEvent(c *gin.Context, messageId string, ev types.Json, tp string, ingestType IngestType, analyticContext types.Json, defaultEventName string) error {
 	typeFixed := utils.MapNVL(eventTypesDict, tp, tp)
-	ev := event
 	if typeFixed == "event" {
 		if defaultEventName != "" {
 			typeFixed = "track"
 		} else {
-			typeFixed = event.GetS("type")
+			typeFixed = ev.GetS("type")
 			if typeFixed == "" {
 				return fmt.Errorf("type property of event is required")
 			}
@@ -283,7 +282,7 @@ func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, i
 	}
 	if typeFixed == "track" {
 		//check event name
-		eventName := utils.DefaultString(event.GetS("event"), defaultEventName)
+		eventName := utils.DefaultString(ev.GetS("event"), defaultEventName)
 		if eventName == "" {
 			return fmt.Errorf("'event' property is required for 'track' event")
 		}
@@ -332,6 +331,9 @@ func patchEvent(c *gin.Context, messageId string, event types.Json, tp string, i
 		ctx.SetIfAbsentFunc("locale", func() any {
 			return strings.TrimSpace(strings.Split(c.GetHeader("Accept-Language"), ",")[0])
 		})
+		// remove any jitsu special properties from ingested events
+		// it is only allowed to be set via functions
+		types.FilterEvent(ev)
 	}
 	nowIsoDate := time.Now().UTC().Format(timestamp.JsonISO)
 	ev.Set("receivedAt", nowIsoDate)
