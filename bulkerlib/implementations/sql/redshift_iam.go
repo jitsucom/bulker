@@ -97,7 +97,7 @@ func NewRedshiftIAM(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 			return nil, err
 		}
 		dataSource.SetConnMaxIdleTime(1 * time.Minute)
-		dataSource.SetConnMaxLifetime(10 * time.Minute)
+		dataSource.SetConnMaxLifetime(5 * time.Minute)
 		dataSource.SetMaxIdleConns(10)
 		return dataSource, nil
 	}
@@ -175,8 +175,7 @@ func (p *RedshiftIAM) createSchemaIfNotExists(ctx context.Context, schema string
 
 // InitDatabase creates database schema instance if doesn't exist
 func (p *RedshiftIAM) InitDatabase(ctx context.Context) error {
-	_ = p.createSchemaIfNotExists(ctx, p.config.Schema)
-
+	// Schema is created in CreateTable method
 	return nil
 }
 
@@ -485,22 +484,33 @@ func (p *RedshiftIAM) LoadTable(ctx context.Context, targetTable *Table, loadSou
 }
 
 func (p *RedshiftIAM) CreateTable(ctx context.Context, schemaToCreate *Table) error {
-	err := p.createSchemaIfNotExists(ctx, schemaToCreate.Namespace)
+	tx, err := p.openTx(ctx, p)
 	if err != nil {
 		return err
 	}
-	err = p.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+			_ = p.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)
+		}
+	}()
+	ctx1 := context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	err = p.createSchemaIfNotExists(ctx1, utils.DefaultString(schemaToCreate.Namespace, p.config.Schema))
+	if err != nil {
+		return err
+	}
+	err = p.SQLAdapterBase.CreateTable(ctx1, schemaToCreate)
 	if err != nil {
 		return err
 	}
 	if schemaToCreate.TimestampColumn != "" {
-		err = p.createSortKey(ctx, schemaToCreate)
+		err = p.createSortKey(ctx1, schemaToCreate)
 		if err != nil {
-			p.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)
-			return fmt.Errorf("failed to create sort key: %v", err)
+			return err
 		}
 	}
-	return nil
+	err = tx.Commit()
+	return err
 }
 
 func (p *RedshiftIAM) createSortKey(ctx context.Context, table *Table) error {
