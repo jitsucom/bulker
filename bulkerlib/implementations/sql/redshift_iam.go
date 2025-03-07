@@ -9,6 +9,7 @@ import (
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"math/rand"
@@ -399,10 +400,10 @@ func (p *RedshiftIAM) deleteThenCopy(ctx context.Context, targetTable *Table, so
 		}
 		pkMatchConditions += fmt.Sprintf(`%s.%s = %s.%s`, quotedTargetTableName, pkColumn, quotedSourceTableName, pkColumn)
 	}
-	//if targetTable.TimestampColumn != "" {
-	//	monthBefore := timestamp.Now().AddDate(0, 0, -mergeWindow).UTC()
-	//	pkMatchConditions += " AND " + fmt.Sprintf(`%s.%s >= '%s'`, quotedTargetTableName, p.quotedColumnName(targetTable.TimestampColumn), monthBefore.Format(time.RFC3339))
-	//}
+	if targetTable.TimestampColumn != "" {
+		monthBefore := timestamp.Now().AddDate(0, 0, -mergeWindow).UTC()
+		pkMatchConditions += " AND " + fmt.Sprintf(`%s.%s >= '%s'`, quotedTargetTableName, p.quotedColumnName(targetTable.TimestampColumn), monthBefore.Format(time.RFC3339))
+	}
 	deleteStatement := fmt.Sprintf(redshiftDeleteBeforeBulkMergeUsing, namespace, quotedTargetTableName, sourceNamespace, quotedSourceTableName, pkMatchConditions)
 
 	if _, err = tx.tx.ExecContext(ctx, deleteStatement); err != nil {
@@ -492,7 +493,7 @@ func (p *RedshiftIAM) CreateTable(ctx context.Context, schemaToCreate *Table) er
 	if err != nil {
 		return err
 	}
-	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
+	if schemaToCreate.TimestampColumn != "" {
 		err = p.createSortKey(ctx, schemaToCreate)
 		if err != nil {
 			p.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)

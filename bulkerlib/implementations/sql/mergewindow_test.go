@@ -13,7 +13,7 @@ var mergeWindowTestTime = timestamp.MustParseTime(time.RFC3339Nano, "2023-02-07T
 
 // TestTransactionalStream sequentially runs  transactional stream without dropping table in between
 func TestMergeWindow(t *testing.T) {
-	configIds := []string{BigqueryBulkerTypeId}
+	configIds := []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless", RedshiftBulkerTypeId + "_iam"}
 	t.Parallel()
 	tests := []bulkerTestConfig{
 		{
