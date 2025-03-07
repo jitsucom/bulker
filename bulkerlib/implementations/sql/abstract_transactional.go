@@ -473,7 +473,7 @@ func (ps *AbstractTransactionalSQLStream) adjustTables(ctx context.Context, targ
 func (ps *AbstractTransactionalSQLStream) ConsumeJSON(ctx context.Context, json []byte) (state bulker.State, processedObject types.Object, err error) {
 	var obj types.Object
 	err = jsonorder.Unmarshal(json, &obj)
-	hasTypeHints := bytes.Contains(json, []byte(implementations.SqlTypePrefix))
+	hasTypeHints := bytes.Contains(json, []byte(types2.SqlTypePrefix))
 	if err != nil {
 		return ps.state, nil, fmt.Errorf("Error parsing JSON: %v", err)
 	}
