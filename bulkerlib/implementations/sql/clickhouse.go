@@ -270,6 +270,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	}
 	tableStatementFactory := NewTableStatementFactory(c)
 	c.tableStatementFactory = tableStatementFactory
+	c.tmpTableUsePK = false
 	c.tableHelper = NewTableHelper(ClickHouseBulkerTypeId, 127, '`')
 	return c, err
 }

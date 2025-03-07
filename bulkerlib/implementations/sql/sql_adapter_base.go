@@ -78,6 +78,7 @@ type SQLAdapterBase[T any] struct {
 	batchFileFormat      types2.FileFormat
 	batchFileCompression types2.FileCompression
 	temporaryTables      bool
+	tmpTableUsePK        bool
 	renameToSchemaless   bool
 	// stringifyObjects objects types like JSON, array will be stringified before sent to warehouse (warehouse will parse them back)
 	stringifyObjects bool
@@ -112,6 +113,7 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, namespace str
 		stringifyObjects:     true,
 	}
 	s.temporaryTables = true
+	s.tmpTableUsePK = true
 	s.batchFileFormat = types2.FileFormatNDJSON
 	s.batchFileCompression = types2.FileCompressionNONE
 	var err error
@@ -833,6 +835,10 @@ func (b *SQLAdapterBase[T]) DefaultNamespace() string {
 
 func (b *SQLAdapterBase[T]) TmpNamespace(targetNamespace string) string {
 	return targetNamespace
+}
+
+func (b *SQLAdapterBase[T]) TmpTableUsePK() bool {
+	return b.tmpTableUsePK
 }
 
 func match(target, pattern string) bool {

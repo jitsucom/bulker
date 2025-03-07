@@ -8,7 +8,6 @@ import (
 	driver "github.com/jitsucom/bulker/bulkerlib/implementations/sql/redshift_driver"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
-	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	_ "github.com/lib/pq"
@@ -257,6 +256,7 @@ func (p *Redshift) LoadTable(ctx context.Context, targetTable *Table, loadSource
 }
 
 func (p *Redshift) deleteThenCopy(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
+	startTime := time.Now()
 	quotedTargetTableName := p.quotedTableName(targetTable.Name)
 	namespace := p.namespacePrefix(targetTable.Namespace)
 	quotedSourceTableName := p.quotedTableName(sourceTable.Name)
@@ -279,21 +279,30 @@ func (p *Redshift) deleteThenCopy(ctx context.Context, targetTable *Table, sourc
 		}
 		pkMatchConditions += fmt.Sprintf(`%s.%s = %s.%s`, quotedTargetTableName, pkColumn, quotedSourceTableName, pkColumn)
 	}
-	if targetTable.TimestampColumn != "" {
-		monthBefore := timestamp.Now().AddDate(0, 0, -mergeWindow).UTC()
-		pkMatchConditions += " AND " + fmt.Sprintf(`%s.%s >= '%s'`, quotedTargetTableName, p.quotedColumnName(targetTable.TimestampColumn), monthBefore.Format(time.RFC3339))
-	}
+	//if targetTable.TimestampColumn != "" {
+	//	monthBefore := timestamp.Now().AddDate(0, 0, -mergeWindow).UTC()
+	//	pkMatchConditions += " AND " + fmt.Sprintf(`%s.%s >= '%s'`, quotedTargetTableName, p.quotedColumnName(targetTable.TimestampColumn), monthBefore.Format(time.RFC3339))
+	//}
 	deleteStatement := fmt.Sprintf(redshiftDeleteBeforeBulkMergeUsing, namespace, quotedTargetTableName, sourceNamespace, quotedSourceTableName, pkMatchConditions)
-
+	state = bulker.WarehouseState{
+		Name:            "delete",
+		TimeProcessedMs: time.Since(startTime).Milliseconds(),
+	}
 	if _, err = tx.tx.ExecContext(ctx, deleteStatement); err != nil {
 		return state, err
 	}
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
-	state, err = p.copy(ctx, targetTable, sourceTable)
+	state1, err := p.copy(ctx, targetTable, sourceTable)
+	state.Merge(state1)
 	if err != nil {
 		return state, err
 	}
+	startTime = time.Now()
 	err = tx.Commit()
+	state.Merge(bulker.WarehouseState{
+		Name:            "commit",
+		TimeProcessedMs: time.Since(startTime).Milliseconds(),
+	})
 	return state, err
 }
 
@@ -302,7 +311,9 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 		return p.copy(ctx, targetTable, sourceTable)
 	} else {
 		for i := 0; i < 5; i++ {
-			state, err = p.deleteThenCopy(ctx, targetTable, sourceTable, mergeWindow)
+			var state1 bulker.WarehouseState
+			state1, err = p.deleteThenCopy(ctx, targetTable, sourceTable, mergeWindow)
+			state.Merge(state1)
 			if err != nil {
 				if strings.Contains(err.Error(), redshiftTxIsolationError) {
 					p.Errorf("Redshift transaction isolation error: %v. Retrying...", err)

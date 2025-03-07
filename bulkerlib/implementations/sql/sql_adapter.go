@@ -61,6 +61,9 @@ type SQLAdapter interface {
 	// TmpNamespace returns namespace used by temporary tables, e.g. for warehouses where temporary tables
 	// must not be specified with schema or db prefix NoNamespaceValue constant must be used
 	TmpNamespace(targetNamespace string) string
+	// TmpTableUsePK Create temporary tables with primary key.
+	// May be useful for Merge performance in some warehouses
+	TmpTableUsePK() bool
 }
 
 type LoadSourceType string
@@ -86,6 +89,10 @@ type TxSQLAdapter struct {
 
 func (tx *TxSQLAdapter) TmpNamespace(targetNamespace string) string {
 	return tx.sqlAdapter.TmpNamespace(targetNamespace)
+}
+
+func (tx *TxSQLAdapter) TmpTableUsePK() bool {
+	return tx.sqlAdapter.TmpTableUsePK()
 }
 
 func (tx *TxSQLAdapter) DefaultNamespace() string {

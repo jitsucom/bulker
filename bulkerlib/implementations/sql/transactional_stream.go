@@ -33,13 +33,18 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 			ps.adjustTableColumnTypes(tmpTable, ps.existingTable, ps.schemaFromOptions, object)
 		}
 		tmpTableName := fmt.Sprintf("%s_tmp%d%03d", utils.ShortenString(ps.tableName, 43), time.Now().UnixMilli(), rand.Intn(1000))
-		return &Table{
+		t := &Table{
 			Namespace:       p.TmpNamespace(ps.namespace),
 			Name:            tmpTableName,
 			Columns:         tmpTable.Columns,
 			Temporary:       true,
 			TimestampColumn: tableForObject.TimestampColumn,
 		}
+		if p.TmpTableUsePK() {
+			t.PrimaryKeyName = p.BuildConstraintName(tmpTableName)
+			t.PKFields = tableForObject.PKFields
+		}
+		return t
 	}
 	return &ps, nil
 }

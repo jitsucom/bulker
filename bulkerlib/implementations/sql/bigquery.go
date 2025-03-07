@@ -1123,6 +1123,10 @@ func (bq *BigQuery) TmpNamespace(namespace string) string {
 	return namespace
 }
 
+func (bq *BigQuery) TmpTableUsePK() bool {
+	return true
+}
+
 func (bq *BigQuery) namespaceName(namespace string) string {
 	return bq.tableHelper.TableName(utils.DefaultString(namespace, bq.config.Dataset))
 }
