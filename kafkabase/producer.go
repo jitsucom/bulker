@@ -188,6 +188,14 @@ func (p *Producer) isClosed() bool {
 	}
 }
 
+func (p *Producer) QueueSize() (int, error) {
+	if p.isClosed() {
+		return 0, p.NewError("producer is closed")
+	}
+
+	return p.producer.Len(), nil
+}
+
 func defaultMetricsLabelFunc(topicId string, status, errText string) (topic, destinationId, mode, tableName, st string, err string) {
 	return topicId, "", "", "", status, errText
 }

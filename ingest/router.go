@@ -11,6 +11,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
@@ -172,9 +173,7 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 
 	fast.Match([]string{"GET", "HEAD", "OPTIONS"}, "/p.js", router.ScriptHandler)
 
-	engine.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "pass"})
-	})
+	engine.GET("/health", router.Health)
 	engine.GET("/robots.txt", func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/plain", []byte("User-agent: *\nDisallow: /\n"))
 	})
@@ -213,6 +212,29 @@ func (r *Router) CorsMiddleware(c *gin.Context) {
 		c.Header("Access-Control-Max-Age", "86400")
 	}
 	c.Next()
+}
+
+func (r *Router) Health(c *gin.Context) {
+	if r.kafkaConfig == nil {
+		logging.Errorf("Health check: FAILED: kafka config is missing")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": "kafka config is missing"})
+		return
+	}
+	size, err := r.producer.QueueSize()
+	if err != nil {
+		logging.Errorf("Health check: FAILED: producer queue size error: %v", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": "producer queue size error: " + err.Error()})
+		return
+	}
+	if float64(size) > r.config.ProducerQueueSizeThreshold*float64(r.config.ProducerQueueSize) {
+		// we need to start worrying about the queue size before it reaches the limit
+		logging.Errorf("Health check: FAILED: producer queue size: %d", size)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": fmt.Sprintf("producer queue size: %d", size)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "pass", "producerQueueSize": size})
+	return
 }
 
 type BatchPayload struct {

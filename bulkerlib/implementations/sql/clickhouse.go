@@ -16,6 +16,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"io"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -36,7 +37,7 @@ const (
 	chLocalPrefix = "local_"
 
 	chDatabaseQuery          = "SELECT name FROM system.databases where name = ?"
-	chClusterQuery           = "SELECT max(shard_num) > 1 FROM system.clusters where cluster = ?"
+	chClusterQuery           = "SELECT max(shard_num) FROM system.clusters where cluster = ?"
 	chCreateDatabaseTemplate = `CREATE DATABASE IF NOT EXISTS %s %s`
 
 	chTableSchemaQuery        = `SELECT name, type FROM system.columns WHERE database = ? and table = ? and default_kind not in ('MATERIALIZED', 'ALIAS', 'EPHEMERAL') order by position`
@@ -219,15 +220,33 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 		if httpMode {
 			// in http mode we don't use shared connection pool.
 			// connection pool of 1 connection bound to each session_id
+			dataSource.SetConnMaxLifetime(time.Minute * 10)
 			dataSource.SetMaxOpenConns(1)
 		} else {
+			dataSource.SetMaxIdleConns(10)
+			dataSource.SetConnMaxLifetime(time.Minute * 10)
+			dataSource.SetConnMaxIdleTime(time.Minute * 3)
+		}
+
+		if _, ok := config.Parameters["session_id"]; !ok {
 			if err := chPing(dataSource); err != nil {
 				_ = dataSource.Close()
 				return nil, err
 			}
-			dataSource.SetMaxIdleConns(10)
-			dataSource.SetConnMaxLifetime(time.Minute * 10)
-			dataSource.SetConnMaxIdleTime(time.Minute * 3)
+			if config.Cluster != "" {
+				var shardNum int
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				defer cancel()
+				err = dataSource.QueryRowContext(ctx, chClusterQuery, config.Cluster).Scan(&shardNum)
+				if err != nil {
+					_ = dataSource.Close()
+					return nil, fmt.Errorf("failed to get cluster info: %v", err)
+				}
+				if shardNum < 1 {
+					_ = dataSource.Close()
+					return nil, errors.New("cluster not found: " + config.Cluster)
+				}
+			}
 		}
 		return dataSource, nil
 	}
@@ -303,7 +322,7 @@ func clickhouseDriverConnectionString(config *ClickHouseConfig) string {
 	hosts := strings.Join(hostWithPorts, ",")
 	// protocol://[user[:password]@][host1:port],[host2:port]/dbname[?param1=value1&paramN=valueN]
 	connectionString := fmt.Sprintf("%s://%s:%s@%s/%s", protocol,
-		config.Username, config.Password, hosts, config.Database)
+		url.QueryEscape(config.Username), url.QueryEscape(config.Password), hosts, config.Database)
 	if len(config.Parameters) > 0 {
 		connectionString += "?"
 		paramList := make([]string, 0, len(config.Parameters))
@@ -406,16 +425,16 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 		return err
 	}
 	if ch.config.Cluster != "" {
-		var distributed bool
-		err := ch.txOrDb(ctx).QueryRowContext(ctx, chClusterQuery, ch.config.Cluster).Scan(&distributed)
+		var shardNum int
+		err := ch.txOrDb(ctx).QueryRowContext(ctx, chClusterQuery, ch.config.Cluster).Scan(&shardNum)
 		if err != nil {
 			ch.Errorf("failed to get cluster info - assuming distributed mode. error: %v", err)
 			//assuming that cluster exists and has multiple shards
 			ch.distributed.Store(true)
 			return nil
 		}
-		ch.distributed.Store(distributed)
-		if distributed {
+		ch.distributed.Store(shardNum > 1)
+		if shardNum > 1 {
 			ch.Debugf("cluster `%s` is distributed", ch.config.Cluster)
 		} else {
 			ch.Debugf("cluster `%s` is not distributed", ch.config.Cluster)

@@ -64,6 +64,8 @@ type TopicManager struct {
 	eventsLogService eventslog.EventsLogService
 	refreshChan      chan bool
 	closed           chan struct{}
+
+	updatedAt time.Time
 }
 
 // NewTopicManager returns TopicManager
@@ -408,6 +410,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 	metrics.TopicManagerStaleTopics.Set(float64(staleTopics.Size()))
 	tm.Debugf("[topic-manager] Refreshed metadata in %v", time.Since(start))
 	tm.ready = true
+	tm.updatedAt = time.Now()
 }
 
 func ExcludeConsumerForTopic[T Consumer](consumers []T, topicId string, cron *Cron) []T {
@@ -500,6 +503,12 @@ func (tm *TopicManager) IsReady() bool {
 	tm.Lock()
 	defer tm.Unlock()
 	return tm.ready
+}
+
+func (tm *TopicManager) UpdatedAt() time.Time {
+	tm.Lock()
+	defer tm.Unlock()
+	return tm.updatedAt
 }
 
 //// GetTopicsSlice returns topics for destinationId

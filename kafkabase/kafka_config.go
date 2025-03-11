@@ -41,10 +41,12 @@ type KafkaConfig struct {
 	KafkaDestinationsDeadLetterTopicName string `mapstructure:"KAFKA_DESTINATIONS_DEAD_LETTER_TOPIC_NAME" default:"destination-messages-dead-letter"`
 
 	// ProducerWaitForDeliveryMs For ProduceSync only is a timeout for producer to wait for delivery report.
-	ProducerQueueSize         int `mapstructure:"PRODUCER_QUEUE_SIZE" default:"100000"`
-	ProducerBatchSize         int `mapstructure:"PRODUCER_BATCH_SIZE" default:"65535"`
-	ProducerLingerMs          int `mapstructure:"PRODUCER_LINGER_MS" default:"1000"`
-	ProducerWaitForDeliveryMs int `mapstructure:"PRODUCER_WAIT_FOR_DELIVERY_MS" default:"1000"`
+	ProducerQueueSize int `mapstructure:"PRODUCER_QUEUE_SIZE" default:"100000"`
+	// ProducerQueueSizeThreshold when queue size reaches this value, health check will return unhealthy
+	ProducerQueueSizeThreshold float64 `mapstructure:"PRODUCER_QUEUE_SIZE_THRESHOLD" default:"0.5"`
+	ProducerBatchSize          int     `mapstructure:"PRODUCER_BATCH_SIZE" default:"65535"`
+	ProducerLingerMs           int     `mapstructure:"PRODUCER_LINGER_MS" default:"1000"`
+	ProducerWaitForDeliveryMs  int     `mapstructure:"PRODUCER_WAIT_FOR_DELIVERY_MS" default:"1000"`
 }
 
 // GetKafkaConfig returns kafka config

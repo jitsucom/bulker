@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/jitsucom/bulker/jitsubase/logging"
 	"io"
 	"net/http"
 	"net/http/pprof"
@@ -22,7 +23,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
-	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
@@ -86,12 +86,31 @@ func (r *Router) Health(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "pass"})
 		return
 	}
-	if r.topicManager.IsReady() {
-		c.JSON(http.StatusOK, gin.H{"status": "pass"})
-	} else {
-		logging.Errorf("Health check: FAILED")
+	if !r.topicManager.IsReady() {
+		logging.Errorf("Health check: FAILED: topic manager is not ready")
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": "topic manager is not ready"})
+		return
 	}
+	updatedAt := r.topicManager.UpdatedAt()
+	if updatedAt.IsZero() || time.Since(updatedAt) > time.Duration(10*r.config.TopicManagerRefreshPeriodSec)*time.Second {
+		logging.Errorf("Health check: FAILED: topic manager is outdated: %s", updatedAt)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": "topic manager is outdated: " + updatedAt.String()})
+		return
+	}
+	size, err := r.producer.QueueSize()
+	if err != nil {
+		logging.Errorf("Health check: FAILED: producer queue size error: %v", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": "producer queue size error: " + err.Error()})
+		return
+	}
+	if float64(size) > r.config.ProducerQueueSizeThreshold*float64(r.config.ProducerQueueSize) {
+		// we need to start worrying about the queue size before it reaches the limit
+		logging.Errorf("Health check: FAILED: producer queue size: %d", size)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": fmt.Sprintf("producer queue size: %d", size)})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "pass", "producerQueueSize": size, "topicsUpdatedAt": updatedAt})
+	return
 }
 
 func (r *Router) EventsHandler(c *gin.Context) {

@@ -2,6 +2,7 @@ package sql
 
 import (
 	"context"
+	"crypto/rsa"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -74,6 +75,10 @@ type SnowflakeConfig struct {
 	Password   string             `mapstructure:"password,omitempty" json:"password,omitempty" yaml:"password,omitempty"`
 	Warehouse  string             `mapstructure:"warehouse,omitempty" json:"warehouse,omitempty" yaml:"warehouse,omitempty"`
 	Parameters map[string]*string `mapstructure:"parameters,omitempty" json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	// AuthenticationMethod can be "password" or "key-pair"
+	AuthenticationMethod string `mapstructure:"authenticationMethod,omitempty" json:"authenticationMethod,omitempty" yaml:"authenticationMethod,omitempty"`
+	PrivateKey           string `mapstructure:"privateKey,omitempty" json:"privateKey,omitempty" yaml:"privateKey,omitempty"`
+	PrivateKeyPassphrase string `mapstructure:"privateKeyPassphrase,omitempty" json:"privateKeyPassphrase,omitempty" yaml:"privateKeyPassphrase,omitempty"`
 }
 
 func init() {
@@ -131,6 +136,18 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	utils.MapPutIfAbsent(config.Parameters, "requestTimeout", &minute)
 	utils.MapPutIfAbsent(config.Parameters, "clientTimeout", &minute)
 
+	var rsaKey *rsa.PrivateKey
+	if config.AuthenticationMethod == "key-pair" {
+		pk, err := utils.ParsePrivateKey([]byte(config.PrivateKey), config.PrivateKeyPassphrase)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %v", err)
+		}
+		var ok bool
+		rsaKey, ok = pk.(*rsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("private key is not RSA")
+		}
+	}
 	dbConnectFunction := func(config *SnowflakeConfig) (*sql.DB, error) {
 		cfg := &sf.Config{
 			Account:   config.Account,
@@ -141,6 +158,11 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 			Database:  config.Db,
 			Warehouse: config.Warehouse,
 			Params:    config.Parameters,
+		}
+		if config.AuthenticationMethod == "key-pair" {
+			cfg.Authenticator = sf.AuthTypeJwt
+			cfg.PrivateKey = rsaKey
+			cfg.Password = ""
 		}
 
 		connectionString, err := sf.DSN(cfg)
