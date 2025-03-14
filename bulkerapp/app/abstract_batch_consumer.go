@@ -52,7 +52,8 @@ type AbstractBatchConsumer struct {
 
 	closed chan struct{}
 
-	running atomic.Bool
+	running           atomic.Bool
+	extraRunScheduled atomic.Bool
 
 	//AbstractBatchConsumer marked as no longer needed. We cannot close it immediately because it can be in the middle of processing batch
 	retired atomic.Bool
@@ -203,11 +204,16 @@ func (bc *AbstractBatchConsumer) TopicId() string {
 func (bc *AbstractBatchConsumer) RunJob() {
 	if bc.running.CompareAndSwap(false, true) {
 		defer func() {
+			bc.idle.Store(true)
+			bc.pause(false)
 			bc.running.Store(false)
 		}()
 		_, _ = bc.ConsumeAll()
+		for bc.extraRunScheduled.CompareAndSwap(true, false) {
+			_, _ = bc.ConsumeAll()
+		}
 	} else {
-		bc.Warnf("Previous job is still running")
+		bc.extraRunScheduled.Store(true)
 	}
 }
 
@@ -226,9 +232,6 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 	lowOffset := int64(kafka.OffsetBeginning)
 	var highOffset int64
 	defer func() {
-		bc.idle.Store(true)
-		bc.pause(false)
-		bc.countersMetric(counters)
 		sec := time.Since(startedAt).Seconds()
 		if err != nil {
 			metrics.ConsumerRuns(bc.topicId, bc.mode, bc.destinationId, bc.tableName, "fail").Inc()
@@ -303,6 +306,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 				bc.Errorf("Batch finished with error: %v stats: %s nextBatch: %t", err2, batchStats, nextBatch)
 			}
 		}
+		bc.countersMetric(batchStats)
 		totalState.Merge(batchState)
 		counters.accumulate(batchStats)
 		if time.Since(lastMetricTime) > 5*time.Minute {

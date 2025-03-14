@@ -130,7 +130,7 @@ func (r *ClickhouseEventsLog) PostAsync(event *ActorEvent) {
 	}
 	r.Lock()
 	defer r.Unlock()
-	event.Timestamp = time.Now()
+	event.Timestamp = time.Now().UTC()
 	r.eventsBuffer = append(r.eventsBuffer, event)
 }
 

@@ -256,7 +256,7 @@ func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *
 
 	if stream.Throttle > 0 {
 		if stream.Throttle >= 100 || rand.Int31n(100) < int32(stream.Throttle) {
-			rError = r.ResponseError(c, http.StatusPaymentRequired, ErrThrottledType, false, fmt.Errorf(ErrThrottledDescription), sendResponse, true)
+			rError = r.ResponseError(c, http.StatusPaymentRequired, ErrThrottledType, false, fmt.Errorf(ErrThrottledDescription), sendResponse, false)
 			return
 		}
 	}
@@ -506,7 +506,7 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event type
 	bodyType := utils.Ternary(tp != "classic", event.GetS("type"), event.GetS("event_type"))
 	ingestMessage = &IngestMessage{
 		IngestType:     loc.IngestType,
-		MessageCreated: time.Now(),
+		MessageCreated: utils.Ternary(tp != "classic", event.GetS("receivedAt"), event.GetS("_timestamp")),
 		MessageId:      messageId,
 		WriteKey:       maskWriteKey(loc.WriteKey),
 		Type:           utils.NvlString(bodyType, tp),
@@ -568,7 +568,7 @@ type IngestMessageOrigin struct {
 
 type IngestMessage struct {
 	IngestType     IngestType          `json:"ingestType"`
-	MessageCreated time.Time           `json:"messageCreated"`
+	MessageCreated string              `json:"messageCreated"`
 	WriteKey       string              `json:"writeKey,omitempty"`
 	MessageId      string              `json:"messageId"`
 	Type           string              `json:"type"`

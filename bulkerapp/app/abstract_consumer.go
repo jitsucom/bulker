@@ -69,7 +69,7 @@ func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, event
 	}
 	meta["status"] = status
 	meta["events"] = events
-	meta["timestamp"] = timestamp.ToISOFormat(time.Now().Truncate(time.Minute))
+	meta["timestamp"] = timestamp.ToISOFormat(time.Now().UTC().Truncate(time.Minute))
 	payload, _ := jsoniter.Marshal(meta)
 	//ac.Infof("Sending metrics to topic %s: %+v", topicId, meta)
 	err = ac.bulkerProducer.ProduceAsync(topicId, uuid.New(), payload, nil, kafka2.PartitionAny)
