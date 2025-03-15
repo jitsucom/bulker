@@ -197,7 +197,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			return state, errorj.Decorate(err, "failed to init transaction")
 		}
 		if ps.temporaryBatchCounter == 0 {
-			err = ps.sqlAdapter.CreateTable(ctx, table)
+			err = ps.tx.CreateTable(ctx, table)
 			if err == nil {
 				ps.sqlAdapter.TableHelper().UpdateCached(table.Name, table)
 			}
