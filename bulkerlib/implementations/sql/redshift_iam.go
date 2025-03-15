@@ -587,11 +587,13 @@ func (p *RedshiftIAM) ReplaceTable(ctx context.Context, targetTableName string, 
 }
 
 func (p *RedshiftIAM) Ping(ctx context.Context) error {
-	// do nothing due to time overhead to initiate connection with assume role
-	//err := p.SQLAdapterBase.Ping(ctx)
-	//if err != nil {
-	//	return err
-	//}
+	if p.dataSource == nil {
+		var err error
+		p.dataSource, err = p.dbConnectFunction(p.config)
+		if err != nil {
+			return fmt.Errorf("failed to connect to %s. error: %v", p.typeId, err)
+		}
+	}
 	return nil
 }
 
