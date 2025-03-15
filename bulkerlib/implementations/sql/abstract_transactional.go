@@ -131,9 +131,6 @@ func (ps *AbstractTransactionalSQLStream) initTx(ctx context.Context) (err error
 		return err
 	}
 	if ps.tx == nil {
-		if err = ps.sqlAdapter.Ping(ctx); err != nil {
-			return err
-		}
 		ps.tx, err = ps.sqlAdapter.OpenTx(ctx)
 		if err != nil {
 			return err
@@ -190,21 +187,11 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 	}()
 	if ps.batchFile != nil && ps.eventsInBatch > 0 {
 		ps.updateRepresentationTable(table)
-		txStart := time.Now()
 		err = ps.initTx(ctx)
-		ps.state.AddWarehouseState(bulker.WarehouseState{
-			Name:            "tx_start",
-			TimeProcessedMs: time.Since(txStart).Milliseconds(),
-		})
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to init transaction")
 		}
-		ensureStart := time.Now()
 		_, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, table)
-		ps.state.AddWarehouseState(bulker.WarehouseState{
-			Name:            "ensure_tmp_table",
-			TimeProcessedMs: time.Since(ensureStart).Milliseconds(),
-		})
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to create table")
 		}

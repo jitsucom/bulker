@@ -69,17 +69,12 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 				return ps.state, err
 			}
 		}
-		ensureStart := time.Now()
 		var dstTable *Table
 		dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, ps.dstTable)
 		if err != nil {
 			ps.updateRepresentationTable(ps.dstTable)
 			return ps.state, errorj.Decorate(err, "failed to ensure destination table")
 		}
-		ps.state.AddWarehouseState(bulker.WarehouseState{
-			Name:            "ensure_table",
-			TimeProcessedMs: time.Since(ensureStart).Milliseconds(),
-		})
 		// TODO: workaround: we cannot currently get sort key column from system table in redshift IAM driver
 		if ps.timestampColumn != "" && dstTable.TimestampColumn == "" {
 			c, ok := dstTable.Columns.Get(ps.timestampColumn)
