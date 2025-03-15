@@ -131,9 +131,6 @@ func (ps *AbstractTransactionalSQLStream) initTx(ctx context.Context) (err error
 		return err
 	}
 	if ps.tx == nil {
-		if err = ps.sqlAdapter.Ping(ctx); err != nil {
-			return err
-		}
 		ps.tx, err = ps.sqlAdapter.OpenTx(ctx)
 		if err != nil {
 			return err

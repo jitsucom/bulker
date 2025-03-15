@@ -151,11 +151,29 @@ func (p *RedshiftIAM) validateOptions(streamOptions []bulker.StreamOption) error
 	return nil
 }
 
-// OpenTx opens underline sql transaction and return wrapped instance
 func (p *RedshiftIAM) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
-	return &TxSQLAdapter{sqlAdapter: p, tx: NewDbWrapper(p.Type(), p.dataSource, p.queryLogger, p.checkErrFunc, false)}, nil
-	//return p.openTx(ctx, p)
+	con, err := p.dataSource.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open connection: %v", err)
+	}
+	return &TxSQLAdapter{sqlAdapter: p, tx: NewDbWrapper(p.Type(), con, p.queryLogger, p.checkErrFunc, true)}, nil
 }
+
+func (p *RedshiftIAM) openTx(ctx context.Context, sqlAdapter SQLAdapter) (*TxSQLAdapter, error) {
+	txWrapper, ok := p.txOrDb(ctx).(*TxWrapper)
+	if ok {
+		con, ok := txWrapper.db.(*sql.Conn)
+		if ok {
+			tx, err := con.BeginTx(ctx, nil)
+			if err != nil {
+				return nil, errorj.BeginTransactionError.Wrap(err, "failed to begin transaction")
+			}
+			return &TxSQLAdapter{sqlAdapter: sqlAdapter, tx: NewTxWrapper(p.Type(), tx, p.queryLogger, p.checkErrFunc)}, nil
+		}
+	}
+	return p.SQLAdapterBase.openTx(ctx, sqlAdapter)
+}
+
 func (p *RedshiftIAM) createSchemaIfNotExists(ctx context.Context, schema string) error {
 	if schema == "" {
 		return nil
@@ -569,10 +587,11 @@ func (p *RedshiftIAM) ReplaceTable(ctx context.Context, targetTableName string, 
 }
 
 func (p *RedshiftIAM) Ping(ctx context.Context) error {
-	err := p.SQLAdapterBase.Ping(ctx)
-	if err != nil {
-		return err
-	}
+	// do nothing due to time overhead to initiate connection with assume role
+	//err := p.SQLAdapterBase.Ping(ctx)
+	//if err != nil {
+	//	return err
+	//}
 	return nil
 }
 
