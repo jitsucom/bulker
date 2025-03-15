@@ -28,17 +28,18 @@ type AbstractTransactionalSQLStream struct {
 	tmpTable      *Table
 	existingTable *Table
 	//function that generate tmp table schema based on target table schema
-	tmpTableFunc       func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table)
-	dstTable           *Table
-	temporaryBatchSize int
-	localBatchFileName string
-	batchFile          *os.File
-	marshaller         types.Marshaller
-	targetMarshaller   types.Marshaller
-	eventsInBatch      int
-	s3                 *implementations.S3
-	batchFileLinesByPK map[string]*DeduplicationLine
-	batchFileSkipLines types2.Set[int]
+	tmpTableFunc          func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table)
+	dstTable              *Table
+	temporaryBatchSize    int
+	temporaryBatchCounter int
+	localBatchFileName    string
+	batchFile             *os.File
+	marshaller            types.Marshaller
+	targetMarshaller      types.Marshaller
+	eventsInBatch         int
+	s3                    *implementations.S3
+	batchFileLinesByPK    map[string]*DeduplicationLine
+	batchFileSkipLines    types2.Set[int]
 	// path to discriminator field in object
 	discriminatorColumn string
 	useDiscriminator    bool
@@ -131,6 +132,9 @@ func (ps *AbstractTransactionalSQLStream) initTx(ctx context.Context) (err error
 		return err
 	}
 	if ps.tx == nil {
+		if err = ps.sqlAdapter.Ping(ctx); err != nil {
+			return err
+		}
 		ps.tx, err = ps.sqlAdapter.OpenTx(ctx)
 		if err != nil {
 			return err
@@ -184,6 +188,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		_ = os.Remove(ps.batchFile.Name())
 		ps.batchFile = nil
 		ps.eventsInBatch = 0
+		ps.temporaryBatchCounter++
 	}()
 	if ps.batchFile != nil && ps.eventsInBatch > 0 {
 		ps.updateRepresentationTable(table)
@@ -191,7 +196,14 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to init transaction")
 		}
-		_, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, table)
+		if ps.temporaryBatchCounter == 0 {
+			err = ps.sqlAdapter.CreateTable(ctx, table)
+			if err == nil {
+				ps.sqlAdapter.TableHelper().UpdateCached(table.Name, table)
+			}
+		} else {
+			_, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.tx, ps.id, table)
+		}
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to create table")
 		}

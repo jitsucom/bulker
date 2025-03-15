@@ -25,6 +25,9 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 		return nil, err
 	}
 	ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.namespace, ps.tableName)
+	if ps.existingTable.Exists() {
+		ps.sqlAdapter.TableHelper().UpdateCached(ps.existingTable.Name, ps.existingTable)
+	}
 	ps.initialColumnsCount = ps.existingTable.ColumnsCount()
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		tmpTable := tableForObject.WithoutColumns()
@@ -70,7 +73,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 			}
 		}
 		var dstTable *Table
-		dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, ps.dstTable)
+		dstTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.tx, ps.id, ps.dstTable)
 		if err != nil {
 			ps.updateRepresentationTable(ps.dstTable)
 			return ps.state, errorj.Decorate(err, "failed to ensure destination table")

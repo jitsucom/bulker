@@ -216,7 +216,7 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAda
 		currentSchema.PrimaryKeyName = ""
 	}
 
-	th.updateCached(diff.Name, currentSchema)
+	th.UpdateCached(diff.Name, currentSchema)
 
 	return currentSchema, nil
 }
@@ -233,7 +233,7 @@ func (th *TableHelper) getCachedOrCreateTableSchema(ctx context.Context, sqlAdap
 		return nil, err
 	}
 
-	th.updateCached(dataSchema.Name, dbSchema)
+	th.UpdateCached(dataSchema.Name, dbSchema)
 
 	return dbSchema, nil
 }
@@ -245,7 +245,7 @@ func (th *TableHelper) refreshTableSchema(ctx context.Context, sqlAdapter SQLAda
 		return nil, err
 	}
 
-	th.updateCached(dataSchema.Name, dbTableSchema)
+	th.UpdateCached(dataSchema.Name, dbTableSchema)
 
 	return dbTableSchema, nil
 }
@@ -320,7 +320,7 @@ func (th *TableHelper) Get(ctx context.Context, sqlAdapter SQLAdapter, namespace
 		return nil, err
 	}
 	if table.Exists() && cacheTable {
-		th.updateCached(table.Name, table)
+		th.UpdateCached(table.Name, table)
 	}
 	return table, nil
 }
@@ -336,7 +336,7 @@ func (th *TableHelper) GetCached(tableName string) (*Table, bool) {
 	return nil, false
 }
 
-func (th *TableHelper) updateCached(tableName string, dbSchema *Table) {
+func (th *TableHelper) UpdateCached(tableName string, dbSchema *Table) {
 	th.Lock()
 	cloned := dbSchema.CleanClone()
 	cloned.Cached = true
