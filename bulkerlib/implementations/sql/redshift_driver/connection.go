@@ -326,9 +326,9 @@ func (c *redshiftConnection) wait(ctx context.Context, id *string) (output *reds
 		return false
 	}
 
-	if describeOutput() {
-		return output, err
-	}
+	//if describeOutput() {
+	//	return output, err
+	//}
 
 	for {
 		select {
