@@ -99,8 +99,8 @@ func NewRedshiftIAM(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 			_ = dataSource.Close()
 			return nil, err
 		}
-		dataSource.SetConnMaxIdleTime(59 * time.Minute)
-		dataSource.SetConnMaxLifetime(59 * time.Minute)
+		dataSource.SetConnMaxIdleTime(50 * time.Minute)
+		dataSource.SetConnMaxLifetime(50 * time.Minute)
 		dataSource.SetMaxIdleConns(20)
 		return dataSource, nil
 	}
