@@ -49,7 +49,7 @@ func (bc *BatchConsumerImpl) batchSizes(streamOptions *bulker.StreamOptions) (ma
 	return
 }
 
-func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
+func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
 	bc.Debugf("Starting batch #%d", batchNum)
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 	startTime := time.Now()
@@ -64,6 +64,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 
 	defer func() {
 		if counters.consumed > 0 {
+			state.QueueSize = queueSize
 			bc.postEventsLog(state, processedObjectSample, err)
 		}
 		if err != nil {

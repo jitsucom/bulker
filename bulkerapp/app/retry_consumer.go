@@ -79,7 +79,7 @@ func (rc *RetryConsumer) batchSizes(_ *bulker.StreamOptions) (_, retryBatchSize 
 
 }
 
-func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize int, highOffset int64) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
+func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 
 	var firstPosition *kafka.TopicPartition

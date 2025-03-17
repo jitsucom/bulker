@@ -161,6 +161,7 @@ type State struct {
 	ErrorRowIndex     int            `json:"errorRowIndex,omitempty"`
 	ProcessingTimeSec float64        `json:"processingTimeSec"`
 	WarehouseState    WarehouseState `json:"statistics,omitempty"`
+	QueueSize         int            `json:"queueSize"`
 }
 
 type WarehouseState struct {
