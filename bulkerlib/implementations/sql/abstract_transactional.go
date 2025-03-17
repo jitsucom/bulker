@@ -198,11 +198,8 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		}
 		if ps.temporaryBatchCounter == 0 {
 			err = ps.tx.CreateTable(ctx, table)
-			if err == nil {
-				ps.sqlAdapter.TableHelper().UpdateCached(table.Name, table)
-			}
 		} else {
-			_, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.tx, ps.id, table)
+			_, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, table)
 		}
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to create table")
