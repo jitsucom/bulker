@@ -679,7 +679,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 		sideCarEnv["CLICKHOUSE_PASSWORD"] = j.config.ClickhousePassword
 		sideCarEnv["CLICKHOUSE_SSL"] = fmt.Sprintf("%t", j.config.ClickhouseSSL)
 	}
-	if len(configuration.FunctionsEnv) > 0 {
+	if configuration != nil && len(configuration.FunctionsEnv) > 0 {
 		b, _ := json.Marshal(configuration.FunctionsEnv)
 		sideCarEnv["FUNCTIONS_ENV"] = string(b)
 	}
