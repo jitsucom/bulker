@@ -196,13 +196,19 @@ e.g. if `BULKER_KAFKA_TOPIC_PREFIX=some.prefix.`, then a full topic name could b
 
 ### `BULKER_KAFKA_TOPIC_RETENTION_HOURS`
 
-*Optional, default value: `168` (7 days)*
+*Optional, default value: `48` (2 days)*
 
 Main topic retention time in hours.
 
+### `BULKER_KAFKA_TOPIC_SEGMENT_HOURS`
+
+*Optional, default value: `24` (1 day)*
+
+Maximum time in hours Kafka waits before creating a new log segment (see `segment.ms` in Kafka). Applies to all topic types.
+
 ### `BULKER_KAFKA_RETRY_TOPIC_RETENTION_HOURS`
 
-*Optional, default value: `168` (7 days)*
+*Optional, default value: `48` (2 days)*
 
 Topic for retried events retention time in hours.
 

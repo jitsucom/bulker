@@ -101,7 +101,7 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 			retryTopicMode: {
 				"cleanup.policy": "delete,compact",
 				"segment.bytes":  fmt.Sprint(appContext.config.KafkaRetryTopicSegmentBytes),
-				"retention.ms":   fmt.Sprint(appContext.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
+				"retention.ms":   fmt.Sprint(appContext.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
 				"segment.ms":     fmt.Sprint(appContext.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 			},
 			deadTopicMode: {
@@ -375,7 +375,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 	err = tm.ensureTopic(destinationsRetryTopicName, 1, map[string]string{
 		"cleanup.policy": "delete,compact",
 		"segment.bytes":  fmt.Sprint(tm.config.KafkaRetryTopicSegmentBytes),
-		"retention.ms":   fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
+		"retention.ms":   fmt.Sprint(tm.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
 		"segment.ms":     fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
 	})
 	if err != nil {
