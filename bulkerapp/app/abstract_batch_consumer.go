@@ -232,6 +232,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 	var lowOffset int64
 	commitedOffset := int64(kafka.OffsetBeginning)
 	var highOffset int64
+	var updatedHighOffset int64
 	defer func() {
 		sec := time.Since(startedAt).Seconds()
 		if err != nil {
@@ -273,6 +274,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 
 	consumer := bc.consumer.Load()
 	lowOffset, highOffset, err = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+	updatedHighOffset = highOffset
 	offsets, _ := consumer.Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: 0}}, 1000)
 	if len(offsets) > 0 {
 		commitedOffset = int64(offsets[0].Offset)
@@ -288,7 +290,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 	batchSizeOffset := int64(utils.Ternary(bc.mode == "retry", retryBatchSize, maxBatchSize))
 	queueSize := utils.Ternary(commitedOffset != int64(kafka.OffsetBeginning), math.Max(float64(highOffset-commitedOffset-batchSizeOffset), 0), math.Max(float64(highOffset-lowOffset-batchSizeOffset), 0))
 	metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(queueSize)
-	lastMetricTime := time.Now()
+	lastOffsetQueryTime := time.Now()
 	bc.Debugf("Starting consuming messages from topic. Messages in topic: ~%d. ", highOffset-commitedOffset)
 	batchNumber := 1
 	for {
@@ -311,16 +313,18 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.countersMetric(batchCounters)
 		totalState.Merge(batchState)
 		counters.accumulate(batchCounters)
-		if batchCounters.consumed > 0 && time.Since(lastMetricTime) > 5*time.Minute {
-			_, newHighOffset, err := consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
-			if err != nil {
-				bc.Errorf("Failed to query watermark offsets: %v", err)
-				bc.errorMetric("query_watermark_failed")
-			} else {
-				queueSize = math.Max(float64(newHighOffset-batchCounters.firstOffset-int64(batchCounters.consumed)-batchSizeOffset), 0)
-				metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(queueSize)
+		if batchCounters.consumed > 0 {
+			if time.Since(lastOffsetQueryTime) > 5*time.Minute {
+				var err1 error
+				_, updatedHighOffset, err1 = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+				if err1 != nil {
+					bc.Errorf("Failed to query watermark offsets: %v", err)
+					bc.errorMetric("query_watermark_failed")
+				}
+				lastOffsetQueryTime = time.Now()
 			}
-			lastMetricTime = time.Now()
+			queueSize = math.Max(float64(updatedHighOffset-batchCounters.firstOffset-int64(batchCounters.consumed)-batchSizeOffset), 0)
+			metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(queueSize)
 		}
 		if !nextBatch {
 			err = err2
