@@ -80,7 +80,9 @@ func (s *SpecCatalogSideCar) Run() {
 			row := &Row{}
 			err := jsonorder.Unmarshal(line, row)
 			if err != nil {
-				s.panic("error parsing airbyte line %s: %v", string(line), err)
+				s._log("jitsu", "ERROR", fmt.Sprintf("error parsing airbyte line %s: %v", string(line), err))
+				s.sourceLog("INFO", string(line))
+				continue
 			}
 			switch row.Type {
 			case LogType:

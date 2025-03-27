@@ -209,7 +209,9 @@ func (s *ReadSideCar) Run() {
 			row := &Row{}
 			err := jsonorder.Unmarshal(line, row)
 			if err != nil {
-				s.panic("error parsing airbyte line %s: %v", lineStr, err)
+				s._log("jitsu", "ERROR", fmt.Sprintf("error parsing airbyte line %s: %v", string(line), err))
+				s.sourceLog("INFO", lineStr)
+				continue
 			}
 			switch row.Type {
 			case LogType:
