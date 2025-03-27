@@ -145,6 +145,7 @@ func (f FirebaseSource) Discover(srcCfgPath string, logTracker airbyte.LogTracke
 
 		streams = append(streams, airbyte.Stream{
 			Name:                    collection.ID,
+			Namespace:               "firestore",
 			SourceDefinedPrimaryKey: [][]string{{"id"}},
 			JSONSchema:              airbyte.Properties{},
 			SupportedSyncModes: []airbyte.SyncMode{
@@ -157,6 +158,7 @@ func (f FirebaseSource) Discover(srcCfgPath string, logTracker airbyte.LogTracke
 
 	streams = append(streams, airbyte.Stream{
 		Name:                    "users",
+		Namespace:               "auth",
 		SourceDefinedPrimaryKey: [][]string{{"uid"}},
 		JSONSchema:              airbyte.Properties{},
 		SupportedSyncModes: []airbyte.SyncMode{
@@ -215,13 +217,13 @@ func (f FirebaseSource) Read(sourceCfgPath string, prevStatePath string, configu
 	}
 
 	for _, stream := range configuredCat.Streams {
-		if stream.Stream.Name == "users" {
-			err = loadUsers(ctx, authClient, tracker)
+		if stream.Stream.Namespace == "auth" && stream.Stream.Name == "users" {
+			err = loadUsers(ctx, stream.Stream, authClient, tracker)
 			if err != nil {
 				return err
 			}
 		} else {
-			err = loadCollection(ctx, stream.Stream.Name, firestoreClient, tracker)
+			err = loadCollection(ctx, stream.Stream, firestoreClient, tracker)
 			if err != nil {
 				return err
 			}
@@ -233,7 +235,7 @@ func (f FirebaseSource) Read(sourceCfgPath string, prevStatePath string, configu
 	})
 }
 
-func loadUsers(ctx context.Context, authClient *auth.Client, tracker airbyte.MessageTracker) error {
+func loadUsers(ctx context.Context, stream airbyte.Stream, authClient *auth.Client, tracker airbyte.MessageTracker) error {
 	iter := authClient.Users(ctx, "")
 	var users []map[string]interface{}
 
@@ -261,7 +263,7 @@ func loadUsers(ctx context.Context, authClient *auth.Client, tracker airbyte.Mes
 		user["last_login"] = unixTimestampToISOString(authUser.UserMetadata.LastLogInTimestamp)
 		user["last_refresh"] = unixTimestampToISOString(authUser.UserMetadata.LastRefreshTimestamp)
 		users = append(users, user)
-		err = tracker.Record(user, "users", "")
+		err = tracker.Record(user, stream.Name, stream.Namespace)
 		if err != nil {
 			return err
 		}
@@ -272,10 +274,10 @@ func loadUsers(ctx context.Context, authClient *auth.Client, tracker airbyte.Mes
 // loadCollection gets the exact firestore key or by path with wildcard:
 //
 //	collection/*/sub_collection/*/sub_sub_collection
-func loadCollection(ctx context.Context, collectionName string, firestoreClient *firestore.Client, tracker airbyte.MessageTracker) error {
-	collection := firestoreClient.Collection(collectionName)
+func loadCollection(ctx context.Context, stream airbyte.Stream, firestoreClient *firestore.Client, tracker airbyte.MessageTracker) error {
+	collection := firestoreClient.Collection(stream.Name)
 	if collection == nil {
-		return fmt.Errorf("collection [%s] doesn't exist in Firestore", collectionName)
+		return fmt.Errorf("collection [%s] doesn't exist in Firestore", stream.Name)
 	}
 
 	//firebase doesn't respect big requests
@@ -336,7 +338,7 @@ func loadCollection(ctx context.Context, collectionName string, firestoreClient 
 				}
 			}
 
-			err = tracker.Record(data, collectionName, "")
+			err = tracker.Record(data, stream.Name, stream.Namespace)
 			if err != nil {
 				return err
 			}
