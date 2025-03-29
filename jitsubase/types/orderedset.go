@@ -91,11 +91,7 @@ func (s OrderedSet[K]) Equals(other OrderedSet[K]) bool {
 		return true
 	}
 	if s.Size() == 1 {
-		if s.mp.ll.root.Key != other.mp.ll.root.Key {
-			return false
-		}
-		return true
-
+		return s.mp.ll.Front().Key == other.mp.ll.Front().Key
 	}
 	el2 := other.mp.Front()
 	for el := s.mp.Front(); el != nil; {

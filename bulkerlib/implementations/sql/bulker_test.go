@@ -41,7 +41,7 @@ type TestConfig struct {
 
 type StepFunction func(testConfig bulkerTestConfig, mode bulker.BulkMode) error
 
-var configRegistry = map[string]any{}
+var configRegistry = map[string]TestConfig{}
 
 type ExpectedTable struct {
 	Name      string
@@ -546,11 +546,10 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 			if !utils.ArrayContains(allBulkerConfigs, testConfigId) {
 				continue
 			}
-			testConfigRaw, ok := configRegistry[testConfigId]
+			testConfig, ok := configRegistry[testConfigId]
 			if !ok {
 				t.Fatalf("No config found for %s", testConfigId)
 			}
-			testConfig := testConfigRaw.(TestConfig)
 			newTd.config = &bulker.Config{Id: testConfigId, BulkerType: testConfig.BulkerType, DestinationConfig: testConfig.Config, LogLevel: bulker.Verbose}
 			for _, mode := range newTd.modes {
 				tc := newTd
