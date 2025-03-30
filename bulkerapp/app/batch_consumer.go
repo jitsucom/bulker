@@ -64,7 +64,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 
 	defer func() {
 		if counters.consumed > 0 {
-			state.QueueSize = queueSize
+			state.QueueSize = max(queueSize-int(latestMessage.TopicPartition.Offset-firstPosition.Offset)-1, 0)
 			bc.postEventsLog(state, processedObjectSample, err)
 		}
 		if err != nil {

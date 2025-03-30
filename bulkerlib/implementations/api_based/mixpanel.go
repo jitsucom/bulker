@@ -18,6 +18,8 @@ import (
 const MixpanelBulkerTypeId = "mixpanel"
 const MixpanelUnsupported = "Only 'batch' mode is supported"
 
+var retryDelaysMs = [5]int{100, 200, 200, 500, 0}
+
 func init() {
 	bulker.RegisterBulker(MixpanelBulkerTypeId, NewMixpanelBulker)
 }
@@ -65,44 +67,55 @@ func (mp *MixpanelBulker) Type() string {
 	return MixpanelBulkerTypeId
 }
 
-func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ map[string]any) (int, string, error) {
+func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ map[string]any) (statusCode int, respBody string, err error) {
 	if mp.closed.Load() {
 		return 0, "", fmt.Errorf("attempt to use closed Mixpanel instance")
 	}
 
-	req, err := http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, reader)
-	if err != nil {
-		return 0, "", err
-	}
-	req.Header.Set("Content-Type", "application/x-ndjson")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Encoding", "gzip")
-	serviceAccount := fmt.Sprintf("%s:%s", mp.config.ServiceAccountUserName, mp.config.ServiceAccountPassword)
-	req.Header.Set("Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString([]byte(serviceAccount))))
+	for _, retryDelayMs := range retryDelaysMs {
+		var req *http.Request
+		req, err = http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, reader)
+		if err != nil {
+			return 0, "", err
+		}
+		req.Header.Set("Content-Type", "application/x-ndjson")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Content-Encoding", "gzip")
+		serviceAccount := fmt.Sprintf("%s:%s", mp.config.ServiceAccountUserName, mp.config.ServiceAccountPassword)
+		req.Header.Set("Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString([]byte(serviceAccount))))
 
-	res, err := mp.httpClient.Do(req)
-	if err != nil {
-		return 0, "", err
-	} else {
-		defer res.Body.Close()
-		//get body
-		var body []byte
-		body, err = io.ReadAll(res.Body)
-		strbody := string(body)
-		statusCode := res.StatusCode
-		if statusCode == 200 {
-			return statusCode, strbody, nil
-		} else if statusCode == 400 {
-			if strings.Contains(strbody, "some data points in the request failed validation") {
-				return statusCode, strbody, nil
-			} else {
-				return statusCode, "", mp.NewError("status: %v body: %s", statusCode, strbody)
-			}
+		var res *http.Response
+		res, err = mp.httpClient.Do(req)
+		if err != nil {
+			statusCode = 0
+			respBody = ""
+			time.Sleep(time.Duration(retryDelayMs) * time.Millisecond)
+			continue
 		} else {
-			return statusCode, "", mp.NewError("status: %v body: %s err: %v", statusCode, strbody, err)
+			defer res.Body.Close()
+			var bodyBytes []byte
+			bodyBytes, err = io.ReadAll(res.Body)
+			respBody = string(bodyBytes)
+			statusCode = res.StatusCode
+			switch statusCode {
+			case 200:
+				return statusCode, respBody, nil
+			case 400:
+				if strings.Contains(respBody, "some data points in the request failed validation") {
+					return statusCode, respBody, nil
+				} else {
+					return statusCode, respBody, mp.NewError("http status: %v%s", statusCode, utils.Ternary(err != nil, " err: "+err.Error(), ""))
+				}
+			case 500:
+				err = mp.NewError("http status: %v%s", statusCode, utils.Ternary(err != nil, " err: "+err.Error(), ""))
+				time.Sleep(time.Duration(retryDelayMs) * time.Millisecond)
+				continue
+			default:
+				return statusCode, respBody, mp.NewError("http status: %v%s", statusCode, utils.Ternary(err != nil, " err: "+err.Error(), ""))
+			}
 		}
 	}
-
+	return
 }
 
 func (mp *MixpanelBulker) GetBatchFileFormat() types2.FileFormat {
