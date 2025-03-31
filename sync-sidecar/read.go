@@ -23,11 +23,6 @@ import (
 const interruptError = "Stream was interrupted. Check logs for errors."
 const cancelledError = "Sync job was cancelled"
 
-var forceTemporaryBatchesSources = map[string]int{
-	"airbyte/source-sftp-bulk": 100000,
-	"airbyte/source-file":      100000,
-	"airbyte/source-sftp":      100000,
-}
 var forceTemporaryBatchesDestinations = map[string]int{
 	"webhook": 100,
 }
@@ -470,10 +465,13 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	} else if len(str.DefaultCursorField) > 0 {
 		streamOptions = append(streamOptions, bulker.WithDiscriminatorField(str.DefaultCursorField))
 	}
+
 	if size, ok := forceTemporaryBatchesDestinations[s.blk.Type()]; ok {
 		streamOptions = append(streamOptions, bulker.WithTemporaryBatchSize(size))
-	} else if size, ok := forceTemporaryBatchesSources[s.packageName]; ok {
-		streamOptions = append(streamOptions, bulker.WithTemporaryBatchSize(size))
+	} else if mode == bulker.ReplaceTable {
+		// in replace table mode bulker doesn't use TEMPORARY tables in databases.
+		// that allows us to populate tmp table during long period and through multiple transactions
+		streamOptions = append(streamOptions, bulker.WithTemporaryBatchSize(100000))
 	}
 
 	if namespace != "" {

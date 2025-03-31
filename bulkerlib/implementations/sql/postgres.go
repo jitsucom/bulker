@@ -112,8 +112,8 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		config.Parameters = map[string]string{}
 	}
 	utils.MapPutIfAbsent(config.Parameters, "connect_timeout", "60")
-	utils.MapPutIfAbsent(config.Parameters, "write_timeout", "180000")
-	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "180000")
+	utils.MapPutIfAbsent(config.Parameters, "write_timeout", "300000")
+	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "300000")
 
 	typecastFunc := func(placeholder string, column types2.SQLColumn) string {
 		if column.Override {
