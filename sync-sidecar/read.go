@@ -626,7 +626,7 @@ func (s *ReadSideCar) loadState() (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	st := string(state)
+	st := strings.TrimSpace(string(state))
 	if len(st) == 0 || st == "{}" {
 		return "", false
 	}

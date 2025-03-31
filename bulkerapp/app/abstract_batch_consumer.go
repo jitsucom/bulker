@@ -314,7 +314,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		totalState.Merge(batchState)
 		counters.accumulate(batchCounters)
 		if batchCounters.consumed > 0 {
-			if time.Since(lastOffsetQueryTime) > 1*time.Minute {
+			if time.Since(lastOffsetQueryTime) > 1*time.Minute || !nextBatch {
 				var err1 error
 				_, updatedHighOffset, err1 = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
 				if err1 != nil {
