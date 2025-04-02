@@ -291,6 +291,7 @@ func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 		ps.state.Representation.(RepresentationTable).Schema.Len() != table.ColumnsCount() {
 		ps.state.Representation = RepresentationTable{
 			Name:             table.Name,
+			TargetName:       ps.sqlAdapter.TableName(ps.tableName),
 			Schema:           table.ToSimpleMap(),
 			PrimaryKeyFields: table.GetPKFields(),
 			PrimaryKeyName:   table.PrimaryKeyName,
@@ -301,6 +302,7 @@ func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 
 type RepresentationTable struct {
 	Name             string                          `json:"name"`
+	TargetName       string                          `json:"targetName,omitempty"`
 	Schema           *types2.OrderedMap[string, any] `json:"schema"`
 	PrimaryKeyFields []string                        `json:"primaryKeyFields,omitempty"`
 	PrimaryKeyName   string                          `json:"primaryKeyName,omitempty"`
