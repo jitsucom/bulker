@@ -97,6 +97,10 @@ func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ m
 			bodyBytes, err = io.ReadAll(res.Body)
 			respBody = string(bodyBytes)
 			statusCode = res.StatusCode
+			errText := ""
+			if err != nil {
+				errText = err.Error()
+			}
 			switch statusCode {
 			case 200:
 				return statusCode, respBody, nil
@@ -104,14 +108,14 @@ func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ m
 				if strings.Contains(respBody, "some data points in the request failed validation") {
 					return statusCode, respBody, nil
 				} else {
-					return statusCode, respBody, mp.NewError("http status: %v%s", statusCode, utils.Ternary(err != nil, " err: "+err.Error(), ""))
+					return statusCode, respBody, mp.NewError("http status: %v%s", statusCode, errText)
 				}
 			case 500:
-				err = mp.NewError("http status: %v%s", statusCode, utils.Ternary(err != nil, " err: "+err.Error(), ""))
+				err = mp.NewError("http status: %v%s", statusCode, errText)
 				time.Sleep(time.Duration(retryDelayMs) * time.Millisecond)
 				continue
 			default:
-				return statusCode, respBody, mp.NewError("http status: %v%s", statusCode, utils.Ternary(err != nil, " err: "+err.Error(), ""))
+				return statusCode, respBody, mp.NewError("http status: %v%s", statusCode, errText)
 			}
 		}
 	}
