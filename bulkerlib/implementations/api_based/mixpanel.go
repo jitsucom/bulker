@@ -1,6 +1,7 @@
 package api_based
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -72,9 +73,14 @@ func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ m
 		return 0, "", fmt.Errorf("attempt to use closed Mixpanel instance")
 	}
 
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to read request body: %v", err)
+	}
 	for _, retryDelayMs := range retryDelaysMs {
 		var req *http.Request
-		req, err = http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, reader)
+		//bytes reader
+		req, err = http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, bytes.NewReader(body))
 		if err != nil {
 			return 0, "", err
 		}
