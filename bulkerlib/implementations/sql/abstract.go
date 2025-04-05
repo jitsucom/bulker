@@ -161,14 +161,11 @@ type DWHEnvelope struct {
 	sqlTypesHints   types.SQLTypes
 }
 
-func (dwh *DWHEnvelope) set(fieldName string, value any, skipReformat bool) error {
+func (dwh *DWHEnvelope) set(fieldName string, value any) error {
 	if fieldName == "" {
 		fieldName = "_unnamed"
 	}
 	colName := dwh.sqlAdapter.ColumnName(fieldName)
-	if !skipReformat {
-		value, _ = types.ReformatValue(value)
-	}
 
 	dwh.flattenedObject.Set(colName, value)
 	field, err := ResolveType(fieldName, value, dwh.sqlTypesHints)
@@ -229,13 +226,13 @@ func (ps *AbstractSQLStream) _mapForDwh(key string, value types.Object, dwhEnvel
 				if err != nil {
 					return fmt.Errorf("error marshaling json object with key %s: %v", key, err)
 				}
-				err = dwhEnvelope.set(key, b, true)
+				err = dwhEnvelope.set(key, b)
 				if err != nil {
 					return err
 				}
 
 			} else {
-				err := dwhEnvelope.set(key, types.ObjectToMap(value), true)
+				err := dwhEnvelope.set(key, types.ObjectToMap(value))
 				if err != nil {
 					return err
 				}
@@ -253,7 +250,7 @@ func (ps *AbstractSQLStream) _mapForDwh(key string, value types.Object, dwhEnvel
 		elv := el.Value
 		if elv == nil {
 			if !ps.omitNils {
-				err := dwhEnvelope.set(newKey, elv, true)
+				err := dwhEnvelope.set(newKey, elv)
 				if err != nil {
 					return err
 				}
@@ -262,13 +259,23 @@ func (ps *AbstractSQLStream) _mapForDwh(key string, value types.Object, dwhEnvel
 			}
 		} else {
 			switch o := elv.(type) {
-			case string, json.Number:
-				err := dwhEnvelope.set(newKey, o, false)
+			case string:
+				var v any = o
+				ts, ok := types.ReformatTimeValue(o, false)
+				if ok {
+					v = ts
+				}
+				err := dwhEnvelope.set(newKey, v)
+				if err != nil {
+					return err
+				}
+			case json.Number:
+				err := dwhEnvelope.set(newKey, types.ReformatJSONNumberValue(o))
 				if err != nil {
 					return err
 				}
 			case bool:
-				err := dwhEnvelope.set(newKey, o, true)
+				err := dwhEnvelope.set(newKey, o)
 				if err != nil {
 					return err
 				}
@@ -282,7 +289,7 @@ func (ps *AbstractSQLStream) _mapForDwh(key string, value types.Object, dwhEnvel
 					if err != nil {
 						return fmt.Errorf("error marshaling array with key %s: %v", key, err)
 					}
-					err = dwhEnvelope.set(newKey, string(b), true)
+					err = dwhEnvelope.set(newKey, string(b))
 					if err != nil {
 						return err
 					}
@@ -293,7 +300,7 @@ func (ps *AbstractSQLStream) _mapForDwh(key string, value types.Object, dwhEnvel
 							return types.ObjectToMap(o)
 						}
 						return obj
-					}), true)
+					}))
 					if err != nil {
 						return err
 					}
@@ -305,20 +312,20 @@ func (ps *AbstractSQLStream) _mapForDwh(key string, value types.Object, dwhEnvel
 					if err != nil {
 						return fmt.Errorf("error marshaling array with key %s: %v", key, err)
 					}
-					err = dwhEnvelope.set(newKey, string(b), true)
+					err = dwhEnvelope.set(newKey, string(b))
 					if err != nil {
 						return err
 					}
 				} else {
 					err := dwhEnvelope.set(newKey, utils.ArrayMap(o, func(obj types.Object) map[string]any {
 						return types.ObjectToMap(obj)
-					}), true)
+					}))
 					if err != nil {
 						return err
 					}
 				}
 			case int, int64, float64, time.Time:
-				err := dwhEnvelope.set(newKey, o, true)
+				err := dwhEnvelope.set(newKey, o)
 				if err != nil {
 					return err
 				}
@@ -332,12 +339,12 @@ func (ps *AbstractSQLStream) _mapForDwh(key string, value types.Object, dwhEnvel
 						if err != nil {
 							return fmt.Errorf("error marshaling array with key %s: %v", key, err)
 						}
-						err = dwhEnvelope.set(newKey, string(b), true)
+						err = dwhEnvelope.set(newKey, string(b))
 						if err != nil {
 							return err
 						}
 					} else {
-						err := dwhEnvelope.set(newKey, elv, true)
+						err := dwhEnvelope.set(newKey, elv)
 						if err != nil {
 							return err
 						}
@@ -345,7 +352,7 @@ func (ps *AbstractSQLStream) _mapForDwh(key string, value types.Object, dwhEnvel
 				case reflect.Map:
 					return fmt.Errorf("flattener doesn't support map. Object is required")
 				default:
-					err := dwhEnvelope.set(newKey, elv, true)
+					err := dwhEnvelope.set(newKey, elv)
 					if err != nil {
 						return err
 					}
