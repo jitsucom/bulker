@@ -489,7 +489,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) (*Table, er
 
 	//create distributed table
 	if ch.distributed.Load() {
-		return nil, ch.createDistributedTableInTransaction(ctx, table)
+		return table, ch.createDistributedTableInTransaction(ctx, table)
 	}
 
 	return table, nil
