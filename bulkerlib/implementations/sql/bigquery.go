@@ -351,7 +351,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (t *Table, er
 	_, err = bqTable.Metadata(ctx)
 	if err == nil {
 		bq.Infof("BigQuery table %s already exists", tableName)
-		return nil, nil
+		return table, nil
 	}
 
 	if !isNotFoundErr(err) {

@@ -468,7 +468,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) (*Table, er
 					Statement: query,
 				})
 		}
-		return nil, nil
+		return table, nil
 	}
 	columnsDDL := table.MappedColumns(func(name string, column types.SQLColumn) string {
 		return ch.columnDDL(name, table, column)
