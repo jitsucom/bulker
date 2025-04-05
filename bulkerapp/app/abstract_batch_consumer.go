@@ -277,7 +277,9 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 	updatedHighOffset = highOffset
 	offsets, _ := consumer.Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: 0}}, 1000)
 	if len(offsets) > 0 {
-		commitedOffset = int64(offsets[0].Offset)
+		if offsets[0].Offset != kafka.OffsetInvalid {
+			commitedOffset = int64(offsets[0].Offset)
+		}
 	}
 	if err != nil {
 		bc.errorMetric("query_watermark_failed")

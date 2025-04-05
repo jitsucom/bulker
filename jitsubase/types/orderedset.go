@@ -64,6 +64,14 @@ func (s OrderedSet[K]) Clone() OrderedSet[K] {
 	return newSortedSet
 }
 
+func (s OrderedSet[K]) Map(f func(K) K) OrderedSet[K] {
+	newSortedSet := NewOrderedSet[K]()
+	for el := s.mp.Front(); el != nil; el = el.Next() {
+		newSortedSet.Put(f(el.Key))
+	}
+	return newSortedSet
+}
+
 func (s OrderedSet[K]) Size() int {
 	return s.mp.Len()
 }

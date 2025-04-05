@@ -48,32 +48,39 @@ func (tr *TypeResolverImpl) Resolve(object types2.Object, sqlTypeHints types2.SQ
 		if ok {
 			el.Value = v
 		}
-		//value type
-		resultColumnType, err := types2.TypeFromValue(v)
+		field, err := ResolveType(k, v, sqlTypeHints)
 		if err != nil {
-			return nil, fmt.Errorf("Error getting type of field [%s]: %v", k, err)
+			return nil, err
 		}
-
-		////default typecast
-		//if defaultType, ok := types2.DefaultTypes[k]; ok {
-		//	converted, err := types2.Convert(defaultType, v)
-		//	if err != nil {
-		//		return nil, fmt.Errorf("Error default converting field [%s]: %v", k, err)
-		//	}
-		//
-		//	resultColumnType = defaultType
-		//	object[k] = converted
-		//}
-		if sqlTypeHints == nil {
-			fields = append(fields, NewField(k, resultColumnType))
-		} else {
-			if sqlType, ok := sqlTypeHints[k]; ok {
-				fields = append(fields, NewFieldWithSQLType(k, resultColumnType, &sqlType))
-			} else {
-				fields = append(fields, NewField(k, resultColumnType))
-			}
-		}
+		fields = append(fields, field)
 	}
 
 	return fields, nil
+}
+
+func ResolveType(name string, value any, sqlTypeHints types2.SQLTypes) (Field, error) {
+	resultColumnType, err := types2.TypeFromValue(value)
+	if err != nil {
+		return Field{}, fmt.Errorf("Error getting type of field [%s] value %v: %v", name, value, err)
+	}
+
+	if sqlTypeHints == nil {
+		return Field{
+			Name:     name,
+			dataType: &resultColumnType,
+		}, nil
+	} else {
+		if sqlType, ok := sqlTypeHints[name]; ok {
+			return Field{
+				Name:          name,
+				dataType:      &resultColumnType,
+				suggestedType: &sqlType,
+			}, nil
+		} else {
+			return Field{
+				Name:     name,
+				dataType: &resultColumnType,
+			}, nil
+		}
+	}
 }

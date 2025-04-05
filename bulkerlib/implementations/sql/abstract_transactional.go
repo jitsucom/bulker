@@ -178,7 +178,7 @@ func (ps *AbstractTransactionalSQLStream) postComplete(ctx context.Context, err 
 }
 
 func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (state bulker.WarehouseState, err error) {
-	table := ps.tmpTable
+	tmpTable := ps.tmpTable
 	defer func() {
 		if ps.merge {
 			ps.batchFileLinesByPK = make(map[string]*DeduplicationLine)
@@ -191,15 +191,15 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		ps.temporaryBatchCounter++
 	}()
 	if ps.batchFile != nil && ps.eventsInBatch > 0 {
-		ps.updateRepresentationTable(table)
+		ps.updateRepresentationTable(tmpTable)
 		err = ps.initTx(ctx)
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to init transaction")
 		}
 		if ps.temporaryBatchCounter == 0 {
-			err = ps.tx.CreateTable(ctx, table)
+			_, err = ps.tx.CreateTable(ctx, tmpTable)
 		} else {
-			_, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, table)
+			_, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, tmpTable)
 		}
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to create table")
@@ -241,7 +241,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			}()
 			writer = workingFile
 			if needToConvert {
-				err = ps.targetMarshaller.InitSchema(workingFile, table.ColumnNames(), ps.sqlAdapter.GetAvroSchema(table))
+				err = ps.targetMarshaller.InitSchema(workingFile, tmpTable.ColumnNames(), ps.sqlAdapter.GetAvroSchema(tmpTable))
 				if err != nil {
 					return state, errorj.Decorate(err, "failed to write header for converted batch file")
 				}
@@ -341,7 +341,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 			})
 			logging.Infof("[%s] Batch file uploaded to s3 in %.2f s.", ps.id, time.Since(loadTime).Seconds())
 			loadTime = time.Now()
-			loadState, err := ps.tx.LoadTable(ctx, table, &LoadSource{Type: AmazonS3, Path: s3FileName, URL: url, Format: ps.sqlAdapter.GetBatchFileFormat(), S3Config: s3Config})
+			loadState, err := ps.tx.LoadTable(ctx, tmpTable, &LoadSource{Type: AmazonS3, Path: s3FileName, URL: url, Format: ps.sqlAdapter.GetBatchFileFormat(), S3Config: s3Config})
 			state.Merge(loadState)
 			if err != nil {
 				return state, errorj.Decorate(err, "failed to flush tmp file to the warehouse")
@@ -349,7 +349,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				logging.Debugf("[%s] Batch file loaded to %s in %.2f s.", ps.id, ps.sqlAdapter.Type(), time.Since(loadTime).Seconds())
 			}
 		} else {
-			loadState, err := ps.tx.LoadTable(ctx, table, &LoadSource{Type: LocalFile, Path: workingFile.Name(), Format: ps.sqlAdapter.GetBatchFileFormat()})
+			loadState, err := ps.tx.LoadTable(ctx, tmpTable, &LoadSource{Type: LocalFile, Path: workingFile.Name(), Format: ps.sqlAdapter.GetBatchFileFormat()})
 			state.Merge(loadState)
 			if err != nil {
 				return state, errorj.Decorate(err, "failed to flush tmp file to the warehouse")
@@ -545,7 +545,7 @@ func (ps *AbstractTransactionalSQLStream) Abort(ctx context.Context) (state bulk
 }
 
 func (ps *AbstractTransactionalSQLStream) getPKValue(object types.Object) (string, error) {
-	pkColumns := ps.pkColumns
+	pkColumns := ps.pkColumnsArrays
 	l := len(pkColumns)
 	if l == 0 {
 		return "", fmt.Errorf("primary key is not set")

@@ -72,17 +72,12 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 		namespace = th.TableName(namespace)
 	}
 	table := &Table{
-		Name:      sqlAdapter.TableName(batchHeader.TableName),
-		Namespace: namespace,
-		Columns:   NewColumns(),
-		Partition: batchHeader.Partition,
-		PKFields:  adaptedPKFields,
-	}
-	table.TimestampColumn = timestampColumn
-
-	//pk fields from the configuration
-	if !adaptedPKFields.Empty() {
-		table.PrimaryKeyName = sqlAdapter.BuildConstraintName(table.Name)
+		Name:            sqlAdapter.TableName(batchHeader.TableName),
+		Namespace:       namespace,
+		Columns:         NewColumns(),
+		Partition:       batchHeader.Partition,
+		PKFields:        adaptedPKFields,
+		TimestampColumn: timestampColumn,
 	}
 
 	for _, field := range batchHeader.Fields {
@@ -198,7 +193,9 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAda
 	}
 	defer tableLock.Unlock()
 
-	if err := sqlAdapter.PatchTableSchema(ctx, diff); err != nil {
+	var patched *Table
+	patched, err = sqlAdapter.PatchTableSchema(ctx, diff)
+	if err != nil {
 		return nil, err
 	}
 
@@ -210,7 +207,7 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAda
 	//pk fields
 	if !diff.PKFields.Empty() {
 		currentSchema.PKFields = diff.PKFields
-		currentSchema.PrimaryKeyName = diff.PrimaryKeyName
+		currentSchema.PrimaryKeyName = patched.PrimaryKeyName
 	} else if diff.DeletePrimaryKeyNamed != "" {
 		currentSchema.PKFields = types.OrderedSet[string]{}
 		currentSchema.PrimaryKeyName = ""
@@ -271,14 +268,16 @@ func (th *TableHelper) getOrCreate(ctx context.Context, sqlAdapter SQLAdapter, d
 
 	//create new
 	if !dbTableSchema.Exists() {
-		if err := sqlAdapter.CreateTable(ctx, dataSchema); err != nil {
+		var created *Table
+		created, err = sqlAdapter.CreateTable(ctx, dataSchema)
+		if err != nil {
 			return nil, err
 		}
 
 		dbTableSchema.Name = dataSchema.Name
 		dbTableSchema.Columns = dataSchema.Columns
 		dbTableSchema.PKFields = dataSchema.PKFields
-		dbTableSchema.PrimaryKeyName = dataSchema.PrimaryKeyName
+		dbTableSchema.PrimaryKeyName = utils.DefaultString(dataSchema.PrimaryKeyName, created.PrimaryKeyName)
 		dbTableSchema.TimestampColumn = dataSchema.TimestampColumn
 	}
 

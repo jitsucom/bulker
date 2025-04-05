@@ -13,7 +13,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"os"
 	"path"
 	"regexp"
@@ -330,16 +329,11 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, namespace string, tableN
 	table.PKFields = pkFields
 	table.PrimaryKeyName = primaryKeyName
 
-	jitsuPrimaryKeyName := s.BuildConstraintName(table.Name)
-	if primaryKeyName != "" && strings.ToLower(primaryKeyName) != strings.ToLower(jitsuPrimaryKeyName) {
-		s.Debugf("table: %s has a custom primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key_fields configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
+	if primaryKeyName != "" && !strings.HasPrefix(strings.ToLower(primaryKeyName), BulkerManagedPkConstraintPrefix) {
+		s.Infof("table: %s has a primary key with name: %s that isn't managed by Jitsu. Custom primary key will be used in rows deduplication and updates. primary_key configuration provided in Jitsu config will be ignored.", table.Name, primaryKeyName)
 	}
 
 	return table, nil
-}
-
-func (s *Snowflake) BuildConstraintName(tableName string) string {
-	return strings.ToUpper(fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers()))
 }
 
 // getPrimaryKey returns primary key name and fields
@@ -552,23 +546,23 @@ func sfIdentifierFunction(value string, alphanumeric bool) (adapted string, need
 	}
 }
 
-func (s *Snowflake) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+func (s *Snowflake) CreateTable(ctx context.Context, schemaToCreate *Table) (*Table, error) {
 	err := s.createSchemaIfNotExists(ctx, schemaToCreate.Namespace)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = s.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
 		err = s.createClusteringKey(ctx, schemaToCreate)
 		if err != nil {
 			s.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)
-			return fmt.Errorf("failed to create sort key: %v", err)
+			return nil, fmt.Errorf("failed to create sort key: %v", err)
 		}
 	}
-	return nil
+	return schemaToCreate, nil
 }
 
 func (s *Snowflake) createClusteringKey(ctx context.Context, table *Table) error {

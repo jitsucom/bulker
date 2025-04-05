@@ -53,7 +53,6 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 			TimestampColumn: tableForObject.TimestampColumn,
 		}
 		if p.TmpTableUsePK() {
-			t.PrimaryKeyName = p.BuildConstraintName(tmpTableName)
 			t.PKFields = tableForObject.PKFields
 		}
 		return t

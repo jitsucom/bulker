@@ -44,7 +44,6 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 			TimestampColumn: tableForObject.TimestampColumn,
 		}
 		if p.TmpTableUsePK() {
-			t.PrimaryKeyName = p.BuildConstraintName(tmpTableName)
 			t.PKFields = tableForObject.PKFields
 		}
 		return t

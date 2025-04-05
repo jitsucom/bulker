@@ -445,10 +445,10 @@ func (ch *ClickHouse) InitDatabase(ctx context.Context) error {
 
 // CreateTable create database table with name,columns provided in Table representation
 // New tables will have MergeTree() or ReplicatedMergeTree() engine depends on config.cluster empty or not
-func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
+func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) (*Table, error) {
 	err := ch.createDatabaseIfNotExists(ctx, table.Namespace)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	quotedSchema := ch.namespacePrefix(table.Namespace)
 
@@ -462,13 +462,13 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 		query := fmt.Sprintf(createTableTemplate, "TEMPORARY", quotedSchema, ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
 
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-			return errorj.CreateTableError.Wrap(err, "failed to create table").
+			return nil, errorj.CreateTableError.Wrap(err, "failed to create table").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
 					Table:     table.Name,
 					Statement: query,
 				})
 		}
-		return nil
+		return nil, nil
 	}
 	columnsDDL := table.MappedColumns(func(name string, column types.SQLColumn) string {
 		return ch.columnDDL(name, table, column)
@@ -477,7 +477,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 	statementStr := ch.tableStatementFactory.CreateTableStatement(quotedSchema, ch.quotedLocalTableName(table.Name), ch.TableName(table.Name), strings.Join(columnsDDL, ","), table)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, statementStr); err != nil {
-		return errorj.CreateTableError.Wrap(err, "failed to create table").
+		return nil, errorj.CreateTableError.Wrap(err, "failed to create table").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Database:    ch.config.Database,
 				Cluster:     ch.config.Cluster,
@@ -489,10 +489,10 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) error {
 
 	//create distributed table
 	if ch.distributed.Load() {
-		return ch.createDistributedTableInTransaction(ctx, table)
+		return nil, ch.createDistributedTableInTransaction(ctx, table)
 	}
 
-	return nil
+	return table, nil
 }
 
 // GetTableSchema return table (name,columns with name and types) representation wrapped in Table struct
@@ -591,14 +591,14 @@ func (ch *ClickHouse) getPrimaryKey(ctx context.Context, namespace, tableName st
 	}
 	primaryKeys := types2.NewOrderedSet[string]()
 	primaryKeys.PutAll(utils.ArrayMap(strings.Split(pkString, ","), strings.TrimSpace))
-	return ch.BuildConstraintName(tableName), primaryKeys, nil
+	return BuildConstraintName(tableName), primaryKeys, nil
 }
 
 // PatchTableSchema add new columns(from provided Table) to existing table
 // drop and create distributed table
-func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) error {
+func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) (*Table, error) {
 	if patchSchema.ColumnsCount() == 0 {
-		return nil
+		return patchSchema, nil
 	}
 	addedColumnsDDL := patchSchema.MappedColumns(func(columnName string, column types.SQLColumn) string {
 		return "ADD COLUMN " + ch.columnDDL(columnName, patchSchema, column)
@@ -608,7 +608,7 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 	query := fmt.Sprintf(chAlterTableTemplate, namespace, ch.quotedLocalTableName(patchSchema.Name), ch.getOnClusterClause(), strings.Join(addedColumnsDDL, ", "))
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
-		return errorj.PatchTableError.Wrap(err, "failed to patch table").
+		return nil, errorj.PatchTableError.Wrap(err, "failed to patch table").
 			WithProperty(errorj.DBInfo, &types.ErrorPayload{
 				Database:    ch.config.Database,
 				Cluster:     ch.config.Cluster,
@@ -626,12 +626,12 @@ func (ch *ClickHouse) PatchTableSchema(ctx context.Context, patchSchema *Table) 
 			ch.Errorf("Error altering distributed table for [%s] with statement [%s]: %v", patchSchema.Name, query, err)
 			// fallback for older clickhouse versions: drop and create distributed table if ReplicatedMergeTree engine
 			ch.dropTable(ctx, namespace, ch.quotedTableName(patchSchema.Name), ch.getOnClusterClause(), true)
-			return ch.createDistributedTableInTransaction(ctx, patchSchema)
+			return nil, ch.createDistributedTableInTransaction(ctx, patchSchema)
 		}
 
 	}
 
-	return nil
+	return patchSchema, nil
 }
 
 func (ch *ClickHouse) Select(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {

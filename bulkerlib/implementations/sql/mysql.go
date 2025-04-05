@@ -347,13 +347,9 @@ func (m *MySQL) GetTableSchema(ctx context.Context, namespace string, tableName 
 	table.PKFields = pkFields
 	if pkFields.Size() > 0 {
 		//in MySQL primary key has always name: "PRIMARY"
-		table.PrimaryKeyName = m.BuildConstraintName(table.Name)
+		table.PrimaryKeyName = BuildConstraintName(tableName)
 	}
 	return table, nil
-}
-
-func (m *MySQL) BuildConstraintName(tableName string) string {
-	return "PRIMARY"
 }
 
 func (m *MySQL) getTable(ctx context.Context, namespace, tableName string) (*Table, error) {
@@ -523,23 +519,23 @@ func mySQLMapColumnValue(value any, valuePresent bool, column types2.SQLColumn) 
 	return value
 }
 
-func (m *MySQL) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+func (m *MySQL) CreateTable(ctx context.Context, schemaToCreate *Table) (*Table, error) {
 	err := m.createDatabaseIfNotExists(ctx, schemaToCreate.Namespace)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = m.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
 		err = m.createIndex(ctx, schemaToCreate)
 		if err != nil {
 			m.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)
-			return fmt.Errorf("failed to create sort key: %v", err)
+			return nil, fmt.Errorf("failed to create sort key: %v", err)
 		}
 	}
-	return nil
+	return schemaToCreate, nil
 }
 
 func (m *MySQL) createPrimaryKey(ctx context.Context, table *Table) error {

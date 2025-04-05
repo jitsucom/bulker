@@ -208,7 +208,6 @@ func (t *Table) Diff(sqlAdapter SQLAdapter, another *Table) *Table {
 		}
 	}
 
-	jitsuPrimaryKeyName := sqlAdapter.BuildConstraintName(t.Name)
 	classicPrimaryKeyName := t.Namespace + "_" + t.Name + "_pk"
 	jitsuManagedPk := strings.HasPrefix(strings.ToLower(t.PrimaryKeyName), BulkerManagedPkConstraintPrefix) || (t.PrimaryKeyName == classicPrimaryKeyName && t.PKFields.Size() == 1 && t.PKFields.Contains("eventn_ctx_event_id"))
 	//check if primary key is maintained by Jitsu (for Postgres and Redshift)
@@ -223,14 +222,10 @@ func (t *Table) Diff(sqlAdapter SQLAdapter, another *Table) *Table {
 			//re-create or delete if another.PKFields is empty
 			diff.DeletePrimaryKeyNamed = t.PrimaryKeyName
 			diff.PKFields = another.PKFields
-			if another.PKFields.Size() > 0 {
-				diff.PrimaryKeyName = jitsuPrimaryKeyName
-			}
 		}
 	} else if another.PKFields.Size() > 0 {
 		//create
 		diff.PKFields = another.PKFields
-		diff.PrimaryKeyName = jitsuPrimaryKeyName
 	}
 
 	return diff

@@ -67,6 +67,10 @@ type TypeCastFunction func(placeholder string, column types2.SQLColumn) string
 // ErrorAdapter is used to extract implementation specific payload and adapt to standard error
 type ErrorAdapter func(error) error
 
+func BuildConstraintName(tableName string) string {
+	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers())
+}
+
 type SQLAdapterBase[T any] struct {
 	appbase.Service
 	typeId string
@@ -595,7 +599,7 @@ func (b *SQLAdapterBase[T]) createTableOnly(ctx context.Context, schemaToCreate 
 
 // PatchTableSchema alter table with columns (if not empty)
 // recreate primary key (if not empty) or delete primary key if Table.DeletePrimaryKeyNamed is true
-func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Table) error {
+func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Table) (*Table, error) {
 	quotedTableName := b.quotedTableName(patchTable.Name)
 	quotedSchema := b.namespacePrefix(patchTable.Namespace)
 
@@ -615,14 +619,14 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	//patch primary keys - delete old
 	if patchTable.DeletePrimaryKeyNamed != "" {
 		err := b.deletePrimaryKey(ctx, patchTable)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -630,11 +634,11 @@ func (b *SQLAdapterBase[T]) PatchTableSchema(ctx context.Context, patchTable *Ta
 	if patchTable.PKFields.Size() > 0 {
 		err := b.createPrimaryKey(ctx, patchTable)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return patchTable, nil
 }
 
 // createPrimaryKey create primary key constraint
@@ -652,6 +656,10 @@ func (b *SQLAdapterBase[T]) createPrimaryKey(ctx context.Context, table *Table) 
 	columnNames := make([]string, table.PKFields.Size())
 	for i, column := range table.GetPKFields() {
 		columnNames[i] = b.quotedColumnName(column)
+	}
+
+	if table.PrimaryKeyName == "" {
+		table.PrimaryKeyName = BuildConstraintName(table.Name)
 	}
 
 	statement := fmt.Sprintf(alterPrimaryKeyTemplate, quotedSchema,
@@ -823,10 +831,6 @@ func (b *SQLAdapterBase[T]) GetAvroType(sqlType string) (any, bool) {
 func (b *SQLAdapterBase[T]) GetAvroSchema(table *Table) *types2.AvroSchema {
 	// not really an avro schema in a base driver
 	return nil
-}
-
-func (b *SQLAdapterBase[T]) BuildConstraintName(tableName string) string {
-	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers())
 }
 
 func (b *SQLAdapterBase[T]) DefaultNamespace() string {

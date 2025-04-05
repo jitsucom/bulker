@@ -37,10 +37,10 @@ type SQLAdapter interface {
 	InitDatabase(ctx context.Context) error
 	TableHelper() *TableHelper
 	GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error)
-	CreateTable(ctx context.Context, schemaToCreate *Table) error
+	CreateTable(ctx context.Context, schemaToCreate *Table) (*Table, error)
 	CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error)
 	LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error)
-	PatchTableSchema(ctx context.Context, patchTable *Table) error
+	PatchTableSchema(ctx context.Context, patchTable *Table) (*Table, error)
 	TruncateTable(ctx context.Context, namespace string, tableName string) error
 	//(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error
 	Delete(ctx context.Context, namespace string, tableName string, deleteConditions *WhenConditions) error
@@ -56,7 +56,6 @@ type SQLAdapter interface {
 	ColumnName(rawColumn string) string
 	// TableName adapts table name to sql identifier rules of database
 	TableName(rawTableName string) string
-	BuildConstraintName(tableName string) string
 	DefaultNamespace() string
 	// TmpNamespace returns namespace used by temporary tables, e.g. for warehouses where temporary tables
 	// must not be specified with schema or db prefix NoNamespaceValue constant must be used
@@ -155,7 +154,7 @@ func (tx *TxSQLAdapter) GetTableSchema(ctx context.Context, namespace string, ta
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.GetTableSchema(ctx, namespace, tableName)
 }
-func (tx *TxSQLAdapter) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+func (tx *TxSQLAdapter) CreateTable(ctx context.Context, schemaToCreate *Table) (*Table, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.CreateTable(ctx, schemaToCreate)
 }
@@ -167,7 +166,7 @@ func (tx *TxSQLAdapter) LoadTable(ctx context.Context, targetTable *Table, loadS
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.LoadTable(ctx, targetTable, loadSource)
 }
-func (tx *TxSQLAdapter) PatchTableSchema(ctx context.Context, patchTable *Table) error {
+func (tx *TxSQLAdapter) PatchTableSchema(ctx context.Context, patchTable *Table) (*Table, error) {
 	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	return tx.sqlAdapter.PatchTableSchema(ctx, patchTable)
 }
@@ -220,8 +219,4 @@ func (tx *TxSQLAdapter) ColumnName(identifier string) string {
 
 func (tx *TxSQLAdapter) TableName(identifier string) string {
 	return tx.sqlAdapter.TableName(identifier)
-}
-
-func (tx *TxSQLAdapter) BuildConstraintName(tableName string) string {
-	return tx.sqlAdapter.BuildConstraintName(tableName)
 }
