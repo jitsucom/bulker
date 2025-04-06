@@ -23,6 +23,12 @@ var (
 		ParseFunc:    utils.ParseInt,
 	}
 
+	BatchSizeBytesOption = ImplementationOption[int]{
+		Key:          "batchSizeBytes",
+		DefaultValue: 0,
+		ParseFunc:    utils.ParseInt,
+	}
+
 	TemporaryBatchSizeOption = ImplementationOption[int]{
 		Key:          "temporaryBatchSize",
 		DefaultValue: 0,
@@ -171,6 +177,7 @@ var (
 func init() {
 	RegisterOption(&ModeOption)
 	RegisterOption(&BatchSizeOption)
+	RegisterOption(&BatchSizeBytesOption)
 	RegisterOption(&TemporaryBatchSizeOption)
 	RegisterOption(&BatchFrequencyOption)
 	RegisterOption(&RetryFrequencyOption)
@@ -312,7 +319,9 @@ func WithToSameCase() StreamOption {
 }
 
 func WithTemporaryBatchSize(temporaryBatchSize int) StreamOption {
-	return func(options *StreamOptions) {
-		TemporaryBatchSizeOption.Set(options, temporaryBatchSize)
-	}
+	return WithOption(&TemporaryBatchSizeOption, temporaryBatchSize)
+}
+
+func WithBatchSizeBytes(batchSizeBytes int) StreamOption {
+	return WithOption(&BatchSizeBytesOption, batchSizeBytes)
 }

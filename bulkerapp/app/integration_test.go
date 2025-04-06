@@ -179,6 +179,40 @@ func TestGoodAndBadStreams(t *testing.T) {
 	}
 }
 
+func TestBathSizeBytes(t *testing.T) {
+	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "0",
+		"BULKER_TOPIC_MANAGER_REFRESH_PERIOD_SEC": "1",
+		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC":  "1"})
+	t.Cleanup(func() {
+		app.Exit(appbase.SIG_SHUTDOWN_FOR_TESTS)
+		time.Sleep(5 * time.Second)
+		if postgresContainer != nil {
+			_ = postgresContainer.Close()
+		}
+		if kafkaContainer != nil {
+			_ = kafkaContainer.Close()
+		}
+	})
+
+	tests := []AppTestConfig{
+		{
+			name:                       "good_batch_bytes",
+			destinationId:              "batch_postgres_bytes",
+			eventsFile:                 "test_data/goodbatch.ndjson",
+			token:                      "21a2ae36-32994870a9fbf2f61ea6f6c8",
+			waitAfterAllMessageSentSec: 10,
+			expectedRowsCount:          30,
+			expectedDeadCount:          0,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			integrationTest(t, tt, postgresContainer)
+		})
+	}
+}
+
 // Test that retry consumer works
 func TestEventsRetry(t *testing.T) {
 	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "20",

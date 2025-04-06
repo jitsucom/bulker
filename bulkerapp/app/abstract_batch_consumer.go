@@ -25,8 +25,8 @@ const errorHeader = "error"
 
 const pauseHeartBeatInterval = 120 * time.Second
 
-type BatchSizesFunction func(*bulker.StreamOptions) (batchSize int, retryBatchSize int)
-type BatchFunction func(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBatch bool, err error)
+type BatchSizesFunction func(*bulker.StreamOptions) (batchSize int, batchSizeBytes int, retryBatchSize int)
+type BatchFunction func(destination *Destination, batchNum, batchSize, batchSizeBytes, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBatch bool, err error)
 type ShouldConsumeFunction func(committedOffset, highOffset int64) bool
 
 type BatchConsumer interface {
@@ -270,7 +270,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		}()
 	}
 
-	maxBatchSize, retryBatchSize := bc.batchSizeFunc(streamOptions)
+	maxBatchSize, maxBatchSizeBytes, retryBatchSize := bc.batchSizeFunc(streamOptions)
 
 	consumer := bc.consumer.Load()
 	lowOffset, highOffset, err = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
@@ -306,7 +306,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 				return
 			}
 		}
-		batchCounters, batchState, nextBatch, err2 := bc.processBatch(destination, batchNumber, maxBatchSize, retryBatchSize, highOffset, int(queueSize))
+		batchCounters, batchState, nextBatch, err2 := bc.processBatch(destination, batchNumber, maxBatchSize, maxBatchSizeBytes, retryBatchSize, highOffset, int(queueSize))
 		if err2 != nil {
 			if nextBatch {
 				bc.Errorf("Batch finished with error: %v stats: %s nextBatch: %t", err2, batchCounters, nextBatch)
@@ -345,9 +345,9 @@ func (bc *AbstractBatchConsumer) close() error {
 	return bc.consumer.Load().Close()
 }
 
-func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBath bool, err error) {
+func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, batchSizeBytes, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBath bool, err error) {
 	bc.resume()
-	return bc.batchFunc(destination, batchNum, batchSize, retryBatchSize, highOffset, queueSize)
+	return bc.batchFunc(destination, batchNum, batchSize, batchSizeBytes, retryBatchSize, highOffset, queueSize)
 }
 
 func (bc *AbstractBatchConsumer) shouldConsume(committedOffset, highOffset int64) bool {
@@ -545,9 +545,13 @@ func (bc *AbstractBatchConsumer) countersMetric(counters BatchCounters) {
 	countersValue := reflect.ValueOf(counters)
 	countersType := countersValue.Type()
 	for i := 0; i < countersValue.NumField(); i++ {
+		metricName := countersType.Field(i).Name
+		if metricName == "firstOffset" {
+			continue
+		}
 		value := countersValue.Field(i).Int()
 		if value > 0 {
-			metrics.ConsumerMessages(bc.topicId, bc.mode, bc.destinationId, bc.tableName, countersType.Field(i).Name).Add(float64(value))
+			metrics.ConsumerMessages(bc.topicId, bc.mode, bc.destinationId, bc.tableName, metricName).Add(float64(value))
 		}
 	}
 }
@@ -556,6 +560,7 @@ type BatchCounters struct {
 	consumed        int
 	skipped         int
 	processed       int
+	processedBytes  int
 	notReadyReadded int
 	retryScheduled  int
 	retried         int
@@ -567,6 +572,7 @@ type BatchCounters struct {
 // accumulate stats from batch
 func (bs *BatchCounters) accumulate(batchStats BatchCounters) {
 	bs.consumed += batchStats.consumed
+	bs.processedBytes += batchStats.processedBytes
 	bs.skipped += batchStats.skipped
 	bs.processed += batchStats.processed
 	bs.notReadyReadded += batchStats.notReadyReadded
