@@ -168,12 +168,12 @@ func (p *Producer) Close() error {
 	if p == nil || p.isClosed() {
 		return nil
 	}
+	p.closed.Store(true)
 	notProduced := p.producer.Flush(10000)
 	if notProduced > 0 {
 		p.Errorf("%d message left unsent in producer queue.", notProduced)
 		//TODO: suck p.producer.ProduceChannel() and store to fallback file or some retry queue
 	}
-	p.closed.Store(true)
 	p.Infof("Closing producer.")
 	p.producer.Close()
 	close(p.asyncDeliveryChannel)
