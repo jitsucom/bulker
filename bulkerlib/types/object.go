@@ -6,8 +6,8 @@ import (
 
 type Object = types.Json
 
-func NewObject() Object {
-	return types.NewJson()
+func NewObject(defaultCapacity int) Object {
+	return types.NewJson(defaultCapacity)
 }
 
 func ObjectFromMap(mp map[string]any) Object {

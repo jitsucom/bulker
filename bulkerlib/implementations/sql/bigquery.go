@@ -17,7 +17,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"math"
@@ -289,7 +288,7 @@ func (bq *BigQuery) Ping(ctx context.Context) error {
 func (bq *BigQuery) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = bq.TableName(tableName)
 	namespace = bq.namespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	bqTable := bq.client.Dataset(namespace).Table(tableName)
 
 	meta, err := bqTable.Metadata(ctx)
@@ -340,10 +339,10 @@ func (bq *BigQuery) GetTableSchema(ctx context.Context, namespace string, tableN
 }
 
 // CreateTable creates google BigQuery table from Table
-func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
+func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (t *Table, err error) {
 	err = bq.createDatasetIfNotExists(ctx, table.Namespace)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tableName := bq.TableName(table.Name)
 	namespace := bq.namespaceName(table.Namespace)
@@ -352,11 +351,11 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	_, err = bqTable.Metadata(ctx)
 	if err == nil {
 		bq.Infof("BigQuery table %s already exists", tableName)
-		return nil
+		return table, nil
 	}
 
 	if !isNotFoundErr(err) {
-		return errorj.GetTableError.Wrap(err, "failed to get table metadata").
+		return nil, errorj.GetTableError.Wrap(err, "failed to get table metadata").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Dataset: namespace,
 				Bucket:  bq.config.Bucket,
@@ -374,11 +373,14 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	}
 	var tableConstraints *bigquery.TableConstraints
 	var labels map[string]string
-	if table.PKFields.Size() > 0 && table.PrimaryKeyName != "" {
+	if table.PKFields.Size() > 0 {
 		tableConstraints = &bigquery.TableConstraints{
 			PrimaryKey: &bigquery.PrimaryKey{
 				Columns: table.GetPKFields(),
 			},
+		}
+		if table.PrimaryKeyName == "" {
+			table.PrimaryKeyName = BuildConstraintName(table.Name)
 		}
 		labels = map[string]string{
 			bigqueryPKHashLabel: table.PKFields.Hash(),
@@ -410,7 +412,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 	bq.logQuery(fmt.Sprintf("CREATE table %s with schema: ", bq.fullTableName(table.Namespace, table.Name)), tableMetaData, nil)
 	if err := bqTable.Create(ctx, &tableMetaData); err != nil {
 		schemaJson, _ := bqSchema.ToJSONFields()
-		return errorj.GetTableError.Wrap(err, "failed to create table").
+		return nil, errorj.GetTableError.Wrap(err, "failed to create table").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Dataset:   namespace,
 				Bucket:    bq.config.Bucket,
@@ -420,7 +422,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (err error) {
 			})
 	}
 
-	return nil
+	return table, nil
 }
 
 func (bq *BigQuery) createDatasetIfNotExists(ctx context.Context, dataset string) error {
@@ -459,12 +461,12 @@ func (bq *BigQuery) InitDatabase(ctx context.Context) error {
 }
 
 // PatchTableSchema adds Table columns to google BigQuery table
-func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) error {
+func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) (*Table, error) {
 	namespace := bq.namespaceName(patchSchema.Namespace)
 	bqTable := bq.client.Dataset(namespace).Table(patchSchema.Name)
 	metadata, err := bqTable.Metadata(ctx)
 	if err != nil {
-		return errorj.PatchTableError.Wrap(err, "failed to get table metadata").
+		return nil, errorj.PatchTableError.Wrap(err, "failed to get table metadata").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Dataset: namespace,
 				Bucket:  bq.config.Bucket,
@@ -482,9 +484,12 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 	}
 
 	//patch primary keys - create new
-	if patchSchema.PKFields.Size() > 0 && patchSchema.PrimaryKeyName != "" {
+	if patchSchema.PKFields.Size() > 0 {
 		if metadata.Labels == nil {
 			metadata.Labels = map[string]string{}
+		}
+		if patchSchema.PrimaryKeyName == "" {
+			patchSchema.PrimaryKeyName = BuildConstraintName(patchSchema.Name)
 		}
 		metadata.Labels[bigqueryPKHashLabel] = patchSchema.PKFields.Hash()
 		metadata.Labels[bigqueryPKNameLabel] = patchSchema.PrimaryKeyName
@@ -505,7 +510,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 	bq.logQuery("PATCH update request: ", updateReq, nil)
 	if _, err := bqTable.Update(ctx, updateReq, metadata.ETag); err != nil {
 		schemaJson, _ := metadata.Schema.ToJSONFields()
-		return errorj.PatchTableError.Wrap(err, "failed to patch table").
+		return nil, errorj.PatchTableError.Wrap(err, "failed to patch table").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Dataset:   namespace,
 				Bucket:    bq.config.Bucket,
@@ -515,7 +520,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) er
 			})
 	}
 
-	return nil
+	return patchSchema, nil
 }
 
 func (bq *BigQuery) DeletePartition(ctx context.Context, namespace, tableName string, datePartiton *DatePartition) error {
@@ -1014,10 +1019,6 @@ func (bq *BigQuery) Delete(ctx context.Context, namespace string, tableName stri
 }
 func (bq *BigQuery) Type() string {
 	return BigqueryBulkerTypeId
-}
-
-func (bq *BigQuery) BuildConstraintName(tableName string) string {
-	return fmt.Sprintf("%s%s", BulkerManagedPkConstraintPrefix, uuid.NewLettersNumbers())
 }
 
 func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {

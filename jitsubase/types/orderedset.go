@@ -11,7 +11,7 @@ type OrderedSet[K cmp.Ordered] struct {
 }
 
 func NewOrderedSet[K cmp.Ordered](values ...K) OrderedSet[K] {
-	s := NewOrderedMap[K, struct{}]()
+	s := NewOrderedMap[K, struct{}](len(values))
 	for _, v := range values {
 		s.Set(v, struct{}{})
 	}
@@ -53,15 +53,23 @@ func (s OrderedSet[K]) Remove(key K) {
 }
 
 func (s OrderedSet[K]) Clear() {
-	s.mp = NewOrderedMap[K, struct{}]()
+	s.mp = NewOrderedMap[K, struct{}](0)
 }
 
 func (s OrderedSet[K]) Clone() OrderedSet[K] {
-	newSortedSet := NewOrderedSet[K]()
+	var mp = NewOrderedMap[K, struct{}](s.Size())
 	for el := s.mp.Front(); el != nil; el = el.Next() {
-		newSortedSet.Put(el.Key)
+		mp.Set(el.Key, struct{}{})
 	}
-	return newSortedSet
+	return OrderedSet[K]{mp: mp}
+}
+
+func (s OrderedSet[K]) Map(f func(K) K) OrderedSet[K] {
+	var mp = NewOrderedMap[K, struct{}](s.Size())
+	for el := s.mp.Front(); el != nil; el = el.Next() {
+		mp.Set(f(el.Key), struct{}{})
+	}
+	return OrderedSet[K]{mp: mp}
 }
 
 func (s OrderedSet[K]) Size() int {

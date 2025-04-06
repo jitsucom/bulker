@@ -258,7 +258,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, namespace string, tableNa
 func (p *Postgres) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
 	namespace = p.namespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, namespace, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -474,30 +474,30 @@ func (p *Postgres) getPrimaryKey(ctx context.Context, namespace string, tableNam
 	return primaryKeyName, primaryKeys, nil
 }
 
-func (p *Postgres) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+func (p *Postgres) CreateTable(ctx context.Context, schemaToCreate *Table) (*Table, error) {
 	err := p.createSchemaIfNotExists(ctx, schemaToCreate.Namespace)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = p.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
 		err = p.createIndex(ctx, schemaToCreate)
 		if err != nil {
 			p.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)
-			return fmt.Errorf("failed to create sort key: %v", err)
+			return nil, fmt.Errorf("failed to create sort key: %v", err)
 		}
 	}
-	return nil
+	return schemaToCreate, nil
 }
 
 func (p *Postgres) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
 	targetTable := replacementTable.Clone()
 	targetTable.Name = targetTableName
-	if targetTable.PrimaryKeyName != "" {
-		targetTable.PrimaryKeyName = p.BuildConstraintName(targetTableName)
+	if !targetTable.PKFields.Empty() {
+		targetTable.PrimaryKeyName = BuildConstraintName(targetTableName)
 	}
 	_, err = p.tableHelper.EnsureTableWithoutCaching(ctx, p, p.ID, targetTable)
 	if err != nil {

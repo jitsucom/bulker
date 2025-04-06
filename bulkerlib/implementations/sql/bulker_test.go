@@ -697,12 +697,12 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			expectedTable.Name = ""
 		}
 		if !testConfig.expectedTableCaseChecking {
-			newColumns := NewColumns()
+			newColumns := NewColumns(0)
 			for el := expectedTable.Columns.Front(); el != nil; el = el.Next() {
 				newColumns.Set(strings.ToLower(el.Key), el.Value)
 			}
 			expectedTable.Columns = newColumns
-			newColumns = NewColumns()
+			newColumns = NewColumns(0)
 			for el := table.Columns.Front(); el != nil; el = el.Next() {
 				newColumns.Set(strings.ToLower(el.Key), el.Value)
 			}
@@ -778,7 +778,7 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 						t.Fatalf("test config error: expected table must have a 'name' column of string type to guess what type to expect for %s column", PartitonIdKeyword)
 					}
 				}
-				newExpectedTable := ExpectedTable{Name: testConfig.expectedTable.Name, Columns: NewColumns(), PKFields: slices.Clone(testConfig.expectedTable.PKFields)}
+				newExpectedTable := ExpectedTable{Name: testConfig.expectedTable.Name, Columns: NewColumns(0), PKFields: slices.Clone(testConfig.expectedTable.PKFields)}
 				newExpectedTable.Columns.Set(PartitonIdKeyword, textColumn)
 				newExpectedTable.Columns.SetAll(testConfig.expectedTable.Columns)
 				testConfig.expectedTable = newExpectedTable
@@ -837,7 +837,7 @@ func PostStep(step string, testConfig bulkerTestConfig, mode bulker.BulkMode, re
 
 // Returns Columns map with no type information
 func justColumns(columns ...string) Columns {
-	colsMap := NewColumns()
+	colsMap := NewColumns(0)
 	for _, col := range columns {
 		colsMap.Set(col, types2.SQLColumn{})
 	}

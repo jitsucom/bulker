@@ -332,7 +332,7 @@ func (iter *Iterator) Read() interface{} {
 		})
 		return arr
 	case ObjectValue:
-		obj := types.NewOrderedMap[string, any]()
+		obj := types.NewOrderedMap[string, any](0)
 		iter.ReadMapCB(func(Iter *Iterator, field string) bool {
 			var elem interface{}
 			iter.ReadVal(&elem)

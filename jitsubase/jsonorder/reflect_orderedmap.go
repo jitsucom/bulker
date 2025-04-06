@@ -55,7 +55,7 @@ func (decoder *orderedMapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 		return
 	}
 	if orderedMapType.UnsafeIsNil(ptr) {
-		mp := types.NewOrderedMap[string, any]()
+		mp := types.NewOrderedMap[string, any](0)
 		orderedMapType.UnsafeSet(ptr, unsafe.Pointer(&mp))
 	}
 	if c != '{' {

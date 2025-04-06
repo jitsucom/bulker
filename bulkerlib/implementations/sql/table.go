@@ -11,18 +11,18 @@ const BulkerManagedPkConstraintPrefix = "jitsu_pk_"
 // Columns is a list of columns representation
 type Columns = *types2.OrderedMap[string, types.SQLColumn]
 
-func NewColumns() Columns {
-	return types2.NewOrderedMap[string, types.SQLColumn]()
+func NewColumns(defaultCapacity int) Columns {
+	return types2.NewOrderedMap[string, types.SQLColumn](defaultCapacity)
 }
 
 func NewColumnsFromMap(mp map[string]types.SQLColumn) Columns {
-	m := types2.NewOrderedMap[string, types.SQLColumn]()
+	m := types2.NewOrderedMap[string, types.SQLColumn](len(mp))
 	m.SetAllMap(mp)
 	return m
 }
 
 func NewColumnsFromArrays(arr []types2.El[string, types.SQLColumn]) Columns {
-	m := types2.NewOrderedMap[string, types.SQLColumn]()
+	m := types2.NewOrderedMap[string, types.SQLColumn](len(arr))
 	for _, a := range arr {
 		m.Set(a.Key, a.Value)
 	}
@@ -97,7 +97,7 @@ func (t *Table) CleanClone() *Table {
 	if t == nil {
 		return nil
 	}
-	clonedColumns := NewColumns()
+	clonedColumns := NewColumns(t.Columns.Len())
 	for el := t.Columns.Front(); el != nil; el = el.Next() {
 		v := el.Value
 		clonedColumns.Set(el.Key, types.SQLColumn{
@@ -149,8 +149,9 @@ func (t *Table) Clone() *Table {
 
 // Clone returns clone of current table
 func (t *Table) clone(omitColumns bool) *Table {
-	clonedColumns := NewColumns()
+	var clonedColumns Columns
 	if !omitColumns {
+		clonedColumns = NewColumns(t.Columns.Len())
 		for el := t.Columns.Front(); el != nil; el = el.Next() {
 			v := el.Value
 			clonedColumns.Set(el.Key, types.SQLColumn{
@@ -161,6 +162,8 @@ func (t *Table) clone(omitColumns bool) *Table {
 				Override: v.Override,
 			})
 		}
+	} else {
+		clonedColumns = NewColumns(0)
 	}
 
 	clonedPkFields := t.PKFields.Clone()
@@ -194,7 +197,7 @@ func (t *Table) GetPKFieldsSet() types2.OrderedSet[string] {
 // 2) all fields from another schema exist in current schema
 // NOTE: Diff method doesn't take types into account
 func (t *Table) Diff(sqlAdapter SQLAdapter, another *Table) *Table {
-	diff := &Table{Name: t.Name, Namespace: t.Namespace, Columns: NewColumns(), PKFields: types2.NewOrderedSet[string]()}
+	diff := &Table{Name: t.Name, Namespace: t.Namespace, Columns: NewColumns(0), PKFields: types2.NewOrderedSet[string]()}
 
 	if !another.Exists() {
 		return diff
@@ -208,7 +211,6 @@ func (t *Table) Diff(sqlAdapter SQLAdapter, another *Table) *Table {
 		}
 	}
 
-	jitsuPrimaryKeyName := sqlAdapter.BuildConstraintName(t.Name)
 	classicPrimaryKeyName := t.Namespace + "_" + t.Name + "_pk"
 	jitsuManagedPk := strings.HasPrefix(strings.ToLower(t.PrimaryKeyName), BulkerManagedPkConstraintPrefix) || (t.PrimaryKeyName == classicPrimaryKeyName && t.PKFields.Size() == 1 && t.PKFields.Contains("eventn_ctx_event_id"))
 	//check if primary key is maintained by Jitsu (for Postgres and Redshift)
@@ -223,21 +225,17 @@ func (t *Table) Diff(sqlAdapter SQLAdapter, another *Table) *Table {
 			//re-create or delete if another.PKFields is empty
 			diff.DeletePrimaryKeyNamed = t.PrimaryKeyName
 			diff.PKFields = another.PKFields
-			if another.PKFields.Size() > 0 {
-				diff.PrimaryKeyName = jitsuPrimaryKeyName
-			}
 		}
 	} else if another.PKFields.Size() > 0 {
 		//create
 		diff.PKFields = another.PKFields
-		diff.PrimaryKeyName = jitsuPrimaryKeyName
 	}
 
 	return diff
 }
 
 func (t *Table) ToSimpleMap() *types2.OrderedMap[string, any] {
-	simple := types2.NewOrderedMap[string, any]()
+	simple := types2.NewOrderedMap[string, any](t.ColumnsCount())
 	for el := t.Columns.Front(); el != nil; el = el.Next() {
 		simple.Set(el.Key, el.Value.Type)
 	}

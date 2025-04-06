@@ -475,23 +475,23 @@ func (p *Redshift) TmpNamespace(string) string {
 	return NoNamespaceValue
 }
 
-func (p *Redshift) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+func (p *Redshift) CreateTable(ctx context.Context, schemaToCreate *Table) (*Table, error) {
 	err := p.createSchemaIfNotExists(ctx, schemaToCreate.Namespace)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = p.SQLAdapterBase.CreateTable(ctx, schemaToCreate)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !schemaToCreate.Temporary && schemaToCreate.TimestampColumn != "" {
 		err = p.createSortKey(ctx, schemaToCreate)
 		if err != nil {
 			p.DropTable(ctx, schemaToCreate.Namespace, schemaToCreate.Name, true)
-			return fmt.Errorf("failed to create sort key: %v", err)
+			return nil, fmt.Errorf("failed to create sort key: %v", err)
 		}
 	}
-	return nil
+	return schemaToCreate, nil
 }
 
 func (p *Redshift) createSortKey(ctx context.Context, table *Table) error {

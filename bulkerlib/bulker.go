@@ -157,6 +157,7 @@ type State struct {
 	LastError         error          `json:"-"`
 	LastErrorText     string         `json:"error,omitempty"`
 	ProcessedRows     int            `json:"processedRows"`
+	ProcessedBytes    int            `json:"processedBytes"`
 	SuccessfulRows    int            `json:"successfulRows"`
 	ErrorRowIndex     int            `json:"errorRowIndex,omitempty"`
 	ProcessingTimeSec float64        `json:"processingTimeSec"`
@@ -181,6 +182,7 @@ var warehouseStateMergeF = func(curr, new any) any {
 
 func (s *State) Merge(second State) {
 	s.ProcessedRows += second.ProcessedRows
+	s.ProcessedBytes += second.ProcessedBytes
 	s.SuccessfulRows += second.SuccessfulRows
 	s.ProcessingTimeSec += second.ProcessingTimeSec
 	if second.WarehouseState.Name != "" {
@@ -244,7 +246,7 @@ func (ws *WarehouseState) Merge(second WarehouseState) {
 	}
 	if ws.States == nil {
 		st := *ws
-		ws.States = types2.NewOrderedMap[string, any]()
+		ws.States = types2.NewOrderedMap[string, any](0)
 		ws.States.Set(ws.Name, st)
 	}
 	ws.Name = "total"

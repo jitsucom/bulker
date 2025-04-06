@@ -6,12 +6,12 @@ const SqlTypePrefix = "__sql_type"
 
 type Json = *OrderedMap[string, any]
 
-func NewJson() Json {
-	return NewOrderedMap[string, any]()
+func NewJson(defaultCapacity int) Json {
+	return NewOrderedMap[string, any](defaultCapacity)
 }
 
 func JsonFromMap(mp map[string]any) Json {
-	om := NewJson()
+	om := NewJson(len(mp))
 	for k, v := range mp {
 		nested, ok := v.(map[string]any)
 		if ok {

@@ -39,7 +39,7 @@ func NewFlattener(nameTransformer func(string) string, omitNilValues, stringifyO
 // from {"$key1":1} to {"_key1":1}
 // from {"(key1)":1} to {"_key1_":1}
 func (f *FlattenerImpl) FlattenObject(object types.Object, notFlatteningKeys types2.Set[string]) (types.Object, error) {
-	flattenMap := types.NewObject()
+	flattenMap := types.NewObject(0)
 
 	err := f.flatten("", object, flattenMap, notFlatteningKeys)
 	if err != nil {

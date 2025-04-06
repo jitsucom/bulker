@@ -74,12 +74,12 @@ func (rc *RetryConsumer) shouldConsumeFuncImpl(committedOffset, highOffset int64
 	return false
 }
 
-func (rc *RetryConsumer) batchSizes(_ *bulker.StreamOptions) (_, retryBatchSize int) {
-	return rc.config.BatchRunnerDefaultBatchSize, rc.config.RetryConsumerBatchSize
+func (rc *RetryConsumer) batchSizes(_ *bulker.StreamOptions) (_, _, retryBatchSize int) {
+	return rc.config.BatchRunnerDefaultBatchSize, 0, rc.config.RetryConsumerBatchSize
 
 }
 
-func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
+func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, _, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 
 	var firstPosition *kafka.TopicPartition

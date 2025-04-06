@@ -36,11 +36,13 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 	return &bc, nil
 }
 
-func (bc *BatchConsumerImpl) batchSizes(streamOptions *bulker.StreamOptions) (maxBatchSize, retryBatchSize int) {
+func (bc *BatchConsumerImpl) batchSizes(streamOptions *bulker.StreamOptions) (maxBatchSize, maxBatchSizeBytes, retryBatchSize int) {
 	maxBatchSize = bulker.BatchSizeOption.Get(streamOptions)
 	if maxBatchSize <= 0 {
 		maxBatchSize = bc.config.BatchRunnerDefaultBatchSize
 	}
+
+	maxBatchSizeBytes = bulker.BatchSizeBytesOption.Get(streamOptions)
 
 	retryBatchSize = bulker.RetryBatchSizeOption.Get(streamOptions)
 	if retryBatchSize <= 0 {
@@ -49,7 +51,7 @@ func (bc *BatchConsumerImpl) batchSizes(streamOptions *bulker.StreamOptions) (ma
 	return
 }
 
-func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
+func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, batchSizeBytes, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
 	bc.Debugf("Starting batch #%d", batchNum)
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 	startTime := time.Now()
@@ -94,6 +96,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		}
 	}()
 	processed := 0
+	consumedBytes := 0
 	consumer := bc.consumer.Load()
 	for i := 0; i < batchSize; i++ {
 		if bc.retired.Load() {
@@ -121,6 +124,24 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			}
 			return counters, state, false, bc.NewError("Failed to consume event from topic. Retryable: %t: %v", kafkaErr.IsRetriable(), kafkaErr)
 		}
+		consumedBytes += len(message.Value)
+		if batchSizeBytes > 0 && consumedBytes > batchSizeBytes {
+			bc.Debugf("Reached batch size %d of %d. Stopping batch", consumedBytes, batchSizeBytes)
+			nextBatch = true
+			consumedBytes -= len(message.Value)
+			// seek to the previous message
+			_, err = consumer.SeekPartitions([]kafka.TopicPartition{message.TopicPartition})
+			if err != nil {
+				kafkaErr := err.(kafka.Error)
+				bc.errorMetric("SEEK_ERROR:" + metrics.KafkaErrorCode(kafkaErr))
+				if bulkerStream != nil {
+					_ = bulkerStream.Abort(ctx)
+				}
+				return counters, state, false, bc.NewError("Failed seek to previous message. Retryable: %t: %v", kafkaErr.IsRetriable(), kafkaErr)
+			}
+			break
+		}
+
 		counters.consumed++
 		retriesHeader := kafkabase.GetKafkaHeader(message, retriesCountHeader)
 		if retriesHeader != "" {
@@ -195,12 +216,14 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		//TODO: do we need to interrupt commit if consumer is retired?
 		state, err = bulkerStream.Complete(ctx)
 		pauseTimer.Stop()
+		state.ProcessedBytes = consumedBytes
 		state.ProcessingTimeSec = time.Since(startTime).Seconds()
 		if err != nil {
 			failedPosition = &latestMessage.TopicPartition
 			return counters, state, false, bc.NewError("Failed to commit bulker stream to %s: %v", destination.config.BulkerType, err)
 		}
 		counters.processed = processed
+		counters.processedBytes = consumedBytes
 		_, err = consumer.CommitMessage(latestMessage)
 		if err != nil {
 			bc.errorMetric("KAFKA_COMMIT_ERR:" + metrics.KafkaErrorCode(err))

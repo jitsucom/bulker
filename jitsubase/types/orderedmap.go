@@ -16,9 +16,9 @@ type El[K cmp.Ordered, V any] struct {
 	Value V
 }
 
-func NewOrderedMap[K cmp.Ordered, V any]() *OrderedMap[K, V] {
+func NewOrderedMap[K cmp.Ordered, V any](defaultCapacity int) *OrderedMap[K, V] {
 	return &OrderedMap[K, V]{
-		kv: make(map[K]*Element[K, V]),
+		kv: make(map[K]*Element[K, V], defaultCapacity),
 	}
 }
 
@@ -135,7 +135,7 @@ func (m *OrderedMap[K, V]) SetPath(path K, value V) {
 		var ok bool
 		o, ok := obj.Get(any(key).(K))
 		if !ok {
-			newObj := NewOrderedMap[K, V]()
+			newObj := NewOrderedMap[K, V](0)
 			obj.Set(any(key).(K), any(newObj).(V))
 			obj = newObj
 			continue
@@ -295,7 +295,7 @@ func (m *OrderedMap[K, V]) Back() *Element[K, V] {
 // Copy returns a new OrderedMap with the same elements.
 // Using Copy while there are concurrent writes may mangle the result.
 func (m *OrderedMap[K, V]) Copy() *OrderedMap[K, V] {
-	m2 := NewOrderedMap[K, V]()
+	m2 := NewOrderedMap[K, V](m.Len())
 	for el := m.Front(); el != nil; el = el.Next() {
 		m2.Set(el.Key, el.Value)
 	}

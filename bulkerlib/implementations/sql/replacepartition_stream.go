@@ -53,7 +53,6 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 			TimestampColumn: tableForObject.TimestampColumn,
 		}
 		if p.TmpTableUsePK() {
-			t.PrimaryKeyName = p.BuildConstraintName(tmpTableName)
 			t.PKFields = tableForObject.PKFields
 		}
 		return t
@@ -75,7 +74,7 @@ func (ps *ReplacePartitionStream) ConsumeMap(ctx context.Context, mp map[string]
 }
 
 func (ps *ReplacePartitionStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObjects types.Object, err error) {
-	objCopy := types.NewObject()
+	objCopy := types.NewObject(object.Len() + 1)
 	objCopy.Set(PartitonIdKeyword, ps.partitionId)
 	objCopy.SetAll(object)
 	return ps.AbstractTransactionalSQLStream.Consume(ctx, objCopy)

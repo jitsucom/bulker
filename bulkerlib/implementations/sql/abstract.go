@@ -2,13 +2,16 @@ package sql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -21,6 +24,7 @@ const unmappedDataColumn = "_unmapped_data"
 type AbstractSQLStream struct {
 	id                string
 	sqlAdapter        SQLAdapter
+	stringifyObjects  bool
 	mode              bulker.BulkMode
 	options           bulker.StreamOptions
 	tableName         string
@@ -37,8 +41,11 @@ type AbstractSQLStream struct {
 	state  bulker.State
 	inited bool
 
+	existingTable *Table
+
 	customTypes     types.SQLTypes
-	pkColumns       []string
+	pkColumns       types2.OrderedSet[string]
+	pkColumnsArrays []string
 	timestampColumn string
 
 	unmappedDataColumn string
@@ -52,7 +59,7 @@ type AbstractSQLStream struct {
 }
 
 func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.BulkMode, streamOptions ...bulker.StreamOption) (*AbstractSQLStream, error) {
-	ps := AbstractSQLStream{id: id, sqlAdapter: p, tableName: tableName, mode: mode}
+	ps := AbstractSQLStream{id: id, sqlAdapter: p, stringifyObjects: p.StringifyObjects(), tableName: p.TableName(tableName), mode: mode}
 	ps.options = bulker.StreamOptions{}
 	for _, option := range streamOptions {
 		ps.options.Add(option)
@@ -63,7 +70,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 		} else {
 			ps.nameTransformer = strings.ToLower
 		}
-		ps.tableName = ps.nameTransformer(tableName)
+		ps.tableName = p.TableName(ps.nameTransformer(tableName))
 	} else {
 		ps.nameTransformer = func(s string) string { return s }
 	}
@@ -77,7 +84,8 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	}
 
 	var customFields = ColumnTypesOption.Get(&ps.options)
-	ps.pkColumns = utils.ArrayMap(pkColumns.ToSlice(), p.ColumnName)
+	ps.pkColumns = pkColumns.Map(p.ColumnName)
+	ps.pkColumnsArrays = ps.pkColumns.ToSlice()
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
 	if ps.timestampColumn != "" {
 		ps.timestampColumn = p.ColumnName(ps.timestampColumn)
@@ -103,7 +111,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	ps.unmappedDataColumn = p.ColumnName(unmappedDataColumn)
 
 	ps.state = bulker.State{Status: bulker.Active, Mode: mode, Representation: RepresentationTable{
-		Name: p.TableName(ps.tableName),
+		Name: ps.tableName,
 	}}
 	ps.customTypes = customFields
 	ps.startTime = time.Now()
@@ -115,13 +123,246 @@ func (ps *AbstractSQLStream) preprocess(object types.Object, skipTypeHints bool)
 		return nil, nil, fmt.Errorf("stream is not active. Status: %s", ps.state.Status)
 	}
 
-	batchHeader, processedObject, err := ProcessEvents(ps.tableName, object, ps.customTypes, ps.nameTransformer, ps.omitNils, ps.sqlAdapter.StringifyObjects(), ps.notFlatteningKeys, skipTypeHints)
+	_ = object.Delete("JITSU_TABLE_NAME")
+	notFlatKeys := ps.notFlatteningKeys
+	var sqlTypesHints types.SQLTypes
+	var err error
+	if !skipTypeHints {
+		sqlTypesHints, err = extractSQLTypesHints(object)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if len(ps.customTypes) > 0 {
+		if sqlTypesHints == nil {
+			sqlTypesHints = types.SQLTypes{}
+		}
+		for k, v := range ps.customTypes {
+			sqlTypesHints[k] = v
+		}
+	}
+	if len(sqlTypesHints) > 0 {
+		notFlatKeys = types2.NewSet[string]()
+		for key := range sqlTypesHints {
+			notFlatKeys.Put(key)
+		}
+		notFlatKeys.PutSet(ps.notFlatteningKeys)
+	}
+	processedObject, table, err := ps.mapForDwh(object, notFlatKeys, sqlTypesHints)
 	if err != nil {
 		return nil, nil, err
 	}
-	table, processedObject := ps.sqlAdapter.TableHelper().MapTableSchema(ps.sqlAdapter, batchHeader, processedObject, ps.pkColumns, ps.timestampColumn, ps.namespace)
 	ps.state.ProcessedRows++
 	return table, processedObject, nil
+}
+
+type DWHEnvelope struct {
+	sqlAdapter      SQLAdapter
+	flattenedObject types.Object
+	table           *Table
+	sqlTypesHints   types.SQLTypes
+}
+
+func (dwh *DWHEnvelope) set(fieldName string, value any) error {
+	if fieldName == "" {
+		fieldName = "_unnamed"
+	}
+	colName := dwh.sqlAdapter.ColumnName(fieldName)
+
+	dwh.flattenedObject.Set(colName, value)
+	field, err := ResolveType(fieldName, value, dwh.sqlTypesHints)
+	if err != nil {
+		return err
+	}
+	suggestedSQLType, ok := field.GetSuggestedSQLType()
+	if ok {
+		dt, ok := dwh.sqlAdapter.GetDataType(suggestedSQLType.Type)
+		if ok {
+			suggestedSQLType.DataType = dt
+		}
+		dwh.table.Columns.Set(colName, suggestedSQLType)
+	} else {
+		//map Jitsu type -> SQL type
+		sqlType, ok := dwh.sqlAdapter.GetSQLType(field.GetType())
+		if ok {
+			dwh.table.Columns.Set(colName, types.SQLColumn{DataType: field.GetType(), Type: sqlType, New: true})
+		} else {
+			logging.SystemErrorf("Unknown column type %s mapping for %s", field.GetType(), dwh.sqlAdapter.Type())
+		}
+	}
+	return nil
+}
+
+func (ps *AbstractSQLStream) mapForDwh(object types.Object, notFlatteningKeys types2.Set[string], sqlTypesHints types.SQLTypes) (types.Object, *Table, error) {
+	flattenMap := types.NewObject(ps.existingTable.ColumnsCount() + 1)
+	table := &Table{
+		Name:            ps.tableName,
+		Namespace:       ps.namespace,
+		Columns:         NewColumns(ps.existingTable.ColumnsCount() + 1),
+		PKFields:        ps.pkColumns,
+		TimestampColumn: ps.timestampColumn,
+	}
+	dwhEnvelope := &DWHEnvelope{
+		sqlAdapter:      ps.sqlAdapter,
+		flattenedObject: flattenMap,
+		table:           table,
+		sqlTypesHints:   sqlTypesHints,
+	}
+
+	err := ps._mapForDwh("", object, dwhEnvelope, notFlatteningKeys)
+	if err != nil {
+		return nil, nil, err
+	}
+	return flattenMap, table, nil
+}
+
+// recursive function for flatten key (if value is inner object -> recursion call)
+// Reformat key
+func (ps *AbstractSQLStream) _mapForDwh(key string, value types.Object, dwhEnvelope *DWHEnvelope, notFlatteningKeys types2.Set[string]) error {
+	if notFlatteningKeys != nil {
+		if _, ok := notFlatteningKeys[key]; ok {
+			if ps.stringifyObjects {
+				// if there is sql type hint for nested object - we don't flatten it.
+				// Instead, we marshal it to json string hoping that database cast function will do the job
+				b, err := jsonorder.MarshalToString(value)
+				if err != nil {
+					return fmt.Errorf("error marshaling json object with key %s: %v", key, err)
+				}
+				err = dwhEnvelope.set(key, b)
+				if err != nil {
+					return err
+				}
+
+			} else {
+				err := dwhEnvelope.set(key, types.ObjectToMap(value))
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}
+	for el := value.Front(); el != nil; el = el.Next() {
+		var newKey string
+		if key != "" {
+			newKey = key + "_" + ps.nameTransformer(el.Key)
+		} else {
+			newKey = ps.nameTransformer(el.Key)
+		}
+		elv := el.Value
+		if elv == nil {
+			if !ps.omitNils {
+				err := dwhEnvelope.set(newKey, elv)
+				if err != nil {
+					return err
+				}
+			} else {
+				continue
+			}
+		} else {
+			switch o := elv.(type) {
+			case string:
+				var v any = o
+				ts, ok := types.ReformatTimeValue(o, false)
+				if ok {
+					v = ts
+				}
+				err := dwhEnvelope.set(newKey, v)
+				if err != nil {
+					return err
+				}
+			case json.Number:
+				err := dwhEnvelope.set(newKey, types.ReformatJSONNumberValue(o))
+				if err != nil {
+					return err
+				}
+			case bool:
+				err := dwhEnvelope.set(newKey, o)
+				if err != nil {
+					return err
+				}
+			case types.Object:
+				if err := ps._mapForDwh(newKey, o, dwhEnvelope, notFlatteningKeys); err != nil {
+					return err
+				}
+			case []any:
+				if ps.stringifyObjects {
+					b, err := jsonorder.Marshal(elv)
+					if err != nil {
+						return fmt.Errorf("error marshaling array with key %s: %v", key, err)
+					}
+					err = dwhEnvelope.set(newKey, string(b))
+					if err != nil {
+						return err
+					}
+				} else {
+					err := dwhEnvelope.set(newKey, utils.ArrayMap(o, func(obj any) any {
+						o, ok := obj.(types.Object)
+						if ok {
+							return types.ObjectToMap(o)
+						}
+						return obj
+					}))
+					if err != nil {
+						return err
+					}
+				}
+			case []types.Object:
+				// not really the case. because it is hiding behind []any type
+				if ps.stringifyObjects {
+					b, err := jsonorder.Marshal(elv)
+					if err != nil {
+						return fmt.Errorf("error marshaling array with key %s: %v", key, err)
+					}
+					err = dwhEnvelope.set(newKey, string(b))
+					if err != nil {
+						return err
+					}
+				} else {
+					err := dwhEnvelope.set(newKey, utils.ArrayMap(o, func(obj types.Object) map[string]any {
+						return types.ObjectToMap(obj)
+					}))
+					if err != nil {
+						return err
+					}
+				}
+			case int, int64, float64, time.Time:
+				err := dwhEnvelope.set(newKey, o)
+				if err != nil {
+					return err
+				}
+			default:
+				// just in case. but we never should reach this point
+				k := reflect.TypeOf(elv).Kind()
+				switch k {
+				case reflect.Slice, reflect.Array:
+					if ps.stringifyObjects {
+						b, err := jsonorder.Marshal(elv)
+						if err != nil {
+							return fmt.Errorf("error marshaling array with key %s: %v", key, err)
+						}
+						err = dwhEnvelope.set(newKey, string(b))
+						if err != nil {
+							return err
+						}
+					} else {
+						err := dwhEnvelope.set(newKey, elv)
+						if err != nil {
+							return err
+						}
+					}
+				case reflect.Map:
+					return fmt.Errorf("flattener doesn't support map. Object is required")
+				default:
+					err := dwhEnvelope.set(newKey, elv)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (ps *AbstractSQLStream) postConsume(err error) error {
@@ -144,7 +385,7 @@ func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 	}
 	if ps.state.Representation == nil {
 		ps.updateRepresentationTable(&Table{
-			Name: ps.sqlAdapter.TableName(ps.tableName),
+			Name: ps.tableName,
 		})
 	}
 	return ps.state, err
@@ -291,7 +532,7 @@ func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 		ps.state.Representation.(RepresentationTable).Schema.Len() != table.ColumnsCount() {
 		ps.state.Representation = RepresentationTable{
 			Name:             table.Name,
-			TargetName:       ps.sqlAdapter.TableName(ps.tableName),
+			TargetName:       ps.tableName,
 			Schema:           table.ToSimpleMap(),
 			PrimaryKeyFields: table.GetPKFields(),
 			PrimaryKeyName:   table.PrimaryKeyName,

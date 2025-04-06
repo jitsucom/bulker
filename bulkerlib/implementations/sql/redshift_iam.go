@@ -316,7 +316,7 @@ func (p *RedshiftIAM) getPrimaryKeys(ctx context.Context, namespace, tableName s
 func (p *RedshiftIAM) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
 	namespace = p.namespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, utils.DefaultString(namespace, "pg_temp_11"), tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -504,10 +504,10 @@ func (p *RedshiftIAM) LoadTable(ctx context.Context, targetTable *Table, loadSou
 	return state, nil
 }
 
-func (p *RedshiftIAM) CreateTable(ctx context.Context, schemaToCreate *Table) error {
+func (p *RedshiftIAM) CreateTable(ctx context.Context, schemaToCreate *Table) (*Table, error) {
 	tx, err := p.openTx(ctx, p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() {
 		if err != nil {
@@ -518,20 +518,20 @@ func (p *RedshiftIAM) CreateTable(ctx context.Context, schemaToCreate *Table) er
 	ctx1 := context.WithValue(ctx, ContextTransactionKey, tx.tx)
 	err = p.createSchemaIfNotExists(ctx1, utils.DefaultString(schemaToCreate.Namespace, p.config.Schema))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = p.SQLAdapterBase.CreateTable(ctx1, schemaToCreate)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if schemaToCreate.TimestampColumn != "" {
 		err = p.createSortKey(ctx1, schemaToCreate)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	err = tx.Commit()
-	return err
+	return schemaToCreate, err
 }
 
 func (p *RedshiftIAM) createSortKey(ctx context.Context, table *Table) error {
