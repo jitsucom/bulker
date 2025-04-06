@@ -258,7 +258,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, namespace string, tableNa
 func (p *Postgres) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
 	namespace = p.namespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, namespace, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").

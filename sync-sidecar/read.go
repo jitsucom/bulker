@@ -76,7 +76,7 @@ func (s *ReadSideCar) Run() {
 			s.closeActiveStreams(!cancelled && !s.isCriticalError())
 		}
 		if len(s.processedStreams) > 0 {
-			statusMap := types2.NewOrderedMap[string, any]()
+			statusMap := types2.NewOrderedMap[string, any](0)
 			s.catalog.ForEach(func(streamName string, _ *Stream) {
 				if stream, ok := s.processedStreams[streamName]; ok {
 					statusMap.Set(streamName, stream.StreamStat)
@@ -586,7 +586,7 @@ func (s *ReadSideCar) storeState(stream, state string) {
 }
 
 func (s *ReadSideCar) updateRunningStatus() {
-	statusMap := types2.NewOrderedMap[string, any]()
+	statusMap := types2.NewOrderedMap[string, any](0)
 	s.catalog.ForEach(func(streamName string, _ *Stream) {
 		if stream, ok := s.processedStreams[streamName]; ok {
 			statusMap.Set(streamName, stream.StreamStat)
@@ -650,7 +650,7 @@ func (s *ReadSideCar) loadCatalog() error {
 	if err != nil {
 		return fmt.Errorf("error parsing catalog file: %v", err)
 	}
-	mp := types2.NewOrderedMap[string, *Stream]()
+	mp := types2.NewOrderedMap[string, *Stream](len(catalog.Streams))
 	for _, stream := range catalog.Streams {
 		mp.Set(joinStrings(stream.Namespace, stream.Name, "."), stream)
 	}

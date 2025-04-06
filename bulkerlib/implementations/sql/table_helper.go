@@ -64,17 +64,14 @@ func NewTableHelper(bulkerTypeId string, maxIdentifierLength int, identifierQuot
 // applies column types mapping
 // adjusts object properties names to column names
 func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesHeader, object types2.Object, pkColumns []string, timestampColumn string, namespace string) (*Table, types2.Object) {
-	adaptedPKFields := types.NewOrderedSet[string]()
-	for _, pkField := range pkColumns {
-		adaptedPKFields.Put(pkField)
-	}
+	adaptedPKFields := types.NewOrderedSet[string](pkColumns...)
 	if namespace != "" {
 		namespace = th.TableName(namespace)
 	}
 	table := &Table{
 		Name:            sqlAdapter.TableName(batchHeader.TableName),
 		Namespace:       namespace,
-		Columns:         NewColumns(),
+		Columns:         NewColumns(len(batchHeader.Fields) + 1),
 		Partition:       batchHeader.Partition,
 		PKFields:        adaptedPKFields,
 		TimestampColumn: timestampColumn,
@@ -111,7 +108,7 @@ func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesH
 func (th *TableHelper) MapSchema(sqlAdapter SQLAdapter, schema types2.Schema, nameTransformer func(string) string) *Table {
 	table := &Table{
 		Name:    th.TableName(nameTransformer(schema.Name)),
-		Columns: NewColumns(),
+		Columns: NewColumns(schema.ColumnsCount() + 1),
 	}
 
 	for _, field := range schema.Fields {
@@ -213,9 +210,7 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAda
 		currentSchema.PrimaryKeyName = ""
 	}
 
-	th.UpdateCached(diff.Name, currentSchema)
-
-	return currentSchema, nil
+	return th.UpdateCached(diff.Name, currentSchema), nil
 }
 
 func (th *TableHelper) getCachedOrCreateTableSchema(ctx context.Context, sqlAdapter SQLAdapter, destinationName string, dataSchema *Table) (*Table, error) {
@@ -230,9 +225,7 @@ func (th *TableHelper) getCachedOrCreateTableSchema(ctx context.Context, sqlAdap
 		return nil, err
 	}
 
-	th.UpdateCached(dataSchema.Name, dbSchema)
-
-	return dbSchema, nil
+	return th.UpdateCached(dataSchema.Name, dbSchema), nil
 }
 
 // refreshTableSchema force get (or create) db table schema and update it in-memory
@@ -242,9 +235,7 @@ func (th *TableHelper) refreshTableSchema(ctx context.Context, sqlAdapter SQLAda
 		return nil, err
 	}
 
-	th.UpdateCached(dataSchema.Name, dbTableSchema)
-
-	return dbTableSchema, nil
+	return th.UpdateCached(dataSchema.Name, dbTableSchema), nil
 }
 
 // lock table -> get existing schema -> create a new one if doesn't exist -> return schema with version
@@ -319,7 +310,7 @@ func (th *TableHelper) Get(ctx context.Context, sqlAdapter SQLAdapter, namespace
 		return nil, err
 	}
 	if table.Exists() && cacheTable {
-		th.UpdateCached(table.Name, table)
+		return th.UpdateCached(table.Name, table), nil
 	}
 	return table, nil
 }
@@ -335,12 +326,13 @@ func (th *TableHelper) GetCached(tableName string) (*Table, bool) {
 	return nil, false
 }
 
-func (th *TableHelper) UpdateCached(tableName string, dbSchema *Table) {
+func (th *TableHelper) UpdateCached(tableName string, dbSchema *Table) *Table {
 	th.Lock()
 	cloned := dbSchema.CleanClone()
 	cloned.Cached = true
 	th.tablesCache[tableName] = cloned
 	th.Unlock()
+	return cloned
 }
 
 // clearCache removes cached table schema for cache for provided table

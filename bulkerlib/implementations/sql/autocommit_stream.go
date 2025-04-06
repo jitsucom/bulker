@@ -49,39 +49,38 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 	if err != nil {
 		return
 	}
-	existingTable, err := ps.sqlAdapter.TableHelper().Get(ctx, ps.sqlAdapter, table.Namespace, table.Name, true)
-	if err != nil {
-		err = errorj.Decorate(err, "failed to get current table table")
-		return
+	if ps.existingTable == nil {
+		ps.existingTable, _ = ps.sqlAdapter.TableHelper().Get(ctx, ps.sqlAdapter, ps.namespace, ps.tableName, true)
 	}
-	if existingTable.Exists() {
+
+	if ps.existingTable.Exists() {
 		if ps.initialColumnsCount == 0 {
-			ps.initialColumnsCount = existingTable.ColumnsCount()
+			ps.initialColumnsCount = ps.existingTable.ColumnsCount()
 		}
 		currentTable := table.WithoutColumns()
 		if ps.schemaFromOptions != nil {
 			//just to convert values to schema data types
-			ps.adjustTableColumnTypes(currentTable, existingTable, ps.schemaFromOptions, object)
+			ps.adjustTableColumnTypes(currentTable, ps.existingTable, ps.schemaFromOptions, object)
 		}
-		columnsAdded := ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
-		if columnsAdded || !currentTable.PKFields.Equals(existingTable.PKFields) {
+		columnsAdded := ps.adjustTableColumnTypes(currentTable, ps.existingTable, table, processedObject)
+		if columnsAdded || !currentTable.PKFields.Equals(ps.existingTable.PKFields) {
 			ps.updateRepresentationTable(currentTable)
 			// if new columns were added - update table. (for _unmapped_data column)
-			existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, currentTable)
+			ps.existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, currentTable)
 			if err != nil {
 				// give another try without using table cache
-				existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.sqlAdapter, ps.id, currentTable)
+				ps.existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.sqlAdapter, ps.id, currentTable)
 				if err != nil {
 					ps.updateRepresentationTable(currentTable)
 					err = errorj.Decorate(err, "failed to ensure table")
 					return
 				}
 				// here this method only tries to convert values to existing column types
-				columnsAdded = ps.adjustTableColumnTypes(currentTable, existingTable, table, processedObject)
+				columnsAdded = ps.adjustTableColumnTypes(currentTable, ps.existingTable, table, processedObject)
 				if columnsAdded {
 					ps.updateRepresentationTable(currentTable)
 					// if new columns were added - update table. (for _unmapped_data column)
-					existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, currentTable)
+					ps.existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, currentTable)
 					if err != nil {
 						err = errorj.Decorate(err, "failed to ensure table")
 						return
@@ -101,31 +100,32 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 				currentTable.Columns.DeleteElement(curEl)
 			}
 		}
-		currentTable.PrimaryKeyName = existingTable.PrimaryKeyName
+		currentTable.PrimaryKeyName = ps.existingTable.PrimaryKeyName
 		err = ps.sqlAdapter.Insert(ctx, currentTable, ps.merge, processedObject)
 	} else {
 		if ps.schemaFromOptions != nil {
 			//just to convert values to schema data types
 			ps.adjustTableColumnTypes(table, nil, ps.schemaFromOptions, object)
 		}
-		existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
+		ps.existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
 		if err != nil {
 			err = errorj.Decorate(err, "failed to ensure table")
 			return
 		}
-		ps.updateRepresentationTable(existingTable)
+		ps.updateRepresentationTable(ps.existingTable)
+		currentTable := ps.existingTable.Clone()
 		// remove columns with missed data from Insert statements
-		for el := existingTable.Columns.Front(); el != nil; {
+		for el := currentTable.Columns.Front(); el != nil; {
 			name := el.Key
 			curEl := el
 			// move to the next element before deleting the current one. otherwise iteration will be broken
 			el = el.Next()
 			v, ok := processedObject.Get(name)
 			if !ok || v == nil {
-				existingTable.Columns.DeleteElement(curEl)
+				currentTable.Columns.DeleteElement(curEl)
 			}
 		}
-		err = ps.sqlAdapter.Insert(ctx, existingTable, ps.merge, processedObject)
+		err = ps.sqlAdapter.Insert(ctx, currentTable, ps.merge, processedObject)
 	}
 
 	return ps.state, processedObject, err

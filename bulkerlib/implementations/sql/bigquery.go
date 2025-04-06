@@ -288,7 +288,7 @@ func (bq *BigQuery) Ping(ctx context.Context) error {
 func (bq *BigQuery) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = bq.TableName(tableName)
 	namespace = bq.namespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	bqTable := bq.client.Dataset(namespace).Table(tableName)
 
 	meta, err := bqTable.Metadata(ctx)

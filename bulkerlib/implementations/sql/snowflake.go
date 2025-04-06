@@ -274,7 +274,7 @@ func (s *Snowflake) InitDatabase(ctx context.Context) error {
 // GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
 func (s *Snowflake) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	quotedTableName, tableName := s.tableHelper.adaptTableName(tableName)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 
 	query := fmt.Sprintf(sfDescTableQuery, s.namespacePrefix(namespace), quotedTableName)
 	rows, err := s.txOrDb(ctx).QueryContext(ctx, query)

@@ -24,9 +24,8 @@ import (
 
 type AbstractTransactionalSQLStream struct {
 	*AbstractSQLStream
-	tx            *TxSQLAdapter
-	tmpTable      *Table
-	existingTable *Table
+	tx       *TxSQLAdapter
+	tmpTable *Table
 	//function that generate tmp table schema based on target table schema
 	tmpTableFunc          func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table)
 	dstTable              *Table
@@ -56,8 +55,8 @@ func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, m
 		return nil, err
 	}
 	ps := AbstractTransactionalSQLStream{}
-	ps.existingTable = &Table{}
 	ps.AbstractSQLStream = abs
+	ps.existingTable = &Table{}
 	if ps.merge {
 		ps.batchFileLinesByPK = make(map[string]*DeduplicationLine)
 		ps.batchFileSkipLines = types2.NewSet[int]()

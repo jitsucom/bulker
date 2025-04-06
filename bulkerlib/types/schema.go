@@ -13,3 +13,7 @@ type SchemaField struct {
 func (s Schema) IsEmpty() bool {
 	return len(s.Fields) == 0
 }
+
+func (s Schema) ColumnsCount() int {
+	return len(s.Fields)
+}

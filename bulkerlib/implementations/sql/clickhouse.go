@@ -501,7 +501,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, namespace string, tabl
 	queryTableName := ch.TableName(ch.localTableName(tableName))
 	namespace = ch.namespaceName(namespace)
 	tableName = ch.TableName(tableName)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types2.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types2.NewOrderedSet[string]()}
 	rows, err := ch.txOrDb(ctx).QueryContext(ctx, chTableSchemaQuery, namespace, queryTableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").

@@ -355,7 +355,7 @@ func (m *MySQL) GetTableSchema(ctx context.Context, namespace string, tableName 
 func (m *MySQL) getTable(ctx context.Context, namespace, tableName string) (*Table, error) {
 	tableName = m.TableName(tableName)
 	namespace = m.namespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 	rows, err := m.dataSource.QueryContext(ctx, mySQLTableSchemaQuery, namespace, tableName)

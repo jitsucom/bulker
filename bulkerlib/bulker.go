@@ -244,7 +244,7 @@ func (ws *WarehouseState) Merge(second WarehouseState) {
 	}
 	if ws.States == nil {
 		st := *ws
-		ws.States = types2.NewOrderedMap[string, any]()
+		ws.States = types2.NewOrderedMap[string, any](0)
 		ws.States.Set(ws.Name, st)
 	}
 	ws.Name = "total"

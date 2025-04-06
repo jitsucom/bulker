@@ -122,7 +122,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 // parseEvent parses event from query parameters (dataField and json paths)
 func (r *Router) parsePixelEvent(c *gin.Context, tp string) (event types.Json, err error) {
 	parameters := c.Request.URL.Query()
-	event = types.NewJson()
+	event = types.NewJson(0)
 
 	data := parameters.Get(dataField)
 	if data != "" {
@@ -191,7 +191,7 @@ func processHeadersData(c *gin.Context, event types.Json, tp string) {
 		ctx, _ = o.(types.Json)
 	}
 	if ctx == nil {
-		ctx = types.NewJson()
+		ctx = types.NewJson(0)
 	}
 	groupId := ctx.GetS("groupId")
 	if groupId == "" {
@@ -206,9 +206,9 @@ func processHeadersData(c *gin.Context, event types.Json, tp string) {
 		traits, _ = o.(types.Json)
 	}
 	if traits == nil {
-		traits = types.NewJson()
+		traits = types.NewJson(0)
 	}
-	traitsNew := types.NewJson()
+	traitsNew := types.NewJson(0)
 	groupTraits, _ := c.Cookie(groupTraitsCookie)
 	if groupTraits != "" {
 		_ = jsonorder.Unmarshal([]byte(groupTraits), &traitsNew)
@@ -233,7 +233,7 @@ func processHeadersData(c *gin.Context, event types.Json, tp string) {
 				page, _ = o.(types.Json)
 			}
 			if page == nil {
-				page = types.NewJson()
+				page = types.NewJson(0)
 			}
 			page.SetIfAbsent("url", referer)
 			page.SetIfAbsent("path", r.Path)
@@ -249,7 +249,7 @@ func processHeadersData(c *gin.Context, event types.Json, tp string) {
 					properties, _ = o.(types.Json)
 				}
 				if properties == nil {
-					properties = types.NewJson()
+					properties = types.NewJson(0)
 				}
 				properties.SetIfAbsent("url", referer)
 				properties.SetIfAbsent("path", r.Path)

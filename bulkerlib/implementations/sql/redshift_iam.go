@@ -316,7 +316,7 @@ func (p *RedshiftIAM) getPrimaryKeys(ctx context.Context, namespace, tableName s
 func (p *RedshiftIAM) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
 	namespace = p.namespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, utils.DefaultString(namespace, "pg_temp_11"), tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").

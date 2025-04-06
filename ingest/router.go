@@ -332,7 +332,7 @@ func patchEvent(c *gin.Context, messageId string, ev types.Json, tp string, inge
 
 	ctx, ok := ev.GetN("context").(types.Json)
 	if !ok || ctx == nil {
-		ctx = types.NewOrderedMap[string, any]()
+		ctx = types.NewOrderedMap[string, any](4)
 		ev.Set("context", ctx)
 	}
 

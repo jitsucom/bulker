@@ -41,6 +41,8 @@ type AbstractSQLStream struct {
 	state  bulker.State
 	inited bool
 
+	existingTable *Table
+
 	customTypes     types.SQLTypes
 	pkColumns       types2.OrderedSet[string]
 	pkColumnsArrays []string
@@ -192,11 +194,11 @@ func (dwh *DWHEnvelope) set(fieldName string, value any) error {
 }
 
 func (ps *AbstractSQLStream) mapForDwh(object types.Object, notFlatteningKeys types2.Set[string], sqlTypesHints types.SQLTypes) (types.Object, *Table, error) {
-	flattenMap := types.NewObject()
+	flattenMap := types.NewObject(ps.existingTable.ColumnsCount() + 1)
 	table := &Table{
 		Name:            ps.tableName,
 		Namespace:       ps.namespace,
-		Columns:         NewColumns(),
+		Columns:         NewColumns(ps.existingTable.ColumnsCount() + 1),
 		PKFields:        ps.pkColumns,
 		TimestampColumn: ps.timestampColumn,
 	}
