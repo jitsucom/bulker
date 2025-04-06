@@ -87,10 +87,10 @@ func (p *Producer) Start() {
 			for {
 				select {
 				case <-ticker.C:
-					ProducerQueueLength.Set(float64(p.producer.Len()))
 					if p.closed.Load() {
 						return
 					}
+					ProducerQueueLength.Set(float64(p.producer.Len()))
 				}
 			}
 		})
