@@ -347,7 +347,7 @@ func (m *MySQL) GetTableSchema(ctx context.Context, namespace string, tableName 
 	table.PKFields = pkFields
 	if pkFields.Size() > 0 {
 		//in MySQL primary key has always name: "PRIMARY"
-		table.PrimaryKeyName = BuildConstraintName(tableName)
+		table.PrimaryKeyName = "PRIMARY"
 	}
 	return table, nil
 }

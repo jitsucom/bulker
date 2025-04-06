@@ -179,7 +179,7 @@ func TestGoodAndBadStreams(t *testing.T) {
 	}
 }
 
-func TestBathSizeBytes(t *testing.T) {
+func TestBatchSizeBytes(t *testing.T) {
 	app, kafkaContainer, postgresContainer := initApp(t, map[string]string{"BULKER_MESSAGES_RETRY_COUNT": "0",
 		"BULKER_TOPIC_MANAGER_REFRESH_PERIOD_SEC": "1",
 		"BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC":  "1"})
