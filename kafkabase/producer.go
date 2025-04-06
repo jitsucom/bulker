@@ -7,6 +7,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"sync/atomic"
 	"time"
 )
 
@@ -33,7 +34,7 @@ type Producer struct {
 	reportQueueLength    bool
 	asyncDeliveryChannel chan kafka.Event
 	waitForDelivery      time.Duration
-	closed               chan struct{}
+	closed               atomic.Bool
 	metricsLabelFunc     MetricsLabelsFunc
 }
 
@@ -53,7 +54,6 @@ func NewProducer(config *KafkaConfig, kafkaConfig *kafka.ConfigMap, reportQueueL
 		producer:             producer,
 		reportQueueLength:    reportQueueLength,
 		asyncDeliveryChannel: make(chan kafka.Event, 1000),
-		closed:               make(chan struct{}),
 		waitForDelivery:      time.Millisecond * time.Duration(config.ProducerWaitForDeliveryMs),
 		metricsLabelFunc:     metricsLabelFunc,
 	}, nil
@@ -86,10 +86,11 @@ func (p *Producer) Start() {
 			defer ticker.Stop()
 			for {
 				select {
-				case <-p.closed:
-					return
 				case <-ticker.C:
 					ProducerQueueLength.Set(float64(p.producer.Len()))
+					if p.closed.Load() {
+						return
+					}
 				}
 			}
 		})
@@ -167,12 +168,12 @@ func (p *Producer) Close() error {
 	if p == nil || p.isClosed() {
 		return nil
 	}
-	notProduced := p.producer.Flush(3000)
+	notProduced := p.producer.Flush(10000)
 	if notProduced > 0 {
 		p.Errorf("%d message left unsent in producer queue.", notProduced)
 		//TODO: suck p.producer.ProduceChannel() and store to fallback file or some retry queue
 	}
-	close(p.closed)
+	p.closed.Store(true)
 	p.Infof("Closing producer.")
 	p.producer.Close()
 	close(p.asyncDeliveryChannel)
@@ -180,12 +181,7 @@ func (p *Producer) Close() error {
 }
 
 func (p *Producer) isClosed() bool {
-	select {
-	case <-p.closed:
-		return true
-	default:
-		return false
-	}
+	return p.closed.Load()
 }
 
 func (p *Producer) QueueSize() (int, error) {
