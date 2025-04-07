@@ -96,6 +96,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		}
 	}()
 	processed := 0
+	maxMessageSize := 0
 	consumedBytes := 0
 	consumer := bc.consumer.Load()
 	for i := 0; i < batchSize; i++ {
@@ -111,6 +112,11 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			// we reached the end of the topic
 			break
 		}
+		if batchSizeBytes > 0 && consumedBytes+maxMessageSize >= batchSizeBytes {
+			nextBatch = true
+			bc.Infof("Reached batch size %d of %d. Stopping batch", consumedBytes, batchSizeBytes)
+			break
+		}
 		message, err := consumer.ReadMessage(bc.waitForMessages)
 		if err != nil {
 			kafkaErr := err.(kafka.Error)
@@ -124,23 +130,9 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			}
 			return counters, state, false, bc.NewError("Failed to consume event from topic. Retryable: %t: %v", kafkaErr.IsRetriable(), kafkaErr)
 		}
-		consumedBytes += len(message.Value)
-		if batchSizeBytes > 0 && consumedBytes > batchSizeBytes {
-			bc.Debugf("Reached batch size %d of %d. Stopping batch", consumedBytes, batchSizeBytes)
-			nextBatch = true
-			consumedBytes -= len(message.Value)
-			// seek to the previous message
-			_, err = consumer.SeekPartitions([]kafka.TopicPartition{message.TopicPartition})
-			if err != nil {
-				kafkaErr := err.(kafka.Error)
-				bc.errorMetric("SEEK_ERROR:" + metrics.KafkaErrorCode(kafkaErr))
-				if bulkerStream != nil {
-					_ = bulkerStream.Abort(ctx)
-				}
-				return counters, state, false, bc.NewError("Failed seek to previous message. Retryable: %t: %v", kafkaErr.IsRetriable(), kafkaErr)
-			}
-			break
-		}
+		messageSize := len(message.Value)
+		maxMessageSize = max(maxMessageSize, messageSize)
+		consumedBytes += messageSize
 
 		counters.consumed++
 		retriesHeader := kafkabase.GetKafkaHeader(message, retriesCountHeader)
