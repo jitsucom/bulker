@@ -71,7 +71,7 @@ func newAbstractTransactionalStream(id string, p SQLAdapter, tableName string, m
 	return &ps, nil
 }
 
-func (ps *AbstractTransactionalSQLStream) initTmpFile(ctx context.Context) (err error) {
+func (ps *AbstractTransactionalSQLStream) initTmpFile(_ context.Context) (err error) {
 	if ps.batchFile == nil {
 		if !ps.merge && ps.sqlAdapter.GetBatchFileFormat() == types.FileFormatNDJSON {
 			//without merge we can write file with compression - no need to convert
@@ -190,19 +190,6 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		ps.temporaryBatchCounter++
 	}()
 	if ps.batchFile != nil && ps.eventsInBatch > 0 {
-		ps.updateRepresentationTable(tmpTable)
-		err = ps.initTx(ctx)
-		if err != nil {
-			return state, errorj.Decorate(err, "failed to init transaction")
-		}
-		if ps.temporaryBatchCounter == 0 {
-			_, err = ps.tx.CreateTable(ctx, tmpTable)
-		} else {
-			_, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, tmpTable)
-		}
-		if err != nil {
-			return state, errorj.Decorate(err, "failed to create table")
-		}
 		err = ps.marshaller.Flush()
 		if err != nil {
 			return state, errorj.Decorate(err, "failed to flush marshaller")
@@ -220,6 +207,25 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		batchSizeMb := float64(batchSize) / 1024 / 1024
 		sec := time.Since(ps.startTime).Seconds()
 		logging.Debugf("[%s] Flushed %d events to batch file. Size: %.2f mb in %.2f s. Speed: %.2f mb/s", ps.id, ps.eventsInBatch, batchSizeMb, sec, batchSizeMb/sec)
+		//TODO: wrong time measurements if tmp batch size is set (only in sync case )
+		state.Merge(bulker.WarehouseState{
+			Name:            "consume",
+			TimeProcessedMs: time.Since(ps.startTime).Milliseconds(),
+		})
+
+		ps.updateRepresentationTable(tmpTable)
+		err = ps.initTx(ctx)
+		if err != nil {
+			return state, errorj.Decorate(err, "failed to init transaction")
+		}
+		if ps.temporaryBatchCounter == 0 {
+			_, err = ps.tx.CreateTable(ctx, tmpTable)
+		} else {
+			_, err = ps.sqlAdapter.TableHelper().EnsureTableWithoutCaching(ctx, ps.tx, ps.id, tmpTable)
+		}
+		if err != nil {
+			return state, errorj.Decorate(err, "failed to create table")
+		}
 
 		workingFile := ps.batchFile
 		needToConvert := false
@@ -295,6 +301,11 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				_ = gzipWriter.Close()
 			}
 			_ = workingFile.Sync()
+			state.Merge(bulker.WarehouseState{
+				Name:            "convert",
+				BytesProcessed:  int(batchSize),
+				TimeProcessedMs: time.Since(convertStart).Milliseconds(),
+			})
 			if needToConvert {
 				stat, _ = workingFile.Stat()
 				var convertedSizeMb float64
@@ -304,13 +315,11 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 				}
 				logging.Infof("[%s] Converted batch file from %s (%.2f mb) to %s (%.2f mb) in %.2f s.", ps.id, ps.marshaller.FileExtension(), batchSizeMb, ps.targetMarshaller.FileExtension(), convertedSizeMb, time.Since(convertStart).Seconds())
 			}
-			state = bulker.WarehouseState{
-				Name:            "convert",
-				BytesProcessed:  int(stat.Size()),
-				TimeProcessedMs: time.Since(convertStart).Milliseconds(),
-			}
 		}
-
+		state.Merge(bulker.WarehouseState{
+			Name:           "batch_size",
+			BytesProcessed: int(batchSize),
+		})
 		loadTime := time.Now()
 		if ps.s3 != nil {
 			s3Config := s3BatchFileOption.Get(&ps.options)

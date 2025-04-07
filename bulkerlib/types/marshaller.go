@@ -59,7 +59,7 @@ type JSONMarshaller struct {
 func (jm *JSONMarshaller) Init(writer io.Writer, _ []string) error {
 	if jm.writer == nil {
 		if jm.compression == FileCompressionGZIP {
-			jm.writer = gzip.NewWriter(writer)
+			jm.writer, _ = gzip.NewWriterLevel(writer, 4)
 		} else {
 			jm.writer = writer
 		}
@@ -131,7 +131,7 @@ type JSONArrayMarshaller struct {
 func (ja *JSONArrayMarshaller) Init(writer io.Writer, _ []string) error {
 	if ja.writer == nil {
 		if ja.compression == FileCompressionGZIP {
-			ja.writer = gzip.NewWriter(writer)
+			ja.writer, _ = gzip.NewWriterLevel(writer, 4)
 		} else {
 			ja.writer = writer
 		}
@@ -211,7 +211,7 @@ type CSVMarshaller struct {
 func (cm *CSVMarshaller) Init(writer io.Writer, header []string) error {
 	if cm.writer == nil {
 		if cm.compression == FileCompressionGZIP {
-			cm.gzipWriter = gzip.NewWriter(writer)
+			cm.gzipWriter, _ = gzip.NewWriterLevel(writer, 4)
 			cm.writer = csv.NewWriter(cm.gzipWriter)
 		} else {
 			cm.writer = csv.NewWriter(writer)
