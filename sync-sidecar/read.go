@@ -197,7 +197,7 @@ func (s *ReadSideCar) Run() {
 		defer stdOutErrWaitGroup.Done()
 
 		scanner := bufio.NewScanner(s.outPipe)
-		scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
+		scanner.Buffer(make([]byte, 1024*10), 1024*1024*50)
 		for scanner.Scan() {
 			s.lastMessageTime.Store(time.Now().Unix())
 			line := scanner.Bytes()
