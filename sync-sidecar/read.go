@@ -60,6 +60,12 @@ func (s *ReadSideCar) Run() {
 
 	s.lastMessageTime.Store(time.Now().Unix())
 
+	s.dbpool, err = pg.NewPGPool(s.databaseURL)
+	if err != nil {
+		s.panic("Unable to create postgres connection pool: %v", err)
+	}
+	defer s.dbpool.Close()
+
 	defer func() {
 		cancelled := s.cancelled.Load()
 		timeExceeded := cancelled && time.Now().Sub(s.startedAt) > time.Hour*time.Duration(s.taskTimeoutHours)
@@ -137,12 +143,6 @@ func (s *ReadSideCar) Run() {
 			}
 		}
 	}()
-
-	s.dbpool, err = pg.NewPGPool(s.databaseURL)
-	if err != nil {
-		s.panic("Unable to create postgres connection pool: %v", err)
-	}
-	defer s.dbpool.Close()
 
 	err = s.loadDestinationConfig()
 	if err != nil {
