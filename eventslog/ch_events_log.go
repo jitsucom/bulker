@@ -1,11 +1,10 @@
 package eventslog
 
 import (
-	"context"
 	"crypto/tls"
+	"database/sql"
 	"fmt"
 	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/safego"
@@ -21,7 +20,7 @@ const chEventsLogServiceName = "ch_events_log"
 type ClickhouseEventsLog struct {
 	sync.Mutex
 	appbase.Service
-	conn                  driver.Conn
+	conn                  *sql.DB
 	eventsBuffer          []*ActorEvent
 	periodicFlushInterval time.Duration
 	closeChan             chan struct{}
@@ -48,19 +47,13 @@ func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 		},
 		Protocol:    clickhouse.HTTP,
 		DialTimeout: time.Second * 30,
-		Compression: &clickhouse.Compression{
-			Method: clickhouse.CompressionZSTD,
-		},
 	}
 	if config.ClickhouseSSL {
 		opts.TLS = &tls.Config{
 			InsecureSkipVerify: true,
 		}
 	}
-	conn, err := clickhouse.Open(opts)
-	if err != nil {
-		return nil, err
-	}
+	conn := clickhouse.OpenDB(opts)
 	c := ClickhouseEventsLog{
 		Service:               base,
 		conn:                  conn,
@@ -98,14 +91,20 @@ func (r *ClickhouseEventsLog) flush() {
 	clear(r.eventsBuffer)
 	r.eventsBuffer = r.eventsBuffer[:0]
 	r.Unlock()
-	batch, err := r.conn.PrepareBatch(context.Background(), "INSERT INTO events_log SETTINGS async_insert=1, wait_for_async_insert=0")
+	scope, err := r.conn.Begin()
+	if err != nil {
+		r.Errorf("Error starting transaction: %v", err)
+		return
+	}
+	batch, err := scope.Prepare("INSERT INTO events_log SETTINGS async_insert=1, wait_for_async_insert=0")
 	if err != nil {
 		r.Errorf("Error preparing batch: %v", err)
+		_ = scope.Rollback()
 		return
 	}
 	for _, event := range bufferCopy {
 		bytes, _ := jsonorder.Marshal(event.Event)
-		err = batch.Append(
+		_, err = batch.Exec(
 			event.Timestamp,
 			event.ActorId,
 			string(event.EventType),
@@ -114,12 +113,14 @@ func (r *ClickhouseEventsLog) flush() {
 		)
 		if err != nil {
 			r.Errorf("Error appending to batch: %v", err)
-			continue
+			_ = scope.Rollback()
+			return
 		}
 	}
-	err = batch.Send()
+	err = scope.Commit()
 	if err != nil {
 		r.Errorf("Error sending batch: %v", err)
+		_ = scope.Rollback()
 	} else {
 		r.Debugf("Inserted %d events in %v", len(bufferCopy), time.Since(tm))
 	}
@@ -137,7 +138,7 @@ func (r *ClickhouseEventsLog) PostAsync(event *ActorEvent) {
 
 func (r *ClickhouseEventsLog) PostEvent(event *ActorEvent) (id EventsLogRecordId, err error) {
 	bytes, _ := jsonorder.Marshal(event.Event)
-	err = r.conn.AsyncInsert(context.Background(), "INSERT INTO events_log VALUES (?,?,?,?,?)", false, event.Timestamp, event.ActorId, string(event.EventType), string(event.Level), string(bytes))
+	_, err = r.conn.Exec("INSERT INTO events_log SETTINGS async_insert=1, wait_for_async_insert=0 VALUES (?,?,?,?,?)", false, event.Timestamp, event.ActorId, string(event.EventType), string(event.Level), string(bytes))
 	return
 }
 
@@ -146,7 +147,8 @@ func (r *ClickhouseEventsLog) GetEvents(eventType EventType, actorId string, lev
 }
 
 func (r *ClickhouseEventsLog) InsertTaskLog(level, logger, message, syncId, taskId string, timestamp time.Time) error {
-	return r.conn.AsyncInsert(context.Background(), "INSERT INTO task_log(task_id, sync_id, timestamp, level, logger, message) SETTINGS async_insert_busy_timeout_ms=1000 VALUES (?,?,?,?,?,?)", false, taskId, syncId, timestamp.UnixMilli(), level, logger, message)
+	_, err := r.conn.Exec("INSERT INTO task_log(task_id, sync_id, timestamp, level, logger, message) SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_ms=1000 VALUES (?,?,?,?,?,?)", false, taskId, syncId, timestamp.UnixMilli(), level, logger, message)
+	return err
 }
 
 func (r *ClickhouseEventsLog) Close() error {
