@@ -770,7 +770,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 					VolumeMounts: volumeMounts,
 					Resources: v1.ResourceRequirements{
 						Limits: v1.ResourceList{
-							v1.ResourceCPU: *resource.NewMilliQuantity(int64(500), resource.DecimalSI),
+							v1.ResourceCPU: *resource.NewMilliQuantity(int64(1000), resource.DecimalSI),
 							// 8Gi
 							v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 33)), resource.BinarySI),
 						},
