@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go v0.116.0
 	cloud.google.com/go/bigquery v1.64.0
 	cloud.google.com/go/storage v1.43.0
-	github.com/ClickHouse/clickhouse-go/v2 v2.33.0
+	github.com/ClickHouse/clickhouse-go/v2 v2.34.0
 	github.com/Kount/pq-timeouts v1.0.0
 	github.com/aws/aws-sdk-go-v2 v1.32.5
 	github.com/aws/aws-sdk-go-v2/config v1.28.1
@@ -27,7 +27,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	google.golang.org/api v0.214.0
 	k8s.io/apimachinery v0.30.2
-	
+
 )
 
 //replace github.com/cucumber/godog => github.com/laurazard/godog v0.0.0-20220922095256-4c4b17abdae7

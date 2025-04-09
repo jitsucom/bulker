@@ -46,6 +46,7 @@ func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 			"async_insert_busy_timeout_ms": 10000,
 			"date_time_input_format":       "best_effort",
 		},
+		Protocol:    clickhouse.HTTP,
 		DialTimeout: time.Second * 30,
 		Compression: &clickhouse.Compression{
 			Method: clickhouse.CompressionZSTD,
@@ -97,7 +98,7 @@ func (r *ClickhouseEventsLog) flush() {
 	clear(r.eventsBuffer)
 	r.eventsBuffer = r.eventsBuffer[:0]
 	r.Unlock()
-	batch, err := r.conn.PrepareBatch(context.Background(), "INSERT INTO events_log")
+	batch, err := r.conn.PrepareBatch(context.Background(), "INSERT INTO events_log SETTINGS async_insert=1, wait_for_async_insert=0")
 	if err != nil {
 		r.Errorf("Error preparing batch: %v", err)
 		return

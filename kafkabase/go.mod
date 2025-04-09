@@ -26,7 +26,7 @@ require (
 	github.com/docker/buildx v0.21.2 // indirect
 	github.com/docker/cli v28.0.1+incompatible // indirect
 	github.com/docker/compose/v2 v2.33.1 // indirect
-	github.com/docker/docker v28.0.1+incompatible // indirect
+	github.com/docker/docker v28.0.4+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect

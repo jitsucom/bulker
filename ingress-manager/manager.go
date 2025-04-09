@@ -44,6 +44,10 @@ func NewManager(appContext *Context) *Manager {
 			panic(err)
 		}
 	}
+	err = m.RemoveLegacy()
+	if err != nil {
+		panic(err)
+	}
 	return m
 }
 
