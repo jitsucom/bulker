@@ -81,7 +81,7 @@ type StreamCredentials struct {
 }
 
 func (sc *StreamCredentials) String() string {
-	return fmt.Sprintf("[slug: %s][domain: %s][writeKey: %s][ingestType: %s]", sc.Slug, sc.Domain, maskWriteKey(sc.WriteKey), sc.IngestType)
+	return fmt.Sprintf("[slug: %s][domain: %s][writeKey: %s][ingestType: %s]", sc.Slug, sc.Domain, sc.WriteKey, sc.IngestType)
 }
 
 func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelector) *Router {
