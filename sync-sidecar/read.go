@@ -24,7 +24,8 @@ const interruptError = "Stream was interrupted. Check logs for errors."
 const cancelledError = "Sync job was cancelled"
 
 var forceTemporaryBatchesDestinations = map[string]int{
-	"webhook": 100,
+	"webhook":    100,
+	"clickhouse": 20000,
 }
 
 type ReadSideCar struct {
