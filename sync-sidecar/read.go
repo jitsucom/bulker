@@ -50,21 +50,14 @@ type ReadSideCar struct {
 
 func (s *ReadSideCar) Run() {
 	var err error
-	s.lastMessageTime.Store(time.Now().Unix())
-	ticker := time.NewTicker(15 * time.Minute)
-	defer ticker.Stop()
-	go func() {
-		for range ticker.C {
-			if time.Now().Unix()-s.lastMessageTime.Load() > 4000 {
-				s.panic("No messages from %s for 1 hour. Exiting", s.packageName)
-			}
-		}
-	}()
-	s.dbpool, err = pg.NewPGPool(s.databaseURL)
-	if err != nil {
-		s.panic("Unable to create postgres connection pool: %v", err)
+
+	s.log("Sidecar. command: read. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
+	s.fullSync = os.Getenv("FULL_SYNC") == "true"
+	if s.fullSync {
+		s.log("Running in Full Sync mode")
 	}
-	defer s.dbpool.Close()
+
+	s.lastMessageTime.Store(time.Now().Unix())
 
 	defer func() {
 		cancelled := s.cancelled.Load()
@@ -134,11 +127,22 @@ func (s *ReadSideCar) Run() {
 			s.sendGoodStatus("SUCCESS", "", "", true)
 		}
 	}()
-	s.log("Sidecar. command: read. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
-	s.fullSync = os.Getenv("FULL_SYNC") == "true"
-	if s.fullSync {
-		s.log("Running in Full Sync mode")
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	go func() {
+		for range ticker.C {
+			if time.Now().Unix()-s.lastMessageTime.Load() > 8000 {
+				s.panic("No messages from %s for 2 hour. Exiting", s.packageName)
+			}
+		}
+	}()
+
+	s.dbpool, err = pg.NewPGPool(s.databaseURL)
+	if err != nil {
+		s.panic("Unable to create postgres connection pool: %v", err)
 	}
+	defer s.dbpool.Close()
+
 	err = s.loadDestinationConfig()
 	if err != nil {
 		s.panic("Error loading destination config: %v", err)

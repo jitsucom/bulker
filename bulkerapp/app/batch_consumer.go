@@ -114,7 +114,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		}
 		if batchSizeBytes > 0 && consumedBytes+maxMessageSize >= batchSizeBytes {
 			nextBatch = true
-			bc.Infof("Reached batch size %d of %d. Stopping batch", consumedBytes, batchSizeBytes)
+			bc.Debugf("Reached batch size %d of %d. Stopping batch", consumedBytes, batchSizeBytes)
 			break
 		}
 		message, err := consumer.ReadMessage(bc.waitForMessages)

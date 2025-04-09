@@ -210,6 +210,7 @@ func (ps *AbstractTransactionalSQLStream) flushBatchFile(ctx context.Context) (s
 		//TODO: wrong time measurements if tmp batch size is set (only in sync case )
 		state.Merge(bulker.WarehouseState{
 			Name:            "consume",
+			BytesProcessed:  int(batchSize),
 			TimeProcessedMs: time.Since(ps.startTime).Milliseconds(),
 		})
 
