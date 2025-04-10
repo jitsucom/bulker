@@ -1,6 +1,7 @@
 package eventslog
 
 import (
+	"context"
 	"crypto/tls"
 	"database/sql"
 	"fmt"
@@ -46,7 +47,7 @@ func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 			"date_time_input_format":       "best_effort",
 		},
 		Protocol:    clickhouse.HTTP,
-		DialTimeout: time.Second * 30,
+		DialTimeout: time.Second * 5,
 	}
 	if config.ClickhouseSSL {
 		opts.TLS = &tls.Config{
@@ -91,12 +92,14 @@ func (r *ClickhouseEventsLog) flush() {
 	clear(r.eventsBuffer)
 	r.eventsBuffer = r.eventsBuffer[:0]
 	r.Unlock()
-	scope, err := r.conn.Begin()
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(r.periodicFlushInterval))
+	defer cancel()
+	scope, err := r.conn.BeginTx(ctx, nil)
 	if err != nil {
 		r.Errorf("Error starting transaction: %v", err)
 		return
 	}
-	batch, err := scope.Prepare("INSERT INTO events_log SETTINGS async_insert=1, wait_for_async_insert=0")
+	batch, err := scope.PrepareContext(ctx, "INSERT INTO events_log SETTINGS async_insert=1, wait_for_async_insert=0")
 	if err != nil {
 		r.Errorf("Error preparing batch: %v", err)
 		_ = scope.Rollback()
@@ -138,7 +141,7 @@ func (r *ClickhouseEventsLog) PostAsync(event *ActorEvent) {
 
 func (r *ClickhouseEventsLog) PostEvent(event *ActorEvent) (id EventsLogRecordId, err error) {
 	bytes, _ := jsonorder.Marshal(event.Event)
-	_, err = r.conn.Exec("INSERT INTO events_log SETTINGS async_insert=1, wait_for_async_insert=0 VALUES (?,?,?,?,?)", false, event.Timestamp, event.ActorId, string(event.EventType), string(event.Level), string(bytes))
+	_, err = r.conn.Exec("INSERT INTO events_log SETTINGS async_insert=1, wait_for_async_insert=0 VALUES (?,?,?,?,?)", event.Timestamp, event.ActorId, string(event.EventType), string(event.Level), string(bytes))
 	return
 }
 
@@ -147,7 +150,7 @@ func (r *ClickhouseEventsLog) GetEvents(eventType EventType, actorId string, lev
 }
 
 func (r *ClickhouseEventsLog) InsertTaskLog(level, logger, message, syncId, taskId string, timestamp time.Time) error {
-	_, err := r.conn.Exec("INSERT INTO task_log(task_id, sync_id, timestamp, level, logger, message) SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_ms=1000 VALUES (?,?,?,?,?,?)", false, taskId, syncId, timestamp.UnixMilli(), level, logger, message)
+	_, err := r.conn.Exec("INSERT INTO task_log(task_id, sync_id, timestamp, level, logger, message) SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_ms=1000 VALUES (?,?,?,?,?,?)", taskId, syncId, timestamp.UnixMilli(), level, logger, message)
 	return err
 }
 
