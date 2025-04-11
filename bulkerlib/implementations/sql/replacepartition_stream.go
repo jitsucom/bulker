@@ -25,6 +25,8 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 		so.Add(opt)
 	}
 	partitionId := bulker.PartitionIdOption.Get(&so)
+	disableTemporaryTables := DisableTemporaryTables.Get(&so)
+
 	if partitionId == "" {
 		return nil, errors.New("WithPartition is required option for ReplacePartitionStream")
 	}
@@ -49,7 +51,7 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 			Namespace:       p.TmpNamespace(ps.namespace),
 			Name:            tmpTableName,
 			Columns:         tmpTable.Columns,
-			Temporary:       true,
+			Temporary:       !disableTemporaryTables,
 			TimestampColumn: tableForObject.TimestampColumn,
 		}
 		if p.TmpTableUsePK() {

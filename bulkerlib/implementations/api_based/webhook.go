@@ -86,14 +86,14 @@ func (mp *WebhookBulker) Type() string {
 	return WebhookBulkerTypeId
 }
 
-func (mp *WebhookBulker) Upload(reader io.Reader, eventsName string, eventsCount int, env map[string]any) (int, string, error) {
+func (mp *WebhookBulker) Upload(reader io.Reader, eventsName string, eventsCount int, env map[string]any) (statusCode int, respBody string, err error) {
 	if mp.closed.Load() {
 		return 0, "", fmt.Errorf("attempt to use closed Webhook instance")
 	}
 
-	var err error
+	var body []byte
 	if mp.config.CustomPayload {
-		result := MacrosRegex.ReplaceAllFunc(mp.payload, func(match []byte) []byte {
+		body = MacrosRegex.ReplaceAllFunc(mp.payload, func(match []byte) []byte {
 			subMatches := MacrosRegex.FindSubmatch(match)
 			if len(subMatches) > 1 {
 				macroName := string(subMatches[1]) // Extracted macro name (e.g., "EVENT")
@@ -144,47 +144,49 @@ func (mp *WebhookBulker) Upload(reader io.Reader, eventsName string, eventsCount
 			}
 			return match // Keep unchanged if not found
 		})
-		reader = bytes.NewReader(result)
-	}
-	if err != nil {
-		return 0, "", err
-	}
-	req, err := http.NewRequest(strings.ToUpper(utils.DefaultString(mp.config.Method, "POST")), mp.config.URL, reader)
-	if err != nil {
-		return 0, "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	for _, header := range mp.config.Headers {
-		headerParts := strings.SplitN(header, ":", 2)
-		if len(headerParts) != 2 {
-			req.Header.Set(strings.TrimSpace(headerParts[0]), "")
-		} else {
-			req.Header.Set(strings.TrimSpace(headerParts[0]), strings.TrimSpace(headerParts[1]))
-		}
-	}
-	res, err := mp.httpClient.Do(req)
-	if err != nil {
-		return 0, "", err
 	} else {
-		defer res.Body.Close()
-		//get body
-		var body []byte
-		body, err = io.ReadAll(res.Body)
-		strbody := string(body)
-		statusCode := res.StatusCode
-		if statusCode == 200 {
-			return statusCode, strbody, nil
-		} else if statusCode == 400 {
-			if strings.Contains(strbody, "some data points in the request failed validation") {
-				return statusCode, strbody, nil
+		body, err = io.ReadAll(reader)
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	for _, retryDelayMs := range retryDelaysMs {
+		var req *http.Request
+		req, err = http.NewRequest(strings.ToUpper(utils.DefaultString(mp.config.Method, "POST")), mp.config.URL, bytes.NewReader(body))
+		if err != nil {
+			return 0, "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		for _, header := range mp.config.Headers {
+			headerParts := strings.SplitN(header, ":", 2)
+			if len(headerParts) != 2 {
+				req.Header.Set(strings.TrimSpace(headerParts[0]), "")
 			} else {
-				return statusCode, "", mp.NewError("status: %v body: %s", statusCode, strbody)
+				req.Header.Set(strings.TrimSpace(headerParts[0]), strings.TrimSpace(headerParts[1]))
 			}
+		}
+		var res *http.Response
+		res, err = mp.httpClient.Do(req)
+		if err != nil {
+			return 0, "", err
 		} else {
-			return statusCode, "", mp.NewError("status: %v body: %s err: %v", statusCode, strbody, err)
+			defer res.Body.Close()
+			var bodyBytes []byte
+			bodyBytes, err = io.ReadAll(res.Body)
+			respBody = string(bodyBytes)
+			statusCode = res.StatusCode
+			if statusCode == 200 {
+				return statusCode, respBody, nil
+			} else if statusCode == 502 || statusCode == 503 {
+				err = mp.NewError("http status: %v", statusCode)
+				time.Sleep(time.Duration(retryDelayMs) * time.Millisecond)
+				continue
+			} else {
+				return statusCode, respBody, mp.NewError("status: %v err: %v", statusCode, err)
+			}
 		}
 	}
-
+	return
 }
 
 func (mp *WebhookBulker) GetBatchFileFormat() types2.FileFormat {

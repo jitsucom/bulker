@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/pg"
@@ -26,6 +27,10 @@ const cancelledError = "Sync job was cancelled"
 var forceTemporaryBatchesDestinations = map[string]int{
 	"webhook":    100,
 	"clickhouse": 20000,
+}
+
+var disableTemporaryTableDestinations = map[string]struct{}{
+	"clickhouse": {},
 }
 
 type ReadSideCar struct {
@@ -477,6 +482,9 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 		// in replace table mode bulker doesn't use TEMPORARY tables in databases.
 		// that allows us to populate tmp table during long period and through multiple transactions
 		streamOptions = append(streamOptions, bulker.WithTemporaryBatchSize(100000))
+	}
+	if _, ok := disableTemporaryTableDestinations[s.blk.Type()]; ok {
+		streamOptions = append(streamOptions, sql.WithDisableTemporaryTables())
 	}
 
 	if namespace != "" {

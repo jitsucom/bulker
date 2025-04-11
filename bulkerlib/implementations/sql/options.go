@@ -61,6 +61,12 @@ var (
 		ParseFunc:    utils.ParseInt,
 	}
 
+	DisableTemporaryTables = bulker.ImplementationOption[bool]{
+		Key:          "disableTemporaryTables",
+		DefaultValue: false,
+		ParseFunc:    utils.ParseBool,
+	}
+
 	localBatchFileOption = bulker.ImplementationOption[string]{Key: "BULKER_OPTION_LOCAL_BATCH_FILE"}
 
 	s3BatchFileOption = bulker.ImplementationOption[*S3OptionConfig]{Key: "BULKER_OPTION_S3_BATCH_FILE"}
@@ -72,6 +78,7 @@ func init() {
 	bulker.RegisterOption(&OmitNilsOption)
 	bulker.RegisterOption(&SchemaFreezeOption)
 	bulker.RegisterOption(&MaxColumnsCount)
+	bulker.RegisterOption(&DisableTemporaryTables)
 }
 
 type S3OptionConfig struct {
@@ -137,13 +144,13 @@ func WithColumnTypeDDL(columnName, sqlType, ddlType string) bulker.StreamOption 
 // Not every database solution supports this option
 // fileName - name of tmp file that will be used to collection event batches before sending them to destination
 func withLocalBatchFile(fileName string) bulker.StreamOption {
-	return func(options *bulker.StreamOptions) {
-		localBatchFileOption.Set(options, fileName)
-	}
+	return bulker.WithOption(&localBatchFileOption, fileName)
 }
 
 func withS3BatchFile(s3OptionConfig *S3OptionConfig) bulker.StreamOption {
-	return func(options *bulker.StreamOptions) {
-		s3BatchFileOption.Set(options, s3OptionConfig)
-	}
+	return bulker.WithOption(&s3BatchFileOption, s3OptionConfig)
+}
+
+func WithDisableTemporaryTables() bulker.StreamOption {
+	return bulker.WithOption(&DisableTemporaryTables, true)
 }

@@ -20,6 +20,12 @@ type TransactionalStream struct {
 func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOptions ...bulker.StreamOption) (bulker.BulkerStream, error) {
 	ps := TransactionalStream{}
 	var err error
+	so := bulker.StreamOptions{}
+	for _, opt := range streamOptions {
+		so.Add(opt)
+	}
+	disableTemporaryTables := DisableTemporaryTables.Get(&so)
+
 	ps.AbstractTransactionalSQLStream, err = newAbstractTransactionalStream(id, p, tableName, bulker.Batch, streamOptions...)
 	if err != nil {
 		return nil, err
@@ -40,7 +46,7 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 			Namespace:       p.TmpNamespace(ps.namespace),
 			Name:            tmpTableName,
 			Columns:         tmpTable.Columns,
-			Temporary:       true,
+			Temporary:       !disableTemporaryTables,
 			TimestampColumn: tableForObject.TimestampColumn,
 		}
 		if p.TmpTableUsePK() {
