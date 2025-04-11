@@ -90,11 +90,17 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 		"/robots.txt",
 		"/p.js",
 		"/v1/projects/:writeKey/settings",
+		"/v1/projects/projects/:writeKey/settings",
+		"/v1/projects",
 		"/v1/b",
 		"/v1/batch",
+		"/v1/batch/b",
 		"/projects/:writeKey/settings",
+		"/projects/projects/:writeKey/settings",
+		"/projects",
 		"/b",
 		"/batch",
+		"/batch/b",
 		"/api/s/s2s/batch",
 		"/api/s/:tp",
 		"/api/px/:tp",
@@ -151,9 +157,15 @@ func NewRouter(appContext *Context, partitionSelector kafkabase.PartitionSelecto
 	//fast.Use(timeout.Timeout(timeout.WithTimeout(5 * time.Second)))
 	fast.Use(router.CorsMiddleware)
 	fast.Match([]string{"GET", "OPTIONS", "POST"}, "/v1/projects/:writeKey/settings", router.SettingsHandler)
+	fast.Match([]string{"GET", "OPTIONS", "POST"}, "/v1/projects/projects/:writeKey/settings", router.SettingsHandler)
+	fast.Match([]string{"GET", "OPTIONS", "POST"}, "/v1/projects", router.SettingsHandler)
 	fast.Match([]string{"GET", "OPTIONS", "POST"}, "/projects/:writeKey/settings", router.SettingsHandler)
+	fast.Match([]string{"GET", "OPTIONS", "POST"}, "/projects/projects/:writeKey/settings", router.SettingsHandler)
+	fast.Match([]string{"GET", "OPTIONS", "POST"}, "/projects", router.SettingsHandler)
+	fast.Match([]string{"OPTIONS", "POST"}, "/v1/batch/b", router.BatchHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/v1/batch", router.BatchHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/v1/b", router.BatchHandler)
+	fast.Match([]string{"OPTIONS", "POST"}, "/batch/b", router.BatchHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/batch", router.BatchHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/b", router.BatchHandler)
 	fast.Match([]string{"OPTIONS", "POST"}, "/api/s/s2s/batch", router.BatchHandler)
