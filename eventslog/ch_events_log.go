@@ -46,6 +46,9 @@ func NewClickhouseEventsLog(config EventsLogConfig) (EventsLogService, error) {
 			"async_insert_busy_timeout_ms": 10000,
 			"date_time_input_format":       "best_effort",
 		},
+		Compression: &clickhouse.Compression{
+			Method: clickhouse.CompressionLZ4,
+		},
 		Protocol:    clickhouse.HTTP,
 		DialTimeout: time.Second * 5,
 	}
