@@ -13,7 +13,7 @@ func kafka1() {
 	bootstapServers := os.Getenv("KAFKA_BOOTSTRAP_SERVERS")
 	securityProtocol := os.Getenv("KAFKA_SECURITY_PROTOCOL")
 	kafkaSasl := os.Getenv("KAFKA_SASL")
-
+	fmt.Println("Kafka bootstrap servers:", bootstapServers, "security protocol:", securityProtocol, "kafka sasl:", kafkaSasl)
 	kafkaConfig := &kafka.ConfigMap{
 		"client.id":                "bulkerapp_admin",
 		"bootstrap.servers":        bootstapServers,
@@ -22,8 +22,8 @@ func kafka1() {
 	}
 	if securityProtocol != "" {
 		_ = kafkaConfig.SetKey("security.protocol", securityProtocol)
+		_ = kafkaConfig.SetKey("enable.ssl.certificate.verification", false)
 	}
-	_ = kafkaConfig.SetKey("enable.ssl.certificate.verification", false)
 	if kafkaSasl != "" {
 		sasl := map[string]interface{}{}
 		err := hjson.Unmarshal([]byte(kafkaSasl), &sasl)
