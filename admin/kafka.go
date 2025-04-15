@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/hjson/hjson-go/v4"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"os"
 )
 
 // add partitions to the topic
 func kafka1() {
 	bootstapServers := os.Getenv("KAFKA_BOOTSTRAP_SERVERS")
-	securityProtocol := utils.Nvl(os.Getenv("KAFKA_SECURITY_PROTOCOL"), "SASL_SSL")
+	securityProtocol := os.Getenv("KAFKA_SECURITY_PROTOCOL")
 	kafkaSasl := os.Getenv("KAFKA_SASL")
 
 	kafkaConfig := &kafka.ConfigMap{
