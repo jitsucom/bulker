@@ -324,7 +324,7 @@ func (a *S3) Close() error {
 }
 
 func ping(client *s3.Client, config *S3Config) (err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
 	defer cancel()
 	_, err = client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(config.Bucket),
