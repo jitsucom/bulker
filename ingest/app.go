@@ -100,6 +100,7 @@ func (a *Context) Cleanup() error {
 }
 
 func (a *Context) ShutdownSignal() error {
+	a.server.SetKeepAlivesEnabled(false)
 	_ = a.server.Shutdown(context.Background())
 	return nil
 }

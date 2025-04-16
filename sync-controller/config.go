@@ -35,6 +35,9 @@ type Config struct {
 
 	SidecarImage string `mapstructure:"SIDECAR_IMAGE" default:"jitsucom/sidecar:latest"`
 
+	LocalIngestEndpoint  string `mapstructure:"LOCAL_INGEST_ENDPOINT"`
+	GlobalIngestEndpoint string `mapstructure:"GLOBAL_INGEST_ENDPOINT"`
+
 	LogLevel   string `mapstructure:"LOG_LEVEL" default:"INFO"`
 	DBLogLevel string `mapstructure:"DB_LOG_LEVEL" default:"INFO"`
 }

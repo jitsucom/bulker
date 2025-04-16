@@ -324,13 +324,14 @@ func (a *S3) Close() error {
 }
 
 func ping(client *s3.Client, config *S3Config) (err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
+	timeout := time.Second * 60
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	_, err = client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(config.Bucket),
 	})
 	if err != nil {
-		return fmt.Errorf("s3 bucket access error: %w", err)
+		return fmt.Errorf("%s timeout exceeded while establishing s3 connection: %w", timeout, err)
 	}
 	return nil
 }

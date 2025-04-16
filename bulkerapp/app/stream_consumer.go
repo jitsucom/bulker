@@ -187,8 +187,15 @@ func (sc *StreamConsumerImpl) start() {
 	sc.Infof("Starting stream consumer for topic. Ver: %s", sc.destination.config.UpdatedAt)
 	safego.RunWithRestart(func() {
 		var err error
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
+		var queueSize float64
+		lastCurrentOffset := sc.currentOffset
+		speedMeasurementInterval := 10 * time.Second
+		var processedPerInterval int
+		var speed float64
+		queueSizeTicker := time.NewTicker(1 * time.Minute)
+		defer queueSizeTicker.Stop()
+		speedTicker := time.NewTicker(speedMeasurementInterval)
+		defer speedTicker.Stop()
 		for {
 			select {
 			case <-sc.closed:
@@ -201,14 +208,19 @@ func (sc *StreamConsumerImpl) start() {
 				}
 				sc.Infof("Closed stream state: %+v", state)
 				return
-			case <-ticker.C:
-				if sc.currentOffset > 0 {
+			case <-speedTicker.C:
+				speed = float64(processedPerInterval) / speedMeasurementInterval.Seconds()
+				processedPerInterval = 0
+			case <-queueSizeTicker.C:
+				if sc.currentOffset != lastCurrentOffset {
+					lastCurrentOffset = sc.currentOffset
 					_, highOffset, err := sc.consumer.QueryWatermarkOffsets(sc.topicId, 0, 10_000)
 					if err != nil {
 						sc.Errorf("Error querying watermark offsets: %v", err)
 						metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "query_watermark_failed").Inc()
 					} else {
-						metrics.ConsumerQueueSize(sc.topicId, "stream", sc.destination.Id(), sc.tableName).Set(math.Max(float64(highOffset-sc.currentOffset-1), 0))
+						queueSize = math.Max(float64(highOffset-sc.currentOffset-2), 0)
+						metrics.ConsumerQueueSize(sc.topicId, "stream", sc.destination.Id(), sc.tableName).Set(queueSize)
 					}
 				}
 			default:
@@ -236,7 +248,9 @@ func (sc *StreamConsumerImpl) start() {
 				var state bulker.State
 				var processedObject types.Object
 				state, processedObject, err = sc.stream.Load().Consume(context.Background(), message)
-				sc.postEventsLog(message.Value, state.Representation, processedObject, err)
+				processedPerInterval++
+				queueSize--
+				sc.postEventsLog(message.Value, state.Representation, processedObject, queueSize, speed, err)
 				if err != nil {
 					metrics.ConsumerErrors(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "bulker_stream_error").Inc()
 					sc.Errorf("Failed to inject event to bulker stream: %v", err)
@@ -319,10 +333,12 @@ func (sc *StreamConsumerImpl) UpdateDestination(destination *Destination) error 
 	return nil
 }
 
-func (sc *StreamConsumerImpl) postEventsLog(message []byte, representation any, processedObject types.Object, processedErr error) {
+func (sc *StreamConsumerImpl) postEventsLog(message []byte, representation any, processedObject types.Object, queueSize float64, speed float64, processedErr error) {
 	object := map[string]any{
-		"original": string(message),
-		"status":   "SUCCESS",
+		"original":  string(message),
+		"status":    "SUCCESS",
+		"queueSize": max(int(queueSize), 0),
+		"speed":     speed,
 	}
 	if representation != nil {
 		object["representation"] = representation

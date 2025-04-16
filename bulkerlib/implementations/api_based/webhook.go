@@ -12,6 +12,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"sync/atomic"
@@ -20,6 +21,9 @@ import (
 
 const WebhookBulkerTypeId = "webhook"
 const WebhookUnsupported = "Only 'batch' mode is supported"
+
+var GlobalIngestEndpoint = os.Getenv("GLOBAL_INGEST_ENDPOINT")
+var LocalIngestEndpoint = os.Getenv("LOCAL_INGEST_ENDPOINT")
 
 var MacrosRegex = regexp.MustCompile(`\{\{\s*([\w.-]+)\s*}}`)
 
@@ -40,9 +44,12 @@ type WebhookConfig struct {
 }
 type WebhookBulker struct {
 	appbase.Service
-	config     WebhookConfig
-	httpClient *http.Client
-	payload    []byte
+	config      WebhookConfig
+	isIngest    bool
+	url         string
+	originalUrl string
+	httpClient  *http.Client
+	payload     []byte
 
 	closed *atomic.Bool
 }
@@ -63,10 +70,22 @@ func NewWebhookBulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		}
 		payload = []byte(pl.Code)
 	}
+	url := webhookConfig.URL
+	originalUrl := url
+	isIngest := false
+	if GlobalIngestEndpoint != "" && strings.HasSuffix(url, GlobalIngestEndpoint) {
+		isIngest = true
+		if LocalIngestEndpoint != "" {
+			url = LocalIngestEndpoint
+		}
+	}
 
 	return &WebhookBulker{Service: appbase.NewServiceBase(WebhookBulkerTypeId), config: webhookConfig, httpClient: httpClient,
-		payload: payload,
-		closed:  &atomic.Bool{}}, nil
+		payload:     payload,
+		url:         url,
+		originalUrl: originalUrl,
+		isIngest:    isIngest,
+		closed:      &atomic.Bool{}}, nil
 
 }
 
@@ -152,9 +171,9 @@ func (mp *WebhookBulker) Upload(reader io.Reader, eventsName string, eventsCount
 	}
 	for _, retryDelayMs := range retryDelaysMs {
 		var req *http.Request
-		req, err = http.NewRequest(strings.ToUpper(utils.DefaultString(mp.config.Method, "POST")), mp.config.URL, bytes.NewReader(body))
+		req, err = http.NewRequest(strings.ToUpper(utils.DefaultString(mp.config.Method, "POST")), mp.url, bytes.NewReader(body))
 		if err != nil {
-			return 0, "", err
+			return 0, "", mp.fixError(err)
 		}
 		req.Header.Set("Content-Type", "application/json")
 		for _, header := range mp.config.Headers {
@@ -168,13 +187,29 @@ func (mp *WebhookBulker) Upload(reader io.Reader, eventsName string, eventsCount
 		var res *http.Response
 		res, err = mp.httpClient.Do(req)
 		if err != nil {
-			return 0, "", err
+			statusCode = 0
+			respBody = ""
+			err = mp.fixError(err)
+			if mp.isIngest {
+				time.Sleep(time.Duration(retryDelayMs) * time.Millisecond)
+				continue
+			}
+			return
 		} else {
 			defer res.Body.Close()
 			var bodyBytes []byte
-			bodyBytes, err = io.ReadAll(res.Body)
-			respBody = string(bodyBytes)
 			statusCode = res.StatusCode
+			bodyBytes, err = io.ReadAll(res.Body)
+			if err != nil {
+				respBody = ""
+				err = mp.fixError(err)
+				if mp.isIngest {
+					time.Sleep(time.Duration(retryDelayMs) * time.Millisecond)
+					continue
+				}
+				return
+			}
+			respBody = string(bodyBytes)
 			if statusCode == 200 {
 				return statusCode, respBody, nil
 			} else if statusCode == 502 || statusCode == 503 {
@@ -182,11 +217,21 @@ func (mp *WebhookBulker) Upload(reader io.Reader, eventsName string, eventsCount
 				time.Sleep(time.Duration(retryDelayMs) * time.Millisecond)
 				continue
 			} else {
-				return statusCode, respBody, mp.NewError("status: %v err: %v", statusCode, err)
+				return statusCode, respBody, mp.NewError("status: %v err: %v", statusCode, mp.fixError(err))
 			}
 		}
 	}
 	return
+}
+
+func (mp *WebhookBulker) fixError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if mp.isIngest {
+		return errors.New(strings.ReplaceAll(err.Error(), mp.url, mp.originalUrl))
+	}
+	return err
 }
 
 func (mp *WebhookBulker) GetBatchFileFormat() types2.FileFormat {
