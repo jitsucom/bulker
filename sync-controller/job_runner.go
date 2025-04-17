@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -51,6 +52,7 @@ type JobRunner struct {
 	taskStatusCh  chan *TaskStatus
 	runningPods   map[string]time.Time
 	cleanedUpPods types.Set[string]
+	waitGroup     sync.WaitGroup
 }
 
 func NewJobRunner(appContext *Context) (*JobRunner, error) {
@@ -389,7 +391,25 @@ func PodName(syncId, taskId, pkg string) string {
 	return strings.ToLower(nonAlphaNum.ReplaceAllLiteralString(pkg, "-") + "-" + podId)
 }
 
-func (j *JobRunner) CreatePod(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {
+func (j *JobRunner) CreateJob(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {
+	startedBy := map[string]any{}
+	_ = json.Unmarshal([]byte(taskDescriptor.StartedBy), &startedBy)
+	byScheduler := startedBy["trigger"] == "scheduled"
+	if !byScheduler {
+		return j.createJob(taskDescriptor, configuration)
+	} else {
+		j.waitGroup.Add(1)
+		go func() {
+			defer j.waitGroup.Done()
+			sleepSec := utils.HashStringInt(taskDescriptor.SyncID) % 60
+			time.Sleep(time.Second * time.Duration(sleepSec))
+			j.createJob(taskDescriptor, configuration)
+		}()
+		return TaskStatus{Status: StatusPending}
+	}
+}
+
+func (j *JobRunner) createJob(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {
 	taskStatus := TaskStatus{TaskDescriptor: taskDescriptor}
 	podName := taskDescriptor.PodName()
 	if !configuration.IsEmpty() {
@@ -826,6 +846,7 @@ func (j *JobRunner) Close() {
 	case <-j.closeCh:
 	default:
 		close(j.closeCh)
+		j.waitGroup.Wait()
 	}
 }
 

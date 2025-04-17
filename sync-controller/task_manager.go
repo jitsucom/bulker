@@ -41,7 +41,7 @@ func (t *TaskManager) SpecHandler(c *gin.Context) {
 		StartedAt:      startedAt.Format(time.RFC3339),
 	}
 
-	taskStatus := t.jobRunner.CreatePod(taskDescriptor, nil)
+	taskStatus := t.jobRunner.CreateJob(taskDescriptor, nil)
 	if taskStatus.Status == StatusCreateFailed {
 		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Error})
 		return
@@ -64,7 +64,7 @@ func (t *TaskManager) CheckHandler(c *gin.Context) {
 		StartedAt:      time.Now().Format(time.RFC3339),
 	}
 
-	taskStatus := t.jobRunner.CreatePod(taskDescriptor, &taskConfig)
+	taskStatus := t.jobRunner.CreateJob(taskDescriptor, &taskConfig)
 	if taskStatus.Status == StatusCreateFailed {
 		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Error})
 		return
@@ -87,7 +87,7 @@ func (t *TaskManager) DiscoverHandler(c *gin.Context) {
 		StartedAt:      time.Now().Format(time.RFC3339),
 	}
 
-	taskStatus := t.jobRunner.CreatePod(taskDescriptor, &taskConfig)
+	taskStatus := t.jobRunner.CreateJob(taskDescriptor, &taskConfig)
 	if taskStatus.Status == StatusCreateFailed {
 		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Error})
 		return
@@ -131,7 +131,7 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 		StartedAt:       time.Now().Format(time.RFC3339),
 	}
 
-	taskStatus := t.jobRunner.CreatePod(taskDescriptor, &taskConfig)
+	taskStatus := t.jobRunner.CreateJob(taskDescriptor, &taskConfig)
 	if taskStatus.Status == StatusCreateFailed {
 		c.JSON(http.StatusOK, gin.H{"ok": false, "error": taskStatus.Error})
 		return
