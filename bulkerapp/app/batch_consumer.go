@@ -18,11 +18,12 @@ import (
 
 type BatchConsumerImpl struct {
 	*AbstractBatchConsumer
+	retryTopic       string
 	eventsLogService eventslog.EventsLogService
 }
 
-func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService eventslog.EventsLogService) (*BatchConsumerImpl, error) {
-	base, err := NewAbstractBatchConsumer(repository, destinationId, batchPeriodSec, topicId, "batch", config, kafkaConfig, bulkerProducer)
+func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService eventslog.EventsLogService, topicManager *TopicManager) (*BatchConsumerImpl, error) {
+	base, err := NewAbstractBatchConsumer(repository, destinationId, batchPeriodSec, topicId, "batch", config, kafkaConfig, bulkerProducer, topicManager)
 	if err != nil {
 		return nil, err
 	}
@@ -30,6 +31,8 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 		AbstractBatchConsumer: base,
 		eventsLogService:      eventsLogService,
 	}
+	retryTopic, _ := MakeTopicId(destinationId, retryTopicMode, allTablesToken, config.KafkaTopicPrefix, false)
+	bc.retryTopic = retryTopic
 	bc.batchSizeFunc = bc.batchSizes
 	bc.batchFunc = bc.processBatchImpl
 	bc.pause(false)
@@ -257,6 +260,11 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		}
 
 	}()
+	err = bc.topicManager.ensureTopic(bc.retryTopic, 1, bc.topicManager.RetryTopicConfig())
+	if err != nil {
+		return counters, fmt.Errorf("failed to create retry topic %s: %v", bc.retryTopic, err)
+	}
+
 	producer, err = bc.initTransactionalProducer()
 	if err != nil {
 		return
@@ -305,7 +313,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 			}
 			counters.consumed++
 			deadLettered := false
-			failedTopic, _ := MakeTopicId(bc.destinationId, retryTopicMode, allTablesToken, bc.config.KafkaTopicPrefix, false)
+			failedTopic := bc.retryTopic
 			retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
 			if err != nil {
 				bc.Errorf("failed to read retry header: %v", err)
@@ -313,7 +321,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 			if retries >= bc.config.MessagesRetryCount {
 				//no attempts left - send to dead-letter topic
 				deadLettered = true
-				failedTopic, _ = MakeTopicId(bc.destinationId, deadTopicMode, allTablesToken, bc.config.KafkaTopicPrefix, false)
+				failedTopic = bc.config.KafkaDestinationsDeadLetterTopicName
 			}
 			headers := message.Headers
 			kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenStringWithEllipsis(originalErr.Error(), 256))

@@ -21,6 +21,7 @@ type AbstractConsumer struct {
 	topicId        string
 	bulkerProducer *Producer
 	repository     *Repository
+	topicManager   *TopicManager
 }
 
 type Consumer interface {
@@ -28,13 +29,14 @@ type Consumer interface {
 	TopicId() string
 }
 
-func NewAbstractConsumer(config *Config, repository *Repository, topicId string, bulkerProducer *Producer) *AbstractConsumer {
+func NewAbstractConsumer(config *Config, repository *Repository, topicId string, bulkerProducer *Producer, topicManager *TopicManager) *AbstractConsumer {
 	return &AbstractConsumer{
 		Service:        appbase.NewServiceBase(topicId),
 		config:         config,
 		topicId:        topicId,
 		bulkerProducer: bulkerProducer,
 		repository:     repository,
+		topicManager:   topicManager,
 	}
 }
 

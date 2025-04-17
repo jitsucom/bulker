@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"strings"
 	"sync"
@@ -64,6 +65,7 @@ type TopicManager struct {
 	eventsLogService eventslog.EventsLogService
 	refreshChan      chan bool
 	closed           chan struct{}
+	topicDeleteChan  chan string
 
 	updatedAt time.Time
 }
@@ -97,19 +99,7 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		allTopics:            types.NewSet[string](),
 		closed:               make(chan struct{}),
 		refreshChan:          make(chan bool, 1),
-		requiredDestinationTopics: map[string]map[string]string{
-			retryTopicMode: {
-				"cleanup.policy": "delete,compact",
-				"segment.bytes":  fmt.Sprint(appContext.config.KafkaRetryTopicSegmentBytes),
-				"retention.ms":   fmt.Sprint(appContext.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
-				"segment.ms":     fmt.Sprint(appContext.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
-			},
-			deadTopicMode: {
-				"cleanup.policy": "delete,compact",
-				"retention.ms":   fmt.Sprint(appContext.config.KafkaDeadTopicRetentionHours * 60 * 60 * 1000),
-				"segment.ms":     fmt.Sprint(appContext.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
-			},
-		},
+		topicDeleteChan:      make(chan string, 20000),
 	}, nil
 }
 
@@ -117,6 +107,26 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 func (tm *TopicManager) Start() {
 	tm.Infof("Starting topic manager. Shard Number: %d", tm.shardNumber)
 	tm.LoadMetadata()
+	safego.RunWithRestart(func() {
+		for deleteTopic := range tm.topicDeleteChan {
+			if tm.allTopics.Contains(deleteTopic) {
+				tm.Infof("DEL Deleting topic %s", deleteTopic)
+				res, err := tm.kaftaAdminClient.DeleteTopics(context.Background(), []string{deleteTopic})
+				if err != nil {
+					tm.Errorf("DEL Error deleting topic %s: %v", deleteTopic, err)
+					continue
+				}
+				for _, topic := range res {
+					if topic.Error.Code() != kafka.ErrNoError {
+						tm.Errorf("DEL Error deleting topic %s: %v", deleteTopic, topic.Error)
+						continue
+					}
+					tm.Infof("DEL Topic %s deleted successfully", deleteTopic)
+				}
+				time.Sleep(time.Second)
+			}
+		}
+	})
 	safego.RunWithRestart(func() {
 		ticker := time.NewTicker(time.Duration(tm.config.TopicManagerRefreshPeriodSec) * time.Second)
 		defer ticker.Stop()
@@ -201,6 +211,12 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 			lastMessageDate, ok := tm.topicLastActiveDate[topic]
 			if !ok || lastMessageDate.Before(staleTopicsCutOff) {
 				staleTopics.Put(topic)
+				if tm.config.DeleteStaleTopics && tm.shardNumber == 9 && rand.Int31n(100) == 0 {
+					_, _, _, err := ParseTopicId(topic)
+					if err == nil {
+						tm.topicDeleteChan <- topic
+					}
+				}
 				tm.Debugf("Topic %s is stale. Last message date: %v", topic, lastMessageDate)
 				continue
 			}
@@ -229,7 +245,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 				}
 				switch mode {
 				case "stream":
-					streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.streamProducer, tm.eventsLogService)
+					streamConsumer, err := NewStreamConsumer(tm.repository, destination, topic, tm.config, tm.kafkaConfig, tm.streamProducer, tm.eventsLogService, tm)
 					if err != nil {
 						topicsErrorsByMode[mode]++
 						tm.SystemErrorf("Failed to create consumer for destination topic: %s: %v", topic, err)
@@ -248,7 +264,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 					}
 					var batchConsumer *BatchConsumerImpl
 					if err == nil {
-						batchConsumer, err = NewBatchConsumer(tm.repository, destinationId, batchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.batchProducer, tm.eventsLogService)
+						batchConsumer, err = NewBatchConsumer(tm.repository, destinationId, batchPeriodSec, topic, tm.config, tm.kafkaConfig, tm.batchProducer, tm.eventsLogService, tm)
 					}
 					if err != nil {
 						topicsErrorsByMode[mode]++
@@ -274,7 +290,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 					}
 					var retryConsumer *RetryConsumer
 					if err == nil {
-						retryConsumer, err = NewRetryConsumer(tm.repository, destinationId, retryPeriodSec, topic, tm.config, tm.kafkaConfig, tm.batchProducer)
+						retryConsumer, err = NewRetryConsumer(tm.repository, destinationId, retryPeriodSec, topic, tm.config, tm.kafkaConfig, tm.batchProducer, tm)
 					}
 					if err != nil {
 						topicsErrorsByMode[mode]++
@@ -384,7 +400,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 	}
 	if _, dstRetryCnsmrStarted := tm.retryConsumers[destinationsRetryTopicName]; !dstRetryCnsmrStarted {
 		retryPeriodSec := tm.config.BatchRunnerRetryPeriodSec
-		retryConsumer, err := NewRetryConsumer(nil, "", retryPeriodSec, destinationsRetryTopicName, tm.config, tm.kafkaConfig, tm.batchProducer)
+		retryConsumer, err := NewRetryConsumer(nil, "", retryPeriodSec, destinationsRetryTopicName, tm.config, tm.kafkaConfig, tm.batchProducer, tm)
 		if err != nil {
 			tm.SystemErrorf("Failed to create retry consumer for destination topic: %s: %v", destinationsRetryTopicName, err)
 		} else {
@@ -636,6 +652,7 @@ func (tm *TopicManager) createDestinationTopic(topic string, config map[string]s
 			return tm.NewError("Error creating topic %s: %v", res.Topic, res.Error)
 		}
 	}
+	time.Sleep(500 * time.Millisecond) // wait for topic to be propagated
 	tm.Infof("Created topic: %s", topic)
 	tm.Refresh()
 	return nil
@@ -679,9 +696,19 @@ func (tm *TopicManager) createTopic(topic string, partitions int, config map[str
 			return tm.NewError("Error creating topic %s: %v", res.Topic, res.Error)
 		}
 	}
+	time.Sleep(1000 * time.Millisecond) // wait for topic to be propagated
 	tm.Infof("Created topic: %s", topic)
 	tm.Refresh()
 	return nil
+}
+
+func (tm *TopicManager) RetryTopicConfig() map[string]string {
+	return map[string]string{
+		"cleanup.policy": "delete,compact",
+		"segment.bytes":  fmt.Sprint(tm.config.KafkaRetryTopicSegmentBytes),
+		"retention.ms":   fmt.Sprint(tm.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
+		"segment.ms":     fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
+	}
 }
 
 func (tm *TopicManager) Refresh() {
@@ -697,6 +724,7 @@ func (tm *TopicManager) Close() error {
 	}
 	close(tm.closed)
 	close(tm.refreshChan)
+	close(tm.topicDeleteChan)
 	tm.kaftaAdminClient.Close()
 	//close all batch consumers
 	tm.Lock()

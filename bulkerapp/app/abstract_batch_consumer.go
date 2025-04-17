@@ -68,8 +68,8 @@ type AbstractBatchConsumer struct {
 	shouldConsumeFunc ShouldConsumeFunction
 }
 
-func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer) (*AbstractBatchConsumer, error) {
-	abstract := NewAbstractConsumer(config, repository, topicId, bulkerProducer)
+func NewAbstractBatchConsumer(repository *Repository, destinationId string, batchPeriodSec int, topicId, mode string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, topicManager *TopicManager) (*AbstractBatchConsumer, error) {
+	abstract := NewAbstractConsumer(config, repository, topicId, bulkerProducer, topicManager)
 	var tableName string
 	var err error
 	if destinationId != "" {

@@ -26,6 +26,7 @@ type StreamConsumerImpl struct {
 	*AbstractConsumer
 	repository     *Repository
 	destination    *Destination
+	retryTopic     string
 	stream         atomic.Pointer[StreamWrapper]
 	consumerConfig kafka.ConfigMap
 	consumer       *kafka.Consumer
@@ -42,8 +43,8 @@ type StreamConsumer interface {
 	UpdateDestination(destination *Destination) error
 }
 
-func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService eventslog.EventsLogService) (*StreamConsumerImpl, error) {
-	abstract := NewAbstractConsumer(config, repository, topicId, bulkerProducer)
+func NewStreamConsumer(repository *Repository, destination *Destination, topicId string, config *Config, kafkaConfig *kafka.ConfigMap, bulkerProducer *Producer, eventsLogService eventslog.EventsLogService, topicManager *TopicManager) (*StreamConsumerImpl, error) {
+	abstract := NewAbstractConsumer(config, repository, topicId, bulkerProducer, topicManager)
 	_, _, tableName, err := ParseTopicId(topicId)
 	if err != nil {
 		metrics.ConsumerErrors(topicId, "stream", "INVALID_TOPIC", "INVALID_TOPIC:"+topicId, "failed to parse topic").Inc()
@@ -78,11 +79,13 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 	//if destination == nil {
 	//	return nil, fmt.Errorf("[%s] Destination not found", destinationId)
 	//}
+	retryTopic, _ := MakeTopicId(destination.Id(), retryTopicMode, allTablesToken, config.KafkaTopicPrefix, false)
 
 	sc := &StreamConsumerImpl{
 		AbstractConsumer: abstract,
 		repository:       repository,
 		destination:      destination,
+		retryTopic:       retryTopic,
 		tableName:        tableName,
 		consumerConfig:   consumerConfig,
 		consumer:         consumer,
@@ -261,7 +264,7 @@ func (sc *StreamConsumerImpl) start() {
 
 				if err != nil {
 					originalError := err
-					failedTopic, _ := MakeTopicId(sc.destination.Id(), retryTopicMode, allTablesToken, sc.config.KafkaTopicPrefix, false)
+					failedTopic := sc.retryTopic
 					retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
 					if err != nil {
 						sc.Errorf("failed to read retry header: %v", err)
@@ -275,7 +278,12 @@ func (sc *StreamConsumerImpl) start() {
 					if retries >= sc.config.MessagesRetryCount {
 						//no attempts left - send to dead-letter topic
 						status = "deadLettered"
-						failedTopic, _ = MakeTopicId(sc.destination.Id(), deadTopicMode, allTablesToken, sc.config.KafkaTopicPrefix, false)
+						failedTopic = sc.config.KafkaDestinationsDeadLetterTopicName
+					} else {
+						err = sc.topicManager.ensureTopic(sc.retryTopic, 1, sc.topicManager.RetryTopicConfig())
+						if err != nil {
+							sc.Errorf("failed to create retry topic %s: %v", sc.retryTopic, err)
+						}
 					}
 					headers := message.Headers
 					kafkabase.PutKafkaHeader(&headers, errorHeader, utils.ShortenStringWithEllipsis(originalError.Error(), 256))
