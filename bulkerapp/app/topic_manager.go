@@ -54,6 +54,7 @@ type TopicManager struct {
 	abandonedTopics     types.Set[string]
 	staleTopics         types.Set[string]
 	allTopics           types.Set[string]
+	liveTopics          types.Set[string]
 
 	//batch consumers by destinationId
 	batchConsumers  map[string][]BatchConsumer
@@ -67,6 +68,7 @@ type TopicManager struct {
 	closed           chan struct{}
 	topicDeleteChan  chan string
 
+	startedAt time.Time
 	updatedAt time.Time
 }
 
@@ -97,9 +99,11 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		streamConsumers:      make(map[string][]StreamConsumer),
 		abandonedTopics:      types.NewSet[string](),
 		allTopics:            types.NewSet[string](),
+		liveTopics:           types.NewSet[string](),
 		closed:               make(chan struct{}),
 		refreshChan:          make(chan bool, 1),
 		topicDeleteChan:      make(chan string, 20000),
+		startedAt:            time.Now(),
 	}, nil
 }
 
@@ -211,7 +215,9 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 			lastMessageDate, ok := tm.topicLastActiveDate[topic]
 			if !ok || lastMessageDate.Before(staleTopicsCutOff) {
 				staleTopics.Put(topic)
-				if tm.config.DeleteStaleTopics && tm.shardNumber == 9 && rand.Int31n(100) == 0 {
+				if tm.config.DeleteStaleTopics && tm.shardNumber == 9 &&
+					time.Since(tm.startedAt) > 70*time.Minute &&
+					!tm.liveTopics.Contains(topic) && rand.Int31n(100) == 0 {
 					_, _, _, err := ParseTopicId(topic)
 					if err == nil {
 						tm.topicDeleteChan <- topic
@@ -220,6 +226,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 				tm.Debugf("Topic %s is stale. Last message date: %v", topic, lastMessageDate)
 				continue
 			}
+			tm.liveTopics.Put(topic)
 		}
 		destinationId, mode, tableName, err := ParseTopicId(topic)
 		if err != nil {
@@ -550,9 +557,14 @@ func (tm *TopicManager) UpdatedAt() time.Time {
 // EnsureDestinationTopic creates destination topic if it doesn't exist
 func (tm *TopicManager) EnsureDestinationTopic(destination *Destination, topicId string) error {
 	tm.Lock()
-	defer tm.Unlock()
+	tm.liveTopics.Put(topicId)
 	if !tm.allTopics.Contains(topicId) {
-		return tm.createDestinationTopic(topicId, nil)
+		tm.Unlock()
+		err := tm.createDestinationTopic(topicId, nil)
+		time.Sleep(500 * time.Millisecond) // wait for topic to be propagated
+		return err
+	} else {
+		tm.Unlock()
 	}
 	return nil
 }
@@ -652,7 +664,6 @@ func (tm *TopicManager) createDestinationTopic(topic string, config map[string]s
 			return tm.NewError("Error creating topic %s: %v", res.Topic, res.Error)
 		}
 	}
-	time.Sleep(500 * time.Millisecond) // wait for topic to be propagated
 	tm.Infof("Created topic: %s", topic)
 	tm.Refresh()
 	return nil

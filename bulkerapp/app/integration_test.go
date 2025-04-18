@@ -31,6 +31,7 @@ type AppTestConfig struct {
 	destinationId              string
 	eventsFile                 string
 	token                      string
+	mode                       string
 	expectedRowsCount          int
 	expectedDeadCount          int
 	waitAfterAllMessageSentSec int
@@ -128,6 +129,7 @@ func TestGoodAndBadStreams(t *testing.T) {
 			waitAfterAllMessageSentSec: 10,
 			expectedRowsCount:          30,
 			expectedDeadCount:          0,
+			mode:                       "batch",
 		},
 		{
 			name:                       "bad_batch",
@@ -137,6 +139,7 @@ func TestGoodAndBadStreams(t *testing.T) {
 			waitAfterAllMessageSentSec: 10,
 			expectedRowsCount:          20,
 			expectedDeadCount:          10,
+			mode:                       "batch",
 		},
 		{
 			name:                       "good_stream",
@@ -146,6 +149,7 @@ func TestGoodAndBadStreams(t *testing.T) {
 			waitAfterAllMessageSentSec: 10,
 			expectedRowsCount:          30,
 			expectedDeadCount:          0,
+			mode:                       "stream",
 		},
 		{
 			name:                       "bad_stream",
@@ -155,6 +159,7 @@ func TestGoodAndBadStreams(t *testing.T) {
 			waitAfterAllMessageSentSec: 10,
 			expectedRowsCount:          29,
 			expectedDeadCount:          1,
+			mode:                       "stream",
 		},
 		{
 			name:                       "invalid_token",
@@ -169,6 +174,7 @@ func TestGoodAndBadStreams(t *testing.T) {
 			},
 			expectedRowsCount: 0,
 			expectedDeadCount: 0,
+			mode:              "stream",
 		},
 	}
 	for _, tt := range tests {
@@ -203,6 +209,7 @@ func TestBatchSizeBytes(t *testing.T) {
 			waitAfterAllMessageSentSec: 10,
 			expectedRowsCount:          30,
 			expectedDeadCount:          0,
+			mode:                       "batch",
 		},
 	}
 	for _, tt := range tests {
@@ -251,6 +258,7 @@ func TestEventsRetry(t *testing.T) {
 			},
 			expectedRowsCount: 30,
 			expectedDeadCount: 0,
+			mode:              "batch",
 		},
 		{
 			name:                       "good_stream",
@@ -270,6 +278,7 @@ func TestEventsRetry(t *testing.T) {
 			},
 			expectedRowsCount: 30,
 			expectedDeadCount: 0,
+			mode:              "stream",
 		},
 	}
 	for _, tt := range tests {
@@ -317,7 +326,7 @@ func integrationTest(t *testing.T, tt AppTestConfig, postgresContainer *testcont
 
 	reqr.Equal(tt.expectedRowsCount, rowsCount, "unexpected rows count in table %s", tt.name)
 
-	req, _ := http.NewRequest("GET", fmt.Sprintf(testBulkerURL+"/failed/%s?tableName=%s&status=dead", tt.destinationId, tt.name), nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf(testBulkerURL+"/failed/%s?tableName=%s&status=dead&mode=%s", tt.destinationId, tt.name, tt.mode), nil)
 	req.Header.Set("Authorization", "Bearer "+tt.token)
 	res, err := http.DefaultClient.Do(req)
 	if err == nil {

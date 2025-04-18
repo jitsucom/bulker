@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/kafkabase"
 	"io"
 	"net/http"
 	"net/http/pprof"
@@ -305,12 +306,18 @@ func maskWriteKey(wk string) string {
 
 func (r *Router) FailedHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
-	status := utils.DefaultString(c.Query("status"), "dead")
+	status := c.DefaultQuery("status", "dead")
+	tableName := c.DefaultQuery("tableName", allTablesToken)
+	mode := c.DefaultQuery("mode", "batch")
 	if status != retryTopicMode && status != deadTopicMode {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown status: " + status + " (should be '" + retryTopicMode + "' or '" + deadTopicMode + "')"})
 		return
 	}
-	topicId, _ := MakeTopicId(destinationId, status, allTablesToken, r.config.KafkaTopicPrefix, false)
+	topicId := r.config.KafkaDestinationsDeadLetterTopicName
+	if status == retryTopicMode {
+		topicId, _ = MakeTopicId(destinationId, retryTopicMode, allTablesToken, r.config.KafkaTopicPrefix, false)
+	}
+	ogTopicId, _ := MakeTopicId(destinationId, mode, tableName, r.config.KafkaTopicPrefix, false)
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"auto.offset.reset":             "earliest",
 		"group.id":                      uuid.New(),
@@ -342,6 +349,9 @@ func (r *Router) FailedHandler(c *gin.Context) {
 			r.Errorf(err.Error())
 			jsn["ERROR"] = fmt.Errorf("error# %s: couldn't read kafka message", errorID).Error()
 		} else {
+			if kafkabase.GetKafkaHeader(msg, originalTopicHeader) != ogTopicId {
+				continue
+			}
 			err = hjson.Unmarshal(msg.Value, &jsn)
 			if err != nil {
 				jsn["UNPARSABLE_MESSAGE"] = string(msg.Value)
