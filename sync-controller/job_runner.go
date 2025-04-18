@@ -51,6 +51,7 @@ type JobRunner struct {
 	closeCh       chan struct{}
 	taskStatusCh  chan *TaskStatus
 	runningPods   map[string]time.Time
+	runningSyncs  sync.Map
 	cleanedUpPods types.Set[string]
 	waitGroup     sync.WaitGroup
 }
@@ -85,6 +86,7 @@ func (j *JobRunner) watchPodStatuses() {
 				continue
 			}
 			activePods := types.NewSet[string]()
+			activeSyncs := types.NewSet[string]()
 			for _, pod := range list.Items {
 				activePods.Put(pod.Name)
 				if j.cleanedUpPods.Contains(pod.Name) {
@@ -92,6 +94,9 @@ func (j *JobRunner) watchPodStatuses() {
 				}
 				taskStatus := TaskStatus{}
 				_ = mapstructure.Decode(pod.Annotations, &taskStatus)
+				if taskStatus.TaskType == "read" {
+					activeSyncs.Put(taskStatus.SyncID)
+				}
 				taskStatus.PodName = pod.Name
 				status := pod.Status
 				bytes, _ := json.Marshal(status)
@@ -101,6 +106,9 @@ func (j *JobRunner) watchPodStatuses() {
 					taskStatus.Status = StatusSuccess
 					j.Infof("Pod %s succeeded. Cleaning up.", pod.Name)
 					j.cleanupPod(pod.Name)
+					if taskStatus.TaskType == "read" {
+						j.runningSyncs.Delete(taskStatus.SyncID)
+					}
 				case v1.PodFailed:
 					taskStatus.Status = StatusFailed
 					errors, _ := j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
@@ -109,6 +117,9 @@ func (j *JobRunner) watchPodStatuses() {
 					}
 					taskStatus.Error = errors
 					j.Infof("Pod %s failed. Cleaning up.", pod.Name)
+					if taskStatus.TaskType == "read" {
+						j.runningSyncs.Delete(taskStatus.SyncID)
+					}
 					j.cleanupPod(pod.Name)
 				case v1.PodRunning:
 					errors, sourceFailed := j.accumulateErrorLogs(pod.Name, taskStatus.TaskType, status)
@@ -135,6 +146,9 @@ func (j *JobRunner) watchPodStatuses() {
 								}
 								j.Infof("Pod %s is running", pod.Name)
 								j.runningPods[pod.Name] = time.Now()
+								if taskStatus.TaskType == "read" {
+									j.runningSyncs.Store(taskStatus.SyncID, taskStatus.TaskID)
+								}
 							}
 						} else {
 							//report running status only once per minute
@@ -151,6 +165,9 @@ func (j *JobRunner) watchPodStatuses() {
 					} else {
 						taskStatus.Status = StatusPending
 						taskStatus.Error = accumulatePodStatus(status)
+						if taskStatus.TaskType == "read" {
+							j.runningSyncs.Store(taskStatus.SyncID, taskStatus.TaskID)
+						}
 						j.Debugf("Pod %s is pending", pod.Name)
 						continue
 					}
@@ -167,6 +184,13 @@ func (j *JobRunner) watchPodStatuses() {
 					delete(j.runningPods, podName)
 				}
 			}
+			//clean up syncs that are not active anymore
+			j.runningSyncs.Range(func(syncId any, _ any) bool {
+				if !activeSyncs.Contains(syncId.(string)) {
+					j.runningSyncs.Delete(syncId)
+				}
+				return true
+			})
 			for podName := range j.cleanedUpPods {
 				if !activePods.Contains(podName) {
 					j.cleanedUpPods.Remove(podName)
@@ -403,7 +427,14 @@ func (j *JobRunner) CreateJob(taskDescriptor TaskDescriptor, configuration *Task
 			defer j.waitGroup.Done()
 			sleepSec := utils.HashStringInt(taskDescriptor.SyncID) % 60
 			time.Sleep(time.Second * time.Duration(sleepSec))
-			j.createJob(taskDescriptor, configuration)
+			taskId, running := j.runningSyncs.Load(taskDescriptor.SyncID)
+			if !running {
+				taskDescriptor.StartedAt = time.Now().Format(time.RFC3339)
+				j.createJob(taskDescriptor, configuration)
+				j.runningSyncs.Store(taskDescriptor.SyncID, taskDescriptor.TaskID)
+			} else {
+				j.Infof("Sync %s has an already running task: %s. Skipping job creation.", taskDescriptor.SyncID, taskId)
+			}
 		}()
 		return TaskStatus{Status: StatusPending}
 	}
