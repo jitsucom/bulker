@@ -25,7 +25,11 @@ func NewRouter(appContext *Context) *Router {
 	engine.GET("/cancel", appContext.taskManager.CancelHandler)
 
 	engine.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "pass"})
+		if appContext.jobRunner.Inited() {
+			c.JSON(http.StatusOK, gin.H{"status": "pass"})
+		} else {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail"})
+		}
 	})
 
 	engine.GET("/debug/pprof/profile", gin.WrapF(pprof.Profile))

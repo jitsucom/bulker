@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"math/rand"
 	"regexp"
 	"strings"
 	"sync"
@@ -21,8 +20,9 @@ import (
 )
 
 const (
-	retryTopicMode = "retry"
-	deadTopicMode  = "dead"
+	retryTopicMode    = "retry"
+	deadTopicMode     = "dead"
+	profilesTopicMode = "profiles"
 
 	allTablesToken = "_all_"
 
@@ -54,7 +54,6 @@ type TopicManager struct {
 	abandonedTopics     types.Set[string]
 	staleTopics         types.Set[string]
 	allTopics           types.Set[string]
-	liveTopics          types.Set[string]
 
 	//batch consumers by destinationId
 	batchConsumers  map[string][]BatchConsumer
@@ -66,7 +65,6 @@ type TopicManager struct {
 	eventsLogService eventslog.EventsLogService
 	refreshChan      chan bool
 	closed           chan struct{}
-	topicDeleteChan  chan string
 
 	startedAt time.Time
 	updatedAt time.Time
@@ -99,10 +97,8 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 		streamConsumers:      make(map[string][]StreamConsumer),
 		abandonedTopics:      types.NewSet[string](),
 		allTopics:            types.NewSet[string](),
-		liveTopics:           types.NewSet[string](),
 		closed:               make(chan struct{}),
 		refreshChan:          make(chan bool, 1),
-		topicDeleteChan:      make(chan string, 20000),
 		startedAt:            time.Now(),
 	}, nil
 }
@@ -111,26 +107,6 @@ func NewTopicManager(appContext *Context) (*TopicManager, error) {
 func (tm *TopicManager) Start() {
 	tm.Infof("Starting topic manager. Shard Number: %d", tm.shardNumber)
 	tm.LoadMetadata()
-	safego.RunWithRestart(func() {
-		for deleteTopic := range tm.topicDeleteChan {
-			if tm.allTopics.Contains(deleteTopic) {
-				tm.Infof("DEL Deleting topic %s", deleteTopic)
-				res, err := tm.kaftaAdminClient.DeleteTopics(context.Background(), []string{deleteTopic})
-				if err != nil {
-					tm.Errorf("DEL Error deleting topic %s: %v", deleteTopic, err)
-					continue
-				}
-				for _, topic := range res {
-					if topic.Error.Code() != kafka.ErrNoError {
-						tm.Errorf("DEL Error deleting topic %s: %v", deleteTopic, topic.Error)
-						continue
-					}
-					tm.Infof("DEL Topic %s deleted successfully", deleteTopic)
-				}
-				time.Sleep(time.Second)
-			}
-		}
-	})
 	safego.RunWithRestart(func() {
 		ticker := time.NewTicker(time.Duration(tm.config.TopicManagerRefreshPeriodSec) * time.Second)
 		defer ticker.Stop()
@@ -215,21 +191,12 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 			lastMessageDate, ok := tm.topicLastActiveDate[topic]
 			if !ok || lastMessageDate.Before(staleTopicsCutOff) {
 				staleTopics.Put(topic)
-				if tm.config.DeleteStaleTopics && tm.shardNumber == 9 &&
-					time.Since(tm.startedAt) > 70*time.Minute &&
-					!tm.liveTopics.Contains(topic) && rand.Int31n(100) == 0 {
-					_, _, _, err := ParseTopicId(topic)
-					if err == nil {
-						tm.topicDeleteChan <- topic
-					}
-				}
 				tm.Debugf("Topic %s is stale. Last message date: %v", topic, lastMessageDate)
 				continue
 			}
-			tm.liveTopics.Put(topic)
 		}
 		destinationId, mode, tableName, err := ParseTopicId(topic)
-		if err != nil {
+		if err != nil || mode == profilesTopicMode {
 			otherTopicsCount++
 			continue
 		}
@@ -555,9 +522,8 @@ func (tm *TopicManager) UpdatedAt() time.Time {
 //}
 
 // EnsureDestinationTopic creates destination topic if it doesn't exist
-func (tm *TopicManager) EnsureDestinationTopic(destination *Destination, topicId string) error {
+func (tm *TopicManager) EnsureDestinationTopic(topicId string) error {
 	tm.Lock()
-	tm.liveTopics.Put(topicId)
 	if !tm.allTopics.Contains(topicId) {
 		tm.Unlock()
 		err := tm.createDestinationTopic(topicId, nil)
@@ -630,7 +596,7 @@ func (tm *TopicManager) createDestinationTopic(topic string, config map[string]s
 		return tm.NewError("invalid topic name %s", topic)
 	}
 	switch mode {
-	case "stream", "batch", deadTopicMode, retryTopicMode:
+	case "stream", "batch", deadTopicMode, retryTopicMode, profilesTopicMode:
 		// ok
 	default:
 		errorType = "unknown stream mode"
@@ -735,7 +701,6 @@ func (tm *TopicManager) Close() error {
 	}
 	close(tm.closed)
 	close(tm.refreshChan)
-	close(tm.topicDeleteChan)
 	tm.kaftaAdminClient.Close()
 	//close all batch consumers
 	tm.Lock()

@@ -85,8 +85,7 @@ type Config struct {
 	ShardsCount     int  `mapstructure:"SHARDS" default:"1"`
 	EnableConsumers bool `mapstructure:"ENABLE_CONSUMERS" default:"true"`
 	// Suspend consumers for topics not receiving events for longer than KAFKA_TOPIC_RETENTION_HOURS
-	StaleTopics       bool `mapstructure:"STALE_TOPICS" default:"false"`
-	DeleteStaleTopics bool `mapstructure:"DELETE_STALE_TOPICS" default:"false"`
+	StaleTopics bool `mapstructure:"STALE_TOPICS" default:"false"`
 	// # GRACEFUL SHUTDOWN
 	//Timeout that give running batch tasks time to finish during shutdown.
 	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`

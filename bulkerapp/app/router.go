@@ -60,6 +60,7 @@ func NewRouter(appContext *Context) *Router {
 	fast := engine.Group("")
 	//fast.Use(timeout.Timeout(timeout.WithTimeout(10 * time.Second)))
 	fast.POST("/post/:destinationId", router.EventsHandler)
+	fast.POST("/profiles/:profileBuilderId/:priority", router.ProfilesHandler)
 	fast.POST("/test", router.TestConnectionHandler)
 	fast.GET("/log/:eventType/:actorId", router.EventsLogHandler)
 	fast.GET("/ready", router.Health)
@@ -151,7 +152,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true, true)
 		return
 	}
-	err = r.topicManager.EnsureDestinationTopic(destination, topicId)
+	err = r.topicManager.EnsureDestinationTopic(topicId)
 	if err != nil {
 		kafkaErr, ok := err.(kafka.Error)
 		if ok && kafkaErr.Code() == kafka.ErrTopicAlreadyExists {
@@ -173,6 +174,33 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		headers[streamOptionsKeyHeader] = streamOptions
 	}
 	err = r.producer.ProduceAsync(topicId, uuid.New(), body, headers, kafka.PartitionAny)
+	if err != nil {
+		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "ok"})
+}
+
+func (r *Router) ProfilesHandler(c *gin.Context) {
+	profileBuilderId := c.Param("profileBuilderId")
+	priority := c.Param("priority")
+	profileId := c.Query("profileId")
+	var rError *appbase.RouterError
+	defer func() {
+		if rError != nil {
+			metrics.EventsHandlerRequests(profileBuilderId, profilesTopicMode, priority, "error", rError.ErrorType).Inc()
+		} else {
+			metrics.EventsHandlerRequests(profileBuilderId, profilesTopicMode, priority, "success", "").Inc()
+		}
+	}()
+
+	topicId, err := MakeTopicId(profileBuilderId, profilesTopicMode, priority, r.config.KafkaTopicPrefix, false)
+	if err != nil {
+		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true, true)
+		return
+	}
+
+	err = r.producer.ProduceAsync(topicId, profileId, nil, nil, kafka.PartitionAny)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true)
 		return

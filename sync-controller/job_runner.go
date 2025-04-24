@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -54,6 +55,7 @@ type JobRunner struct {
 	runningSyncs  sync.Map
 	cleanedUpPods types.Set[string]
 	waitGroup     sync.WaitGroup
+	inited        atomic.Bool
 }
 
 func NewJobRunner(appContext *Context) (*JobRunner, error) {
@@ -196,6 +198,7 @@ func (j *JobRunner) watchPodStatuses() {
 					j.cleanedUpPods.Remove(podName)
 				}
 			}
+			j.inited.Store(true)
 		}
 	}
 
@@ -870,6 +873,10 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 
 func (j *JobRunner) TaskStatusChannel() <-chan *TaskStatus {
 	return j.taskStatusCh
+}
+
+func (j *JobRunner) Inited() bool {
+	return j.inited.Load()
 }
 
 func (j *JobRunner) Close() {
