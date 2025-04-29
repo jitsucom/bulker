@@ -14,6 +14,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"golang.org/x/net/publicsuffix"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -22,6 +23,7 @@ import (
 const (
 	dataField         = "data"
 	cookieDomainField = "cookie_domain"
+	redirectUrlField  = "destination_url"
 	processHeaders    = "process_headers"
 	anonymousIdCookie = "__eventn_id"
 	userIdCookie      = "__eventn_uid"
@@ -114,9 +116,44 @@ func (r *Router) PixelHandler(c *gin.Context) {
 	if rError != nil {
 		return
 	}
-	// respond with empty git
-	c.Data(http.StatusOK, "image/gif", appbase.EmptyGif)
+	redirectUrl := r.extractRedirectUrl(c, message)
+	if redirectUrl != "" {
+		c.Redirect(http.StatusFound, redirectUrl)
+	} else {
+		c.Data(http.StatusOK, "image/gif", appbase.EmptyGif)
+	}
 
+}
+
+func (r *Router) extractRedirectUrl(c *gin.Context, message types.Json) string {
+	redirectUrl := c.DefaultQuery(redirectUrlField, message.GetS(redirectUrlField))
+	if redirectUrl != "" {
+		// parse url
+		parsedUrl, err := url.Parse(redirectUrl)
+		if err != nil {
+			r.Errorf("Error parsing redirect url %q: %v", redirectUrl, err)
+			return ""
+		}
+		if parsedUrl.Port() != "" {
+			r.Errorf("Redirect url %q must use default port", redirectUrl)
+			return ""
+		}
+		if parsedUrl.Scheme != "https" {
+			r.Errorf("Redirect url %q must use https scheme", redirectUrl)
+			return ""
+		}
+		if parsedUrl.Host == c.Request.Host {
+			r.Errorf("Redirect url %q is not allowed to redirect to the same host", redirectUrl)
+			return ""
+		}
+		ipAddr := net.ParseIP(parsedUrl.Hostname())
+		if ipAddr != nil {
+			r.Errorf("Redirect url %q must not be an IP address", redirectUrl)
+			return ""
+		}
+		return redirectUrl
+	}
+	return ""
 }
 
 // parseEvent parses event from query parameters (dataField and json paths)
@@ -138,7 +175,7 @@ func (r *Router) parsePixelEvent(c *gin.Context, tp string) (event types.Json, e
 	}
 
 	for key, value := range parameters {
-		if key == dataField || key == cookieDomainField || key == processHeaders {
+		if key == dataField || key == cookieDomainField || key == processHeaders || key == redirectUrlField {
 			continue
 		}
 		if len(value) == 1 {
