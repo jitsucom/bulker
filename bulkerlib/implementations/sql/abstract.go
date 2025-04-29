@@ -84,15 +84,15 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	}
 
 	var customFields = ColumnTypesOption.Get(&ps.options)
-	ps.pkColumns = pkColumns.Map(p.ColumnName)
+	ps.pkColumns = pkColumns.Map(ps.nameTransformer).Map(p.ColumnName)
 	ps.pkColumnsArrays = ps.pkColumns.ToSlice()
 	ps.timestampColumn = bulker.TimestampOption.Get(&ps.options)
 	if ps.timestampColumn != "" {
-		ps.timestampColumn = p.ColumnName(ps.timestampColumn)
+		ps.timestampColumn = p.ColumnName(ps.nameTransformer(ps.timestampColumn))
 	}
 	ps.namespace = bulker.NamespaceOption.Get(&ps.options)
 	if ps.namespace != "" {
-		ps.namespace = p.TableName(ps.namespace)
+		ps.namespace = p.TableName(ps.nameTransformer(ps.namespace))
 	}
 	ps.omitNils = OmitNilsOption.Get(&ps.options)
 	ps.schemaFreeze = SchemaFreezeOption.Get(&ps.options)
@@ -108,7 +108,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 		ps.notFlatteningKeys = notFlatteningKeys
 	}
 
-	ps.unmappedDataColumn = p.ColumnName(unmappedDataColumn)
+	ps.unmappedDataColumn = p.ColumnName(ps.nameTransformer(unmappedDataColumn))
 
 	ps.state = bulker.State{Status: bulker.Active, Mode: mode, Representation: RepresentationTable{
 		Name: ps.tableName,
