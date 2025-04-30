@@ -232,7 +232,7 @@ func (ps *AbstractFileStorageStream) flushBatchFile(ctx context.Context) (err er
 				_ = file.Close()
 			}()
 			scanner := bufio.NewScanner(file)
-			scanner.Buffer(make([]byte, 1024*10), 1024*1024*10)
+			scanner.Buffer(make([]byte, 1024*10), 1024*1024*50)
 			i := 0
 			for scanner.Scan() {
 				if !ps.batchFileSkipLines.Contains(i) {

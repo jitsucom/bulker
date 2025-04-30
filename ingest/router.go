@@ -455,8 +455,10 @@ func (r *Router) processSyncDestination(message *IngestMessage, stream *StreamWi
 			for _, id := range ids {
 				if err != nil {
 					DeviceFunctions(id, "error").Inc()
+					DeviceFunctions("total", "error").Inc()
 				} else {
 					DeviceFunctions(id, "success").Inc()
+					DeviceFunctions("total", "success").Inc()
 				}
 			}
 		}(ids)

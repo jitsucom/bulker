@@ -34,7 +34,8 @@ const (
 					gzip
 					IGNOREHEADER 1
                     dateformat 'auto'
-                    timeformat 'auto'`
+                    timeformat 'auto'
+					TRUNCATECOLUMNS`
 
 	redshiftAlterSortKeyTemplate       = `ALTER TABLE %s%s ALTER SORTKEY (%s)`
 	redshiftMergeStatement             = `MERGE INTO {{.Namespace}}{{.TableTo}} USING {{.NamespaceFrom}}{{.TableFrom}} S ON {{.JoinConditions}} WHEN MATCHED THEN UPDATE SET {{.UpdateSet}} WHEN NOT MATCHED THEN INSERT ({{.Columns}}) VALUES ({{.SourceColumns}})`

@@ -26,7 +26,8 @@ const redshiftCopyTemplateIam = `copy %s%s (%s)
 					gzip
 					IGNOREHEADER 1
                     dateformat 'auto'
-                    timeformat 'auto'`
+                    timeformat 'auto'
+					TRUNCATECOLUMNS`
 
 // Postgres is adapter for creating,patching (schema or table), inserting data to postgres
 type RedshiftIAM struct {
