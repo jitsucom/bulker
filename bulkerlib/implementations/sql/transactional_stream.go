@@ -30,11 +30,7 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 	if err != nil {
 		return nil, err
 	}
-	ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.namespace, ps.tableName)
-	if ps.existingTable.Exists() {
-		ps.sqlAdapter.TableHelper().UpdateCached(ps.existingTable.Name, ps.existingTable)
-	}
-	ps.initialColumnsCount = ps.existingTable.ColumnsCount()
+	ps.loadExistingTable = true
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		tmpTable := tableForObject.WithoutColumns()
 		ps.adjustTableColumnTypes(tmpTable, ps.existingTable, tableForObject, object)

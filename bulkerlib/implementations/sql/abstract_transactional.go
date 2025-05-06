@@ -42,6 +42,8 @@ type AbstractTransactionalSQLStream struct {
 	// path to discriminator field in object
 	discriminatorColumn string
 	useDiscriminator    bool
+	// loadExistingTable whether to load an existing table schema on init
+	loadExistingTable bool
 }
 
 type DeduplicationLine struct {
@@ -121,6 +123,13 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 	err = ps.AbstractSQLStream.init(ctx)
 	if err != nil {
 		return err
+	}
+	if ps.loadExistingTable {
+		ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.namespace, ps.tableName)
+		if ps.existingTable.Exists() {
+			ps.sqlAdapter.TableHelper().UpdateCached(ps.existingTable.Name, ps.existingTable)
+		}
+		ps.initialColumnsCount = ps.existingTable.ColumnsCount()
 	}
 	return nil
 }
