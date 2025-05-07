@@ -4,7 +4,6 @@ import (
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"math/rand"
 	"time"
 )
 
@@ -21,11 +20,13 @@ func NewCron(config *Config) *Cron {
 	return &Cron{Service: base, scheduler: s, config: config}
 }
 
-func (c *Cron) AddBatchConsumer(batchConsumer BatchConsumer) (gocron.Job, error) {
+func (c *Cron) AddBatchConsumer(destinationId string, batchConsumer BatchConsumer) (gocron.Job, error) {
 	options := []gocron.JobOption{gocron.WithTags(batchConsumer.TopicId())}
 	if batchConsumer.BatchPeriodSec() > 1 {
-		//randomize start time to avoid all batch run at the same time
-		delay := rand.Intn(batchConsumer.BatchPeriodSec())
+		// spread start time to avoid all batch run at the same time
+		delay := utils.HashStringInt(destinationId) % uint32(batchConsumer.BatchPeriodSec())
+		// introduce small fluctuation to avoid all batches starting at the same time for multi table destinations
+		delay += utils.HashStringInt(batchConsumer.TopicId()) % 30
 		//don't do small delays. gocron doesn't like StartDateTime at past. with small delays that may be possible
 		if delay > 5 {
 			options = append(options, gocron.WithStartAt(gocron.WithStartDateTime(time.Now().Add(time.Duration(delay)*time.Second))))
@@ -36,9 +37,9 @@ func (c *Cron) AddBatchConsumer(batchConsumer BatchConsumer) (gocron.Job, error)
 		options...)
 }
 
-func (c *Cron) ReplaceBatchConsumer(batchConsumer BatchConsumer) (gocron.Job, error) {
+func (c *Cron) ReplaceBatchConsumer(destinationId string, batchConsumer BatchConsumer) (gocron.Job, error) {
 	c.RemoveBatchConsumer(batchConsumer)
-	return c.AddBatchConsumer(batchConsumer)
+	return c.AddBatchConsumer(destinationId, batchConsumer)
 }
 
 func (c *Cron) RemoveBatchConsumer(batchConsumer BatchConsumer) {

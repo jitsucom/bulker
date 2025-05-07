@@ -93,11 +93,6 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		"max.poll.interval.ms":          config.KafkaMaxPollIntervalMs,
 	}, *kafkaConfig))
 
-	consumer, err := kafka.NewConsumer(&consumerConfig)
-	if err != nil {
-		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
-		return nil, abstract.NewError("Error creating consumer: %v", err)
-	}
 	producerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"transactional.id":             fmt.Sprintf("%s_failed_%s", topicId, config.InstanceId),
 		"queue.buffering.max.messages": config.ProducerQueueSize,
@@ -119,16 +114,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		closed:           make(chan struct{}),
 		resumeChannel:    make(chan struct{}),
 	}
-	bc.consumer.Store(consumer)
 	bc.idle.Store(true)
-
-	err = consumer.Subscribe(topicId, bc.rebalanceCallback)
-	if err != nil {
-		metrics.ConsumerErrors(topicId, mode, destinationId, tableName, metrics.KafkaErrorCode(err)).Inc()
-		_ = consumer.Close()
-		return nil, abstract.NewError("Failed to subscribe to topic: %v", err)
-	}
-
 	return bc, nil
 }
 
@@ -203,9 +189,10 @@ func (bc *AbstractBatchConsumer) TopicId() string {
 
 func (bc *AbstractBatchConsumer) RunJob() {
 	if bc.running.CompareAndSwap(false, true) {
+		startedAt := time.Now()
 		defer func() {
 			bc.idle.Store(true)
-			bc.pause(false)
+			bc.pauseOrSuspend(startedAt)
 			bc.running.Store(false)
 		}()
 		_, _ = bc.ConsumeAll()
@@ -271,8 +258,11 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 	}
 
 	maxBatchSize, maxBatchSizeBytes, retryBatchSize := bc.batchSizeFunc(streamOptions)
-
-	consumer := bc.consumer.Load()
+	consumer, err := bc.initConsumer(false)
+	if err != nil {
+		bc.errorMetric("resume_error")
+		return BatchCounters{}, bc.NewError("Failed to resume kafka consumer: %v", err)
+	}
 	lowOffset, highOffset, err = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
 	updatedHighOffset = highOffset
 	offsets, _ := consumer.Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: 0}}, 1000)
@@ -342,7 +332,12 @@ func (bc *AbstractBatchConsumer) close() error {
 	default:
 		close(bc.closed)
 	}
-	return bc.consumer.Load().Close()
+	consumer := bc.consumer.Swap(nil)
+	if consumer != nil {
+		err := consumer.Close()
+		return err
+	}
+	return nil
 }
 
 func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum, batchSize, batchSizeBytes, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBath bool, err error) {
@@ -361,14 +356,30 @@ func (bc *AbstractBatchConsumer) shouldConsume(committedOffset, highOffset int64
 	return true
 }
 
-// pause consumer.
-func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
+func (bc *AbstractBatchConsumer) pauseOrSuspend(startedAt time.Time) {
 	if bc.idle.Load() && bc.retired.Load() {
 		// Close retired idling consumer
 		bc.Infof("Consumer is retired. Closing")
 		_ = bc.close()
 		return
 	}
+	consumer := bc.consumer.Load()
+	if consumer == nil {
+		return
+	}
+	batchPeriodSec := bc.BatchPeriodSec()
+	timeToNextBatch := time.Duration(batchPeriodSec)*time.Second - time.Since(startedAt)
+	if bc.config.SuspendConsumers && timeToNextBatch >= 60*time.Second {
+		bc.Infof("Suspending consumer %s for %s", consumer.String(), timeToNextBatch)
+		_ = consumer.Close()
+		bc.consumer.Store(nil)
+	} else {
+		bc.pause(false)
+	}
+}
+
+// pause consumer.
+func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 	if !bc.paused.CompareAndSwap(false, true) {
 		return
 	}
@@ -429,6 +440,28 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 	})
 }
 
+func (bc *AbstractBatchConsumer) initConsumer(force bool) (consumer *kafka.Consumer, err error) {
+	consumer = bc.consumer.Load()
+	if consumer == nil || force {
+		consumer, err = kafka.NewConsumer(&bc.consumerConfig)
+		if err != nil {
+			bc.errorMetric("consumer_error:" + metrics.KafkaErrorCode(err))
+			bc.Errorf("Error creating kafka consumer: %v", err)
+			return nil, err
+		}
+		err = consumer.SubscribeTopics([]string{bc.topicId}, bc.rebalanceCallback)
+		if err != nil {
+			bc.errorMetric("consumer_error:" + metrics.KafkaErrorCode(err))
+			_ = consumer.Close()
+			bc.Errorf("Failed to subscribe to topic: %v", err)
+			return nil, err
+		}
+		bc.Infof("Consumer created: %s", consumer.String())
+		bc.consumer.Store(consumer)
+	}
+	return consumer, nil
+}
+
 func (bc *AbstractBatchConsumer) restartConsumer() {
 	if bc.retired.Load() {
 		return
@@ -454,21 +487,10 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 			}
 		case <-ticker.C:
 			bc.Infof("Restarting consumer")
-			consumer, err := kafka.NewConsumer(&bc.consumerConfig)
+			_, err := bc.initConsumer(true)
 			if err != nil {
-				bc.errorMetric("consumer_error:" + metrics.KafkaErrorCode(err))
-				bc.Errorf("Error creating kafka consumer: %v", err)
 				break
 			}
-			err = consumer.SubscribeTopics([]string{bc.topicId}, bc.rebalanceCallback)
-			if err != nil {
-				bc.errorMetric("consumer_error:" + metrics.KafkaErrorCode(err))
-				_ = consumer.Close()
-				bc.Errorf("Failed to subscribe to topic: %v", err)
-				break
-			}
-			bc.consumer.Store(consumer)
-			bc.Infof("Restarted successfully")
 			return
 		}
 	}
@@ -511,6 +533,7 @@ func (bc *AbstractBatchConsumer) resume() {
 	if !bc.paused.Load() {
 		return
 	}
+	consumer := bc.consumer.Load()
 	var err error
 	defer func() {
 		if err != nil {
@@ -518,13 +541,13 @@ func (bc *AbstractBatchConsumer) resume() {
 			bc.SystemErrorf("failed to resume kafka consumer.: %v", err)
 		}
 	}()
-	partitions, err := bc.consumer.Load().Assignment()
+	partitions, err := consumer.Assignment()
 	if err != nil {
 		return
 	}
 	select {
 	case bc.resumeChannel <- struct{}{}:
-		err = bc.consumer.Load().Resume(partitions)
+		err = consumer.Resume(partitions)
 	case <-time.After(time.Duration(bc.config.KafkaMaxPollIntervalMs) * time.Millisecond):
 		err = bc.NewError("Resume timeout.")
 		//return bc.consumer.Resume(partitions)

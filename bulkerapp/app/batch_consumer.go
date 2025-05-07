@@ -35,7 +35,6 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 	bc.retryTopic = retryTopic
 	bc.batchSizeFunc = bc.batchSizes
 	bc.batchFunc = bc.processBatchImpl
-	bc.pause(false)
 	return &bc, nil
 }
 
