@@ -892,15 +892,15 @@ func TestTransactionalJSONNoArrays(t *testing.T) {
 				Columns: justColumns("_timestamp", "id", "name", "json1"),
 			},
 			expectedRowsCount: 4,
-			//streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
-			//	Name: "d",
-			//	Fields: []types2.SchemaField{
-			//		{Name: "_timestamp", Type: types2.TIMESTAMP},
-			//		{Name: "id", Type: types2.INT64},
-			//		{Name: "name", Type: types2.STRING},
-			//		{Name: "json1", Type: types2.JSON},
-			//	},
-			//})},
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1", Type: types2.JSON},
+				},
+			})},
 			configIds: []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster_noshards"},
 		},
 		{

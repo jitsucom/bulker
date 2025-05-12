@@ -128,15 +128,15 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.namespace, ps.tableName)
 		if ps.existingTable.Exists() {
 			ps.sqlAdapter.TableHelper().UpdateCached(ps.existingTable.Name, ps.existingTable)
-			for el := ps.existingTable.Columns.Front(); el != nil; el = el.Next() {
-				if el.Value.DataType == types.JSON {
-					if ps.notFlatteningKeys == nil {
-						ps.notFlatteningKeys = types2.NewSet[string](el.Key)
-					} else {
-						ps.notFlatteningKeys.Put(el.Key)
-					}
-				}
-			}
+			//for el := ps.existingTable.Columns.Front(); el != nil; el = el.Next() {
+			//	if el.Value.DataType == types.JSON {
+			//		if ps.notFlatteningKeys == nil {
+			//			ps.notFlatteningKeys = types2.NewSet[string](el.Key)
+			//		} else {
+			//			ps.notFlatteningKeys.Put(el.Key)
+			//		}
+			//	}
+			//}
 		}
 		ps.initialColumnsCount = ps.existingTable.ColumnsCount()
 	}
