@@ -39,8 +39,12 @@ func (s *ColumnScanner) Scan(src any) error {
 	case big.Float:
 		s.value, _ = v.Float64()
 	case *chcol.JSON:
-		b, _ := v.MarshalJSON()
-		s.value = string(b)
+		if len(v.NestedMap()) > 0 {
+			b, _ := v.MarshalJSON()
+			s.value = string(b)
+		} else {
+			s.value = nil
+		}
 	case string:
 		nullable, _ := s.ColumnType.Nullable()
 		if !nullable && v == "" {
