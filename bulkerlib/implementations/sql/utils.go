@@ -3,6 +3,7 @@ package sql
 import (
 	"database/sql"
 	"errors"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
 	"github.com/lib/pq"
 	"math/big"
 	"strconv"
@@ -37,6 +38,9 @@ func (s *ColumnScanner) Scan(src any) error {
 		s.value = int(v.Int64())
 	case big.Float:
 		s.value, _ = v.Float64()
+	case *chcol.JSON:
+		b, _ := v.MarshalJSON()
+		s.value = string(b)
 	case string:
 		nullable, _ := s.ColumnType.Nullable()
 		if !nullable && v == "" {

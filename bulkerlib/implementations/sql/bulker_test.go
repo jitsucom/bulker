@@ -58,7 +58,7 @@ var clickhouseClusterContainerNoShards *clickhouse_noshards.ClickHouseClusterCon
 
 func init() {
 	//uncomment to run tests locally with just one bulker type
-	//allBulkerConfigs = []string{PostgresBulkerTypeId}
+	allBulkerConfigs = []string{PostgresBulkerTypeId}
 
 	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {
 		bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
@@ -146,6 +146,9 @@ func init() {
 			Hosts:    clickhouseContainer.Hosts,
 			Username: "default",
 			Database: clickhouseContainer.Database,
+			Parameters: map[string]string{
+				"enable_json_type": "1",
+			},
 		}}
 	}
 
@@ -200,6 +203,9 @@ func init() {
 			Username: "default",
 			Database: clickhouseClusterContainerNoShards.Database,
 			Cluster:  clickhouseClusterContainerNoShards.Cluster,
+			Parameters: map[string]string{
+				"enable_json_type": "1",
+			},
 		}}
 	}
 

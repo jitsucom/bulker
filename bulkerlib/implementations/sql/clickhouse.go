@@ -78,6 +78,15 @@ var (
 		types.JSON:      {"String"},
 		types.UNKNOWN:   {"String"},
 	}
+	clickhouseTypesWithJSON = map[types.DataType][]string{
+		types.STRING:    {"String", "%String%", "%CHAR%", "%TEXT%", "%BLOB%", "%Enum%", "%UUID%"},
+		types.INT64:     {"Int64", "Int", "LowCardinality(Int"},
+		types.FLOAT64:   {"Float64", "Float32", "Decimal"},
+		types.TIMESTAMP: {"DateTime64(6)", "DateTime", "Date"},
+		types.BOOL:      {"UInt8"},
+		types.JSON:      {"JSON", "Array(JSON)"},
+		types.UNKNOWN:   {"String"},
+	}
 
 	defaultValues = map[string]interface{}{
 		"int8":                          0,
@@ -202,6 +211,8 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 		config.Parameters["secure"] = "true"
 		utils.MapPutIfAbsent(config.Parameters, "skip_verify", "true")
 	}
+	jsonEnabled := fmt.Sprint(config.Parameters["enable_json_type"]) == "1"
+	chTypes := utils.Ternary(jsonEnabled, clickhouseTypesWithJSON, clickhouseTypes)
 	utils.MapPutIfAbsent(config.Parameters, "connection_open_strategy", "round_robin")
 	utils.MapPutIfAbsent(config.Parameters, "mutations_sync", "2")
 	utils.MapPutIfAbsent(config.Parameters, "dial_timeout", "60s")
@@ -262,7 +273,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	if bulkerConfig.LogLevel == bulkerlib.Verbose {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
-	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, config.Database, dbConnectFunction, clickhouseTypes, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr, false)
+	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, ClickHouseBulkerTypeId, config, config.Database, dbConnectFunction, chTypes, queryLogger, chTypecastFunc, QuestionMarkParameterPlaceholder, columnDDlFunc, chReformatValue, checkErr, jsonEnabled)
 	sqlAdapterBase.batchFileFormat = types.FileFormatNDJSON
 	var s3Config *S3OptionConfig
 	if config.LoadAsJSON && config.S3Bucket != "" {

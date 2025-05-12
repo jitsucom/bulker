@@ -129,13 +129,13 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, namespace str
 func InitTypes(dataTypes map[types2.DataType][]string, supportsJSON bool) (typesMapping map[types2.DataType]string, reverseTypesMapping map[string]types2.DataType) {
 	typeMapping := make(map[types2.DataType]string, len(dataTypes))
 	reverseTypeMapping := make(map[string]types2.DataType, len(dataTypes)+3)
-	for dataType, postgresTypes := range dataTypes {
-		for i, postgresType := range postgresTypes {
+	for dataType, dbTypes := range dataTypes {
+		for i, dbType := range dbTypes {
 			if i == 0 {
-				typeMapping[dataType] = postgresType
+				typeMapping[dataType] = dbType
 			}
 			if dataType != types2.UNKNOWN && (dataType != types2.JSON || supportsJSON) {
-				reverseTypeMapping[postgresType] = dataType
+				reverseTypeMapping[dbType] = dataType
 			}
 		}
 	}
