@@ -59,7 +59,7 @@ const (
 	chRenameTableTemplate   = `RENAME TABLE %s%s TO %s%s %s`
 
 	chSelectFinalStatement     = `SELECT %s FROM %s%s FINAL %s%s`
-	chLoadStatement            = `INSERT INTO %s%s (%s)`
+	chLoadStatement            = `INSERT INTO %s%s (%s) VALUES %s`
 	chLoadJSONStatement        = `INSERT INTO %s%s format JSONEachRow`
 	chLoadJSONFromURLStatement = `INSERT INTO %s%s SELECT * FROM url('%s', JSONEachRow)`
 
@@ -393,11 +393,10 @@ func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 		time.Sleep(1 * time.Second)
 	} else {
 		var err error
-		c, err := ch.dataSource.Conn(ctx)
+		db, err = ch.dataSource.Conn(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open connection: %v", err)
 		}
-		db = NewConWithDB(nil, c)
 	}
 	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), db, ch.queryLogger, ch.checkErrFunc, true)}, nil
 }
@@ -767,21 +766,10 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 		defer func() {
 			_ = file.Close()
 		}()
-		txWrapper := ch.txOrDb(ctx).(*TxWrapper)
-		db := txWrapper.db.(*ConWithDB)
-		con := db.con
-		scope, err := con.BeginTx(ctx, nil)
-		if err != nil {
-			return state, err
-		}
-
 		columnNames := targetTable.MappedColumnNames(ch.quotedColumnName)
-		copyStatement = fmt.Sprintf(chLoadStatement, namespace, tableName, strings.Join(columnNames, ", "))
-		batch, err := scope.PrepareContext(ctx, copyStatement)
-		if err != nil {
-			_ = scope.Rollback()
-			return state, checkErr(err)
-		}
+		var placeholdersBuilder strings.Builder
+		args := make([]any, 0, targetTable.ColumnsCount())
+
 		decoder := jsoniter.NewDecoder(file)
 		decoder.UseNumber()
 		for {
@@ -791,10 +779,9 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 				if err == io.EOF {
 					break
 				}
-				_ = scope.Rollback()
 				return state, err
 			}
-			args := make([]any, 0, targetTable.ColumnsCount())
+			placeholdersBuilder.WriteString(",(")
 			err = targetTable.Columns.ForEachIndexedE(func(i int, name string, column types.SQLColumn) error {
 				v, ok := object[name]
 				if !ok && column.Override {
@@ -804,31 +791,33 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 				if err2 != nil {
 					return err2
 				}
+				if i > 0 {
+					placeholdersBuilder.WriteString(",")
+				}
+				placeholdersBuilder.WriteString(ch.typecastFunc(ch.parameterPlaceholder(i, columnNames[i]), column))
 				args = append(args, l)
 				return nil
 			})
 			if err != nil {
-				_ = scope.Rollback()
 				return state, err
 			}
-			if _, err := batch.ExecContext(ctx, args...); err != nil {
-				_ = scope.Rollback()
+			placeholdersBuilder.WriteString(")")
+		}
+		if len(args) > 0 {
+			loadTime := time.Now()
+			state = bulkerlib.WarehouseState{
+				Name:            "clickhouse_prepare_data",
+				TimeProcessedMs: loadTime.Sub(startTime).Milliseconds(),
+			}
+			copyStatement = fmt.Sprintf(chLoadStatement, namespace, tableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
+			if _, err := ch.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
 				return state, checkErr(err)
 			}
+			state.Merge(bulkerlib.WarehouseState{
+				Name:            "clickhouse_load_data",
+				TimeProcessedMs: time.Since(loadTime).Milliseconds(),
+			})
 		}
-		loadTime := time.Now()
-		state = bulkerlib.WarehouseState{
-			Name:            "clickhouse_prepare_data",
-			TimeProcessedMs: loadTime.Sub(startTime).Milliseconds(),
-		}
-		if err := scope.Commit(); err != nil {
-			_ = scope.Rollback()
-			return state, checkErr(err)
-		}
-		state.Merge(bulkerlib.WarehouseState{
-			Name:            "clickhouse_load_data",
-			TimeProcessedMs: time.Since(loadTime).Milliseconds(),
-		})
 		return state, nil
 	}
 }
@@ -1056,13 +1045,13 @@ func convertType(value any, column types.SQLColumn) (any, error) {
 			return strconv.FormatBool(n), nil
 		}
 	default:
-		//if strings.HasPrefix(lt, "datetime64") {
-		//	switch n := v.(type) {
-		//	case time.Time:
-		//		return n.Format(chDateFormat), nil
-		//	}
-		//
-		//}
+		if strings.HasPrefix(lt, "datetime64") {
+			switch n := v.(type) {
+			case time.Time:
+				return n.Format(chDateFormat), nil
+			}
+
+		}
 
 	}
 
