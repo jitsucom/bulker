@@ -22,17 +22,20 @@ func NewCron(config *Config) *Cron {
 
 func (c *Cron) AddBatchConsumer(destinationId string, batchConsumer BatchConsumer) (gocron.Job, error) {
 	options := []gocron.JobOption{gocron.WithTags(batchConsumer.TopicId())}
-	if batchConsumer.BatchPeriodSec() > 1 {
+	batchPeriodSec := batchConsumer.BatchPeriodSec()
+	if batchPeriodSec > 1 {
 		// spread start time to avoid all batch run at the same time
-		delay := utils.HashStringInt(destinationId) % uint32(batchConsumer.BatchPeriodSec())
+		delay := utils.HashStringInt(destinationId) % uint32(batchPeriodSec)
 		// introduce small fluctuation to avoid all batches starting at the same time for multi table destinations
 		delay += utils.HashStringInt(batchConsumer.TopicId()) % 30
-		//don't do small delays. gocron doesn't like StartDateTime at past. with small delays that may be possible
-		if delay > 5 {
-			options = append(options, gocron.WithStartAt(gocron.WithStartDateTime(time.Now().Add(time.Duration(delay)*time.Second))))
+		startTime := time.Now().Truncate(time.Duration(batchPeriodSec) * time.Second).Add(time.Duration(delay) * time.Second)
+		if startTime.Sub(time.Now().UTC()) < 5*time.Second {
+			// we are too late to run at this time. add batchPeriodSec to start time
+			startTime = startTime.Add(time.Duration(batchPeriodSec) * time.Second)
 		}
+		options = append(options, gocron.WithStartAt(gocron.WithStartDateTime(startTime)))
 	}
-	return c.scheduler.NewJob(gocron.DurationJob(time.Duration(batchConsumer.BatchPeriodSec())*time.Second),
+	return c.scheduler.NewJob(gocron.DurationJob(time.Duration(batchPeriodSec)*time.Second),
 		gocron.NewTask(batchConsumer.RunJob),
 		options...)
 }
