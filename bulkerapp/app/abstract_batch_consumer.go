@@ -285,13 +285,14 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.errorMetric("query_watermark_failed")
 		return BatchCounters{}, bc.NewError("Failed to query watermark offsets: %v", err)
 	}
+	batchSizeOffset := int64(utils.Ternary(bc.mode == "retry", retryBatchSize, maxBatchSize))
+	queueSize := utils.Ternary(commitedOffset != int64(kafka.OffsetBeginning), math.Max(float64(highOffset-commitedOffset), 0), math.Max(float64(highOffset-lowOffset), 0))
+	metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(math.Max(queueSize-float64(batchSizeOffset), 0))
+
 	if !bc.shouldConsume(commitedOffset, highOffset) {
 		bc.Debugf("Consumer should not consume. offsets: %d-%d", commitedOffset, highOffset)
 		return BatchCounters{}, nil
 	}
-	batchSizeOffset := int64(utils.Ternary(bc.mode == "retry", retryBatchSize, maxBatchSize))
-	queueSize := utils.Ternary(commitedOffset != int64(kafka.OffsetBeginning), math.Max(float64(highOffset-commitedOffset), 0), math.Max(float64(highOffset-lowOffset), 0))
-	metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(math.Max(queueSize-float64(batchSizeOffset), 0))
 	lastOffsetQueryTime := time.Now()
 	bc.Debugf("Starting consuming messages from topic. Messages in topic: ~%d. ", highOffset-commitedOffset)
 	batchNumber := 1
