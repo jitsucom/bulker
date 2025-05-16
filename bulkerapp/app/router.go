@@ -70,7 +70,7 @@ func NewRouter(appContext *Context) *Router {
 	engine.POST("/bulk/:destinationId", router.BulkHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
 
-	engine.GET("/queue-sizes/:workspaceId", router.QueueSizesHandler)
+	engine.GET("/connections-metrics/:workspaceId", router.ConnectionsMetricsHandler)
 
 	engine.GET("/debug/pprof/profile", gin.WrapF(pprof.Profile))
 	engine.GET("/debug/pprof/heap", gin.WrapF(pprof.Handler("heap").ServeHTTP))
@@ -335,13 +335,15 @@ func maskWriteKey(wk string) string {
 	}
 }
 
-func (r *Router) QueueSizesHandler(c *gin.Context) {
+func (r *Router) ConnectionsMetricsHandler(c *gin.Context) {
 	workspaceId := c.Param("workspaceId")
 	if len(workspaceId) < 10 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid workspaceId"})
 		return
 	}
-	resp, err := http.DefaultClient.Get(r.config.PrometheusURL + "/api/v1/query?query=" + url.QueryEscape("bulkerapp_consumer_queue_size{destinationId=~\""+workspaceId+"-.*\"}"))
+	query := `max (bulkerapp_consumer_queue_size{destinationId=~"` + workspaceId + `-.*"}) by (__name__, destinationId, mode, tableName) or 
+sum (connection_message_statuses{destinationId=~"` + workspaceId + `-.*"}) by (__name__, destinationId, tableName, status)`
+	resp, err := http.DefaultClient.Get(r.config.PrometheusURL + "/api/v1/query?query=" + url.QueryEscape(query))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get queue sizes: " + err.Error()})
 		return
