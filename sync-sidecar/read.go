@@ -28,10 +28,6 @@ var forceTemporaryBatchesDestinations = map[string]int{
 	"webhook": 100,
 }
 
-var disableTemporaryTableDestinations = map[string]struct{}{
-	"clickhouse": {},
-}
-
 type ReadSideCar struct {
 	*AbstractSideCar
 	namespace       string
@@ -482,9 +478,7 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 		// that allows us to populate tmp table during long period and through multiple transactions
 		streamOptions = append(streamOptions, bulker.WithTemporaryBatchSize(100000))
 	}
-	if _, ok := disableTemporaryTableDestinations[s.blk.Type()]; ok {
-		streamOptions = append(streamOptions, sql.WithDisableTemporaryTables())
-	}
+	streamOptions = append(streamOptions, sql.WithDisableTemporaryTables())
 
 	if namespace != "" {
 		streamOptions = append(streamOptions, bulker.WithNamespace(namespace))
