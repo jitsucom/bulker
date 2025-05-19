@@ -13,7 +13,7 @@ services:
       clickhouse-network:
         ipv4_address: 172.23.0.10
   clickhouse01:
-    image: clickhouse/clickhouse-server:24.6-alpine
+    image: clickhouse/clickhouse-server:25.4-alpine
     container_name: clickhouse01
     hostname: clickhouse01
     networks:
@@ -29,11 +29,14 @@ services:
       interval: 1s
       timeout: 3s
       retries: 30
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_SKIP_USER_SETUP: 1
     depends_on:
       zookeeper:
         condition: service_healthy
   clickhouse02:
-    image: clickhouse/clickhouse-server:24.6-alpine
+    image: clickhouse/clickhouse-server:25.4-alpine
     container_name: clickhouse02
     hostname: clickhouse02
     networks:
@@ -49,11 +52,14 @@ services:
       interval: 1s
       timeout: 3s
       retries: 30
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_SKIP_USER_SETUP: 1
     depends_on:
       zookeeper:
         condition: service_healthy
   clickhouse03:
-    image: clickhouse/clickhouse-server:24.6-alpine
+    image: clickhouse/clickhouse-server:25.4-alpine
     container_name: clickhouse03
     hostname: clickhouse03
     networks:
@@ -69,11 +75,14 @@ services:
       interval: 1s
       timeout: 3s
       retries: 30
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_SKIP_USER_SETUP: 1
     depends_on:
       zookeeper:
         condition: service_healthy
   clickhouse04:
-    image: clickhouse/clickhouse-server:24.6-alpine
+    image: clickhouse/clickhouse-server:25.4-alpine
     container_name: clickhouse04
     hostname: clickhouse04
     networks:
@@ -89,6 +98,9 @@ services:
       interval: 1s
       timeout: 3s
       retries: 30
+    environment:
+      #CLICKHOUSE_USER: default
+      CLICKHOUSE_SKIP_USER_SETUP: 1
     depends_on:
       zookeeper:
         condition: service_healthy

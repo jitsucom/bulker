@@ -275,13 +275,11 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.errorMetric("query_watermark_failed")
 		return BatchCounters{}, bc.NewError("Failed to query watermark offsets: %v", err)
 	}
+	queueSize := utils.Ternary(commitedOffset != int64(kafka.OffsetBeginning), math.Max(float64(highOffset-commitedOffset), 0), math.Max(float64(highOffset-lowOffset), 0))
 	if !bc.shouldConsume(commitedOffset, highOffset) {
 		bc.Debugf("Consumer should not consume. offsets: %d-%d", commitedOffset, highOffset)
 		return BatchCounters{}, nil
 	}
-	batchSizeOffset := int64(utils.Ternary(bc.mode == "retry", retryBatchSize, maxBatchSize))
-	queueSize := utils.Ternary(commitedOffset != int64(kafka.OffsetBeginning), math.Max(float64(highOffset-commitedOffset), 0), math.Max(float64(highOffset-lowOffset), 0))
-	metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(math.Max(queueSize-float64(batchSizeOffset), 0))
 	lastOffsetQueryTime := time.Now()
 	bc.Debugf("Starting consuming messages from topic. Messages in topic: ~%d. ", highOffset-commitedOffset)
 	batchNumber := 1
@@ -316,7 +314,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 				lastOffsetQueryTime = time.Now()
 			}
 			queueSize = math.Max(float64(updatedHighOffset-batchCounters.firstOffset-int64(batchCounters.consumed)), 0)
-			metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(math.Max(queueSize-float64(batchSizeOffset), 0))
+			metrics.ConsumerQueueSize(bc.topicId, bc.mode, bc.destinationId, bc.tableName).Set(queueSize)
 		}
 		if !nextBatch {
 			err = err2
@@ -575,6 +573,13 @@ func (bc *AbstractBatchConsumer) countersMetric(counters BatchCounters) {
 		value := countersValue.Field(i).Int()
 		if value > 0 {
 			metrics.ConsumerMessages(bc.topicId, bc.mode, bc.destinationId, bc.tableName, metricName).Add(float64(value))
+			if metricName == "processed" {
+				metrics.ConnectionMessageStatuses(bc.destinationId, bc.tableName, "success").Add(float64(value))
+			} else if metricName == "failed" {
+				metrics.ConnectionMessageStatuses(bc.destinationId, bc.tableName, "error").Add(float64(value))
+			} else if metricName == "retried" || metricName == "deadLettered" {
+				metrics.ConnectionMessageStatuses(bc.destinationId, bc.tableName, metricName).Add(float64(value))
+			}
 		}
 	}
 }

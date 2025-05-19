@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/pprof"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -68,6 +69,8 @@ func NewRouter(appContext *Context) *Router {
 
 	engine.POST("/bulk/:destinationId", router.BulkHandler)
 	engine.GET("/failed/:destinationId", router.FailedHandler)
+
+	engine.GET("/connections-metrics/:workspaceId", router.ConnectionsMetricsHandler)
 
 	engine.GET("/debug/pprof/profile", gin.WrapF(pprof.Profile))
 	engine.GET("/debug/pprof/heap", gin.WrapF(pprof.Handler("heap").ServeHTTP))
@@ -330,6 +333,32 @@ func maskWriteKey(wk string) string {
 	} else {
 		return "***"
 	}
+}
+
+func (r *Router) ConnectionsMetricsHandler(c *gin.Context) {
+	workspaceId := c.Param("workspaceId")
+	if len(workspaceId) < 10 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid workspaceId"})
+		return
+	}
+	query := `max (bulkerapp_consumer_queue_size{destinationId=~"` + workspaceId + `-.*"}) by (__name__, destinationId, mode, tableName) or 
+sum (connection_message_statuses{destinationId=~"` + workspaceId + `-.*"}) by (__name__, destinationId, tableName, status)`
+	resp, err := http.DefaultClient.Get(r.config.PrometheusURL + "/api/v1/query?query=" + url.QueryEscape(query))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get queue sizes: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get queue sizes: " + resp.Status})
+		return
+	}
+	bytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read response: " + err.Error()})
+		return
+	}
+	c.Data(resp.StatusCode, "application/json", bytes)
 }
 
 func (r *Router) FailedHandler(c *gin.Context) {

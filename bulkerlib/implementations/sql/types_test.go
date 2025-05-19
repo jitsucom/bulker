@@ -524,7 +524,7 @@ func TestJSONTypes(t *testing.T) {
 			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_serverless", RedshiftBulkerTypeId + "_iam"}),
 		},
 		{
-			name:                      "json_test_clickhouse",
+			name:                      "json_test_clickhouse_string",
 			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId:         true,
 			dataFile:                  "test_data/types_json.ndjson",
@@ -557,7 +557,43 @@ func TestJSONTypes(t *testing.T) {
 					{Name: "json1_nested2_nested", Type: types2.INT64},
 				},
 			})},
-			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{ClickHouseBulkerTypeId}),
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{ClickHouseBulkerTypeId + "_cluster"}),
+		},
+		{
+			name:                      "json_test_clickhouse_json",
+			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId:         true,
+			dataFile:                  "test_data/types_json.ndjson",
+			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
+			expectedTable: ExpectedTable{
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"_timestamp", types2.SQLColumn{Type: "DateTime64(6)"}},
+					{"id", types2.SQLColumn{Type: "Int64"}},
+					{"name", types2.SQLColumn{Type: "String"}},
+					{"json1_nested", types2.SQLColumn{Type: "Int64"}},
+					{"json2", types2.SQLColumn{Type: "JSON"}},
+					{"array1", types2.SQLColumn{Type: "String"}},
+					{"json1_nested2_nested", types2.SQLColumn{Type: "Int64"}},
+				}),
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "a", "json1_nested": 1, "json2": "{\"nested\":1}", "array1": "[\"1\",\"2\",\"3\"]", "json1_nested2_nested": 0},
+				{"_timestamp": constantTime, "id": 2, "name": "b", "json1_nested": 0, "json2": "{\"nested\":{\"nested\":2}}", "array1": "[1,2,3]", "json1_nested2_nested": 2},
+				{"_timestamp": constantTime, "id": 3, "name": "c", "json1_nested": 1, "json2": "{\"nested\":1}", "array1": "[{\"nested\":1},{\"nested\":2},{\"nested\":3}]", "json1_nested2_nested": 0},
+			},
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1_nested", Type: types2.INT64},
+					{Name: "json2", Type: types2.JSON},
+					{Name: "array1", Type: types2.STRING},
+					{Name: "json1_nested2_nested", Type: types2.INT64},
+				},
+			})},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster_noshards"}),
 		},
 		{
 			name:                      "json_test_snowflake",
@@ -650,7 +686,7 @@ func TestTransactionalJSON(t *testing.T) {
 			tableName: "transactional_json_test",
 			modes:     []bulker.BulkMode{bulker.Batch},
 			dataFile:  "test_data/empty.ndjson",
-			configIds: allBulkerConfigs,
+			configIds: utils.ArrayExcluding(allBulkerConfigs, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId+"_cluster_noshards"),
 		},
 		{
 			name:                "added_columns_first_run",
@@ -672,7 +708,7 @@ func TestTransactionalJSON(t *testing.T) {
 					{Name: "array1", Type: types2.JSON},
 				},
 			})},
-			configIds: allBulkerConfigs,
+			configIds: utils.ArrayExcluding(allBulkerConfigs, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId+"_cluster_noshards"),
 		},
 		{
 			name:                "added_columns_second_run",
@@ -694,14 +730,14 @@ func TestTransactionalJSON(t *testing.T) {
 					{Name: "array1", Type: types2.JSON},
 				},
 			})},
-			configIds: allBulkerConfigs,
+			configIds: utils.ArrayExcluding(allBulkerConfigs, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId+"_cluster_noshards"),
 		},
 		{
 			name:      "dummy_test_table_cleanup",
 			tableName: "transactional_json_test",
 			modes:     []bulker.BulkMode{bulker.Batch},
 			dataFile:  "test_data/empty.ndjson",
-			configIds: allBulkerConfigs,
+			configIds: utils.ArrayExcluding(allBulkerConfigs, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId+"_cluster_noshards"),
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}
@@ -800,6 +836,79 @@ func TestTransactionalJSONnString(t *testing.T) {
 			modes:     []bulker.BulkMode{bulker.Batch},
 			dataFile:  "test_data/empty.ndjson",
 			configIds: utils.ArrayExcluding(allBulkerConfigs, BigqueryBulkerTypeId),
+		},
+	}
+	sequentialGroup := sync.WaitGroup{}
+	sequentialGroup.Add(1)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runTestConfig(t, tt, testStream)
+			sequentialGroup.Done()
+		})
+		sequentialGroup.Wait()
+		sequentialGroup.Add(1)
+	}
+}
+
+func TestTransactionalJSONNoArrays(t *testing.T) {
+	t.Parallel()
+	tests := []bulkerTestConfig{
+		{
+			//deletes any table leftovers from previous tests
+			name:      "dummy_test_table_cleanup",
+			tableName: "transactional_json_test",
+			modes:     []bulker.BulkMode{bulker.Batch},
+			dataFile:  "test_data/empty.ndjson",
+			configIds: []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster_noshards"},
+		},
+		{
+			name:                "added_columns_first_run",
+			tableName:           "transactional_json_test",
+			modes:               []bulker.BulkMode{bulker.Batch},
+			leaveResultingTable: true,
+			dataFile:            "test_data/types_json_noarr_part1.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("_timestamp", "id", "name", "json1"),
+			},
+			expectedRowsCount: 2,
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1", Type: types2.JSON},
+				},
+			})},
+			configIds: []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster_noshards"},
+		},
+		{
+			name:                "added_columns_second_run",
+			tableName:           "transactional_json_test",
+			modes:               []bulker.BulkMode{bulker.Batch},
+			leaveResultingTable: true,
+			dataFile:            "test_data/types_json_noarr_part2.ndjson",
+			expectedTable: ExpectedTable{
+				Columns: justColumns("_timestamp", "id", "name", "json1"),
+			},
+			expectedRowsCount: 4,
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1", Type: types2.JSON},
+				},
+			})},
+			configIds: []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster_noshards"},
+		},
+		{
+			name:      "dummy_test_table_cleanup",
+			tableName: "transactional_json_test",
+			modes:     []bulker.BulkMode{bulker.Batch},
+			dataFile:  "test_data/empty.ndjson",
+			configIds: []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster_noshards"},
 		},
 	}
 	sequentialGroup := sync.WaitGroup{}

@@ -247,7 +247,10 @@ func (sc *StreamConsumerImpl) start() {
 				sc.currentOffset = int64(message.TopicPartition.Offset)
 				metricsMeta := kafkabase.GetKafkaHeader(message, MetricsMetaHeader)
 				metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "consumed").Inc()
-
+				retries, _ := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
+				if retries > 0 {
+					metrics.ConnectionMessageStatuses(sc.destination.Id(), sc.tableName, "retried").Inc()
+				}
 				var state bulker.State
 				var processedObject types.Object
 				state, processedObject, err = sc.stream.Load().Consume(context.Background(), message)
@@ -259,25 +262,24 @@ func (sc *StreamConsumerImpl) start() {
 					sc.Errorf("Failed to inject event to bulker stream: %v", err)
 				} else {
 					sc.SendMetrics(metricsMeta, "success", 1)
+					metrics.ConnectionMessageStatuses(sc.destination.Id(), sc.tableName, "success").Inc()
 					metrics.ConsumerMessages(sc.topicId, "stream", sc.destination.Id(), sc.tableName, "processed").Inc()
 				}
 
 				if err != nil {
 					originalError := err
 					failedTopic := sc.retryTopic
-					retries, err := kafkabase.GetKafkaIntHeader(message, retriesCountHeader)
-					if err != nil {
-						sc.Errorf("failed to read retry header: %v", err)
-					}
 					metricStatus := "error"
 					if retries > 0 {
 						metricStatus = "retry_error"
 					}
 					sc.SendMetrics(metricsMeta, metricStatus, 1)
 					status := "retryScheduled"
+					metrics.ConnectionMessageStatuses(sc.destination.Id(), sc.tableName, "error").Inc()
 					if retries >= sc.config.MessagesRetryCount {
 						//no attempts left - send to dead-letter topic
 						status = "deadLettered"
+						metrics.ConnectionMessageStatuses(sc.destination.Id(), sc.tableName, "deadLettered").Inc()
 						failedTopic = sc.config.KafkaDestinationsDeadLetterTopicName
 					} else {
 						err = sc.topicManager.ensureTopic(sc.retryTopic, 1, sc.topicManager.RetryTopicConfig())

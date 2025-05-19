@@ -253,7 +253,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 						tm.Errorf("Failed to schedule consumer for destination topic: %s: %v", topic, err)
 						continue
 					} else {
-						tm.Infof("Consumer for destination topic %s was scheduled with batch period %ds.", topic, batchConsumer.BatchPeriodSec())
+						tm.Debugf("Consumer for destination topic %s was scheduled with batch period %ds.", topic, batchConsumer.BatchPeriodSec())
 					}
 				case retryTopicMode:
 					retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(destination.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)

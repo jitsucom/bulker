@@ -93,6 +93,8 @@ type Config struct {
 	ShutdownTimeoutSec int `mapstructure:"SHUTDOWN_TIMEOUT_SEC" default:"10"`
 	//Extra delay may be needed. E.g. for metric scrapper to scrape final metrics. So http server will stay active for an extra period.
 	ShutdownExtraDelay int `mapstructure:"SHUTDOWN_EXTRA_DELAY_SEC" default:"5"`
+
+	PrometheusURL string `mapstructure:"PROMETHEUS_URL"`
 }
 
 func init() {

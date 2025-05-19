@@ -78,7 +78,7 @@ func (r *Repository) init() error {
 	for id, dst := range internal.destinations {
 		_, ok := oldDestinations[id]
 		if !ok {
-			r.Infof("Destination %s (%s) was added. Ver: %s", id, dst.config.BulkerType, dst.config.UpdatedAt)
+			r.Debugf("Destination %s (%s) was added. Ver: %s", id, dst.config.BulkerType, dst.config.UpdatedAt)
 			repositoryChange.AddedDestinations = append(repositoryChange.AddedDestinations, dst)
 		}
 	}
