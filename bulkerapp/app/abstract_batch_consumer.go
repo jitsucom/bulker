@@ -409,6 +409,12 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 				}
 			}
 			firstPoll = false
+			consumer := bc.consumer.Load()
+			if consumer == nil {
+				bc.Errorf("Paused Consumer is nil.")
+				time.Sleep(10 * time.Second)
+				continue
+			}
 			message, err := bc.consumer.Load().ReadMessage(bc.waitForMessages)
 			if err != nil {
 				kafkaErr := err.(kafka.Error)
