@@ -412,8 +412,8 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 			consumer := bc.consumer.Load()
 			if consumer == nil {
 				bc.Errorf("Paused Consumer is nil.")
-				time.Sleep(10 * time.Second)
-				continue
+				bc.paused.Store(false)
+				return
 			}
 			message, err := consumer.ReadMessage(bc.waitForMessages)
 			if err != nil {
