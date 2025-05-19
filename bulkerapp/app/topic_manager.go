@@ -246,7 +246,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 						continue
 					}
 					tm.batchConsumers[destinationId] = append(tm.batchConsumers[destinationId], batchConsumer)
-					_, err = tm.cron.AddBatchConsumer(batchConsumer)
+					_, err = tm.cron.AddBatchConsumer(destinationId, batchConsumer)
 					if err != nil {
 						topicsErrorsByMode[mode]++
 						batchConsumer.Retire()
@@ -272,7 +272,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 						continue
 					}
 					tm.retryConsumers[destinationId] = append(tm.retryConsumers[destinationId], retryConsumer)
-					_, err = tm.cron.AddBatchConsumer(retryConsumer)
+					_, err = tm.cron.AddBatchConsumer(destinationId, retryConsumer)
 					if err != nil {
 						topicsErrorsByMode[mode]++
 						retryConsumer.Retire()
@@ -379,7 +379,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 			tm.SystemErrorf("Failed to create retry consumer for destination topic: %s: %v", destinationsRetryTopicName, err)
 		} else {
 			tm.retryConsumers[destinationsRetryTopicName] = append(tm.retryConsumers[destinationsRetryTopicName], retryConsumer)
-			_, err = tm.cron.AddBatchConsumer(retryConsumer)
+			_, err = tm.cron.AddBatchConsumer(destinationsRetryTopicName, retryConsumer)
 			if err != nil {
 				retryConsumer.Retire()
 				tm.SystemErrorf("Failed to schedule retry consumer for destination topic: %s: %v", destinationsRetryTopicName, err)
@@ -428,7 +428,7 @@ func (tm *TopicManager) changeListener(changes RepositoryChange) {
 			batchPeriodSec := utils.Nvl(int(bulker.BatchFrequencyOption.Get(changedDst.streamOptions)*60), tm.config.BatchRunnerPeriodSec)
 			if consumer.BatchPeriodSec() != batchPeriodSec {
 				consumer.UpdateBatchPeriod(batchPeriodSec)
-				_, err := tm.cron.ReplaceBatchConsumer(consumer)
+				_, err := tm.cron.ReplaceBatchConsumer(changedDst.Id(), consumer)
 				if err != nil {
 					metrics.TopicManagerError("reschedule_batch_consumer_error").Inc()
 					consumer.Retire()
@@ -442,7 +442,7 @@ func (tm *TopicManager) changeListener(changes RepositoryChange) {
 			retryPeriodSec := utils.Nvl(int(bulker.RetryFrequencyOption.Get(changedDst.streamOptions)*60), tm.config.BatchRunnerRetryPeriodSec)
 			if consumer.BatchPeriodSec() != retryPeriodSec {
 				consumer.UpdateBatchPeriod(retryPeriodSec)
-				_, err := tm.cron.ReplaceBatchConsumer(consumer)
+				_, err := tm.cron.ReplaceBatchConsumer(changedDst.Id(), consumer)
 				if err != nil {
 					metrics.TopicManagerError("reschedule_batch_consumer_error").Inc()
 					consumer.Retire()

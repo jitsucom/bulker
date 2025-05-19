@@ -27,7 +27,6 @@ func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodS
 	rc.batchFunc = rc.processBatchImpl
 	rc.batchSizeFunc = rc.batchSizes
 	rc.shouldConsumeFunc = rc.shouldConsumeFuncImpl
-	rc.pause(false)
 	return &rc, nil
 }
 
@@ -79,7 +78,7 @@ func (rc *RetryConsumer) batchSizes(_ *bulker.StreamOptions) (_, _, retryBatchSi
 
 }
 
-func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, _, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
+func (rc *RetryConsumer) processBatchImpl(_ *Destination, _, _, _, retryBatchSize int, highOffset int64, updatedHighOffset int) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 
 	var firstPosition *kafka.TopicPartition

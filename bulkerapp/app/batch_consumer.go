@@ -35,7 +35,6 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 	bc.retryTopic = retryTopic
 	bc.batchSizeFunc = bc.batchSizes
 	bc.batchFunc = bc.processBatchImpl
-	bc.pause(false)
 	return &bc, nil
 }
 
@@ -54,7 +53,7 @@ func (bc *BatchConsumerImpl) batchSizes(streamOptions *bulker.StreamOptions) (ma
 	return
 }
 
-func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, batchSizeBytes, retryBatchSize int, highOffset int64, queueSize int) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
+func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum, batchSize, batchSizeBytes, retryBatchSize int, highOffset int64, updatedHighOffset int) (counters BatchCounters, state bulker.State, nextBatch bool, err error) {
 	bc.Debugf("Starting batch #%d", batchNum)
 	counters.firstOffset = int64(kafka.OffsetBeginning)
 	startTime := time.Now()
@@ -69,7 +68,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 
 	defer func() {
 		if counters.consumed > 0 {
-			state.QueueSize = max(queueSize-int(latestMessage.TopicPartition.Offset-firstPosition.Offset)-1, 0)
+			state.QueueSize = max(updatedHighOffset-int(latestMessage.TopicPartition.Offset)-1, 0)
 			bc.postEventsLog(state, processedObjectSample, err)
 		}
 		if err != nil {
