@@ -415,7 +415,7 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 				time.Sleep(10 * time.Second)
 				continue
 			}
-			message, err := bc.consumer.Load().ReadMessage(bc.waitForMessages)
+			message, err := consumer.ReadMessage(bc.waitForMessages)
 			if err != nil {
 				kafkaErr := err.(kafka.Error)
 				if kafkaErr.Code() == kafka.ErrTimedOut {
@@ -435,7 +435,7 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 			} else if message != nil {
 				bc.Debugf("Unexpected message on paused consumer: %v", message)
 				//If message slipped through pause, rollback offset and make sure consumer is paused
-				_, err = bc.consumer.Load().SeekPartitions([]kafka.TopicPartition{message.TopicPartition})
+				_, err = consumer.SeekPartitions([]kafka.TopicPartition{message.TopicPartition})
 				if err != nil {
 					bc.errorMetric("ROLLBACK_ON_PAUSE_ERR")
 					bc.SystemErrorf("Failed to rollback offset on paused consumer: %v", err)
