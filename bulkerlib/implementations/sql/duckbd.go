@@ -74,7 +74,7 @@ var (
 
 type DuckDBConfig struct {
 	DataSourceConfig `mapstructure:",squash"`
-	MotherDuckToken  string `mapstructure:"motherduck_token" json:"motherduck_token" yaml:"motherduck_token"`
+	MotherDuckToken  string `mapstructure:"motherduckToken" json:"motherduckToken" yaml:"motherduckToken"`
 }
 
 type DuckDB struct {
