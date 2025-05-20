@@ -137,7 +137,7 @@ func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 			}
 			connectionString += strings.Join(paramList, "&")
 		}
-		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
+		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, config.Db)
 
 		dataSource, err := sql.Open("duckdb", connectionString)
 		if err != nil {
