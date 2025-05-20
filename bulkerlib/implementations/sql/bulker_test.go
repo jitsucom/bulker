@@ -28,7 +28,7 @@ var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:2
 const forceLeaveResultingTables = false
 
 var allBulkerConfigs = []string{BigqueryBulkerTypeId, RedshiftBulkerTypeId, RedshiftBulkerTypeId + "_iam", RedshiftBulkerTypeId + "_serverless", SnowflakeBulkerTypeId, PostgresBulkerTypeId,
-	MySQLBulkerTypeId, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}
+	MySQLBulkerTypeId, ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards", DuckDBBulkerTypeId}
 
 var exceptBigquery []string
 
@@ -58,7 +58,7 @@ var clickhouseClusterContainerNoShards *clickhouse_noshards.ClickHouseClusterCon
 
 func init() {
 	// uncomment to run tests locally with just one bulker type
-	// allBulkerConfigs = []string{PostgresBulkerTypeId}
+	allBulkerConfigs = []string{DuckDBBulkerTypeId}
 
 	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {
 		bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
@@ -135,6 +135,15 @@ func init() {
 			Db:         mysqlContainer.Database,
 			Parameters: map[string]string{"tls": "false", "parseTime": "true"},
 		}}
+	}
+
+	if utils.ArrayContains(allBulkerConfigs, DuckDBBulkerTypeId) {
+		motherduckConfig := os.Getenv("BULKER_TEST_MOTHERDUCK")
+		if motherduckConfig != "" {
+			configRegistry[DuckDBBulkerTypeId] = TestConfig{BulkerType: DuckDBBulkerTypeId, Config: motherduckConfig}
+		} else {
+			allBulkerConfigs = utils.ArrayExcluding(allBulkerConfigs, DuckDBBulkerTypeId)
+		}
 	}
 
 	if utils.ArrayContains(allBulkerConfigs, ClickHouseBulkerTypeId) {
