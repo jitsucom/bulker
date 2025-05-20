@@ -29,26 +29,23 @@ const (
 	DuckDBBulkerTypeId     = "duckdb"
 	DuckDBMemoryDBAlias    = "jitsu_memdb"
 	duckDBTableSchemaQuery = `SELECT 
- 							pg_attribute.attname AS name,
-    						pg_catalog.format_type(pg_attribute.atttypid,pg_attribute.atttypmod) AS column_type
-						FROM pg_attribute
-         					 JOIN pg_class ON pg_class.oid = pg_attribute.attrelid
-         					 LEFT JOIN pg_attrdef pg_attrdef ON pg_attrdef.adrelid = pg_class.oid AND pg_attrdef.adnum = pg_attribute.attnum
-         					 LEFT JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
-						WHERE pg_class.relkind = 'r'::char
-  							AND  pg_namespace.nspname ilike $1
-  							AND pg_class.relname = $2
-  							AND pg_attribute.attnum > 0 order by pg_attribute.attnum`
+ 							column_name AS name,
+    						lower(data_type) AS column_type
+						FROM information_schema.columns WHERE 
+						 table_catalog = $1 AND
+						 table_schema ilike $2 AND
+						 table_name = $3 order by ordinal_position`
 	duckDBPrimaryKeyFieldsQuery = `SELECT tco.constraint_name as constraint_name,
-       kcu.column_name as key_column
+      kcu.column_name as key_column
 FROM information_schema.table_constraints tco
-         JOIN information_schema.key_column_usage kcu
-              ON kcu.constraint_name = tco.constraint_name
-                  AND kcu.constraint_schema = tco.constraint_schema
-                  AND kcu.constraint_name = tco.constraint_name
+        JOIN information_schema.key_column_usage kcu
+             ON kcu.constraint_name = tco.constraint_name
+                 AND kcu.constraint_schema = tco.constraint_schema
+                 AND kcu.constraint_name = tco.constraint_name
 WHERE tco.constraint_type = 'PRIMARY KEY' AND 
-      kcu.table_schema ilike $1 AND
-      kcu.table_name = $2 order by kcu.ordinal_position`
+     kcu.constraint_catalog = $1 AND
+     kcu.table_schema ilike $2 AND
+     kcu.table_name = $3 order by kcu.ordinal_position`
 
 	duckDBIndexTemplate = `CREATE INDEX %s ON %s%s (%s);`
 
@@ -257,10 +254,11 @@ func (d *DuckDB) GetTableSchema(ctx context.Context, namespace string, tableName
 }
 
 func (d *DuckDB) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
+	db := d.TableName(d.config.Db)
 	tableName = d.TableName(tableName)
 	namespace = d.namespaceName(namespace)
 	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
-	rows, err := d.txOrDb(ctx).QueryContext(ctx, duckDBTableSchemaQuery, namespace, tableName)
+	rows, err := d.txOrDb(ctx).QueryContext(ctx, duckDBTableSchemaQuery, db, namespace, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
@@ -408,10 +406,11 @@ func (d *DuckDB) LoadTable(ctx context.Context, targetTable *Table, loadSource *
 
 // getPrimaryKey returns primary key name and fields
 func (d *DuckDB) getPrimaryKey(ctx context.Context, namespace string, tableName string) (string, types.OrderedSet[string], error) {
+	db := d.TableName(d.config.Db)
 	tableName = d.TableName(tableName)
 	namespace = d.namespaceName(namespace)
 	primaryKeys := types.NewOrderedSet[string]()
-	pkFieldsRows, err := d.txOrDb(ctx).QueryContext(ctx, duckDBPrimaryKeyFieldsQuery, namespace, tableName)
+	pkFieldsRows, err := d.txOrDb(ctx).QueryContext(ctx, duckDBPrimaryKeyFieldsQuery, db, namespace, tableName)
 	if err != nil {
 		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
