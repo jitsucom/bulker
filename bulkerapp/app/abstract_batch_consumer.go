@@ -371,6 +371,7 @@ func (bc *AbstractBatchConsumer) pauseOrSuspend(startedAt time.Time) {
 	timeToNextBatch := time.Duration(batchPeriodSec)*time.Second - time.Since(startedAt)
 	if bc.config.SuspendConsumers && timeToNextBatch >= 60*time.Second {
 		bc.Infof("Suspending consumer %s for %s", consumer.String(), timeToNextBatch)
+		bc._unpause()
 		_ = consumer.Close()
 		bc.consumer.Store(nil)
 	} else {
@@ -532,6 +533,19 @@ func (bc *AbstractBatchConsumer) rebalanceCallback(consumer *kafka.Consumer, eve
 		}
 	}
 	return nil
+}
+
+func (bc *AbstractBatchConsumer) _unpause() {
+	if !bc.paused.Load() {
+		return
+	}
+	select {
+	case bc.resumeChannel <- struct{}{}:
+		return
+	case <-time.After(time.Duration(bc.config.KafkaMaxPollIntervalMs) * time.Millisecond):
+		bc.errorMetric("resume_error")
+		bc.SystemErrorf("failed to unpause kafka consumer.")
+	}
 }
 
 func (bc *AbstractBatchConsumer) resume() {
