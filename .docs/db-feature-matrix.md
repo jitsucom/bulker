@@ -13,13 +13,13 @@ May comes with performance tradeoffs.
 * 🗓️**Timestamp Column** - timestamp column option helps Bulker to create tables optimized for range queries and sorting by time, e.g. event creation time.
 
 
-|                  | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Redshift&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BigQuery&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ClickHouse&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;Snowflake&nbsp;&nbsp;&nbsp;   | &nbsp;&nbsp;&nbsp;&nbsp;Postgres&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MySQL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | S3 (coming soon) |
-|------------------|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|-------------------------------------------------|----------------------------------------------------------|-------------------------------------------------------------------------------|------------------|
-| Stream           | ✅&nbsp;[Supported](#redshift-stream)<br/>⚠️&nbsp;Slow                | ❌&nbsp;[Not supported](#bigquery-stream)                                                                 | ✅&nbsp;[Supported](#clickhouse-stream)                                                         | ✅&nbsp;[Supported](#snowflake-stream)           | ✅&nbsp;[Supported](#postgres-stream)                     | ✅&nbsp;[Supported](#mysql-stream)                                             |                  |
-| Batch            | ✅&nbsp;[Supported](#redshift-batch)                                  | ✅&nbsp;[Supported](#bigquery-batch)                                                                      | ✅&nbsp;[Supported](#clickhouse-batch)                                                          | ✅&nbsp;[Supported](#snowflake-batch)            | ✅&nbsp;[Supported](#postgres-batch)                      | ✅&nbsp;[Supported](#mysql-batch)                                              |                  |
-| Primary key      | ✅&nbsp;[Supported](#redshift-primary-key)                            | ℹ️&nbsp;[Emulated](#bigquery-primary-key)                                                                | ✅️&nbsp;[Supported](#clickhouse-primary-key)                                                   | ✅️ [Supported](#snowflake-primary-key)          | ✅️&nbsp;[Supported](#postgres-primary-key)               | ✅️&nbsp;[Supported](#mysql-primary-key)                                       |                  |
-| Deduplication    | ✅&nbsp;[Supported](#redshift-deduplication)                          | ✅&nbsp;[Supported](#bigquery-deduplication)                                                              | ✅&nbsp;[Supported](#clickhouse-deduplication)<br/>⚠️&nbsp;Eventual&nbsp;dedup                  | ✅&nbsp;[Supported](#snowflake-deduplication)    | ✅&nbsp;[Supported](#postgres-deduplication)              | ✅&nbsp;[Supported](#mysql-deduplication)                                      |                  |
-| Timestamp Column | ✅&nbsp;[Supported](#redshift-timestamp-column)                       | ✅&nbsp;[Supported](#bigquery-timestamp-column)                                                           | ✅&nbsp;[Supported](#clickhouse-timestamp-column)                                               | ✅&nbsp;[Supported](#snowflake-timestamp-column) | ✅&nbsp;[Supported](#postgres-timestamp-column)           | ✅&nbsp;[Supported](#mysql-timestamp-column)                                   |                  |
+|                  | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Redshift&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BigQuery&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ClickHouse&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;Snowflake&nbsp;&nbsp;&nbsp;   | &nbsp;&nbsp;&nbsp;&nbsp;Postgres&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MySQL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DuckDB&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
+|------------------|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|-------------------------------------------------|----------------------------------------------------------|-------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| Stream           | ✅&nbsp;[Supported](#redshift-stream)<br/>⚠️&nbsp;Slow                | ❌&nbsp;[Not supported](#bigquery-stream)                                                                 | ✅&nbsp;[Supported](#clickhouse-stream)                                                         | ✅&nbsp;[Supported](#snowflake-stream)           | ✅&nbsp;[Supported](#postgres-stream)                     | ✅&nbsp;[Supported](#mysql-stream)                                             | ✅&nbsp;[Supported](#duckdb-stream)                                             |
+| Batch            | ✅&nbsp;[Supported](#redshift-batch)                                  | ✅&nbsp;[Supported](#bigquery-batch)                                                                      | ✅&nbsp;[Supported](#clickhouse-batch)                                                          | ✅&nbsp;[Supported](#snowflake-batch)            | ✅&nbsp;[Supported](#postgres-batch)                      | ✅&nbsp;[Supported](#mysql-batch)                                              | ✅&nbsp;[Supported](#duckdb-batch)                                              |
+| Primary key      | ✅&nbsp;[Supported](#redshift-primary-key)                            | ℹ️&nbsp;[Emulated](#bigquery-primary-key)                                                                | ✅️&nbsp;[Supported](#clickhouse-primary-key)                                                   | ✅️ [Supported](#snowflake-primary-key)          | ✅️&nbsp;[Supported](#postgres-primary-key)               | ✅️&nbsp;[Supported](#mysql-primary-key)                                       | ✅️&nbsp;[Supported](#duckdb-primary-key)                                       |
+| Deduplication    | ✅&nbsp;[Supported](#redshift-deduplication)                          | ✅&nbsp;[Supported](#bigquery-deduplication)                                                              | ✅&nbsp;[Supported](#clickhouse-deduplication)<br/>⚠️&nbsp;Eventual&nbsp;dedup                  | ✅&nbsp;[Supported](#snowflake-deduplication)    | ✅&nbsp;[Supported](#postgres-deduplication)              | ✅&nbsp;[Supported](#mysql-deduplication)                                      | ✅&nbsp;[Supported](#duckdb-deduplication)                                      |
+| Timestamp Column | ✅&nbsp;[Supported](#redshift-timestamp-column)                       | ✅&nbsp;[Supported](#bigquery-timestamp-column)                                                           | ✅&nbsp;[Supported](#clickhouse-timestamp-column)                                               | ✅&nbsp;[Supported](#snowflake-timestamp-column) | ✅&nbsp;[Supported](#postgres-timestamp-column)           | ✅&nbsp;[Supported](#mysql-timestamp-column)                                   | ✅&nbsp;[Supported](#duckbd-timestamp-column)                                   |
 
 ## Advanced features
 
@@ -29,10 +29,10 @@ Those features are not exposed as HTTP API and supported only on Go-lib API leve
 * **Replace Partition** - a special version of batch mode that replaces a part of target table. Part of table to replace is defined by 'partition' stream option. Each batch loads data for virtual partition identified by 'partition' option value. If table already contains data for provided 'partition', this data will be deleted and replaced with new data from current batch. Enabled via stream options.
 
 
-|                        | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Redshift&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BigQuery&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ClickHouse&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;Snowflake&nbsp;&nbsp;&nbsp;    | &nbsp;&nbsp;&nbsp;&nbsp;Postgres&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MySQL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | S3 (coming soon) |
-|------------------------|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|--------------------------------------------------|----------------------------------------------------------|-------------------------------------------------------------------------------|------------------|
-| Replace&nbsp;Table     | ✅&nbsp;[Supported](#redshift-replace-table)                          | ✅&nbsp;[Supported](#bigquery-replace-table)                                                              | ✅&nbsp;[Supported](#clickhouse-replace-table)                                                  | ✅&nbsp;[Supported](#snowflake-replace-table)     | ✅&nbsp;[Supported](#postgres-replace-table)              | ✅&nbsp;[Supported](#mysql-replace-table)                                      |                  |
-| Replace&nbsp;Partition | ✅&nbsp;[Supported](#redshift-replace-partition)                      | ✅&nbsp;[Supported](#bigquery-replace-partition)<br/>⚠️&nbsp;Not atomic                                   | ✅&nbsp;[Supported](#clickhouse-replace-partition)                                              | ✅&nbsp;[Supported](#snowflake-replace-partition) | ✅&nbsp;[Supported](#postgres-replace-partition)          | ✅&nbsp;[Supported](#mysql-replace-partition)                                  |                  |
+|                        | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Redshift&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;BigQuery&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ClickHouse&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;Snowflake&nbsp;&nbsp;&nbsp;    | &nbsp;&nbsp;&nbsp;&nbsp;Postgres&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MySQL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DuckDB&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |
+|------------------------|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|--------------------------------------------------|----------------------------------------------------------|-------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| Replace&nbsp;Table     | ✅&nbsp;[Supported](#redshift-replace-table)                          | ✅&nbsp;[Supported](#bigquery-replace-table)                                                              | ✅&nbsp;[Supported](#clickhouse-replace-table)                                                  | ✅&nbsp;[Supported](#snowflake-replace-table)     | ✅&nbsp;[Supported](#postgres-replace-table)              | ✅&nbsp;[Supported](#mysql-replace-table)                                      | ✅&nbsp;[Supported](#duckdb-replace-table)                                      |
+| Replace&nbsp;Partition | ✅&nbsp;[Supported](#redshift-replace-partition)                      | ✅&nbsp;[Supported](#bigquery-replace-partition)<br/>⚠️&nbsp;Not atomic                                   | ✅&nbsp;[Supported](#clickhouse-replace-partition)                                              | ✅&nbsp;[Supported](#snowflake-replace-partition) | ✅&nbsp;[Supported](#postgres-replace-partition)          | ✅&nbsp;[Supported](#mysql-replace-partition)                                  | ✅&nbsp;[Supported](#duckdb-replace-partition)                                  |
 
 
 
@@ -466,3 +466,67 @@ Algorithm:
 - `DELETE from target_table where partition_id=partiton option value`
 - `INSERT into target_table ... ON DUPLICATE KEY UPDATE ...`
 - `COMMIT`
+
+## DuckDB (MotherDuck)
+
+### DuckDB Stream
+
+> ✅ Supported
+
+`INSERT INTO target_table (...) VALUES (..)`
+
+### DuckDB Batch
+
+> ✅ Supported
+
+Algorithm:
+
+- `ATTACH ':memory:' as jitsu_memdb`
+- `INSERT into jitsu_memdb.tmp_table`
+- `INSERT into target_table select from jitsu_memdb.tmp_table`
+
+### DuckDB Deduplication
+
+> ✅ Supported
+
+For batch mode the following algorithm is used:
+
+- `ATTACH ':memory:' as jitsu_memdb`
+- `INSERT into jitsu_memdb.tmp_table`
+- `INSERT OR REPLACE into target_table select from jitsu_memdb.tmp_table`
+
+For stream mode:
+
+`INSERT OR REPLACE INTO target_table ...`
+
+### DuckDB Primary Key
+
+> ✅ Supported
+
+### DuckDB Timestamp Column
+
+> ✅ Supported
+
+Regular index is created on specified timestamp column.
+
+### DuckDB Replace Table
+
+> ✅ Supported
+
+Algorithm:
+- `INSERT into tmp_table`
+- `BEGIN TRANSACTION`
+- `RENAME target_table to deprecated_target_table_20060101_150405`
+- `RENAME tmp_table to target_table`
+- `DROP TABLE deprecated_target_table_20060101_150405`
+- `COMMIT`
+
+### DuckDB Replace Partition
+
+> ✅ Supported
+
+Algorithm:
+- `ATTACH ':memory:' as jitsu_memdb`
+- `INSERT into jitsu_memdb.tmp_table`
+- `DELETE from target_table where partition_id=partiton option value`
+- `INSERT OR REPLACE into target_table select from jitsu_memdb.tmp_table`
