@@ -80,6 +80,29 @@ func TestTypesMappingAndCollision(t *testing.T) {
 			dataFile:          "test_data/types_collision.ndjson",
 			expectedRows: []map[string]any{
 				{"id": 1, "int_1": 1, "roundfloat": 1.0, "float1": 1.2, "intstring": "1", "roundfloatstring": "1.0", "floatstring": "1.1", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": nil},
+				{"id": 2, "int_1": nil, "roundfloat": 1.0, "float1": 1.0, "intstring": "1.1", "roundfloatstring": "1.1", "floatstring": "1.0", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": map[string]any{"int_1": "a"}},
+			},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{DuckDBBulkerTypeId}),
+		},
+		{
+			name:              "types_collision_batch_duckdb",
+			modes:             []bulker.BulkMode{bulker.Batch},
+			expectPartitionId: true,
+			dataFile:          "test_data/types_collision2.ndjson",
+			expectedRows: []map[string]any{
+				{"id": 1, "string2": "test", "time1": constantTime},
+				{"id": 2, "string2": "2022-08-18T14:17:22.375Z", "time1": constantTime},
+				{"id": 3, "string2": nil, "time1": constantTime},
+			},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{DuckDBBulkerTypeId}),
+		},
+		{
+			name:              "types_collision_stream",
+			modes:             []bulker.BulkMode{bulker.Stream},
+			expectPartitionId: true,
+			dataFile:          "test_data/types_collision.ndjson",
+			expectedRows: []map[string]any{
+				{"id": 1, "int_1": 1, "roundfloat": 1.0, "float1": 1.2, "intstring": "1", "roundfloatstring": "1.0", "floatstring": "1.1", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": nil},
 				{"id": 2, "int_1": 0, "roundfloat": 1.0, "float1": 1.0, "intstring": "1.1", "roundfloatstring": "1.1", "floatstring": "1.0", "string1": "test", "bool1": false, "bool2": true, "time1": constantTime, "time2": constantTime, "time3": "2022-08-18", "_unmapped_data": "{\"int_1\":\"a\"}"},
 			},
 			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{ClickHouseBulkerTypeId, ClickHouseBulkerTypeId + "_cluster", ClickHouseBulkerTypeId + "_cluster_noshards"}),

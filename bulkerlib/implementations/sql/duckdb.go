@@ -106,8 +106,11 @@ func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		//replace zero byte character for text fields
 		if valuePresent {
 			if sqlColumn.DataType == types2.STRING {
-				if v, ok := value.(string); ok {
+				switch v := value.(type) {
+				case string:
 					value = strings.ReplaceAll(v, "\u0000", "")
+				case time.Time:
+					value = v.UTC().Format(time.RFC3339Nano)
 				}
 			} else if sqlColumn.DataType == types2.JSON {
 				if v, ok := value.(string); ok {
