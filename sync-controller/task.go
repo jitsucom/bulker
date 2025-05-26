@@ -12,6 +12,7 @@ import (
 type TaskDescriptor struct {
 	TaskID          string `json:"taskId"`
 	TaskType        string `json:"taskType"` //spec, discover, read, check
+	WorkspaceId     string `json:"workspaceId"`
 	SyncID          string `json:"syncId"`
 	SourceType      string `json:"sourceType"`
 	StorageKey      string `json:"storageKey"`
@@ -24,8 +25,10 @@ type TaskDescriptor struct {
 	TableNamePrefix string `json:"tableNamePrefix"`
 	FullSync        string `json:"fullSync"`
 	Debug           string `json:"debug"`
+	Nodelay         string `json:"nodelay"`
 	StartedBy       string `json:"startedBy"`
 	StartedAt       string `json:"startedAt"`
+	ThenRun         string `json:"thenRun"`
 }
 
 func (t *TaskDescriptor) PodName() string {

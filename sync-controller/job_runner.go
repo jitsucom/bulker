@@ -422,7 +422,7 @@ func (j *JobRunner) CreateJob(taskDescriptor TaskDescriptor, configuration *Task
 	startedBy := map[string]any{}
 	_ = json.Unmarshal([]byte(taskDescriptor.StartedBy), &startedBy)
 	byScheduler := startedBy["trigger"] == "scheduled"
-	if !byScheduler {
+	if !byScheduler || utils.IsTruish(taskDescriptor.Nodelay) {
 		return j.createJob(taskDescriptor, configuration)
 	} else {
 		j.waitGroup.Add(1)

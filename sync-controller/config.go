@@ -38,6 +38,9 @@ type Config struct {
 	LocalIngestEndpoint  string `mapstructure:"LOCAL_INGEST_ENDPOINT"`
 	GlobalIngestEndpoint string `mapstructure:"GLOBAL_INGEST_ENDPOINT"`
 
+	ConsoleURL   string `mapstructure:"CONSOLE_URL"`
+	ConsoleToken string `mapstructure:"CONSOLE_TOKEN"`
+
 	LogLevel   string `mapstructure:"LOG_LEVEL" default:"INFO"`
 	DBLogLevel string `mapstructure:"DB_LOG_LEVEL" default:"INFO"`
 }

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/safego"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"strings"
 	"time"
@@ -81,10 +83,16 @@ func (t *TaskManager) DiscoverHandler(c *gin.Context) {
 	}
 	taskDescriptor := TaskDescriptor{
 		TaskType:       "discover",
+		WorkspaceId:    c.Query("workspaceId"),
+		SyncID:         c.Query("syncId"),
+		TaskID:         c.Query("taskId"),
 		Package:        c.Query("package"),
 		PackageVersion: c.Query("version"),
 		StorageKey:     c.Query("storageKey"),
 		StartedAt:      time.Now().Format(time.RFC3339),
+		ThenRun:        c.Query("thenRun"),
+		FullSync:       c.Query("fullSync"),
+		StartedBy:      c.Query("startedBy"),
 	}
 
 	taskStatus := t.jobRunner.CreateJob(taskDescriptor, &taskConfig)
@@ -127,6 +135,7 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 		AddMeta:         c.Query("addMeta"),
 		FullSync:        c.Query("fullSync"),
 		Debug:           c.Query("debug"),
+		Nodelay:         c.Query("nodelay"),
 		StartedBy:       c.Query("startedBy"),
 		StartedAt:       time.Now().Format(time.RFC3339),
 	}
@@ -170,6 +179,36 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 //	c.JSON(http.StatusOK, gin.H{"ok": true})
 //}
 
+func (t *TaskManager) runReadTask(st *TaskStatus) {
+	if t.config.ConsoleURL == "" || t.config.ConsoleToken == "" {
+		t.Errorf("ConsoleURL and ConsoleToken are required to initiate read task after ed")
+		t.jobRunner.runningSyncs.Delete(st.SyncID)
+		return
+	}
+	url := t.config.ConsoleURL + "/api/" + st.WorkspaceId + "/sources/run?syncId=" + st.SyncID + "&taskId=" + st.TaskID + "&skipRefresh=true&nodelay=true"
+	t.Infof("Initiating read task %s for syncId %s: %s", st.TaskID, st.SyncID, url)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("Authorization", "Bearer "+t.config.ConsoleToken)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.jobRunner.runningSyncs.Delete(st.SyncID)
+		err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", fmt.Sprintf("FAILED: Unable to initiate read task: %v", err), st.StartedBy)
+		if err != nil {
+			t.Errorf("Unable to update '%s' status: %v\n", st.TaskType, err)
+		}
+		return
+	} else if res.StatusCode != http.StatusOK {
+		t.jobRunner.runningSyncs.Delete(st.SyncID)
+		err = db.UpsertRunningTask(t.dbpool, st.SyncID, st.TaskID, st.Package, st.PackageVersion, st.StartedAtTime(), "FAILED", fmt.Sprintf("FAILED: Unable to initiate read task: %s", res.Status), st.StartedBy)
+		if err != nil {
+			t.Errorf("Unable to update '%s' status: %v\n", st.TaskType, err)
+		}
+		return
+	} else {
+		t.Infof("Sync %s Read task %s initiated successfully", st.SyncID, st.TaskID)
+	}
+}
+
 func (t *TaskManager) listenTaskStatus() {
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
@@ -192,8 +231,15 @@ func (t *TaskManager) listenTaskStatus() {
 			case "discover":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
 					err = db.UpsertRunningCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "FAILED", st.Error)
+					if utils.IsTruish(st.ThenRun) {
+						t.runReadTask(st)
+					}
 				} else if st.Status == StatusCreated {
 					err = db.UpsertCatalogStatus(t.dbpool, st.Package, st.PackageVersion, st.StorageKey, st.StartedAtTime(), "RUNNING", "")
+				} else if st.Status == StatusSuccess {
+					if utils.IsTruish(st.ThenRun) {
+						t.runReadTask(st)
+					}
 				}
 			case "check":
 				if st.Status == StatusCreateFailed || st.Status == StatusFailed || st.Status == StatusInitTimeout {
