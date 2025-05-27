@@ -835,17 +835,15 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 }
 
 func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulkerlib.WarehouseState, err error) {
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 3; i++ {
 		var state1 bulkerlib.WarehouseState
 		state1, err = ch.copy(ctx, targetTable, sourceTable)
 		state.Merge(state1)
 		if err != nil {
-			if err.Error() == "clickhouse [execute]:: 400 code: " {
-				ch.Errorf("ClickHouse misterious 400 error. Retrying...")
-				//sleep 50-100ms
-				time.Sleep(time.Duration(30+rand.Intn(100)) * time.Millisecond)
-				continue
-			}
+			ch.Errorf("Retrying ClickHouse CopyTables error: %s", err.Error())
+			//sleep 50-100ms
+			time.Sleep(time.Duration(50+rand.Intn(50)) * time.Millisecond)
+			continue
 		}
 		break
 	}
