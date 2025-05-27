@@ -17,7 +17,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"io"
-	"math/rand"
 	"net/url"
 	"os"
 	"regexp"
@@ -54,7 +53,9 @@ const (
 
 	chDeleteQueryTemplate = `ALTER TABLE %s%s %s DELETE WHERE %s`
 
-	chCreateTableTemplate   = `CREATE TABLE %s%s %s (%s) %s %s %s %s`
+	chCreateTableTemplate    = `CREATE TABLE %s%s %s (%s) %s %s %s %s`
+	chCreateTmpTableTemplate = `CREATE TEMPORARY TABLE %s%s (%s) ENGINE = MergeTree() order by tuple()`
+
 	chDropTableTemplate     = `DROP TABLE %s %s%s %s`
 	chTruncateTableTemplate = `TRUNCATE TABLE IF EXISTS %s%s %s`
 	chExchangeTableTemplate = `EXCHANGE TABLES %s%s AND %s%s %s`
@@ -464,7 +465,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) (*Table, er
 			return ch.columnDDL(name, table, column)
 		})
 
-		query := fmt.Sprintf(createTableTemplate, "TEMPORARY", quotedSchema, ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
+		query := fmt.Sprintf(chCreateTmpTableTemplate, quotedSchema, ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
 
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 			return nil, errorj.CreateTableError.Wrap(err, "failed to create table").
@@ -827,19 +828,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 }
 
 func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulkerlib.WarehouseState, err error) {
-	for i := 0; i < 3; i++ {
-		var state1 bulkerlib.WarehouseState
-		state1, err = ch.copy(ctx, targetTable, sourceTable)
-		state.Merge(state1)
-		if err != nil {
-			ch.Errorf("Retrying ClickHouse CopyTables error: %s", err.Error())
-			//sleep 50-100ms
-			time.Sleep(time.Duration(50+rand.Intn(50)) * time.Millisecond)
-			continue
-		}
-		break
-	}
-	return state, err
+	return ch.copy(ctx, targetTable, sourceTable)
 }
 
 func (ch *ClickHouse) Delete(ctx context.Context, namespace string, tableName string, deleteConditions *WhenConditions) error {
