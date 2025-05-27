@@ -108,7 +108,8 @@ func (t *TaskManager) CancelHandler(c *gin.Context) {
 	syncId := c.Query("syncId")
 	taskId := c.Query("taskId")
 	_ = db.UpdateRunningTaskStatus(t.dbpool, taskId, "CANCELLED")
-	t.jobRunner.TerminatePod(PodName(syncId, taskId, pkg))
+	t.jobRunner.TerminatePod(PodName(syncId, taskId, pkg, "discover"))
+	t.jobRunner.TerminatePod(PodName(syncId, taskId, pkg, "read"))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

@@ -32,7 +32,7 @@ type TaskDescriptor struct {
 }
 
 func (t *TaskDescriptor) PodName() string {
-	return PodName(t.SyncID, t.TaskID, t.Package)
+	return PodName(t.SyncID, t.TaskID, t.Package, t.TaskType)
 }
 func (t *TaskDescriptor) StartedAtTime() time.Time {
 	tm, err := time.Parse(time.RFC3339, t.StartedAt)

@@ -412,10 +412,12 @@ func (j *JobRunner) getPodResUsage(podName string, container string) (metrics ma
 //	return taskStatus
 //}
 
-func PodName(syncId, taskId, pkg string) string {
-	taskId = utils.NvlString(taskId, uuid.NewLettersNumbers())
-	podId := utils.JoinNonEmptyStrings(".", syncId, taskId)
-	return strings.ToLower(nonAlphaNum.ReplaceAllLiteralString(pkg, "-") + "-" + podId)
+func PodName(syncId, taskId, pkg, taskType string) string {
+	taskId = utils.NvlString(taskId, uuid.New())[32:]
+	pkg = strings.TrimPrefix(pkg, "airbyte/source-")
+	pkg = strings.TrimPrefix(pkg, "jitsucom/source-")
+	podId := nonAlphaNum.ReplaceAllLiteralString(pkg, "-") + "-" + syncId + "-" + taskType + "-" + taskId
+	return strings.ToLower(podId)
 }
 
 func (j *JobRunner) CreateJob(taskDescriptor TaskDescriptor, configuration *TaskConfiguration) TaskStatus {
