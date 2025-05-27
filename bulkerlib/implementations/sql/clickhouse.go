@@ -14,6 +14,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
+	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"io"
 	"math/rand"
 	"net/url"
@@ -52,12 +53,11 @@ const (
 
 	chDeleteQueryTemplate = `ALTER TABLE %s%s %s DELETE WHERE %s`
 
-	chCreateTableTemplate    = `CREATE TABLE %s%s %s (%s) %s %s %s %s`
-	chCreateTmpTableTemplate = `CREATE TABLE %s%s (%s) ENGINE = MergeTree() order by tuple()`
-	chDropTableTemplate      = `DROP TABLE %s %s%s %s`
-	chTruncateTableTemplate  = `TRUNCATE TABLE IF EXISTS %s%s %s`
-	chExchangeTableTemplate  = `EXCHANGE TABLES %s%s AND %s%s %s`
-	chRenameTableTemplate    = `RENAME TABLE %s%s TO %s%s %s`
+	chCreateTableTemplate   = `CREATE TABLE %s%s %s (%s) %s %s %s %s`
+	chDropTableTemplate     = `DROP TABLE %s %s%s %s`
+	chTruncateTableTemplate = `TRUNCATE TABLE IF EXISTS %s%s %s`
+	chExchangeTableTemplate = `EXCHANGE TABLES %s%s AND %s%s %s`
+	chRenameTableTemplate   = `RENAME TABLE %s%s TO %s%s %s`
 
 	chSelectFinalStatement     = `SELECT %s FROM %s%s FINAL %s%s`
 	chLoadStatement            = `INSERT INTO %s%s (%s)`
@@ -374,32 +374,32 @@ func (ch *ClickHouse) Type() string {
 // it makes sure that all activity happens in one connection.
 func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	var db DB
-	//if ch.httpMode {
-	//	origConfig := *ch.config
-	//	configCopy := origConfig
-	//	configCopy.Parameters = utils.MapCopy(ch.config.Parameters)
-	//	sessionId := uuid.New()
-	//	configCopy.Parameters["session_id"] = sessionId
-	//	utils.MapPutIfAbsent(configCopy.Parameters, "session_timeout", "3600")
-	//	// create db pool just for one session because 'session_id' config parameter defines session
-	//	sessionDb, err := ch.dbConnectFunction(&configCopy)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("failed to open session: %v", err)
-	//	}
-	//	c, err := sessionDb.Conn(ctx)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("failed to open connection: %v", err)
-	//	}
-	//	db = NewConWithDB(sessionDb, c)
-	//	time.Sleep(1 * time.Second)
-	//} else {
-	var err error
-	c, err := ch.dataSource.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open connection: %v", err)
+	if ch.httpMode {
+		origConfig := *ch.config
+		configCopy := origConfig
+		configCopy.Parameters = utils.MapCopy(ch.config.Parameters)
+		sessionId := uuid.New()
+		configCopy.Parameters["session_id"] = sessionId
+		utils.MapPutIfAbsent(configCopy.Parameters, "session_timeout", "3600")
+		// create db pool just for one session because 'session_id' config parameter defines session
+		sessionDb, err := ch.dbConnectFunction(&configCopy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open session: %v", err)
+		}
+		c, err := sessionDb.Conn(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open connection: %v", err)
+		}
+		db = NewConWithDB(sessionDb, c)
+		time.Sleep(1 * time.Second)
+	} else {
+		var err error
+		c, err := ch.dataSource.Conn(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open connection: %v", err)
+		}
+		db = NewConWithDB(nil, c)
 	}
-	db = NewConWithDB(nil, c)
-	//}
 	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), db, ch.queryLogger, ch.checkErrFunc, true)}, nil
 }
 
@@ -466,19 +466,14 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) (*Table, er
 	quotedSchema := ch.namespacePrefix(table.Namespace)
 
 	if table.Temporary {
-		if table.PKFields.Size() > 0 {
-			table = table.Clone()
-			table.PKFields = types2.NewOrderedSet[string]()
-		}
+		table := table.Clone()
+		table.PKFields = types2.NewOrderedSet[string]()
 		columnsDDL := table.MappedColumns(func(name string, column types.SQLColumn) string {
 			return ch.columnDDL(name, table, column)
 		})
-		query := ""
-		if ch.httpMode {
-			query = fmt.Sprintf(chCreateTmpTableTemplate, quotedSchema, ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
-		} else {
-			query = fmt.Sprintf(createTableTemplate, "TEMPORARY", quotedSchema, ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
-		}
+
+		query := fmt.Sprintf(createTableTemplate, "TEMPORARY", quotedSchema, ch.quotedTableName(table.Name), strings.Join(columnsDDL, ", "))
+
 		if _, err := ch.txOrDb(ctx).ExecContext(ctx, query); err != nil {
 			return nil, errorj.CreateTableError.Wrap(err, "failed to create table").
 				WithProperty(errorj.DBInfo, &types.ErrorPayload{
