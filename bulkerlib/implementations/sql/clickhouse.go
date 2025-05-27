@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/ClickHouse/clickhouse-go/v2"
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
@@ -373,34 +374,25 @@ func (ch *ClickHouse) Type() string {
 // OpenTx relies on ClickHouse session by creating new connection and wrapping it with TxSQLAdapter
 // it makes sure that all activity happens in one connection.
 func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
-	var db DB
+	var db *ConWithDB
+	var contextProvider ContextProviderFunc
 	if ch.httpMode {
-		origConfig := *ch.config
-		configCopy := origConfig
-		configCopy.Parameters = utils.MapCopy(ch.config.Parameters)
 		sessionId := uuid.New()
-		configCopy.Parameters["session_id"] = sessionId
-		utils.MapPutIfAbsent(configCopy.Parameters, "session_timeout", "3600")
-		// create db pool just for one session because 'session_id' config parameter defines session
-		sessionDb, err := ch.dbConnectFunction(&configCopy)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open session: %v", err)
+		contextProvider = func(ctx context.Context) context.Context {
+			return clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{
+				"session_id":      sessionId,
+				"session_timeout": "3600",
+			}))
 		}
-		c, err := sessionDb.Conn(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open connection: %v", err)
-		}
-		db = NewConWithDB(sessionDb, c)
-		time.Sleep(1 * time.Second)
-	} else {
-		var err error
-		c, err := ch.dataSource.Conn(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open connection: %v", err)
-		}
-		db = NewConWithDB(nil, c)
 	}
-	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), db, ch.queryLogger, ch.checkErrFunc, true)}, nil
+	var err error
+	c, err := ch.dataSource.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open connection: %v", err)
+	}
+	db = NewConWithDB(nil, c)
+	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), db, ch.queryLogger, ch.checkErrFunc, true),
+		contextProvider: contextProvider}, nil
 }
 
 func (ch *ClickHouse) createDatabaseIfNotExists(ctx context.Context, db string) error {

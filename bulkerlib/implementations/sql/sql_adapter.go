@@ -81,9 +81,12 @@ type LoadSource struct {
 	S3Config *S3OptionConfig
 }
 
+type ContextProviderFunc func(ctx context.Context) context.Context
+
 type TxSQLAdapter struct {
-	sqlAdapter SQLAdapter
-	tx         *TxWrapper
+	sqlAdapter      SQLAdapter
+	tx              *TxWrapper
+	contextProvider ContextProviderFunc
 }
 
 func (tx *TxSQLAdapter) TmpNamespace(targetNamespace string) string {
@@ -134,15 +137,15 @@ func (tx *TxSQLAdapter) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	return nil, fmt.Errorf("can't open transaction inside transaction")
 }
 func (tx *TxSQLAdapter) Insert(ctx context.Context, table *Table, merge bool, objects ...types2.Object) error {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.Insert(ctx, table, merge, objects...)
 }
 func (tx *TxSQLAdapter) Ping(ctx context.Context) error {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.Ping(ctx)
 }
 func (tx *TxSQLAdapter) InitDatabase(ctx context.Context) error {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.InitDatabase(ctx)
 }
 
@@ -151,58 +154,66 @@ func (tx *TxSQLAdapter) TableHelper() *TableHelper {
 }
 
 func (tx *TxSQLAdapter) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.GetTableSchema(ctx, namespace, tableName)
 }
 func (tx *TxSQLAdapter) CreateTable(ctx context.Context, schemaToCreate *Table) (*Table, error) {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.CreateTable(ctx, schemaToCreate)
 }
 func (tx *TxSQLAdapter) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (bulker.WarehouseState, error) {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.CopyTables(ctx, targetTable, sourceTable, mergeWindow)
 }
 func (tx *TxSQLAdapter) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (bulker.WarehouseState, error) {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.LoadTable(ctx, targetTable, loadSource)
 }
 func (tx *TxSQLAdapter) PatchTableSchema(ctx context.Context, patchTable *Table) (*Table, error) {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.PatchTableSchema(ctx, patchTable)
 }
 func (tx *TxSQLAdapter) TruncateTable(ctx context.Context, namespace string, tableName string) error {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.TruncateTable(ctx, namespace, tableName)
 }
 
 //	func (tx *TxSQLAdapter) Update(ctx context.Context, tableName string, object types.Object, whenConditions *WhenConditions) error {
-//		ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+//		ctx = tx.enrichContext(ctx)
 //		return tx.sqlAdapter.Update(ctx, tableName, object, whenConditions)
 //	}
 func (tx *TxSQLAdapter) Delete(ctx context.Context, namespace string, tableName string, deleteConditions *WhenConditions) error {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.Delete(ctx, namespace, tableName, deleteConditions)
 }
 func (tx *TxSQLAdapter) DropTable(ctx context.Context, namespace string, tableName string, ifExists bool) error {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.DropTable(ctx, namespace, tableName, ifExists)
 }
 func (tx *TxSQLAdapter) Drop(ctx context.Context, table *Table, ifExists bool) error {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.Drop(ctx, table, ifExists)
 }
 func (tx *TxSQLAdapter) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) error {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.ReplaceTable(ctx, targetTableName, replacementTable, dropOldTable)
 }
 
 func (tx *TxSQLAdapter) Select(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions, orderBy []string) ([]map[string]any, error) {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.Select(ctx, namespace, tableName, whenConditions, orderBy)
 }
 func (tx *TxSQLAdapter) Count(ctx context.Context, namespace string, tableName string, whenConditions *WhenConditions) (int, error) {
-	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	ctx = tx.enrichContext(ctx)
 	return tx.sqlAdapter.Count(ctx, namespace, tableName, whenConditions)
+}
+
+func (tx *TxSQLAdapter) enrichContext(ctx context.Context) context.Context {
+	if tx.contextProvider != nil {
+		ctx = tx.contextProvider(ctx)
+	}
+	ctx = context.WithValue(ctx, ContextTransactionKey, tx.tx)
+	return ctx
 }
 
 func (tx *TxSQLAdapter) Commit() error {
