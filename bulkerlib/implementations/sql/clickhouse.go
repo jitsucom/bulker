@@ -17,7 +17,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"io"
-	"math/rand"
 	"net/url"
 	"os"
 	"regexp"
@@ -827,19 +826,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 }
 
 func (ch *ClickHouse) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulkerlib.WarehouseState, err error) {
-	for i := 0; i < 3; i++ {
-		var state1 bulkerlib.WarehouseState
-		state1, err = ch.copy(ctx, targetTable, sourceTable)
-		state.Merge(state1)
-		if err != nil {
-			ch.Errorf("Retrying ClickHouse CopyTables error: %s", err.Error())
-			//sleep 50-100ms
-			time.Sleep(time.Duration(50+rand.Intn(50)) * time.Millisecond)
-			continue
-		}
-		break
-	}
-	return state, err
+	return ch.copy(ctx, targetTable, sourceTable)
 }
 
 func (ch *ClickHouse) Delete(ctx context.Context, namespace string, tableName string, deleteConditions *WhenConditions) error {
