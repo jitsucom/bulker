@@ -648,9 +648,9 @@ func (r *Router) WriteKeyStreamLocator(loc *StreamCredentials, s2sEndpoint bool)
 			binding := r.repository.GetData().getStreamByKeyId(parts[0])
 			if binding != nil {
 				if loc.IngestType != IngestTypeWriteKeyDefined && binding.KeyType != string(loc.IngestType) {
-					r.Errorf("[stream: %s]%s invalid key type found %s", binding.StreamId, loc.String(), binding.KeyType)
+					r.Debugf("[stream: %s]%s invalid key type found %s", binding.StreamId, loc.String(), binding.KeyType)
 				} else if !r.checkHash(binding.Hash, parts[1]) {
-					r.Errorf("[stream: %s]%s invalid key secret", binding.StreamId, loc.String())
+					r.Debugf("[stream: %s]%s invalid key secret", binding.StreamId, loc.String())
 				} else {
 					stream := r.repository.GetData().GetStreamByPlainKeyOrId(binding.StreamId)
 					if stream != nil {

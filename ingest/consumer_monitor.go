@@ -88,7 +88,7 @@ func (tm *ConsumerMonitor) Start() {
 					}
 					tm.Lock()
 					if tm.weightedRandom == nil {
-						tm.Infof("Enabling weighed random partition selector. Lags: %v", lags)
+						tm.Debugf("Enabling weighed random partition selector. Lags: %v", lags)
 					}
 					tm.weightedRandom = chooser
 					tm.Unlock()
@@ -96,7 +96,7 @@ func (tm *ConsumerMonitor) Start() {
 					tm.Lock()
 					if tm.weightedRandom != nil {
 						tm.weightedRandom = nil
-						tm.Infof("Disabling weighed random partition selector. Max lag is low: %d", maxLag)
+						tm.Debugf("Disabling weighed random partition selector. Max lag is low: %d", maxLag)
 					}
 					tm.Unlock()
 				}
