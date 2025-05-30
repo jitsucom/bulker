@@ -144,7 +144,7 @@ func (bc *AbstractBatchConsumer) initTransactionalProducer() (*kafka.Producer, e
 			case <-ticker.C:
 				if len(errors) > 0 {
 					for k, v := range errors {
-						bc.Errorf("%s COUNT: %d", k, v)
+						bc.Errorf("%s COUNT: %d", k, *v)
 					}
 					clear(errors)
 				}
@@ -156,8 +156,8 @@ func (bc *AbstractBatchConsumer) initTransactionalProducer() (*kafka.Producer, e
 						errtext := fmt.Sprintf("Error sending message to kafka topic %s: %s", *ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
 						zero := 0
 						cnt := utils.MapGetOrCreate(errors, errtext, &zero)
-						*cnt = *cnt + 1
-						bc.Errorf("%s %d", errtext, len(errors))
+						*cnt++
+						//bc.Errorf("%s %d", errtext, len(errors))
 					} else {
 						kafkabase.ProducerMessages(ProducerMessageLabels(*ev.TopicPartition.Topic, "delivered", "")).Inc()
 						//bc.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)

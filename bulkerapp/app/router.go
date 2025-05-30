@@ -138,21 +138,21 @@ func (r *Router) EventsHandler(c *gin.Context) {
 
 	destination := r.repository.GetDestination(destinationId)
 	if destination == nil {
-		rError = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId), true, true)
+		rError = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId), true, true, false)
 		return
 	}
 	mode = utils.DefaultString(modeOverride, string(destination.Mode()))
 	if mode != string(bulker.Batch) && mode != string(bulker.Stream) {
-		rError = r.ResponseError(c, http.StatusBadRequest, "invalid bulker mode", false, fmt.Errorf("invalid bulker mode: %s", mode), true, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "invalid bulker mode", false, fmt.Errorf("invalid bulker mode: %s", mode), true, true, false)
 		return
 	}
 	if tableName == "" {
-		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), true, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), true, true, false)
 		return
 	}
 	topicId, err := destination.TopicId(tableName, mode, r.config.KafkaTopicPrefix)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true, true)
+		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true, true, false)
 		return
 	}
 	err = r.topicManager.EnsureDestinationTopic(topicId)
@@ -161,14 +161,14 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		if ok && kafkaErr.Code() == kafka.ErrTopicAlreadyExists {
 			r.Warnf("Topic %s already exists", topicId)
 		} else {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't create topic", false, fmt.Errorf("topicId %s: %v", topicId, err), true, true)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't create topic", false, fmt.Errorf("topicId %s: %v", topicId, err), true, true, false)
 			return
 		}
 	}
 
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, true, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, true, true, false)
 		return
 	}
 	bytesRead = len(body)
@@ -178,7 +178,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	}
 	err = r.producer.ProduceAsync(topicId, uuid.New(), body, headers, kafka.PartitionAny)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true)
+		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true, false)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "ok"})
@@ -199,13 +199,13 @@ func (r *Router) ProfilesHandler(c *gin.Context) {
 
 	topicId, err := MakeTopicId(profileBuilderId, profilesTopicMode, priority, r.config.KafkaTopicPrefix, false)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true, true)
+		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true, true, false)
 		return
 	}
 
 	err = r.producer.ProduceAsync(topicId, profileId, nil, nil, kafka.PartitionAny)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true)
+		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true, false)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "ok"})
@@ -240,12 +240,12 @@ func (r *Router) BulkHandler(c *gin.Context) {
 
 	destination := r.repository.GetDestination(destinationId)
 	if destination == nil {
-		rError = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId), true, true)
+		rError = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId), true, true, false)
 		return
 	}
 	mode = string(destination.Mode())
 	if tableName == "" {
-		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), true, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), true, true, false)
 		return
 	}
 	var streamOptions []bulker.StreamOption
@@ -256,7 +256,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 		schema := types.Schema{}
 		err = jsoniter.Unmarshal([]byte(schemaHeader), &schema)
 		if err != nil {
-			rError = r.ResponseError(c, http.StatusBadRequest, "schema unmarshal error", false, err, true, true)
+			rError = r.ResponseError(c, http.StatusBadRequest, "schema unmarshal error", false, err, true, true, false)
 			return
 		}
 		if !schema.IsEmpty() {
@@ -268,7 +268,7 @@ func (r *Router) BulkHandler(c *gin.Context) {
 	destination.InitBulkerInstance()
 	bulkerStream, err := destination.bulker.CreateStream(jobId, tableName, bulkMode, streamOptions...)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusInternalServerError, "create stream error", true, err, true, true)
+		rError = r.ResponseError(c, http.StatusInternalServerError, "create stream error", true, err, true, true, false)
 		return
 	}
 	scanner := bufio.NewScanner(c.Request.Body)
@@ -278,32 +278,32 @@ func (r *Router) BulkHandler(c *gin.Context) {
 		eventBytes := scanner.Bytes()
 		if len(eventBytes) >= 5 && string(eventBytes[:5]) == "ABORT" {
 			state = bulkerStream.Abort(c)
-			rError = r.ResponseError(c, http.StatusBadRequest, "aborted", false, errors.New(string(eventBytes)), true, true)
+			rError = r.ResponseError(c, http.StatusBadRequest, "aborted", false, errors.New(string(eventBytes)), true, true, false)
 			return
 		}
 		bytesRead += len(eventBytes)
 		var obj types.Object
 		if err = jsonorder.Unmarshal(eventBytes, &obj); err != nil {
 			state = bulkerStream.Abort(c)
-			rError = r.ResponseError(c, http.StatusBadRequest, "unmarhsal error", false, err, true, true)
+			rError = r.ResponseError(c, http.StatusBadRequest, "unmarhsal error", false, err, true, true, false)
 			return
 		}
 		if _, processedObjectSample, err = bulkerStream.Consume(c, obj); err != nil {
 			state = bulkerStream.Abort(c)
-			rError = r.ResponseError(c, http.StatusBadRequest, "stream consume error", false, err, true, true)
+			rError = r.ResponseError(c, http.StatusBadRequest, "stream consume error", false, err, true, true, false)
 			return
 		}
 		consumed++
 	}
 	if err = scanner.Err(); err != nil {
 		state = bulkerStream.Abort(c)
-		rError = r.ResponseError(c, http.StatusBadRequest, "scanner error", false, err, true, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "scanner error", false, err, true, true, false)
 		return
 	}
 	if consumed > 0 {
 		state, err = bulkerStream.Complete(c)
 		if err != nil {
-			rError = r.ResponseError(c, http.StatusBadRequest, "stream complete error", false, err, true, true)
+			rError = r.ResponseError(c, http.StatusBadRequest, "stream complete error", false, err, true, true, false)
 			return
 		}
 		r.Infof("Bulk stream for %s mode: %s Completed. Processed: %d in %dms.", jobId, mode, state.SuccessfulRows, time.Since(start).Milliseconds())
@@ -388,7 +388,7 @@ func (r *Router) FailedHandler(c *gin.Context) {
 		err = consumer.Assign([]kafka.TopicPartition{{Topic: &topicId, Partition: 0, Offset: kafka.OffsetBeginning}})
 	}
 	if err != nil {
-		r.ResponseError(c, http.StatusInternalServerError, "consumer error", true, err, true, true)
+		r.ResponseError(c, http.StatusInternalServerError, "consumer error", true, err, true, true, false)
 		return
 	}
 	start := time.Now()
@@ -428,14 +428,14 @@ func (r *Router) FailedHandler(c *gin.Context) {
 func (r *Router) TestConnectionHandler(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		_ = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, true, true)
+		_ = r.ResponseError(c, http.StatusBadRequest, "error reading HTTP body", false, err, true, true, false)
 		return
 	}
 	bulkerCfg := bulker.Config{}
 	destinationConfig := map[string]any{}
 	err = utils.ParseObject(body, &destinationConfig)
 	if err != nil {
-		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "parse failed", false, err, true, true)
+		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "parse failed", false, err, true, true, false)
 		return
 	} else {
 		r.Debugf("[test] parsed config for destination %s: %+v", utils.MapNVL(destinationConfig, "id", ""), destinationConfig)
@@ -449,7 +449,7 @@ func (r *Router) TestConnectionHandler(c *gin.Context) {
 		if b != nil {
 			_ = b.Close()
 		}
-		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "error creating bulker", false, err, true, true)
+		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "error creating bulker", false, err, true, true, false)
 		return
 	}
 	_ = b.Close()

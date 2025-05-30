@@ -240,26 +240,25 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 			dataSource.SetConnMaxIdleTime(time.Minute * 3)
 		}
 
-		if _, ok := config.Parameters["session_id"]; !ok {
-			if err := chPing(dataSource); err != nil {
+		if err := chPing(dataSource); err != nil {
+			_ = dataSource.Close()
+			return nil, err
+		}
+		if config.Cluster != "" {
+			var shardNum int
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			err = dataSource.QueryRowContext(ctx, chClusterQuery, config.Cluster).Scan(&shardNum)
+			if err != nil {
 				_ = dataSource.Close()
-				return nil, err
+				return nil, fmt.Errorf("failed to get cluster info: %v", err)
 			}
-			if config.Cluster != "" {
-				var shardNum int
-				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-				defer cancel()
-				err = dataSource.QueryRowContext(ctx, chClusterQuery, config.Cluster).Scan(&shardNum)
-				if err != nil {
-					_ = dataSource.Close()
-					return nil, fmt.Errorf("failed to get cluster info: %v", err)
-				}
-				if shardNum < 1 {
-					_ = dataSource.Close()
-					return nil, errors.New("cluster not found: " + config.Cluster)
-				}
+			if shardNum < 1 {
+				_ = dataSource.Close()
+				return nil, errors.New("cluster not found: " + config.Cluster)
 			}
 		}
+
 		return dataSource, nil
 	}
 

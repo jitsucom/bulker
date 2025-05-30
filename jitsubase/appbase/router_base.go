@@ -6,12 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 const ContextLoggerName = "contextLogger"
@@ -27,6 +30,22 @@ var EmptyGif = []byte{
 }
 
 var IsHexRegex = regexp.MustCompile(`^[a-fA-F0-9]+$`)
+
+var repeatedErrors = sync.Map{}
+
+func init() {
+	ticker := time.NewTicker(5 * time.Minute)
+	go func() {
+		for range ticker.C {
+			repeatedErrors.Range(func(key, value interface{}) bool {
+				ptr := value.(*int)
+				logging.Errorf("[REPEATED:%d] %s", *ptr, key)
+				return true
+			})
+			repeatedErrors.Clear()
+		}
+	}()
+}
 
 type Router struct {
 	Service
@@ -117,13 +136,13 @@ func (r *Router) authMiddleware(c *gin.Context) {
 	return
 }
 
-func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, sendResponse bool, logError bool) *RouterError {
+func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskError bool, err error, sendResponse bool, logError bool, aggregateLogs bool) *RouterError {
 	routerError := RouterError{ErrorType: errorType}
 	if err != nil {
 		if maskError {
 			errorID := uuid.NewLettersNumbers()
 			err = fmt.Errorf("error# %s: %s: %v", errorID, errorType, err)
-			routerError.PublicError = fmt.Errorf("error# %s: %s", errorID, errorType)
+			routerError.PublicError = errors.New("error# " + errorID + ": " + errorType)
 		} else {
 			err = fmt.Errorf("%s: %v", errorType, err)
 			routerError.PublicError = err
@@ -133,24 +152,36 @@ func (r *Router) ResponseError(c *gin.Context, code int, errorType string, maskE
 		routerError.PublicError = err
 	}
 	routerError.Error = err
-	builder := strings.Builder{}
-	loggerName, ok := c.Get(ContextLoggerName)
-	if ok {
-		builder.WriteString(fmt.Sprintf("[%s]", loggerName))
-	}
-	messageId, ok := c.Get(ContextMessageId)
-	if ok {
-		builder.WriteString(fmt.Sprintf("[messageId: %s]", messageId))
-	}
-	domain, ok := c.Get(ContextDomain)
-	if ok {
-		builder.WriteString(fmt.Sprintf("[domain: %s]", domain))
-	}
-	logFormat := utils.JoinNonEmptyStrings(" ", builder.String(), "%v")
-	if logError {
-		r.Errorf(logFormat, err)
-	} else {
-		r.Debugf(logFormat, err)
+	if logError || logging.IsDebugEnabled() {
+		builder := strings.Builder{}
+		loggerName := c.GetString(ContextLoggerName)
+		if loggerName != "" {
+			builder.WriteString("[" + loggerName + "]")
+		}
+		if !aggregateLogs {
+			messageId := c.GetString(ContextMessageId)
+			if messageId != "" {
+				builder.WriteString("[messageId: " + messageId + "]")
+			}
+		}
+		domain := c.GetString(ContextDomain)
+		if domain != "" {
+			builder.WriteString("[domain: " + domain + "]")
+		}
+		builder.WriteString(" " + fmt.Sprint(err))
+		if logError {
+			if aggregateLogs {
+				e := r.NewError(builder.String())
+				var newValue int
+				val, _ := repeatedErrors.LoadOrStore(e.Error(), &newValue)
+				ptr := val.(*int)
+				*ptr++
+			} else {
+				r.Errorf(builder.String())
+			}
+		} else {
+			r.Debugf(builder.String())
+		}
 	}
 	if sendResponse {
 		if c.FullPath() == "/api/px/:tp" {

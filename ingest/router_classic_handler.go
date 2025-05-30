@@ -88,12 +88,12 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 	}()
 	defer func() {
 		if rerr := recover(); rerr != nil {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), true, true)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), true, true, false)
 		}
 	}()
 	c.Set(appbase.ContextLoggerName, "ingest")
 	if !strings.HasSuffix(c.ContentType(), "application/json") && !strings.HasSuffix(c.ContentType(), "text/plain") {
-		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true, true, false)
 		return
 	}
 	if strings.HasPrefix(c.FullPath(), "/api/v1/s2s/") {
@@ -115,7 +115,7 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 		return
 	})
 	if err != nil {
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error processing message", false, err, true, true)
+		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error processing message", false, err, true, true, false)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 
 	stream := r.getStream(&loc, true, s2sEndpoint)
 	if stream == nil {
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true)
+		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusUnauthorized, http.StatusOK), "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true, true)
 		return
 	}
 	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S
@@ -136,7 +136,7 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 	body, err = io.ReadAll(c.Request.Body)
 	if err != nil {
 		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
-		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error reading HTTP body", false, err, true, true)
+		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error reading HTTP body", false, err, true, true, false)
 		return
 	}
 
@@ -145,14 +145,14 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 	if body[0] == '[' {
 		err = jsonorder.Unmarshal(body, &messages)
 		if err != nil {
-			rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true, true)
+			rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true, true, false)
 			return
 		}
 	} else {
 		var message types.Json
 		err = jsonorder.Unmarshal(body, &message)
 		if err != nil {
-			rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true, true)
+			rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error parsing message", false, fmt.Errorf("%v: %s", err, string(body)), true, true, false)
 			return
 		}
 		messages = append(messages, message)
@@ -167,15 +167,15 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 		c.Set(appbase.ContextMessageId, messageId)
 
 		var ingestMessageBytes []byte
+		var asyncDestinations []string
 		_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, message, nil, "classic", loc, stream, patchClassicEvent, "")
 		if err != nil {
-			rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "event error", false, err, true, true)
+			rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "event error", false, err, true, true, false)
+		} else if len(stream.AsynchronousDestinations) == 0 {
+			rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true, true, true)
+		} else {
+			asyncDestinations, _, rError = r.sendToRotor(c, ingestMessageBytes, stream, true)
 		}
-		if len(stream.AsynchronousDestinations) == 0 {
-			rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true, false)
-		}
-		var asyncDestinations []string
-		asyncDestinations, _, rError = r.sendToRotor(c, ingestMessageBytes, stream, true)
 		if len(ingestMessageBytes) > 0 {
 			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
 		}

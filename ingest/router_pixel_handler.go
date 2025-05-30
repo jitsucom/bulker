@@ -64,7 +64,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 	}()
 	defer func() {
 		if rerr := recover(); rerr != nil {
-			rError = r.ResponseError(c, http.StatusOK, "panic", true, fmt.Errorf("%v", rerr), true, true)
+			rError = r.ResponseError(c, http.StatusOK, "panic", true, fmt.Errorf("%v", rerr), true, true, false)
 		}
 	}()
 	// disable cache
@@ -75,7 +75,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 	tp := c.Param("tp")
 	message, err := r.parsePixelEvent(c, tp)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, err, true, true)
+		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, err, true, true, false)
 		return
 	}
 	messageId := message.GetS("messageId")
@@ -88,7 +88,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 	//func() string { wk, _ := message["writeKey"].(string); return wk }
 	loc, err := r.getDataLocator(c, ingestType, nil)
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, err, true, true)
+		rError = r.ResponseError(c, http.StatusOK, "error processing message", false, err, true, true, false)
 		return
 	}
 
@@ -97,7 +97,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 
 	stream := r.getStream(&loc, false, false)
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true)
+		rError = r.ResponseError(c, http.StatusOK, "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true, true)
 		return
 	}
 
@@ -105,11 +105,11 @@ func (r *Router) PixelHandler(c *gin.Context) {
 	//}
 	_, ingestMessageBytes, err = r.buildIngestMessage(c, messageId, message, nil, tp, loc, stream, patchEvent, "")
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusOK, "event error", false, err, true, true)
+		rError = r.ResponseError(c, http.StatusOK, "event error", false, err, true, true, false)
 		return
 	}
 	if len(stream.AsynchronousDestinations) == 0 {
-		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true, false)
+		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true, true, true)
 		return
 	}
 	asyncDestinations, _, rError = r.sendToRotor(c, ingestMessageBytes, stream, true)

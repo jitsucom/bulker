@@ -27,12 +27,12 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	}()
 	defer func() {
 		if rerr := recover(); rerr != nil {
-			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), true, true)
+			rError = r.ResponseError(c, http.StatusInternalServerError, "panic", true, fmt.Errorf("%v", rerr), true, true, false)
 		}
 	}()
 	c.Set(appbase.ContextLoggerName, "batch")
 	if !strings.HasSuffix(c.ContentType(), "application/json") && !strings.HasSuffix(c.ContentType(), "text/plain") {
-		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "invalid content type", false, fmt.Errorf("%s. Expected: application/json", c.ContentType()), true, true, false)
 		return
 	}
 	bodyReader := c.Request.Body
@@ -45,7 +45,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	}
 	if err != nil {
 		err = fmt.Errorf("Client Ip: %s: %v", utils.NvlString(c.GetHeader("X-Real-Ip"), c.GetHeader("X-Forwarded-For"), c.ClientIP()), err)
-		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing message", false, err, true, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing message", false, err, true, true, false)
 		return
 	}
 	if c.FullPath() == "/api/s/s2s/batch" {
@@ -54,7 +54,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	}
 	loc, err := r.getDataLocator(c, IngestTypeWriteKeyDefined, func() string { return payload.WriteKey })
 	if err != nil {
-		rError = r.ResponseError(c, http.StatusBadRequest, "error processing message", false, err, true, true)
+		rError = r.ResponseError(c, http.StatusBadRequest, "error processing message", false, err, true, true, false)
 		return
 	}
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
@@ -62,7 +62,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 
 	stream := r.getStream(&loc, true, s2sEndpoint)
 	if stream == nil {
-		rError = r.ResponseError(c, http.StatusUnauthorized, "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true)
+		rError = r.ResponseError(c, http.StatusUnauthorized, "stream not found", false, fmt.Errorf("for: %s", loc.String()), true, true, true)
 		return
 	}
 	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S
@@ -85,12 +85,12 @@ func (r *Router) BatchHandler(c *gin.Context) {
 		var asyncDestinations, tagsDestinations []string
 		if err1 == nil {
 			if len(stream.AsynchronousDestinations) == 0 {
-				rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), false, false)
+				rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), false, true, true)
 			} else {
 				asyncDestinations, tagsDestinations, rError = r.sendToRotor(c, ingestMessageBytes, stream, false)
 			}
 		} else {
-			rError = r.ResponseError(c, http.StatusOK, "event error", false, err1, false, true)
+			rError = r.ResponseError(c, http.StatusOK, "event error", false, err1, false, true, false)
 		}
 		if len(ingestMessageBytes) >= 0 {
 			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
