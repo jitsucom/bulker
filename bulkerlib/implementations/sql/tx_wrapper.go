@@ -179,34 +179,54 @@ func (t *TxWrapper) Rollback() error {
 }
 
 type ConWithDB struct {
-	db  *sql.DB
-	con *sql.Conn
+	db   *sql.DB
+	con  *sql.Conn
+	ping bool
 }
 
-func NewConWithDB(db *sql.DB, con *sql.Conn) *ConWithDB {
-	return &ConWithDB{db: db, con: con}
+func NewConWithDB(db *sql.DB, con *sql.Conn, testConnection bool) *ConWithDB {
+	return &ConWithDB{db: db, con: con, ping: testConnection}
 }
 
 func (c *ConWithDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	c.testConnection(ctx)
 	return c.con.ExecContext(ctx, query, args...)
 }
 
 func (c *ConWithDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	c.testConnection(ctx)
 	return c.con.QueryContext(ctx, query, args...)
 }
 
 func (c *ConWithDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	c.testConnection(ctx)
 	return c.con.QueryRowContext(ctx, query, args...)
 }
 
 func (c *ConWithDB) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
+	c.testConnection(ctx)
 	return c.con.PrepareContext(ctx, query)
+}
+
+func (c *ConWithDB) testConnection(ctx context.Context) {
+	if c.ping {
+		currentCon := c.con
+		if err := currentCon.PingContext(ctx); err != nil {
+			newCon, err := c.db.Conn(ctx)
+			if err == nil {
+				c.con = newCon
+				_ = currentCon.Close()
+			}
+		}
+	}
+}
+
+func (c *ConWithDB) Conn(ctx context.Context) *sql.Conn {
+	c.testConnection(ctx)
+	return c.con
 }
 
 func (c *ConWithDB) Close() error {
 	_ = c.con.Close()
-	if c.db != nil {
-		return c.db.Close()
-	}
 	return nil
 }

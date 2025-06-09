@@ -229,16 +229,9 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 			return nil, err
 		}
 
-		if httpMode {
-			// in http mode we don't use shared connection pool.
-			// connection pool of 1 connection bound to each session_id
-			dataSource.SetConnMaxLifetime(time.Minute * 10)
-			dataSource.SetMaxOpenConns(1)
-		} else {
-			dataSource.SetMaxIdleConns(10)
-			dataSource.SetConnMaxLifetime(time.Minute * 10)
-			dataSource.SetConnMaxIdleTime(time.Minute * 3)
-		}
+		dataSource.SetMaxIdleConns(10)
+		dataSource.SetConnMaxLifetime(time.Minute * 10)
+		dataSource.SetConnMaxIdleTime(time.Minute * 3)
 
 		if err := chPing(dataSource); err != nil {
 			_ = dataSource.Close()
@@ -388,7 +381,7 @@ func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open connection: %v", err)
 	}
-	db = NewConWithDB(nil, c)
+	db = NewConWithDB(ch.dataSource, c, ch.httpMode)
 	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), db, ch.queryLogger, ch.checkErrFunc, true),
 		contextProvider: contextProvider}, nil
 }
@@ -751,38 +744,49 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 			return state, nil
 		}
 	} else {
-		file, err := os.Open(loadSource.Path)
+		var file *os.File
+		file, err = os.Open(loadSource.Path)
 		if err != nil {
-			return state, err
+			return
 		}
 		defer func() {
 			_ = file.Close()
 		}()
-		txWrapper := ch.txOrDb(ctx).(*TxWrapper)
-		db := txWrapper.db.(*ConWithDB)
-		con := db.con
-		scope, err := con.BeginTx(ctx, nil)
-		if err != nil {
-			return state, err
-		}
-
 		columnNames := targetTable.MappedColumnNames(ch.quotedColumnName)
 		copyStatement = fmt.Sprintf(chLoadStatement, namespace, tableName, strings.Join(columnNames, ", "))
-		batch, err := scope.PrepareContext(ctx, copyStatement)
+
+		txWrapper := ch.txOrDb(ctx).(*TxWrapper)
+		db := txWrapper.db.(*ConWithDB)
+		con := db.Conn(ctx)
+		var batch *sql.Stmt
+		var scope *sql.Tx
+		scope, err = con.BeginTx(ctx, nil)
 		if err != nil {
-			_ = scope.Rollback()
+			return
+		}
+		defer func() {
+			if err != nil {
+				_ = scope.Rollback()
+			}
+			if batch != nil {
+				_ = batch.Close()
+			}
+		}()
+
+		batch, err = scope.PrepareContext(ctx, copyStatement)
+
+		if err != nil {
 			return state, checkErr(err)
 		}
 		decoder := jsoniter.NewDecoder(file)
 		decoder.UseNumber()
 		for {
-			object := map[string]any{}
+			var object map[string]any
 			err = decoder.Decode(&object)
 			if err != nil {
 				if err == io.EOF {
 					break
 				}
-				_ = scope.Rollback()
 				return state, err
 			}
 			args := make([]any, 0, targetTable.ColumnsCount())
@@ -799,11 +803,9 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 				return nil
 			})
 			if err != nil {
-				_ = scope.Rollback()
 				return state, err
 			}
 			if _, err := batch.ExecContext(ctx, args...); err != nil {
-				_ = scope.Rollback()
 				return state, checkErr(err)
 			}
 		}
@@ -813,7 +815,6 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 			TimeProcessedMs: loadTime.Sub(startTime).Milliseconds(),
 		}
 		if err := scope.Commit(); err != nil {
-			_ = scope.Rollback()
 			return state, checkErr(err)
 		}
 		state.Merge(bulkerlib.WarehouseState{
@@ -1253,10 +1254,6 @@ func (ch *ClickHouse) TmpNamespace(string) string {
 }
 
 func (ch *ClickHouse) Ping(_ context.Context) error {
-	if ch.httpMode {
-		//not sure Ping is necessary in httpMode
-		return nil
-	}
 	if ch.dataSource != nil {
 		err := chPing(ch.dataSource)
 		if err != nil {
