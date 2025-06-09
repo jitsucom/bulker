@@ -44,7 +44,7 @@ func newReplacePartitionStream(id string, p SQLAdapter, tableName string, stream
 		}
 		tmpTableName := fmt.Sprintf("%s_tmp%d%03d", utils.ShortenString(ps.tableName, 43), time.Now().UnixMilli(), rand.Intn(1000))
 		t := &Table{
-			Namespace:       p.TmpNamespace(ps.namespace),
+			Namespace:       utils.Ternary(disableTemporaryTables, ps.namespace, p.TmpNamespace(ps.namespace)),
 			Name:            tmpTableName,
 			Columns:         tmpTable.Columns,
 			Temporary:       !disableTemporaryTables,
