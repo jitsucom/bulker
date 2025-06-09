@@ -116,7 +116,7 @@ func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ m
 				} else {
 					return statusCode, respBody, mp.NewError("http status: %v%s", statusCode, errText)
 				}
-			case 500:
+			case 500, 502, 503:
 				err = mp.NewError("http status: %v%s", statusCode, errText)
 				time.Sleep(time.Duration(retryDelayMs) * time.Millisecond)
 				continue
