@@ -471,14 +471,14 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 		streamOptions = append(streamOptions, bulker.WithDiscriminatorField(str.DefaultCursorField))
 	}
 
+	streamOptions = append(streamOptions, sql.WithDisableTemporaryTables())
 	if size, ok := forceTemporaryBatchesDestinations[s.blk.Type()]; ok {
 		streamOptions = append(streamOptions, bulker.WithTemporaryBatchSize(size))
-	} else if mode == bulker.ReplaceTable {
-		// in replace table mode bulker doesn't use TEMPORARY tables in databases.
+	} else {
+		// during sync we don't use TEMPORARY tables in databases.
 		// that allows us to populate tmp table during long period and through multiple transactions
 		streamOptions = append(streamOptions, bulker.WithTemporaryBatchSize(100000))
 	}
-	streamOptions = append(streamOptions, sql.WithDisableTemporaryTables())
 
 	if namespace != "" {
 		streamOptions = append(streamOptions, bulker.WithNamespace(namespace))
@@ -675,7 +675,7 @@ func (s *ReadSideCar) loadDestinationConfig() error {
 		return fmt.Errorf("error opening destination config file: %v", err)
 	}
 	//s.log("Destination config: %s", string(destinationConfigFile))
-	destinationConfig := map[string]any{}
+	var destinationConfig map[string]any
 	err = jsonorder.Unmarshal(destinationConfigFile, &destinationConfig)
 	if err != nil {
 		return fmt.Errorf("error parsing destination config file: %v", err)

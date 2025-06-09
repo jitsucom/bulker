@@ -107,6 +107,7 @@ func (t *TaskManager) CancelHandler(c *gin.Context) {
 	pkg := c.Query("package")
 	syncId := c.Query("syncId")
 	taskId := c.Query("taskId")
+	t.Infof("Canceling read and discover tasks for syncId: %s, taskId: %s, package: %s", syncId, taskId, pkg)
 	_ = db.UpdateRunningTaskStatus(t.dbpool, taskId, "CANCELLED")
 	t.jobRunner.TerminatePod(PodName(syncId, taskId, pkg, "discover"))
 	t.jobRunner.TerminatePod(PodName(syncId, taskId, pkg, "read"))
