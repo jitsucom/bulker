@@ -339,11 +339,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 	}
 	tm.allTopics = allTopics
 	tm.staleTopics = staleTopics
-	err := tm.ensureTopic(tm.config.KafkaDestinationsTopicName, tm.config.KafkaDestinationsTopicPartitions,
-		map[string]string{
-			"retention.ms": fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
-			"segment.ms":   fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
-		})
+	err := tm.ensureTopic(tm.config.KafkaDestinationsTopicName, tm.config.KafkaDestinationsTopicPartitions, tm.config.TopicConfig("destination"))
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
 		tm.SystemErrorf("Failed to create destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
@@ -352,22 +348,13 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 		metrics.TopicManagerError("destination-topic_error").Inc()
 		tm.SystemErrorf("Failed to create multi-threaded destination topic [%s]: %v", tm.config.KafkaDestinationsTopicName, err)
 	}
-	err = tm.ensureTopic(tm.config.KafkaDestinationsDeadLetterTopicName, 1, map[string]string{
-		"cleanup.policy": "delete,compact",
-		"retention.ms":   fmt.Sprint(tm.config.KafkaDeadTopicRetentionHours * 60 * 60 * 1000),
-		"segment.ms":     fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
-	})
+	err = tm.ensureTopic(tm.config.KafkaDestinationsDeadLetterTopicName, 1, tm.config.TopicConfig("dead"))
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
 		tm.SystemErrorf("Failed to create destination dead letter topic [%s]: %v", tm.config.KafkaDestinationsDeadLetterTopicName, err)
 	}
 	destinationsRetryTopicName := tm.config.KafkaDestinationsRetryTopicName
-	err = tm.ensureTopic(destinationsRetryTopicName, 1, map[string]string{
-		"cleanup.policy": "delete,compact",
-		"segment.bytes":  fmt.Sprint(tm.config.KafkaRetryTopicSegmentBytes),
-		"retention.ms":   fmt.Sprint(tm.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
-		"segment.ms":     fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
-	})
+	err = tm.ensureTopic(destinationsRetryTopicName, 1, tm.config.TopicConfig("retry"))
 	if err != nil {
 		metrics.TopicManagerError("destination-topic_error").Inc()
 		tm.SystemErrorf("Failed to create destination retry topic [%s]: %v", destinationsRetryTopicName, err)
@@ -602,11 +589,7 @@ func (tm *TopicManager) createDestinationTopic(topic string, config map[string]s
 		errorType = "unknown stream mode"
 		return tm.NewError("Unknown stream mode: %s for topic: %s", mode, topic)
 	}
-	topicConfig := map[string]string{
-		"retention.ms":     fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
-		"segment.ms":       fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
-		"compression.type": tm.config.KafkaTopicCompression,
-	}
+	topicConfig := tm.config.TopicConfig("destination")
 	utils.MapPutAll(topicConfig, config)
 	topicRes, err := tm.kaftaAdminClient.CreateTopics(context.Background(), []kafka.TopicSpecification{
 		{
@@ -645,11 +628,7 @@ func (tm *TopicManager) createTopic(topic string, partitions int, config map[str
 			metrics.TopicManagerCreate(topic, "", "", "", "success", "").Inc()
 		}
 	}()
-	topicConfig := map[string]string{
-		"compression.type": tm.config.KafkaTopicCompression,
-		"retention.ms":     fmt.Sprint(tm.config.KafkaTopicRetentionHours * 60 * 60 * 1000),
-		"segment.ms":       fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
-	}
+	topicConfig := tm.config.TopicConfig("destination")
 	utils.MapPutAll(topicConfig, config)
 	topicRes, err := tm.kaftaAdminClient.CreateTopics(context.Background(), []kafka.TopicSpecification{
 		{
