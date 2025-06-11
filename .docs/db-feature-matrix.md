@@ -482,7 +482,7 @@ Algorithm:
 Algorithm:
 
 - `ATTACH ':memory:' as jitsu_memdb`
-- `INSERT into jitsu_memdb.tmp_table`
+- `Use Appender API with jitsu_memdb.tmp_table`
 - `INSERT into target_table select from jitsu_memdb.tmp_table`
 
 ### DuckDB Deduplication
@@ -492,7 +492,7 @@ Algorithm:
 For batch mode the following algorithm is used:
 
 - `ATTACH ':memory:' as jitsu_memdb`
-- `INSERT into jitsu_memdb.tmp_table`
+- `Use Appender API with jitsu_memdb.tmp_table`
 - `INSERT OR REPLACE into target_table select from jitsu_memdb.tmp_table`
 
 For stream mode:
@@ -514,7 +514,9 @@ Regular index is created on specified timestamp column.
 > ✅ Supported
 
 Algorithm:
-- `INSERT into tmp_table`
+- `ATTACH ':memory:' as jitsu_memdb`
+- `Use Appender API with jitsu_memdb.tmp_table`
+- `INSERT into tmp_table select from jitsu_memdb.tmp_table`
 - `BEGIN TRANSACTION`
 - `RENAME target_table to deprecated_target_table_20060101_150405`
 - `RENAME tmp_table to target_table`
@@ -527,6 +529,6 @@ Algorithm:
 
 Algorithm:
 - `ATTACH ':memory:' as jitsu_memdb`
-- `INSERT into jitsu_memdb.tmp_table`
+- `Use Appender API with jitsu_memdb.tmp_table`
 - `DELETE from target_table where partition_id=partiton option value`
 - `INSERT OR REPLACE into target_table select from jitsu_memdb.tmp_table`
