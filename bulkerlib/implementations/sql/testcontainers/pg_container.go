@@ -134,7 +134,7 @@ func (pgc *PostgresContainer) CountRows(table string) (int, error) {
 	rows, err := pgc.datasource.Query(fmt.Sprintf("SELECT count(*) from %s", table))
 	if err != nil {
 		errMessage := err.Error()
-		if strings.HasPrefix(errMessage, "pq: relation") && strings.HasSuffix(errMessage, "does not exist") {
+		if strings.HasPrefix(errMessage, "relation") && strings.HasSuffix(errMessage, "does not exist") {
 			return 0, err
 		}
 

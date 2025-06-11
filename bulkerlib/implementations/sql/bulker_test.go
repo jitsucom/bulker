@@ -57,7 +57,7 @@ var clickhouseClusterContainerNoShards *clickhouse_noshards.ClickHouseClusterCon
 
 func init() {
 	// uncomment to run tests locally with just one bulker type
-	// allBulkerConfigs = []string{PostgresBulkerTypeId}
+	allBulkerConfigs = []string{PostgresBulkerTypeId}
 
 	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {
 		bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
@@ -537,7 +537,7 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 			if !ok {
 				t.Fatalf("No config found for %s", testConfigId)
 			}
-			newTd.config = &bulker.Config{Id: testConfigId, BulkerType: testConfig.BulkerType, DestinationConfig: testConfig.Config, LogLevel: bulker.Verbose}
+			newTd.config = &bulker.Config{Id: testConfigId, BulkerType: testConfig.BulkerType, DestinationConfig: testConfig.Config, LogLevel: bulker.Default}
 			for _, mode := range newTd.modes {
 				tc := newTd
 				mode := mode

@@ -326,7 +326,6 @@ func (p *Postgres) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 }
 
 func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
-	startTime := time.Now()
 	quotedTableName := p.quotedTableName(targetTable.Name)
 	qoutedNamespace := p.namespacePrefix(targetTable.Namespace)
 	if loadSource.Type != LocalFile {
@@ -348,36 +347,61 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	decoder := jsoniter.NewDecoder(file)
 	decoder.UseNumber()
 	paramIdx := 1
+	paramsLimit := 65535 - targetTable.ColumnsCount() //65535 is max number of parameters in postgres query
+	prepareTime := time.Now()
+main:
 	for {
-		var object map[string]any
-		err = decoder.Decode(&object)
-		if err != nil {
-			if err == io.EOF {
-				break
+		for k := 0; k < paramsLimit; {
+			var object map[string]any
+			err = decoder.Decode(&object)
+			if err != nil {
+				if err == io.EOF {
+					break main
+				}
+				return state, err
 			}
-			return state, err
+			placeholdersBuilder.WriteString(",(")
+			targetTable.Columns.ForEachIndexed(func(i int, v string, col types2.SQLColumn) {
+				val, ok := object[v]
+				if ok {
+					val, _ = types2.ReformatValue(val)
+				}
+				if i > 0 {
+					placeholdersBuilder.WriteString(",")
+				}
+				placeholdersBuilder.WriteString(p.typecastFunc(p.parameterPlaceholder(paramIdx, columnNames[i]), col))
+				args = append(args, p.valueMappingFunction(val, ok, col))
+				paramIdx++
+				k++
+			})
+			placeholdersBuilder.WriteString(")")
 		}
-		placeholdersBuilder.WriteString(",(")
-		targetTable.Columns.ForEachIndexed(func(i int, v string, col types2.SQLColumn) {
-			val, ok := object[v]
-			if ok {
-				val, _ = types2.ReformatValue(val)
-			}
-			if i > 0 {
-				placeholdersBuilder.WriteString(",")
-			}
-			placeholdersBuilder.WriteString(p.typecastFunc(p.parameterPlaceholder(paramIdx, columnNames[i]), col))
-			args = append(args, p.valueMappingFunction(val, ok, col))
-			paramIdx++
+		state.Merge(bulker.WarehouseState{
+			Name:            "postgres_prepare_data",
+			TimeProcessedMs: time.Since(prepareTime).Milliseconds(),
 		})
-		placeholdersBuilder.WriteString(")")
+		if len(args) > 0 {
+			loadTime := time.Now()
+			copyStatement := fmt.Sprintf(pgLoadStatement, qoutedNamespace, quotedTableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
+			if _, err := p.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
+				return state, checkErr(err)
+			}
+			state.Merge(bulker.WarehouseState{
+				Name:            "postgres_load_data",
+				TimeProcessedMs: time.Since(loadTime).Milliseconds(),
+			})
+		}
+		prepareTime = time.Now()
+		paramIdx = 1
+		placeholdersBuilder.Reset()
+		args = args[:0]
 	}
+	state.Merge(bulker.WarehouseState{
+		Name:            "postgres_prepare_data",
+		TimeProcessedMs: time.Since(prepareTime).Milliseconds(),
+	})
 	if len(args) > 0 {
 		loadTime := time.Now()
-		state = bulker.WarehouseState{
-			Name:            "postgres_prepare_data",
-			TimeProcessedMs: loadTime.Sub(startTime).Milliseconds(),
-		}
 		copyStatement := fmt.Sprintf(pgLoadStatement, qoutedNamespace, quotedTableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
 		if _, err := p.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
 			return state, checkErr(err)

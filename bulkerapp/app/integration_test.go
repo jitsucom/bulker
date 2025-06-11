@@ -168,7 +168,7 @@ func TestGoodAndBadStreams(t *testing.T) {
 			waitAfterAllMessageSentSec: 0,
 			token:                      "badtoken",
 			expectedErrors: map[string]any{
-				"count_rows":       "pq: relation \"bulker.invalid_token\" does not exist",
+				"count_rows":       "relation \"bulker.invalid_token\" does not exist",
 				"send_object_0":    "unexpected status code: 401",
 				"check_dead_topic": "unexpected status code: 401",
 			},
