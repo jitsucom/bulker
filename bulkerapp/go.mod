@@ -9,12 +9,12 @@ require (
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/uuid v1.6.0
 	github.com/hjson/hjson-go/v4 v4.4.0
-	github.com/jackc/pgx/v5 v5.7.2
+	github.com/jackc/pgx/v5 v5.7.5
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
-	github.com/testcontainers/testcontainers-go/modules/compose v0.35.0
+	github.com/testcontainers/testcontainers-go/modules/compose v0.37.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

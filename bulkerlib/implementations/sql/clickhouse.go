@@ -293,7 +293,6 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	}
 	tableStatementFactory := NewTableStatementFactory(c)
 	c.tableStatementFactory = tableStatementFactory
-	c.temporaryTables = !httpMode
 	c.tmpTableUsePK = false
 	c.tableHelper = NewTableHelper(ClickHouseBulkerTypeId, 127, '`')
 	return c, err
@@ -382,7 +381,7 @@ func (ch *ClickHouse) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open connection: %v", err)
 	}
-	db = NewConWithDB(ch.dataSource, c, ch.httpMode)
+	db = NewConWithDB(ch.dataSource, c, false)
 	return &TxSQLAdapter{sqlAdapter: ch, tx: NewDbWrapper(ch.Type(), db, ch.queryLogger, ch.checkErrFunc, true),
 		contextProvider: contextProvider}, nil
 }
@@ -745,38 +744,26 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 			return state, nil
 		}
 	} else {
-		var file *os.File
-		file, err = os.Open(loadSource.Path)
+		file, err := os.Open(loadSource.Path)
 		if err != nil {
-			return
+			return state, err
 		}
 		defer func() {
 			_ = file.Close()
 		}()
-		columnNames := targetTable.MappedColumnNames(ch.quotedColumnName)
-		copyStatement = fmt.Sprintf(chLoadStatement, namespace, tableName, strings.Join(columnNames, ", "))
-
 		txWrapper := ch.txOrDb(ctx).(*TxWrapper)
 		db := txWrapper.db.(*ConWithDB)
 		con := db.Conn(ctx)
-		var batch *sql.Stmt
-		var scope *sql.Tx
-		scope, err = con.BeginTx(ctx, nil)
+		scope, err := con.BeginTx(ctx, nil)
 		if err != nil {
-			return
+			return state, err
 		}
-		defer func() {
-			if err != nil {
-				_ = scope.Rollback()
-			}
-			if batch != nil {
-				_ = batch.Close()
-			}
-		}()
 
-		batch, err = scope.PrepareContext(ctx, copyStatement)
-
+		columnNames := targetTable.MappedColumnNames(ch.quotedColumnName)
+		copyStatement = fmt.Sprintf(chLoadStatement, namespace, tableName, strings.Join(columnNames, ", "))
+		batch, err := scope.PrepareContext(ctx, copyStatement)
 		if err != nil {
+			_ = scope.Rollback()
 			return state, checkErr(err)
 		}
 		decoder := jsoniter.NewDecoder(file)
@@ -788,6 +775,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 				if err == io.EOF {
 					break
 				}
+				_ = scope.Rollback()
 				return state, err
 			}
 			args := make([]any, 0, targetTable.ColumnsCount())
@@ -804,9 +792,11 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 				return nil
 			})
 			if err != nil {
+				_ = scope.Rollback()
 				return state, err
 			}
 			if _, err := batch.ExecContext(ctx, args...); err != nil {
+				_ = scope.Rollback()
 				return state, checkErr(err)
 			}
 		}
@@ -816,6 +806,7 @@ func (ch *ClickHouse) LoadTable(ctx context.Context, targetTable *Table, loadSou
 			TimeProcessedMs: loadTime.Sub(startTime).Milliseconds(),
 		}
 		if err := scope.Commit(); err != nil {
+			_ = scope.Rollback()
 			return state, checkErr(err)
 		}
 		state.Merge(bulkerlib.WarehouseState{

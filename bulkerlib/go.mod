@@ -6,10 +6,10 @@ require (
 	cloud.google.com/go v0.116.0
 	cloud.google.com/go/bigquery v1.64.0
 	cloud.google.com/go/storage v1.43.0
-	github.com/ClickHouse/clickhouse-go/v2 v2.34.0
-	github.com/Kount/pq-timeouts v1.0.0
+	github.com/ClickHouse/clickhouse-go/v2 v2.36.0
+	github.com/jackc/pgx/v5 v5.7.5
 	github.com/aws/aws-sdk-go-v2 v1.32.5
-	github.com/marcboeker/go-duckdb/v2 v2.2.1
+	github.com/marcboeker/go-duckdb/v2 v2.3.1
 	github.com/aws/aws-sdk-go-v2/config v1.28.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.42
 	github.com/aws/aws-sdk-go-v2/service/redshiftdata v1.31.3
@@ -20,11 +20,10 @@ require (
 	github.com/hamba/avro/v2 v2.24.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joomcode/errorx v1.1.1
-	github.com/lib/pq v1.10.9
 	github.com/snowflakedb/gosnowflake v1.13.1
 	github.com/stretchr/testify v1.10.0
-	github.com/testcontainers/testcontainers-go v0.35.0
-	github.com/testcontainers/testcontainers-go/modules/compose v0.35.0
+	github.com/testcontainers/testcontainers-go v0.37.0
+	github.com/testcontainers/testcontainers-go/modules/compose v0.37.0
 	go.uber.org/atomic v1.11.0
 	google.golang.org/api v0.214.0
 	k8s.io/apimachinery v0.30.2

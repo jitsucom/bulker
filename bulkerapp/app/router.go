@@ -432,7 +432,7 @@ func (r *Router) TestConnectionHandler(c *gin.Context) {
 		return
 	}
 	bulkerCfg := bulker.Config{}
-	destinationConfig := map[string]any{}
+	var destinationConfig map[string]any
 	err = utils.ParseObject(body, &destinationConfig)
 	if err != nil {
 		_ = r.ResponseError(c, http.StatusUnprocessableEntity, "parse failed", false, err, true, true, false)

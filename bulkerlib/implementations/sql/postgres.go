@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
@@ -17,8 +18,6 @@ import (
 	"strings"
 	"text/template"
 	"time"
-
-	_ "github.com/Kount/pq-timeouts"
 )
 
 func init() {
@@ -55,7 +54,7 @@ WHERE tco.constraint_type = 'PRIMARY KEY' AND
 
 	pgMergeQuery = `INSERT INTO {{.Namespace}}{{.TableName}}({{.Columns}}) VALUES ({{.Placeholders}}) ON CONFLICT ON CONSTRAINT {{.PrimaryKeyName}} DO UPDATE set {{.UpdateSet}}`
 
-	pgCopyTemplate = `COPY %s%s(%s) FROM STDIN`
+	pgLoadStatement = `INSERT INTO %s%s (%s) VALUES %s`
 
 	pgBulkMergeQuery       = `INSERT INTO {{.Namespace}}{{.TableTo}}({{.Columns}}) SELECT {{.Columns}} FROM {{.NamespaceFrom}}{{.TableFrom}} ON CONFLICT ON CONSTRAINT {{.PrimaryKeyName}} DO UPDATE SET {{.UpdateSet}}`
 	pgBulkMergeSourceAlias = `excluded`
@@ -111,9 +110,6 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Parameters == nil {
 		config.Parameters = map[string]string{}
 	}
-	utils.MapPutIfAbsent(config.Parameters, "connect_timeout", "60")
-	utils.MapPutIfAbsent(config.Parameters, "write_timeout", "300000")
-	utils.MapPutIfAbsent(config.Parameters, "read_timeout", "300000")
 
 	typecastFunc := func(placeholder string, column types2.SQLColumn) string {
 		if column.Override {
@@ -125,8 +121,15 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		//replace zero byte character for text fields
 		if valuePresent {
 			if sqlColumn.DataType == types2.STRING {
-				if v, ok := value.(string); ok {
+				switch v := value.(type) {
+				case string:
 					value = strings.ReplaceAll(v, "\u0000", "")
+				case time.Time:
+					value = v.UTC().Format(time.RFC3339Nano)
+				case nil:
+					value = v
+				default:
+					value = fmt.Sprint(v)
 				}
 			} else if sqlColumn.DataType == types2.JSON {
 				if v, ok := value.(string); ok {
@@ -150,7 +153,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		}
 		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
 
-		dataSource, err := sql.Open("pq-timeouts", connectionString)
+		dataSource, err := sql.Open("pgx", connectionString)
 		if err != nil {
 			return nil, err
 		}
@@ -323,6 +326,7 @@ func (p *Postgres) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 }
 
 func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
+	startTime := time.Now()
 	quotedTableName := p.quotedTableName(targetTable.Name)
 	qoutedNamespace := p.namespacePrefix(targetTable.Namespace)
 	if loadSource.Type != LocalFile {
@@ -332,29 +336,8 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 		return state, fmt.Errorf("LoadTable: only %s format is supported", p.batchFileFormat)
 	}
 	columnNames := targetTable.MappedColumnNames(p.quotedColumnName)
-	copyStatement := fmt.Sprintf(pgCopyTemplate, qoutedNamespace, quotedTableName, strings.Join(columnNames, ", "))
-	defer func() {
-		if err != nil {
-			err = errorj.LoadError.Wrap(err, "failed to load table").
-				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Schema:      qoutedNamespace,
-					Table:       quotedTableName,
-					PrimaryKeys: targetTable.GetPKFields(),
-					Statement:   copyStatement,
-				})
-		}
-	}()
-
-	stmt, err := p.txOrDb(ctx).PrepareContext(ctx, copyStatement)
-	if err != nil {
-		return state, err
-	}
-	defer func() {
-		_ = stmt.Close()
-	}()
-	//f, err := os.ReadFile(loadSource.Path)
-	//p.Infof("FILE: %s", f)
-
+	var placeholdersBuilder strings.Builder
+	args := make([]any, 0, targetTable.ColumnsCount())
 	file, err := os.Open(loadSource.Path)
 	if err != nil {
 		return state, err
@@ -364,7 +347,7 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 	}()
 	decoder := jsoniter.NewDecoder(file)
 	decoder.UseNumber()
-	args := make([]any, len(columnNames))
+	paramIdx := 1
 	for {
 		var object map[string]any
 		err = decoder.Decode(&object)
@@ -374,22 +357,36 @@ func (p *Postgres) LoadTable(ctx context.Context, targetTable *Table, loadSource
 			}
 			return state, err
 		}
+		placeholdersBuilder.WriteString(",(")
 		targetTable.Columns.ForEachIndexed(func(i int, v string, col types2.SQLColumn) {
 			val, ok := object[v]
 			if ok {
 				val, _ = types2.ReformatValue(val)
 			}
-			args[i] = p.valueMappingFunction(val, ok, col)
+			if i > 0 {
+				placeholdersBuilder.WriteString(",")
+			}
+			placeholdersBuilder.WriteString(p.typecastFunc(p.parameterPlaceholder(paramIdx, columnNames[i]), col))
+			args = append(args, p.valueMappingFunction(val, ok, col))
+			paramIdx++
 		})
-		if _, err := stmt.ExecContext(ctx, args...); err != nil {
+		placeholdersBuilder.WriteString(")")
+	}
+	if len(args) > 0 {
+		loadTime := time.Now()
+		state = bulker.WarehouseState{
+			Name:            "postgres_prepare_data",
+			TimeProcessedMs: loadTime.Sub(startTime).Milliseconds(),
+		}
+		copyStatement := fmt.Sprintf(pgLoadStatement, qoutedNamespace, quotedTableName, strings.Join(columnNames, ", "), placeholdersBuilder.String()[1:])
+		if _, err := p.txOrDb(ctx).ExecContext(ctx, copyStatement, args...); err != nil {
 			return state, checkErr(err)
 		}
+		state.Merge(bulker.WarehouseState{
+			Name:            "postgres_load_data",
+			TimeProcessedMs: time.Since(loadTime).Milliseconds(),
+		})
 	}
-	_, err = stmt.ExecContext(ctx)
-	if err != nil {
-		return state, checkErr(err)
-	}
-
 	return state, nil
 }
 

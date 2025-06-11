@@ -304,7 +304,7 @@ func (m *MySQL) LoadTable(ctx context.Context, targetTable *Table, loadSource *L
 		decoder.UseNumber()
 		args := make([]any, count)
 		for {
-			object := map[string]any{}
+			var object map[string]any
 			err = decoder.Decode(&object)
 			if err != nil {
 				if err == io.EOF {

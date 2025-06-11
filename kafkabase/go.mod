@@ -20,33 +20,35 @@ require (
 	github.com/aws/smithy-go v1.22.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/compose-spec/compose-go/v2 v2.4.8 // indirect
 	github.com/containerd/containerd/api v1.8.0 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/docker/buildx v0.21.2 // indirect
-	github.com/docker/cli v28.0.1+incompatible // indirect
-	github.com/docker/compose/v2 v2.33.1 // indirect
-	github.com/docker/docker v28.0.4+incompatible // indirect
+	github.com/docker/docker v28.2.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.2 // indirect
+	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/moby/buildkit v0.20.1 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/moby/go-archive v0.1.0 // indirect
+	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/testcontainers/testcontainers-go/modules/compose v0.35.0 // indirect
-	go.opentelemetry.io/otel v1.35.0 // indirect
-	go.opentelemetry.io/otel/metric v1.35.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.34.0 // indirect
-	go.opentelemetry.io/otel/trace v1.35.0 // indirect
-	golang.org/x/crypto v0.33.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sync v0.11.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/time v0.8.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20241209162323-e6fa225c2576 // indirect
-	google.golang.org/protobuf v1.36.1 // indirect
-	tags.cncf.io/container-device-interface v0.8.1 // indirect
+	github.com/testcontainers/testcontainers-go/modules/compose v0.37.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.60.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0 // indirect
+	go.opentelemetry.io/otel v1.36.0 // indirect
+	go.opentelemetry.io/otel/metric v1.36.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.35.0 // indirect
+	go.opentelemetry.io/otel/trace v1.36.0 // indirect
+	golang.org/x/crypto v0.38.0 // indirect
+	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c // indirect
+	golang.org/x/net v0.40.0 // indirect
+	golang.org/x/oauth2 v0.30.0 // indirect
+	golang.org/x/sync v0.14.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/time v0.11.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250519155744-55703ea1f237 // indirect
+	google.golang.org/grpc v1.72.1 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 )

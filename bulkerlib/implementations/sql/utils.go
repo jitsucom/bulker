@@ -2,12 +2,11 @@ package sql
 
 import (
 	"database/sql"
-	"errors"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/chcol"
-	"github.com/lib/pq"
 	"math/big"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type ColumnScanner struct {
@@ -38,6 +37,8 @@ func (s *ColumnScanner) Scan(src any) error {
 		s.value = int(v.Int64())
 	case big.Float:
 		s.value, _ = v.Float64()
+	case time.Time:
+		s.value = v.UTC()
 	case *chcol.JSON:
 		if len(v.NestedMap()) > 0 {
 			b, _ := v.MarshalJSON()
@@ -109,38 +110,5 @@ func removeLastComma(str string) string {
 
 // checkErr checks and extracts parsed pq.Error and extract code,message,details
 func checkErr(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	if pgErr, ok := err.(*pq.Error); ok {
-		msgParts := []string{"pq:"}
-		if pgErr.Code != "" {
-			msgParts = append(msgParts, string(pgErr.Code))
-		}
-		if pgErr.Message != "" {
-			msgParts = append(msgParts, pgErr.Message)
-		}
-		if pgErr.Detail != "" {
-			msgParts = append(msgParts, pgErr.Detail)
-		}
-		if pgErr.Schema != "" {
-			msgParts = append(msgParts, "schema:"+pgErr.Schema)
-		}
-		if pgErr.Table != "" {
-			msgParts = append(msgParts, "table:"+pgErr.Table)
-		}
-		if pgErr.Column != "" {
-			msgParts = append(msgParts, "column:"+pgErr.Column)
-		}
-		if pgErr.DataTypeName != "" {
-			msgParts = append(msgParts, "data_type:"+pgErr.DataTypeName)
-		}
-		if pgErr.Constraint != "" {
-			msgParts = append(msgParts, "constraint:"+pgErr.Constraint)
-		}
-		return errors.New(strings.Join(msgParts, " "))
-	}
-
 	return err
 }

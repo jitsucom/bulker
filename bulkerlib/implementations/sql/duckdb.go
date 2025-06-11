@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
@@ -12,13 +13,13 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
+	"github.com/marcboeker/go-duckdb/v2"
+	_ "github.com/marcboeker/go-duckdb/v2"
 	"io"
 	"os"
 	"strings"
 	"text/template"
 	"time"
-
-	_ "github.com/marcboeker/go-duckdb/v2"
 )
 
 func init() {
@@ -82,6 +83,20 @@ func (d *DuckDB) Type() string {
 	return DuckDBBulkerTypeId
 }
 
+func duckDBDsn(config *DuckDBConfig) string {
+	connectionString := fmt.Sprintf("md:%s", config.Db)
+	if len(config.Parameters) > 0 {
+		connectionString += "?"
+		paramList := make([]string, 0, len(config.Parameters))
+		//concat provided connection parameters
+		for k, v := range config.Parameters {
+			paramList = append(paramList, k+"="+v)
+		}
+		connectionString += strings.Join(paramList, "&")
+	}
+	return connectionString
+}
+
 func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	config := &DuckDBConfig{}
 	if err := utils.ParseObject(bulkerConfig.DestinationConfig, config); err != nil {
@@ -111,6 +126,10 @@ func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 					value = strings.ReplaceAll(v, "\u0000", "")
 				case time.Time:
 					value = v.UTC().Format(time.RFC3339Nano)
+				case nil:
+					value = v
+				default:
+					value = fmt.Sprint(v)
 				}
 			} else if sqlColumn.DataType == types2.JSON {
 				if v, ok := value.(string); ok {
@@ -118,7 +137,7 @@ func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 				}
 			} else if sqlColumn.DataType == types2.TIMESTAMP {
 				if v, ok := value.(time.Time); ok {
-					value = v.UTC().Format(time.RFC3339Nano)
+					value = v.UTC()
 				}
 			}
 		}
@@ -130,17 +149,8 @@ func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 
 	dbConnectFunction := func(cfg *DuckDBConfig) (*sql.DB, error) {
-		connectionString := fmt.Sprintf("md:%s", config.Db)
-		if len(config.Parameters) > 0 {
-			connectionString += "?"
-			paramList := make([]string, 0, len(config.Parameters))
-			//concat provided connection parameters
-			for k, v := range config.Parameters {
-				paramList = append(paramList, k+"="+v)
-			}
-			connectionString += strings.Join(paramList, "&")
-		}
-		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, config.Db)
+		connectionString := duckDBDsn(cfg)
+		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, cfg.Db)
 
 		dataSource, err := sql.Open("duckdb", connectionString)
 		if err != nil {
@@ -331,48 +341,37 @@ func (d *DuckDB) LoadTable(ctx context.Context, targetTable *Table, loadSource *
 	if loadSource.Format != d.batchFileFormat {
 		return state, fmt.Errorf("LoadTable: only %s format is supported", d.batchFileFormat)
 	}
-
-	quotedTableName := d.quotedTableName(targetTable.Name)
-	quotedNamespace := d.namespacePrefix(targetTable.Namespace)
-	count := targetTable.ColumnsCount()
-
-	columnNames := make([]string, count)
-	placeholders := make([]string, count)
-	targetTable.Columns.ForEachIndexed(func(i int, name string, col types2.SQLColumn) {
-		columnNames[i] = d.quotedColumnName(name)
-		placeholders[i] = d.typecastFunc(d.parameterPlaceholder(i+1, name), col)
-	})
-	insertPayload := QueryPayload{
-		Namespace:      quotedNamespace,
-		TableName:      quotedTableName,
-		Columns:        strings.Join(columnNames, ", "),
-		Placeholders:   strings.Join(placeholders, ", "),
-		PrimaryKeyName: targetTable.PrimaryKeyName,
-	}
-	buf := strings.Builder{}
-	err = insertQueryTemplate.Execute(&buf, insertPayload)
-	if err != nil {
-		return state, errorj.ExecuteInsertError.Wrap(err, "failed to build query from template")
-	}
-	statement := buf.String()
-	defer func() {
+	memoryTable := targetTable
+	if !targetTable.Temporary {
+		// MotherDuck doesn't support Appender API
+		// so we need to create memory database to use Appender API on it
+		memoryTable = targetTable.Clone()
+		memoryTable.TimestampColumn = ""
+		memoryTable.Namespace = DuckDBMemoryDBAlias
+		_, err = d.CreateTable(ctx, memoryTable)
 		if err != nil {
-			err = errorj.LoadError.Wrap(err, "failed to load table").
-				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
-					Schema:    d.config.Schema,
-					Table:     quotedTableName,
-					Statement: statement,
-				})
+			return state, err
 		}
-	}()
+		defer func() {
+			_ = d.DropTable(ctx, memoryTable.Namespace, memoryTable.Name, true)
+		}()
+	}
 
-	stmt, err := d.txOrDb(ctx).PrepareContext(ctx, statement)
+	con, err := d.dataSource.Driver().Open(duckDBDsn(d.config))
 	if err != nil {
 		return state, err
 	}
-	defer func() {
-		_ = stmt.Close()
-	}()
+	defer con.Close()
+	err = runStatement(con, "ATTACH ':memory:' as "+DuckDBMemoryDBAlias)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		return state, fmt.Errorf("failed to attach memory db: %v", err)
+	}
+
+	appender, err := duckdb.NewAppender(con, DuckDBMemoryDBAlias, "", memoryTable.Name)
+	if err != nil {
+		return state, err
+	}
+	defer appender.Close()
 
 	file, err := os.Open(loadSource.Path)
 	if err != nil {
@@ -383,9 +382,9 @@ func (d *DuckDB) LoadTable(ctx context.Context, targetTable *Table, loadSource *
 	}()
 	decoder := jsoniter.NewDecoder(file)
 	decoder.UseNumber()
-	args := make([]any, count)
+	args := make([]driver.Value, memoryTable.ColumnsCount())
 	for {
-		object := map[string]any{}
+		var object map[string]any
 		err = decoder.Decode(&object)
 		if err != nil {
 			if err == io.EOF {
@@ -393,18 +392,48 @@ func (d *DuckDB) LoadTable(ctx context.Context, targetTable *Table, loadSource *
 			}
 			return state, err
 		}
-		targetTable.Columns.ForEachIndexed(func(i int, name string, col types2.SQLColumn) {
+		memoryTable.Columns.ForEachIndexed(func(i int, name string, col types2.SQLColumn) {
 			val, ok := object[name]
 			if ok {
 				val, _ = types2.ReformatValue(val)
 			}
-			args[i] = d.valueMappingFunction(val, ok, col)
+			v := d.valueMappingFunction(val, ok, col)
+			if t, ok := v.(time.Time); ok {
+				// Seems like appender ruins timezone information, so we convert it to local time
+				v = time.Date(
+					t.Year(), t.Month(), t.Day(),
+					t.Hour(), t.Minute(), t.Second(), t.Nanosecond(),
+					time.Local,
+				)
+			}
+			args[i] = v
 		})
-		if _, err := stmt.ExecContext(ctx, args...); err != nil {
-			return state, checkErr(err)
+		err = appender.AppendRow(args...)
+		if err != nil {
+			return state, err
+		}
+	}
+	if err = appender.Flush(); err != nil {
+		return state, err
+	}
+	if !targetTable.Temporary {
+		s2, err := d.CopyTables(ctx, targetTable, memoryTable, 0)
+		state.Merge(s2)
+		if err != nil {
+			return state, err
 		}
 	}
 	return state, nil
+}
+
+func runStatement(con driver.Conn, statement string) error {
+	stmt, err := con.Prepare(statement)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(nil)
+	return err
 }
 
 // getPrimaryKey returns primary key name and fields

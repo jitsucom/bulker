@@ -11,7 +11,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	_ "github.com/lib/pq"
 	"math/rand"
 	"strings"
 	"text/template"
