@@ -658,15 +658,6 @@ func (tm *TopicManager) createTopic(topic string, partitions int, config map[str
 	return nil
 }
 
-func (tm *TopicManager) RetryTopicConfig() map[string]string {
-	return map[string]string{
-		"cleanup.policy": "delete,compact",
-		"segment.bytes":  fmt.Sprint(tm.config.KafkaRetryTopicSegmentBytes),
-		"retention.ms":   fmt.Sprint(tm.config.KafkaRetryTopicRetentionHours * 60 * 60 * 1000),
-		"segment.ms":     fmt.Sprint(tm.config.KafkaTopicSegmentHours * 60 * 60 * 1000),
-	}
-}
-
 func (tm *TopicManager) Refresh() {
 	select {
 	case tm.refreshChan <- true:
