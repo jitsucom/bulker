@@ -49,7 +49,7 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 
 		connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=disable",
 			"localhost", port, pgDatabase, pgUser, pgPassword)
-		dataSource, err := sql.Open("postgres", connectionString)
+		dataSource, err := sql.Open("pgx", connectionString)
 		if err != nil {
 			return nil, err
 		}
@@ -83,7 +83,7 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 			Image:        "postgres:12-alpine",
 			ExposedPorts: []string{exposedPort},
 			Env:          dbSettings,
-			WaitingFor:   tcWait.ForSQL("5432", "postgres", dbURL).WithStartupTimeout(time.Second * 60),
+			WaitingFor:   tcWait.ForSQL("5432", "pgx", dbURL).WithStartupTimeout(time.Second * 60),
 		},
 		Started: true,
 	})
@@ -104,7 +104,7 @@ func NewPostgresContainer(ctx context.Context) (*PostgresContainer, error) {
 	connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=disable",
 		host, port.Int(), pgDatabase, pgUser, pgPassword)
 	logging.Infof("testcontainters postgres connection string: %s", connectionString)
-	dataSource, err := sql.Open("postgres", connectionString)
+	dataSource, err := sql.Open("pgx", connectionString)
 	if err != nil {
 		container.Terminate(ctx)
 		return nil, err

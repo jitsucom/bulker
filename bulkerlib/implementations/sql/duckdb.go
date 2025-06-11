@@ -110,6 +110,7 @@ func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		utils.MapPutIfAbsent(config.Parameters, "motherduck_token", config.MotherDuckToken)
 		utils.MapPutIfAbsent(config.Parameters, "custom_user_agent", "Jitsu")
 	}
+	utils.MapPutIfAbsent(config.Parameters, "timezone", "UTC")
 
 	typecastFunc := func(placeholder string, column types2.SQLColumn) string {
 		if column.Override {
@@ -397,16 +398,7 @@ func (d *DuckDB) LoadTable(ctx context.Context, targetTable *Table, loadSource *
 			if ok {
 				val, _ = types2.ReformatValue(val)
 			}
-			v := d.valueMappingFunction(val, ok, col)
-			if t, ok := v.(time.Time); ok {
-				// Seems like appender ruins timezone information, so we convert it to local time
-				v = time.Date(
-					t.Year(), t.Month(), t.Day(),
-					t.Hour(), t.Minute(), t.Second(), t.Nanosecond(),
-					time.Local,
-				)
-			}
-			args[i] = v
+			args[i] = d.valueMappingFunction(val, ok, col)
 		})
 		err = appender.AppendRow(args...)
 		if err != nil {
