@@ -710,6 +710,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 		"NAMESPACE":              task.Namespace,
 		"TO_SAME_CASE":           task.ToSameCase,
 		"ADD_META":               task.AddMeta,
+		"DEDUPLICATE":            task.Deduplicate,
 		"TABLE_NAME_PREFIX":      task.TableNamePrefix,
 		"FULL_SYNC":              task.FullSync,
 		"DATABASE_URL":           databaseURL,

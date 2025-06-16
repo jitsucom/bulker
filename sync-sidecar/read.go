@@ -35,8 +35,10 @@ type ReadSideCar struct {
 	tableNamePrefix string
 	toSameCase      bool
 	addMeta         bool
+	deduplicate     bool
 
 	lastMessageTime   atomic.Int64
+	bulkerStartTime   atomic.Int64
 	lastStateMessage  string
 	blk               bulker.Bulker
 	lastStream        *ActiveStream
@@ -138,8 +140,8 @@ func (s *ReadSideCar) Run() {
 	defer ticker.Stop()
 	go func() {
 		for range ticker.C {
-			if time.Now().Unix()-s.lastMessageTime.Load() > 8000 {
-				s.panic("No messages from %s for 2 hour. Exiting", s.packageName)
+			if s.bulkerStartTime.Load() == 0 && time.Now().Unix()-s.lastMessageTime.Load() > 8000 {
+				s.panic("No messages from %s for 2 hours. Exiting", s.packageName)
 			}
 		}
 	}()
@@ -330,6 +332,23 @@ func (s *ReadSideCar) closeStream(streamName string, complete bool) {
 	s._closeStream(stream, complete, false)
 }
 
+func (s *ReadSideCar) manageBulkerTimeout(eventsCount int) func() {
+	s.bulkerStartTime.Store(time.Now().Unix())
+	period := time.Duration(max(eventsCount/185, 3600)) * time.Second
+	timer := time.NewTimer(period)
+	go func() {
+		t := <-timer.C
+		if !t.IsZero() {
+			s.panic("Bulker is running for more than %s. Exiting", period)
+		}
+	}()
+	return func() {
+		timer.Stop()
+		s.lastMessageTime.Store(time.Now().Unix())
+		s.bulkerStartTime.Store(0)
+	}
+}
+
 func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 	if stream == nil {
 		return
@@ -344,8 +363,8 @@ func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 	if !stream.IsActive() {
 		return
 	}
-
 	if stream.bufferedEventsCount >= 500000 || (stream.mode == "incremental" && !s.fullSync) {
+		defer s.manageBulkerTimeout(stream.bufferedEventsCount)()
 		state := stream.Commit(false)
 		state.ProcessingTimeSec = time.Since(stream.started).Seconds()
 		if stream.Error != "" {
@@ -387,6 +406,7 @@ func (s *ReadSideCar) postEventsLog(destinationId string, state bulker.State, pr
 
 func (s *ReadSideCar) _closeStream(stream *ActiveStream, complete bool, strict bool) {
 	wasActive := stream.IsActive()
+	defer s.manageBulkerTimeout(stream.bufferedEventsCount)()
 	state := stream.Close(complete, s.cancelled.Load(), strict)
 	state.ProcessingTimeSec = time.Since(stream.started).Seconds()
 	if stream.Error != "" {
@@ -457,7 +477,7 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	jobId := fmt.Sprintf("%s_%s_%s", s.syncId, s.taskId, tableName)
 
 	var streamOptions []bulker.StreamOption
-	if len(str.GetPrimaryKeys()) > 0 {
+	if s.deduplicate && len(str.GetPrimaryKeys()) > 0 {
 		streamOptions = append(streamOptions, bulker.WithPrimaryKey(str.GetPrimaryKeys()...), bulker.WithDeduplicate())
 	}
 	schema := str.ToSchema()

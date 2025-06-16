@@ -22,6 +22,7 @@ type TaskDescriptor struct {
 	Namespace       string `json:"namespace"`
 	ToSameCase      string `json:"sameCase"`
 	AddMeta         string `json:"addMeta"`
+	Deduplicate     string `json:"deduplicate"`
 	TableNamePrefix string `json:"tableNamePrefix"`
 	FullSync        string `json:"fullSync"`
 	Debug           string `json:"debug"`
