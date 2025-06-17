@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go v0.116.0
 	cloud.google.com/go/bigquery v1.64.0
 	cloud.google.com/go/storage v1.43.0
-	github.com/ClickHouse/clickhouse-go/v2 v2.36.0
+	github.com/ClickHouse/clickhouse-go/v2 v2.37.1
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/aws/aws-sdk-go-v2 v1.32.5
 	github.com/marcboeker/go-duckdb/v2 v2.2.1
