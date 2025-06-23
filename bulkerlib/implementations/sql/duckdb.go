@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
@@ -398,7 +399,13 @@ func (d *DuckDB) LoadTable(ctx context.Context, targetTable *Table, loadSource *
 			if ok {
 				val, _ = types2.ReformatValue(val)
 			}
-			args[i] = d.valueMappingFunction(val, ok, col)
+			v := d.valueMappingFunction(val, ok, col)
+			if col.DataType == types2.JSON {
+				if vv, ok := v.(string); ok {
+					v = json.RawMessage(vv)
+				}
+			}
+			args[i] = v
 		})
 		err = appender.AppendRow(args...)
 		if err != nil {

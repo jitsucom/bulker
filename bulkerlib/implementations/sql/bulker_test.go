@@ -537,7 +537,7 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 			if !ok {
 				t.Fatalf("No config found for %s", testConfigId)
 			}
-			newTd.config = &bulker.Config{Id: testConfigId, BulkerType: testConfig.BulkerType, DestinationConfig: testConfig.Config, LogLevel: bulker.Default}
+			newTd.config = &bulker.Config{Id: testConfigId, BulkerType: testConfig.BulkerType, DestinationConfig: testConfig.Config, LogLevel: bulker.Verbose}
 			for _, mode := range newTd.modes {
 				tc := newTd
 				mode := mode
