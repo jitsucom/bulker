@@ -54,6 +54,12 @@ type ReadSideCar struct {
 func (s *ReadSideCar) Run() {
 	var err error
 
+	s.dbpool, err = pg.NewPGPool(s.databaseURL)
+	if err != nil {
+		s.panic("Unable to create postgres connection pool: %v", err)
+	}
+	defer s.dbpool.Close()
+
 	s.log("Sidecar. command: read. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
 	s.fullSync = os.Getenv("FULL_SYNC") == "true"
 	if s.fullSync {
@@ -61,12 +67,6 @@ func (s *ReadSideCar) Run() {
 	}
 
 	s.lastMessageTime.Store(time.Now().Unix())
-
-	s.dbpool, err = pg.NewPGPool(s.databaseURL)
-	if err != nil {
-		s.panic("Unable to create postgres connection pool: %v", err)
-	}
-	defer s.dbpool.Close()
 
 	defer func() {
 		cancelled := s.cancelled.Load()
