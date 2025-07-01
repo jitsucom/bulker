@@ -87,7 +87,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 				if err2 != nil {
 					bc.errorMetric("PROCESS_FAILED_ERROR")
 					bc.SystemErrorf(err2.Error())
-					bc.restartConsumer()
+					bc.restartConsumer(nil)
 				} else if counters.failed > 1 && int64(latestMessage.TopicPartition.Offset) < highOffset-1 {
 					// if we fail right on the first message - that probably means connection problems. No need to move further.
 					// otherwise we can try to consume next batch
@@ -223,15 +223,41 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		if err != nil {
 			bc.errorMetric("KAFKA_COMMIT_ERR:" + metrics.KafkaErrorCode(err))
 			bc.Errorf("Failed to commit kafka consumer after batch was successfully committed to the destination: %v", err)
-			bc.restartConsumer()
-			var tp []kafka.TopicPartition
-			tp, err = bc.consumer.Load().CommitMessage(latestMessage)
-			if err != nil {
-				bc.SystemErrorf("Failed to commit kafka consumer after batch was successfully committed to the destination: %v", err)
-				err = bc.NewError("Failed to commit kafka consumer: %v", err)
-				return
+			committed := false
+			bc.restartConsumer(func() {
+				defer func() {
+					if r := recover(); r != nil {
+						bc.SystemErrorf("Recovered from panic: %v", r)
+					}
+				}()
+				admin, e1 := kafka.NewAdminClient(bc.kafkaConfig)
+				if e1 != nil {
+					bc.SystemErrorf("Failed to create kafka admin client: %v", e1)
+					return
+				} else {
+					defer admin.Close()
+					gof, e2 := admin.AlterConsumerGroupOffsets(ctx, []kafka.ConsumerGroupTopicPartitions{{Group: bc.topicId, Partitions: []kafka.TopicPartition{{Topic: latestMessage.TopicPartition.Topic, Partition: latestMessage.TopicPartition.Partition, Offset: latestMessage.TopicPartition.Offset + 1}}}})
+					if e2 != nil {
+						bc.Errorf("Failed to alter consumer group offsets: %v", e2)
+					} else {
+						committed = true
+						bc.Infof("Successfully altered consumer group offsets: %+v", gof)
+					}
+				}
+
+			})
+			if !committed {
+				var tp []kafka.TopicPartition
+				tp, err = bc.consumer.Load().CommitMessage(latestMessage)
+				if err != nil {
+					bc.SystemErrorf("Failed to commit kafka consumer after batch was successfully committed to the destination: %v", err)
+					err = bc.NewError("Failed to commit kafka consumer: %v", err)
+					return
+				} else {
+					bc.Infof("Successfully committed kafka consumer after initial fail: %+v", tp)
+				}
 			} else {
-				bc.Infof("Successfully committed kafka consumer after initial fail: %+v", tp)
+				err = nil
 			}
 		}
 	} else if bulkerStream != nil {

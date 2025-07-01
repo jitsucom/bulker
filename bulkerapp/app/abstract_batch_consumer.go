@@ -43,6 +43,7 @@ type AbstractBatchConsumer struct {
 	repository      *Repository
 	destinationId   string
 	batchPeriodSec  int
+	kafkaConfig     *kafka.ConfigMap
 	consumerConfig  kafka.ConfigMap
 	consumer        atomic.Pointer[kafka.Consumer]
 	producerConfig  kafka.ConfigMap
@@ -108,6 +109,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		tableName:        tableName,
 		batchPeriodSec:   batchPeriodSec,
 		mode:             mode,
+		kafkaConfig:      kafkaConfig,
 		consumerConfig:   consumerConfig,
 		producerConfig:   producerConfig,
 		waitForMessages:  time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
@@ -431,7 +433,7 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 				if kafkaErr.IsRetriable() {
 					time.Sleep(10 * time.Second)
 				} else {
-					bc.restartConsumer()
+					bc.restartConsumer(nil)
 				}
 			} else if message != nil {
 				bc.Debugf("Unexpected message on paused consumer: %v", message)
@@ -440,7 +442,7 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 				if err != nil {
 					bc.errorMetric("ROLLBACK_ON_PAUSE_ERR")
 					bc.SystemErrorf("Failed to rollback offset on paused consumer: %v", err)
-					bc.restartConsumer()
+					bc.restartConsumer(nil)
 				}
 				bc.pauseKafkaConsumer()
 			}
@@ -470,18 +472,18 @@ func (bc *AbstractBatchConsumer) initConsumer(force bool) (consumer *kafka.Consu
 	return consumer, nil
 }
 
-func (bc *AbstractBatchConsumer) restartConsumer() {
+func (bc *AbstractBatchConsumer) restartConsumer(beforeInit func()) {
 	if bc.retired.Load() {
 		return
 	}
 	bc.Infof("Restarting consumer")
 	go func(c *kafka.Consumer) {
-		bc.Infof("Closing previous consumer")
-		err := c.Close()
-		bc.Infof("Previous consumer closed: %v", err)
+		e1 := c.Unsubscribe()
+		e2 := c.Close()
+		bc.Infof("Previous consumer closed: %v %v", e1, e2)
 	}(bc.consumer.Load())
 
-	ticker := time.NewTicker(time.Duration(bc.config.KafkaSessionTimeoutMs+10000) * time.Millisecond)
+	ticker := time.NewTicker(time.Duration(bc.config.KafkaSessionTimeoutMs+15000) * time.Millisecond)
 	defer ticker.Stop()
 	// for faster reaction on retiring
 	pauseTicker := time.NewTicker(1 * time.Second)
@@ -494,6 +496,9 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 				return
 			}
 		case <-ticker.C:
+			if beforeInit != nil {
+				beforeInit()
+			}
 			_, err := bc.initConsumer(true)
 			if err != nil {
 				break
@@ -512,7 +517,7 @@ func (bc *AbstractBatchConsumer) pauseKafkaConsumer() {
 	if err != nil {
 		bc.errorMetric("pause_error")
 		bc.SystemErrorf("Failed to pause kafka consumer: %v", err)
-		bc.restartConsumer()
+		bc.restartConsumer(nil)
 	} else {
 		if len(partitions) > 0 {
 			bc.Debugf("Consumer paused.")

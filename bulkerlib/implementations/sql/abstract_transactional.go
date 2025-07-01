@@ -149,7 +149,7 @@ func (ps *AbstractTransactionalSQLStream) initTx(ctx context.Context) (err error
 		return err
 	}
 	if ps.tx == nil {
-		ctx1, cancel := context.WithTimeout(ctx, time.Minute*4)
+		ctx1, cancel := context.WithTimeout(ctx, time.Second*290)
 		defer cancel()
 		if time.Since(ps.lastPing) > 5*time.Minute {
 			if err = ps.sqlAdapter.Ping(ctx1); err != nil {
