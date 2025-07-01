@@ -308,6 +308,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		if batchCounters.consumed > 0 {
 			if time.Since(lastOffsetQueryTime) > 1*time.Minute || !nextBatch {
 				var err1 error
+				consumer = bc.consumer.Load()
 				_, updatedHighOffset, err1 = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
 				if err1 != nil {
 					bc.Errorf("Failed to query watermark offsets: %v", err1)
@@ -480,7 +481,7 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 		bc.Infof("Previous consumer closed: %v", err)
 	}(bc.consumer.Load())
 
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(time.Duration(bc.config.KafkaSessionTimeoutMs+10000) * time.Millisecond)
 	defer ticker.Stop()
 	// for faster reaction on retiring
 	pauseTicker := time.NewTicker(1 * time.Second)

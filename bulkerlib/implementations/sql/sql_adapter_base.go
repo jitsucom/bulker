@@ -121,7 +121,7 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, namespace str
 	s.batchFileFormat = types2.FileFormatNDJSON
 	s.batchFileCompression = types2.FileCompressionNONE
 	var err error
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*4)
 	defer cancel()
 	s.dataSource, err = dbConnectFunction(ctx, config)
 	s.typesMapping, s.reverseTypesMapping = InitTypes(dataTypes, supportsJSON)

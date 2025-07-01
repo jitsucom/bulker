@@ -393,7 +393,7 @@ func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 }
 
 func (ps *AbstractSQLStream) init(ctx context.Context) error {
-	ctx1, cancel := context.WithTimeout(ctx, time.Minute*2)
+	ctx1, cancel := context.WithTimeout(ctx, time.Minute*4)
 	defer cancel()
 	if time.Since(ps.lastPing) > 5*time.Minute {
 		if err := ps.sqlAdapter.Ping(ctx1); err != nil {
@@ -405,7 +405,7 @@ func (ps *AbstractSQLStream) init(ctx context.Context) error {
 		return nil
 	}
 	//setup required db object like 'schema' or 'dataset' if doesn't exist
-	err := ps.sqlAdapter.InitDatabase(ctx1)
+	err := ps.sqlAdapter.InitDatabase(ctx)
 	if err != nil {
 		return err
 	}

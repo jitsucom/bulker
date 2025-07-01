@@ -224,11 +224,14 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 			bc.errorMetric("KAFKA_COMMIT_ERR:" + metrics.KafkaErrorCode(err))
 			bc.Errorf("Failed to commit kafka consumer after batch was successfully committed to the destination: %v", err)
 			bc.restartConsumer()
-			_, err = bc.consumer.Load().CommitMessage(latestMessage)
+			var tp []kafka.TopicPartition
+			tp, err = bc.consumer.Load().CommitMessage(latestMessage)
 			if err != nil {
 				bc.SystemErrorf("Failed to commit kafka consumer after batch was successfully committed to the destination: %v", err)
 				err = bc.NewError("Failed to commit kafka consumer: %v", err)
 				return
+			} else {
+				bc.Infof("Successfully committed kafka consumer after initial fail: %+v", tp)
 			}
 		}
 	} else if bulkerStream != nil {
