@@ -222,7 +222,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	utils.MapPutIfAbsent(config.Parameters, "insert_distributed_sync", "1")
 	utils.MapPutIfAbsent(config.Parameters, "compress", "true")
 
-	dbConnectFunction := func(config *ClickHouseConfig) (*sql.DB, error) {
+	dbConnectFunction := func(ctx context.Context, config *ClickHouseConfig) (*sql.DB, error) {
 		dsn := clickhouseDriverConnectionString(config)
 		dataSource, err := sql.Open("clickhouse", dsn)
 		if err != nil {
@@ -233,7 +233,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 		dataSource.SetConnMaxLifetime(time.Minute * 10)
 		dataSource.SetConnMaxIdleTime(time.Minute * 3)
 
-		if err := chPing(dataSource); err != nil {
+		if err := chPing(ctx, dataSource); err != nil {
 			_ = dataSource.Close()
 			return nil, err
 		}
@@ -1245,11 +1245,11 @@ func (ch *ClickHouse) TmpNamespace(string) string {
 	return NoNamespaceValue
 }
 
-func (ch *ClickHouse) Ping(_ context.Context) error {
+func (ch *ClickHouse) Ping(ctx context.Context) error {
 	if ch.dataSource != nil {
-		err := chPing(ch.dataSource)
+		err := chPing(ctx, ch.dataSource)
 		if err != nil {
-			dataSource, err := ch.dbConnectFunction(ch.config)
+			dataSource, err := ch.dbConnectFunction(ctx, ch.config)
 			if err == nil {
 				_ = ch.dataSource.Close()
 				ch.dataSource = dataSource
@@ -1258,7 +1258,7 @@ func (ch *ClickHouse) Ping(_ context.Context) error {
 		}
 	} else {
 		var err error
-		ch.dataSource, err = ch.dbConnectFunction(ch.config)
+		ch.dataSource, err = ch.dbConnectFunction(ctx, ch.config)
 		if err != nil {
 			return err
 		}
@@ -1266,6 +1266,6 @@ func (ch *ClickHouse) Ping(_ context.Context) error {
 	return nil
 }
 
-func chPing(db *sql.DB) error {
-	return db.Ping()
+func chPing(ctx context.Context, db *sql.DB) error {
+	return db.PingContext(ctx)
 }

@@ -38,8 +38,9 @@ type AbstractSQLStream struct {
 	schemaFromOptions *Table
 	notFlatteningKeys types2.Set[string]
 
-	state  bulker.State
-	inited bool
+	state    bulker.State
+	inited   bool
+	lastPing time.Time
 
 	existingTable *Table
 
@@ -392,14 +393,19 @@ func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 }
 
 func (ps *AbstractSQLStream) init(ctx context.Context) error {
-	if err := ps.sqlAdapter.Ping(ctx); err != nil {
-		return err
+	ctx1, cancel := context.WithTimeout(ctx, time.Minute*2)
+	defer cancel()
+	if time.Since(ps.lastPing) > 5*time.Minute {
+		if err := ps.sqlAdapter.Ping(ctx1); err != nil {
+			return err
+		}
+		ps.lastPing = time.Now()
 	}
 	if ps.inited {
 		return nil
 	}
 	//setup required db object like 'schema' or 'dataset' if doesn't exist
-	err := ps.sqlAdapter.InitDatabase(ctx)
+	err := ps.sqlAdapter.InitDatabase(ctx1)
 	if err != nil {
 		return err
 	}

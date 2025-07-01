@@ -88,7 +88,7 @@ func NewRedshiftIAM(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
 
-	dbConnectFunction := func(cfg *driver.RedshiftConfig) (*sql.DB, error) {
+	dbConnectFunction := func(ctx context.Context, cfg *driver.RedshiftConfig) (*sql.DB, error) {
 		connectionString := cfg.String()
 		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
 
@@ -96,7 +96,7 @@ func NewRedshiftIAM(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := dataSource.Ping(); err != nil {
+		if err := dataSource.PingContext(ctx); err != nil {
 			_ = dataSource.Close()
 			return nil, err
 		}
@@ -590,7 +590,7 @@ func (p *RedshiftIAM) ReplaceTable(ctx context.Context, targetTableName string, 
 func (p *RedshiftIAM) Ping(ctx context.Context) error {
 	if p.dataSource == nil {
 		var err error
-		p.dataSource, err = p.dbConnectFunction(p.config)
+		p.dataSource, err = p.dbConnectFunction(ctx, p.config)
 		if err != nil {
 			return fmt.Errorf("failed to connect to %s. error: %v", p.typeId, err)
 		}

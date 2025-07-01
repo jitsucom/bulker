@@ -310,7 +310,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 				var err1 error
 				_, updatedHighOffset, err1 = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
 				if err1 != nil {
-					bc.Errorf("Failed to query watermark offsets: %v", err)
+					bc.Errorf("Failed to query watermark offsets: %v", err1)
 					bc.errorMetric("query_watermark_failed")
 				}
 				lastOffsetQueryTime = time.Now()
@@ -403,7 +403,7 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 			if !firstPoll {
 				select {
 				case <-bc.resumeChannel:
-					bc.paused.Store(false)
+					bc.paused.CompareAndSwap(true, false)
 					bc.Debugf("Consumer resumed.")
 					break loop
 				case <-pauseTicker.C:
@@ -439,6 +439,7 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 				if err != nil {
 					bc.errorMetric("ROLLBACK_ON_PAUSE_ERR")
 					bc.SystemErrorf("Failed to rollback offset on paused consumer: %v", err)
+					bc.restartConsumer()
 				}
 				bc.pauseKafkaConsumer()
 			}
@@ -479,7 +480,7 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 		bc.Infof("Previous consumer closed: %v", err)
 	}(bc.consumer.Load())
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	// for faster reaction on retiring
 	pauseTicker := time.NewTicker(1 * time.Second)
@@ -492,7 +493,6 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 				return
 			}
 		case <-ticker.C:
-			bc.Infof("Restarting consumer")
 			_, err := bc.initConsumer(true)
 			if err != nil {
 				break
@@ -511,6 +511,7 @@ func (bc *AbstractBatchConsumer) pauseKafkaConsumer() {
 	if err != nil {
 		bc.errorMetric("pause_error")
 		bc.SystemErrorf("Failed to pause kafka consumer: %v", err)
+		bc.restartConsumer()
 	} else {
 		if len(partitions) > 0 {
 			bc.Debugf("Consumer paused.")

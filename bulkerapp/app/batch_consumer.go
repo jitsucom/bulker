@@ -87,6 +87,7 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 				if err2 != nil {
 					bc.errorMetric("PROCESS_FAILED_ERROR")
 					bc.SystemErrorf(err2.Error())
+					bc.restartConsumer()
 				} else if counters.failed > 1 && int64(latestMessage.TopicPartition.Offset) < highOffset-1 {
 					// if we fail right on the first message - that probably means connection problems. No need to move further.
 					// otherwise we can try to consume next batch
@@ -221,9 +222,14 @@ func (bc *BatchConsumerImpl) processBatchImpl(destination *Destination, batchNum
 		_, err = consumer.CommitMessage(latestMessage)
 		if err != nil {
 			bc.errorMetric("KAFKA_COMMIT_ERR:" + metrics.KafkaErrorCode(err))
-			bc.SystemErrorf("Failed to commit kafka consumer after batch was successfully committed to the destination: %v", err)
-			err = bc.NewError("Failed to commit kafka consumer: %v", err)
-			return
+			bc.Errorf("Failed to commit kafka consumer after batch was successfully committed to the destination: %v", err)
+			bc.restartConsumer()
+			_, err = bc.consumer.Load().CommitMessage(latestMessage)
+			if err != nil {
+				bc.SystemErrorf("Failed to commit kafka consumer after batch was successfully committed to the destination: %v", err)
+				err = bc.NewError("Failed to commit kafka consumer: %v", err)
+				return
+			}
 		}
 	} else if bulkerStream != nil {
 		_ = bulkerStream.Abort(ctx)
@@ -305,7 +311,6 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 					time.Sleep(10 * time.Second)
 					continue
 				} else {
-					bc.restartConsumer()
 					err = fmt.Errorf("failed to consume message: %v", err)
 					return
 				}

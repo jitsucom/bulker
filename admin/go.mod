@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	cloud.google.com/go/cloudsqlconn v1.17.1
-	github.com/confluentinc/confluent-kafka-go/v2 v2.8.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.10.1
 	github.com/hjson/hjson-go/v4 v4.4.0
 	github.com/jackc/pgx/v5 v5.7.5
 	go.mongodb.org/mongo-driver v1.17.2

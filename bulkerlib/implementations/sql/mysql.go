@@ -93,14 +93,14 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	utils.MapPutIfAbsent(config.Parameters, "readTimeout", "60s")
 	utils.MapPutIfAbsent(config.Parameters, "charset", "utf8mb4,utf8")
 
-	dbConnectFunction := func(cfg *DataSourceConfig) (*sql.DB, error) {
+	dbConnectFunction := func(ctx context.Context, cfg *DataSourceConfig) (*sql.DB, error) {
 		connectionString := mySQLDriverConnectionString(config)
 		dataSource, err := sql.Open("mysql", connectionString)
 		if err != nil {
 			return nil, err
 		}
 
-		if err := dataSource.Ping(); err != nil {
+		if err := dataSource.PingContext(ctx); err != nil {
 			dataSource.Close()
 			return nil, err
 		}

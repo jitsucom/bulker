@@ -207,7 +207,7 @@ func (j *JobRunner) watchPodStatuses() {
 func (j *JobRunner) sendStatus(taskStatus *TaskStatus) {
 	select {
 	case j.taskStatusCh <- taskStatus:
-	default:
+	case <-time.After(time.Second * 5):
 		j.SystemErrorf("taskStatusCh is full. Dropping task status: %+v", *taskStatus)
 	}
 }

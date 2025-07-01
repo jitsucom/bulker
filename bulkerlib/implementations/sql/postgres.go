@@ -110,6 +110,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Parameters == nil {
 		config.Parameters = map[string]string{}
 	}
+	utils.MapPutIfAbsent(config.Parameters, "connect_timeout", "90")
 
 	typecastFunc := func(placeholder string, column types2.SQLColumn) string {
 		if column.Override {
@@ -144,7 +145,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
 
-	dbConnectFunction := func(cfg *PostgresConfig) (*sql.DB, error) {
+	dbConnectFunction := func(ctx context.Context, cfg *PostgresConfig) (*sql.DB, error) {
 		connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
 			config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
 		//concat provided connection parameters
@@ -152,12 +153,11 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 			connectionString += " " + k + "=" + v + " "
 		}
 		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
-
 		dataSource, err := sql.Open("pgx", connectionString)
 		if err != nil {
 			return nil, err
 		}
-		if err := dataSource.Ping(); err != nil {
+		if err := dataSource.PingContext(ctx); err != nil {
 			_ = dataSource.Close()
 			return nil, err
 		}

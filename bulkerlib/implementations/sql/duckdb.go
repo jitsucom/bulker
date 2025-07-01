@@ -150,7 +150,7 @@ func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
 
-	dbConnectFunction := func(cfg *DuckDBConfig) (*sql.DB, error) {
+	dbConnectFunction := func(ctx context.Context, cfg *DuckDBConfig) (*sql.DB, error) {
 		connectionString := duckDBDsn(cfg)
 		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, cfg.Db)
 
@@ -158,7 +158,7 @@ func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := dataSource.Ping(); err != nil {
+		if err := dataSource.PingContext(ctx); err != nil {
 			_ = dataSource.Close()
 			return nil, err
 		}

@@ -149,8 +149,13 @@ func (ps *AbstractTransactionalSQLStream) initTx(ctx context.Context) (err error
 		return err
 	}
 	if ps.tx == nil {
-		if err = ps.sqlAdapter.Ping(ctx); err != nil {
-			return err
+		ctx1, cancel := context.WithTimeout(ctx, time.Minute*2)
+		defer cancel()
+		if time.Since(ps.lastPing) > 5*time.Minute {
+			if err = ps.sqlAdapter.Ping(ctx1); err != nil {
+				return err
+			}
+			ps.lastPing = time.Now()
 		}
 		ps.tx, err = ps.sqlAdapter.OpenTx(ctx)
 		if err != nil {

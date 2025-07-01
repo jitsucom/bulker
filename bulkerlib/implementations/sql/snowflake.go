@@ -147,7 +147,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 			return nil, fmt.Errorf("private key is not RSA")
 		}
 	}
-	dbConnectFunction := func(config *SnowflakeConfig) (*sql.DB, error) {
+	dbConnectFunction := func(ctx context.Context, config *SnowflakeConfig) (*sql.DB, error) {
 		cfg := &sf.Config{
 			Account:   config.Account,
 			User:      config.Username,
@@ -174,7 +174,7 @@ func NewSnowflake(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 			return nil, err
 		}
 
-		if err := dataSource.Ping(); err != nil {
+		if err := dataSource.PingContext(ctx); err != nil {
 			dataSource.Close()
 			return nil, err
 		}
