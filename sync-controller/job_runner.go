@@ -148,7 +148,7 @@ func (j *JobRunner) watchPodStatuses() {
 								}
 								j.Infof("Pod %s is running", pod.Name)
 								j.runningPods[pod.Name] = time.Now()
-								if taskStatus.TaskType == "read" {
+								if taskStatus.TaskType == "read" || utils.IsTruish(taskStatus.ThenRun) {
 									j.runningSyncs.Store(taskStatus.SyncID, taskStatus.TaskID)
 								}
 							}
