@@ -41,6 +41,11 @@ func JsonToMap(j Json) map[string]any {
 func FilterEvent(event Json) {
 	_ = event.Delete("JITSU_TABLE_NAME")
 	_ = event.Delete("JITSU_PROFILE_ID")
+	_ = event.Delete("SALESFORCE_OPERATION")
+	_ = event.Delete("SALESFORCE_SOBJECT")
+	_ = event.Delete("SALESFORCE_MATCHERS_OPERATOR")
+	_ = event.Delete("SALESFORCE_MATCHERS")
+	_ = event.Delete("SALESFORCE_PAYLOAD")
 	filterEvent(event)
 }
 
