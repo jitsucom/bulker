@@ -67,15 +67,16 @@ type TaskStatus struct {
 type Status string
 
 const (
-	StatusRunning      Status = "RUNNING"
-	StatusFailed       Status = "FAILED"
-	StatusTimeExceeded Status = "TIME_EXCEEDED"
-	StatusSuccess      Status = "SUCCESS"
-	StatusCreated      Status = "CREATED"
-	StatusCreateFailed Status = "CREATE_FAILED"
-	StatusInitTimeout  Status = "INIT_TIMEOUT"
-	StatusPending      Status = "PENDING"
-	StatusUnknown      Status = "UNKNOWN"
+	StatusRunning        Status = "RUNNING"
+	StatusFailed         Status = "FAILED"
+	StatusTimeExceeded   Status = "TIME_EXCEEDED"
+	StatusSuccess        Status = "SUCCESS"
+	StatusCreated        Status = "CREATED"
+	StatusCreateFailed   Status = "CREATE_FAILED"
+	StatusAlreadyCreated Status = "ALREADY_CREATED"
+	StatusInitTimeout    Status = "INIT_TIMEOUT"
+	StatusPending        Status = "PENDING"
+	StatusUnknown        Status = "UNKNOWN"
 )
 
 type TaskConfiguration struct {

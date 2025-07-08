@@ -452,6 +452,11 @@ func (j *JobRunner) createJob(taskDescriptor TaskDescriptor, configuration *Task
 		secret := j.createSecret(podName, taskDescriptor, configuration)
 		_, err := j.clientset.CoreV1().Secrets(j.namespace).Create(context.Background(), secret, metav1.CreateOptions{})
 		if err != nil {
+			if strings.Contains(err.Error(), "already exists") {
+				j.Infof("Secret already exists. Looks like other instance already creating job: %s", taskDescriptor.TaskID)
+				taskStatus.Status = StatusAlreadyCreated
+				return taskStatus
+			}
 			taskStatus.Status = StatusCreateFailed
 			taskStatus.Error = err.Error()
 			j.sendStatus(&taskStatus)
@@ -461,6 +466,11 @@ func (j *JobRunner) createJob(taskDescriptor TaskDescriptor, configuration *Task
 	pod := j.createPod(podName, taskDescriptor, configuration)
 	pod, err := j.clientset.CoreV1().Pods(j.namespace).Create(context.Background(), pod, metav1.CreateOptions{})
 	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			j.Infof("Pod already exists. Looks like other instance already created job: %s", taskDescriptor.TaskID)
+			taskStatus.Status = StatusAlreadyCreated
+			return taskStatus
+		}
 		taskStatus.Status = StatusCreateFailed
 		taskStatus.Error = err.Error()
 	} else {
