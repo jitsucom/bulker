@@ -163,7 +163,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 				return nil, fmt.Errorf("failed to create cloudsql dialer: %v", err)
 			}
 			username := cfg.Username
-			if username == "JITSU_MANAGED" {
+			if username == "" {
 				username = utils.DefaultString(os.Getenv("GOOGLE_PSC_SQL_USERNAME"), os.Getenv("BULKER_GOOGLE_PSC_SQL_USERNAME"))
 			}
 			connectionString := fmt.Sprintf("user=%s database=%s search_path=%s", username, cfg.Db, config.Schema)
