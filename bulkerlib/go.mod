@@ -5,6 +5,7 @@ go 1.24
 require (
 	cloud.google.com/go v0.116.0
 	cloud.google.com/go/bigquery v1.64.0
+	cloud.google.com/go/cloudsqlconn v1.17.2
 	cloud.google.com/go/storage v1.43.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.37.1
 	github.com/jackc/pgx/v5 v5.7.5

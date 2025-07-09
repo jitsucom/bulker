@@ -1,9 +1,12 @@
 package sql
 
 import (
+	"cloud.google.com/go/cloudsqlconn"
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
@@ -13,6 +16,7 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
+	"net"
 	"os"
 	"path"
 	"strings"
@@ -76,8 +80,10 @@ var (
 )
 
 type PostgresConfig struct {
-	DataSourceConfig `mapstructure:",squash"`
-	SSLConfig        `mapstructure:",squash"`
+	DataSourceConfig       `mapstructure:",squash"`
+	SSLConfig              `mapstructure:",squash"`
+	AuthenticationMethod   string `mapstructure:"authenticationMethod,omitempty" json:"authenticationMethod,omitempty" yaml:"authenticationMethod,omitempty"`
+	InstanceConnectionName string `mapstructure:"instanceConnectionName,omitempty" json:"instanceConnectionName,omitempty" yaml:"instanceConnectionName,omitempty"`
 }
 
 // Postgres is adapter for creating,patching (schema or table), inserting data to postgres
@@ -146,24 +152,59 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	}
 
 	dbConnectFunction := func(ctx context.Context, cfg *PostgresConfig) (*sql.DB, error) {
-		connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
-			config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
-		//concat provided connection parameters
-		for k, v := range config.Parameters {
-			connectionString += " " + k + "=" + v + " "
+		if cfg.AuthenticationMethod == "google-psc" {
+			dialer, err := cloudsqlconn.NewDialer(
+				ctx,
+				cloudsqlconn.WithIAMAuthN(),
+				cloudsqlconn.WithLazyRefresh(),
+				cloudsqlconn.WithDNSResolver(),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create cloudsql dialer: %v", err)
+			}
+			connectionString := fmt.Sprintf("user=%s database=%s search_path=%s", cfg.Username, cfg.Db, config.Schema)
+			for k, v := range config.Parameters {
+				connectionString += " " + k + "=" + v + " "
+			}
+			pgxConfig, err := pgx.ParseConfig(connectionString)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse dsn: %v", err)
+			}
+			pgxConfig.DialFunc = func(ctx context.Context, network, instance string) (net.Conn, error) {
+				return dialer.Dial(ctx, cfg.InstanceConnectionName, cloudsqlconn.WithPSC())
+			}
+			dbURI := stdlib.RegisterConnConfig(pgxConfig)
+			dataSource, err := sql.Open("pgx", dbURI)
+			if err != nil {
+				return nil, err
+			}
+			if err := dataSource.PingContext(ctx); err != nil {
+				_ = dataSource.Close()
+				return nil, err
+			}
+			dataSource.SetConnMaxIdleTime(3 * time.Minute)
+			dataSource.SetMaxIdleConns(10)
+			return dataSource, nil
+		} else {
+			connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
+				config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
+			//concat provided connection parameters
+			for k, v := range config.Parameters {
+				connectionString += " " + k + "=" + v + " "
+			}
+			logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
+			dataSource, err := sql.Open("pgx", connectionString)
+			if err != nil {
+				return nil, err
+			}
+			if err := dataSource.PingContext(ctx); err != nil {
+				_ = dataSource.Close()
+				return nil, err
+			}
+			dataSource.SetConnMaxIdleTime(3 * time.Minute)
+			dataSource.SetMaxIdleConns(10)
+			return dataSource, nil
 		}
-		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
-		dataSource, err := sql.Open("pgx", connectionString)
-		if err != nil {
-			return nil, err
-		}
-		if err := dataSource.PingContext(ctx); err != nil {
-			_ = dataSource.Close()
-			return nil, err
-		}
-		dataSource.SetConnMaxIdleTime(3 * time.Minute)
-		dataSource.SetMaxIdleConns(10)
-		return dataSource, nil
 	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, config.Schema, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr, true)
 	p := &Postgres{sqlAdapterBase, tmpDir}
