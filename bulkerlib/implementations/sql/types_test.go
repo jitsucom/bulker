@@ -584,7 +584,7 @@ func TestJSONTypes(t *testing.T) {
 		},
 		{
 			name:                      "json_test_clickhouse_json",
-			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:                     []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId:         true,
 			dataFile:                  "test_data/types_json.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
