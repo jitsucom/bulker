@@ -48,7 +48,7 @@ func NewRedshiftIAM(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Parameters == nil {
 		config.Parameters = map[string]string{}
 	}
-	config.Timeout = time.Minute * 2
+	config.Timeout = time.Minute * 10
 	config.MinPolling = 50 * time.Millisecond
 	config.MaxPolling = 1 * time.Second
 	config.RoleARNExpiry = 60 * time.Minute

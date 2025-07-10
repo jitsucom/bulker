@@ -125,7 +125,9 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		return err
 	}
 	if ps.loadExistingTable {
-		ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.namespace, ps.tableName)
+		ctx1, cancel := context.WithTimeout(ctx, time.Second*290)
+		defer cancel()
+		ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(ctx1, ps.namespace, ps.tableName)
 		if ps.existingTable.Exists() {
 			ps.sqlAdapter.TableHelper().UpdateCached(ps.existingTable.Name, ps.existingTable)
 			//for el := ps.existingTable.Columns.Front(); el != nil; el = el.Next() {
