@@ -49,8 +49,8 @@ func NewRedshiftIAM(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		config.Parameters = map[string]string{}
 	}
 	config.Timeout = time.Minute * 10
-	config.MinPolling = 50 * time.Millisecond
-	config.MaxPolling = 1 * time.Second
+	config.MinPolling = 500 * time.Millisecond
+	config.MaxPolling = 10 * time.Second
 	config.RoleARNExpiry = 60 * time.Minute
 
 	typecastFunc := func(placeholder string, column types2.SQLColumn) string {
@@ -103,7 +103,7 @@ func NewRedshiftIAM(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		}
 		dataSource.SetConnMaxIdleTime(30 * time.Minute)
 		dataSource.SetConnMaxLifetime(30 * time.Minute)
-		dataSource.SetMaxIdleConns(20)
+		dataSource.SetMaxIdleConns(10)
 		return dataSource, nil
 	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, RedshiftBulkerTypeId, config, config.Schema, dbConnectFunction, redshiftTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, redshiftColumnDDL, valueMappingFunc, checkErr, true)
