@@ -30,7 +30,7 @@ func NewRetryConsumer(repository *Repository, destinationId string, batchPeriodS
 	return &rc, nil
 }
 
-func (rc *RetryConsumer) shouldConsumeFuncImpl(committedOffset, highOffset int64) bool {
+func (rc *RetryConsumer) shouldConsumeFuncImpl(partitionId int32, committedOffset, highOffset int64) bool {
 	var firstPosition *kafka.TopicPartition
 	defer func() {
 		//recover
@@ -60,6 +60,11 @@ func (rc *RetryConsumer) shouldConsumeFuncImpl(committedOffset, highOffset int64
 		}
 		if firstPosition == nil {
 			firstPosition = &message.TopicPartition
+		}
+		if message.TopicPartition.Partition != partitionId {
+			rc.Debugf("Message partition %d is not equal to consumer partition %d. Skipping", message.TopicPartition.Partition, partitionId)
+			// we are not interested in messages from other partitions
+			return false
 		}
 		currentOffset = int64(message.TopicPartition.Offset)
 		if rc.isTimeToRetry(message) {

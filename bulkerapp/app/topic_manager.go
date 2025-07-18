@@ -379,7 +379,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 			tm.SystemErrorf("Failed to create retry consumer for destination topic: %s: %v", destinationsRetryTopicName, err)
 		} else {
 			tm.retryConsumers[destinationsRetryTopicName] = append(tm.retryConsumers[destinationsRetryTopicName], retryConsumer)
-			_, err = tm.cron.AddBatchConsumer(destinationsRetryTopicName, retryConsumer)
+			_, err = tm.cron.AddBatchConsumer(fmt.Sprintf("%s_%d", destinationsRetryTopicName, tm.shardNumber), retryConsumer)
 			if err != nil {
 				retryConsumer.Retire()
 				tm.SystemErrorf("Failed to schedule retry consumer for destination topic: %s: %v", destinationsRetryTopicName, err)

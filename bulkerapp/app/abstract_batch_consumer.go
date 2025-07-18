@@ -27,7 +27,7 @@ const pauseHeartBeatInterval = 120 * time.Second
 
 type BatchSizesFunction func(*bulker.StreamOptions) (batchSize int, batchSizeBytes int, retryBatchSize int)
 type BatchFunction func(destination *Destination, batchNum, batchSize, batchSizeBytes, retryBatchSize int, highOffset int64, updatedHighOffset int) (counters BatchCounters, state bulker.State, nextBatch bool, err error)
-type ShouldConsumeFunction func(committedOffset, highOffset int64) bool
+type ShouldConsumeFunction func(partitionId int32, committedOffset, highOffset int64) bool
 
 type BatchConsumer interface {
 	Consumer
@@ -264,9 +264,26 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.errorMetric("resume_error")
 		return BatchCounters{}, bc.NewError("Failed to resume kafka consumer: %v", err)
 	}
-	_, highOffset, err = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+	var partition int32 = 0
+	if bc.mode == "retry" && bc.topicId == bc.config.KafkaDestinationsRetryTopicName {
+		var ass []kafka.TopicPartition
+		var err error
+		for i := 0; i < 10; i++ {
+			ass, err = consumer.Assignment()
+			if err != nil || len(ass) != 1 {
+				time.Sleep(time.Second * time.Duration(i+1))
+			}
+		}
+		if err != nil || len(ass) != 1 {
+			bc.errorMetric("assignment_error")
+			return BatchCounters{}, bc.NewError("Failed to get consumer assignment (%d): %v", len(ass), err)
+		}
+		partition = ass[0].Partition
+		bc.Infof("Assigned partition: %d", partition)
+	}
+	_, highOffset, err = consumer.QueryWatermarkOffsets(bc.topicId, partition, 10_000)
 	updatedHighOffset = highOffset
-	offsets, erro := consumer.Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: 0}}, 10_000)
+	offsets, erro := consumer.Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: partition}}, 10_000)
 	if len(offsets) > 0 {
 		if offsets[0].Offset != kafka.OffsetInvalid {
 			commitedOffset = int64(offsets[0].Offset)
@@ -280,7 +297,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.errorMetric("query_watermark_failed")
 		return BatchCounters{}, bc.NewError("Failed to query watermark offsets: %v", err)
 	}
-	if !bc.shouldConsume(commitedOffset, highOffset) {
+	if !bc.shouldConsume(partition, commitedOffset, highOffset) {
 		bc.Debugf("Consumer should not consume. offsets: %d-%d", commitedOffset, highOffset)
 		return BatchCounters{}, nil
 	}
@@ -311,7 +328,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 			if time.Since(lastOffsetQueryTime) > 1*time.Minute || !nextBatch {
 				var err1 error
 				consumer = bc.consumer.Load()
-				_, updatedHighOffset, err1 = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+				_, updatedHighOffset, err1 = consumer.QueryWatermarkOffsets(bc.topicId, partition, 10_000)
 				if err1 != nil {
 					bc.Errorf("Failed to query watermark offsets: %v", err1)
 					bc.errorMetric("query_watermark_failed")
@@ -348,13 +365,13 @@ func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum
 	return bc.batchFunc(destination, batchNum, batchSize, batchSizeBytes, retryBatchSize, highOffset, updatedHighOffset)
 }
 
-func (bc *AbstractBatchConsumer) shouldConsume(committedOffset, highOffset int64) bool {
+func (bc *AbstractBatchConsumer) shouldConsume(partitionId int32, committedOffset, highOffset int64) bool {
 	if highOffset == 0 || committedOffset == highOffset {
 		return false
 	}
 	if bc.shouldConsumeFunc != nil {
 		bc.resume()
-		return bc.shouldConsumeFunc(committedOffset, highOffset)
+		return bc.shouldConsumeFunc(partitionId, committedOffset, highOffset)
 	}
 	return true
 }
@@ -465,6 +482,9 @@ func (bc *AbstractBatchConsumer) initConsumer(force bool) (consumer *kafka.Consu
 			_ = consumer.Close()
 			bc.Errorf("Failed to subscribe to topic: %v", err)
 			return nil, err
+		}
+		if bc.mode == "retry" && bc.topicId == bc.config.KafkaDestinationsRetryTopicName {
+			consumer.Assign([]kafka.TopicPartition{kafka.TopicPartition{Topic: &bc.topicId, Offset: kafka.OffsetStored, Partition: int32(bc.config.InstanceIndex)}})
 		}
 		bc.Infof("Consumer created: %s", consumer.String())
 		bc.consumer.Store(consumer)
