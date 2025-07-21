@@ -320,11 +320,11 @@ func patchEvent(c *gin.Context, messageId string, ev types.Json, tp string, inge
 		if eventName == "" {
 			return fmt.Errorf("'event' property is required for 'track' event")
 		}
-		if strings.Contains(eventName, "--") || strings.Contains(eventName, ";") || strings.Contains(eventName, "=") || strings.Contains(eventName, "/*") {
-			return fmt.Errorf("Invalid track event name '%s'. Only alpha-numeric characters, underscores and spaces are allowed in track event name.", eventName)
-		}
-		if len(eventName) > 64 {
-			return fmt.Errorf("Invalid track event name '%s'. Max length is 64 characters.", eventName)
+		//if strings.Contains(eventName, "--") || strings.Contains(eventName, ";") || strings.Contains(eventName, "=") || strings.Contains(eventName, "/*") {
+		//	return fmt.Errorf("Invalid track event name '%s'. Only alpha-numeric characters, underscores and spaces are allowed in track event name.", eventName)
+		//}
+		if len(eventName) > 128 {
+			return fmt.Errorf("Invalid track event name '%s'. Max length is 128 characters.", eventName)
 		}
 		if defaultEventName != "" {
 			ev.SetIfAbsent("event", eventName)
