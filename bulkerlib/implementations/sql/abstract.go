@@ -93,7 +93,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	}
 	ps.namespace = bulker.NamespaceOption.Get(&ps.options)
 	if ps.namespace != "" {
-		ps.namespace = p.TableName(ps.nameTransformer(ps.namespace))
+		ps.namespace = p.NamespaceName(ps.nameTransformer(ps.namespace))
 	}
 	ps.omitNils = OmitNilsOption.Get(&ps.options)
 	ps.schemaFreeze = SchemaFreezeOption.Get(&ps.options)

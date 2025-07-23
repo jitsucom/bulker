@@ -254,7 +254,7 @@ func (p *Postgres) createSchemaIfNotExists(ctx context.Context, schema string) e
 	if schema == "" {
 		return nil
 	}
-	n := p.namespaceName(schema)
+	n := p.NamespaceName(schema)
 	if n == "" {
 		return nil
 	}
@@ -305,7 +305,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, namespace string, tableNa
 
 func (p *Postgres) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
-	namespace = p.namespaceName(namespace)
+	namespace = p.NamespaceName(namespace)
 	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, namespace, tableName)
 	if err != nil {
@@ -491,7 +491,7 @@ func getDefaultValueStatement(sqlType string) string {
 // getPrimaryKey returns primary key name and fields
 func (p *Postgres) getPrimaryKey(ctx context.Context, namespace string, tableName string) (string, types.OrderedSet[string], error) {
 	tableName = p.TableName(tableName)
-	namespace = p.namespaceName(namespace)
+	namespace = p.NamespaceName(namespace)
 	primaryKeys := types.NewOrderedSet[string]()
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, pgPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {

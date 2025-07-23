@@ -753,7 +753,7 @@ func (b *SQLAdapterBase[T]) quotedTableName(tableName string) string {
 	return b.tableHelper.quotedTableName(tableName)
 }
 
-func (b *SQLAdapterBase[T]) namespaceName(namespace string) string {
+func (b *SQLAdapterBase[T]) NamespaceName(namespace string) string {
 	if namespace == NoNamespaceValue {
 		return ""
 	}

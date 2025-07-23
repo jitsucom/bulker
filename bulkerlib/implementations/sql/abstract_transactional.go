@@ -129,7 +129,7 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		defer cancel()
 		ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(ctx1, ps.namespace, ps.tableName)
 		if ps.existingTable.Exists() {
-			ps.sqlAdapter.TableHelper().UpdateCached(ps.existingTable.Name, ps.existingTable)
+			ps.sqlAdapter.TableHelper().UpdateCached(ps.existingTable)
 			//for el := ps.existingTable.Columns.Front(); el != nil; el = el.Next() {
 			//	if el.Value.DataType == types.JSON {
 			//		if ps.notFlatteningKeys == nil {
@@ -139,6 +139,8 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 			//		}
 			//	}
 			//}
+		} else {
+			ps.sqlAdapter.TableHelper().ClearCached(ps.sqlAdapter.NamespaceName(ps.namespace), ps.tableName)
 		}
 		ps.initialColumnsCount = ps.existingTable.ColumnsCount()
 	}

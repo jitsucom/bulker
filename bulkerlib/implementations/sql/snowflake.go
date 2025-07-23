@@ -248,7 +248,7 @@ func (s *Snowflake) createSchemaIfNotExists(ctx context.Context, schema string) 
 	if schema == "" {
 		return nil
 	}
-	schema = s.namespaceName(schema)
+	schema = s.NamespaceName(schema)
 	if schema == "" {
 		return nil
 	}
@@ -274,6 +274,7 @@ func (s *Snowflake) InitDatabase(ctx context.Context) error {
 // GetTableSchema returns table (name,columns with name and types) representation wrapped in Table struct
 func (s *Snowflake) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	quotedTableName, tableName := s.tableHelper.adaptTableName(tableName)
+	namespace = s.NamespaceName(namespace)
 	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 
 	query := fmt.Sprintf(sfDescTableQuery, s.namespacePrefix(namespace), quotedTableName)

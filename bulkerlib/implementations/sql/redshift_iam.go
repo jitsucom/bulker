@@ -180,7 +180,7 @@ func (p *RedshiftIAM) createSchemaIfNotExists(ctx context.Context, schema string
 	if schema == "" {
 		return nil
 	}
-	n := p.namespaceName(schema)
+	n := p.NamespaceName(schema)
 	if n == "" {
 		return nil
 	}
@@ -236,7 +236,7 @@ func (p *RedshiftIAM) GetTableSchema(ctx context.Context, namespace string, tabl
 
 func (p *RedshiftIAM) getSortKey(ctx context.Context, namespace, tableName string) (string, error) {
 	tableName = p.TableName(tableName)
-	namespace = p.namespaceName(namespace)
+	namespace = p.NamespaceName(namespace)
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftGetSortKeyQuery, namespace, tableName)
 	if err != nil {
 		return "", errorj.GetPrimaryKeysError.Wrap(err, "failed to get sort key").
@@ -267,7 +267,7 @@ func (p *RedshiftIAM) getSortKey(ctx context.Context, namespace, tableName strin
 
 func (p *RedshiftIAM) getPrimaryKeys(ctx context.Context, namespace, tableName string) (string, types.OrderedSet[string], error) {
 	tableName = p.TableName(tableName)
-	namespace = p.namespaceName(namespace)
+	namespace = p.NamespaceName(namespace)
 	primaryKeys := types.NewOrderedSet[string]()
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {
@@ -317,7 +317,7 @@ func (p *RedshiftIAM) getPrimaryKeys(ctx context.Context, namespace, tableName s
 
 func (p *RedshiftIAM) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
-	namespace = p.namespaceName(namespace)
+	namespace = p.NamespaceName(namespace)
 	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, utils.DefaultString(namespace, "pg_temp_11"), tableName)
 	if err != nil {
@@ -559,7 +559,7 @@ func (p *RedshiftIAM) createSortKey(ctx context.Context, table *Table) error {
 }
 
 func (p *RedshiftIAM) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
-	row := p.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema ilike '%s' AND table_name = '%s')`, p.namespaceName(replacementTable.Namespace), targetTableName))
+	row := p.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema ilike '%s' AND table_name = '%s')`, p.NamespaceName(replacementTable.Namespace), targetTableName))
 	exists := false
 	err = row.Scan(&exists)
 	if err != nil {

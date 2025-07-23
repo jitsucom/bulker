@@ -219,7 +219,7 @@ func (d *DuckDB) createSchemaIfNotExists(ctx context.Context, schema string) err
 	if schema == "" || schema == DuckDBMemoryDBAlias {
 		return nil
 	}
-	n := d.namespaceName(schema)
+	n := d.NamespaceName(schema)
 	if n == "" {
 		return nil
 	}
@@ -271,7 +271,7 @@ func (d *DuckDB) GetTableSchema(ctx context.Context, namespace string, tableName
 func (d *DuckDB) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	db := d.TableName(d.config.Db)
 	tableName = d.TableName(tableName)
-	namespace = d.namespaceName(namespace)
+	namespace = d.NamespaceName(namespace)
 	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	rows, err := d.txOrDb(ctx).QueryContext(ctx, duckDBTableSchemaQuery, db, namespace, tableName)
 	if err != nil {
@@ -439,7 +439,7 @@ func runStatement(con driver.Conn, statement string) error {
 func (d *DuckDB) getPrimaryKey(ctx context.Context, namespace string, tableName string) (string, types.OrderedSet[string], error) {
 	db := d.TableName(d.config.Db)
 	tableName = d.TableName(tableName)
-	namespace = d.namespaceName(namespace)
+	namespace = d.NamespaceName(namespace)
 	primaryKeys := types.NewOrderedSet[string]()
 	pkFieldsRows, err := d.txOrDb(ctx).QueryContext(ctx, duckDBPrimaryKeyFieldsQuery, db, namespace, tableName)
 	if err != nil {
