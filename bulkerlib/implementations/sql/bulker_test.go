@@ -57,7 +57,7 @@ var clickhouseClusterContainerNoShards *clickhouse_noshards.ClickHouseClusterCon
 
 func init() {
 	// uncomment to run tests locally with just one bulker type
-	// allBulkerConfigs = []string{PostgresBulkerTypeId}
+	allBulkerConfigs = []string{SnowflakeBulkerTypeId}
 
 	if utils.ArrayContains(allBulkerConfigs, BigqueryBulkerTypeId) {
 		bigqueryConfig := os.Getenv("BULKER_TEST_BIGQUERY")
@@ -707,7 +707,9 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			table.PKFields = newPKFields
 
 			table.Name = strings.ToLower(table.Name)
+			table.Namespace = strings.ToLower(table.Namespace)
 			expectedTable.Name = strings.ToLower(expectedTable.Name)
+			expectedTable.Namespace = strings.ToLower(expectedTable.Namespace)
 		}
 		actualColumns := table.Columns
 		expectedColumns := expectedTable.Columns
