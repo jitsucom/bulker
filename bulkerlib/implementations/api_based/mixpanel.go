@@ -149,7 +149,7 @@ func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ m
 						return statusCode, respBody, nil
 					}
 					var builder strings.Builder
-					builder.WriteString(fmt.Sprintf("Some data points in the request failed validation. Failed records: %d:\n", len(validationError.FailedRecords)))
+					builder.WriteString(fmt.Sprintf("Some data points in the request failed validation. Imported records: %d Failed records: %d:\n", validationError.NumRecordsImported, len(validationError.FailedRecords)))
 					for _, failedRecord := range validationError.FailedRecords {
 						builder.WriteString(fmt.Sprintf("$insert_id:%s %s:%s\n",
 							failedRecord.InsertId, failedRecord.Field, failedRecord.Message))
