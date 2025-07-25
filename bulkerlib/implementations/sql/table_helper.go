@@ -164,6 +164,9 @@ func (th *TableHelper) ensureTable(ctx context.Context, sqlAdapter SQLAdapter, d
 		// if patching of cached table failed - that may mean table was changed outside of bulker
 		// get fresh table schema from db and try again
 		actualSchema, err = th.getOrCreateWithLock(ctx, sqlAdapter, destinationID, desiredSchema)
+		if err != nil {
+			return nil, err
+		}
 		th.UpdateCached(actualSchema)
 	}
 
