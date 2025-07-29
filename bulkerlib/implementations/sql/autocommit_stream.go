@@ -39,6 +39,9 @@ func (ps *AutoCommitStream) ConsumeMap(ctx context.Context, mp map[string]any) (
 
 func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObject types.Object, err error) {
 	defer func() {
+		if err != nil {
+			ps.sqlAdapter.TableHelper().ClearCached(ps.sqlAdapter.NamespaceName(ps.namespace), ps.tableName)
+		}
 		err = ps.postConsume(err)
 		state = ps.state
 	}()
