@@ -125,3 +125,14 @@ func Values[V any, K comparable](mp map[K]V) []V {
 	}
 	return result
 }
+
+func MapKeys[K comparable, V any](mp map[K]V) []K {
+	if mp == nil {
+		return nil
+	}
+	result := make([]K, 0, len(mp))
+	for k := range mp {
+		result = append(result, k)
+	}
+	return result
+}

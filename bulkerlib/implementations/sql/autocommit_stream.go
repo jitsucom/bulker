@@ -110,11 +110,13 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 			//just to convert values to schema data types
 			ps.adjustTableColumnTypes(table, nil, ps.schemaFromOptions, object)
 		}
-		ps.existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
+		var existingTable *Table
+		existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
 		if err != nil {
 			err = errorj.Decorate(err, "failed to ensure table")
 			return
 		}
+		ps.existingTable = existingTable
 		ps.updateRepresentationTable(ps.existingTable)
 		currentTable := ps.existingTable.Clone()
 		// remove columns with missed data from Insert statements

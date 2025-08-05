@@ -48,6 +48,9 @@ type KafkaConfig struct {
 	ProducerBatchSize          int     `mapstructure:"PRODUCER_BATCH_SIZE" default:"65535"`
 	ProducerLingerMs           int     `mapstructure:"PRODUCER_LINGER_MS" default:"1000"`
 	ProducerWaitForDeliveryMs  int     `mapstructure:"PRODUCER_WAIT_FOR_DELIVERY_MS" default:"1000"`
+	
+	// Failover logger configuration
+	FailoverLoggerEnvConfig `mapstructure:",squash"`
 }
 
 // GetKafkaConfig returns kafka config
