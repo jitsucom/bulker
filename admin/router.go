@@ -18,7 +18,6 @@ func NewRouter(context *Context) *Router {
 	base := appbase.NewRouterBase(context.config.Config, []string{
 		"/health",
 		"/",
-		"/static",
 	})
 	router := &Router{
 		Router:              base,
@@ -32,18 +31,17 @@ func NewRouter(context *Context) *Router {
 
 	// Admin API routes (protected by auth)
 	adminAPI := engine.Group("/api/admin")
+	adminAPI.Use(router.CorsMiddleware)
 	reprocessingAPI := adminAPI.Group("/reprocessing")
-
-	reprocessingAPI.POST("/jobs", router.startReprocessingJob)
-	reprocessingAPI.GET("/jobs", router.listReprocessingJobs)
-	reprocessingAPI.GET("/jobs/:id", router.getReprocessingJob)
-	reprocessingAPI.POST("/jobs/:id/pause", router.pauseReprocessingJob)
-	reprocessingAPI.POST("/jobs/:id/resume", router.resumeReprocessingJob)
-	reprocessingAPI.POST("/jobs/:id/cancel", router.cancelReprocessingJob)
+	reprocessingAPI.Match([]string{"OPTIONS", "POST"}, "/jobs", router.startReprocessingJob)
+	reprocessingAPI.Match([]string{"OPTIONS", "GET"}, "/jobs", router.listReprocessingJobs)
+	reprocessingAPI.Match([]string{"OPTIONS", "GET"}, "/jobs/:id", router.getReprocessingJob)
+	reprocessingAPI.Match([]string{"OPTIONS", "POST"}, "/jobs/:id/pause", router.pauseReprocessingJob)
+	reprocessingAPI.Match([]string{"OPTIONS", "POST"}, "/jobs/:id/resume", router.resumeReprocessingJob)
+	reprocessingAPI.Match([]string{"OPTIONS", "POST"}, "/jobs/:id/cancel", router.cancelReprocessingJob)
 
 	// Serve HTML interface for admin (no auth required for UI, auth handled via form)
 	engine.GET("/", router.serveAdminHTML)
-	engine.Static("/static", "./static")
 
 	return router
 
