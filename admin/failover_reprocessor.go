@@ -45,18 +45,17 @@ const (
 
 // ReprocessingJobConfig contains configuration for starting a reprocessing job
 type ReprocessingJobConfig struct {
-	S3Path         string    `json:"s3_path,omitempty"`    // S3 path (s3://bucket/prefix)
-	LocalPath      string    `json:"local_path,omitempty"` // Local filesystem path
-	StreamIds      []string  `json:"stream_ids,omitempty"`
-	ConnectionIds  []string  `json:"connection_ids,omitempty"`
-	DryRun         bool      `json:"dry_run"`
-	StartFile      string    `json:"start_file,omitempty"`
-	StartLine      int64     `json:"start_line,omitempty"`
-	MaxConcurrency int       `json:"max_concurrency,omitempty"`
-	BatchSize      int       `json:"batch_size,omitempty"`
-	DateFrom       time.Time `json:"date_from,omitempty"` // Filter messages created after this date
-	DateTo         time.Time `json:"date_to,omitempty"`   // Filter messages created before this date
-	Limit          int64     `json:"limit,omitempty"`     // Maximum number of events to process
+	S3Path        string    `json:"s3_path,omitempty"`    // S3 path (s3://bucket/prefix)
+	LocalPath     string    `json:"local_path,omitempty"` // Local filesystem path
+	StreamIds     []string  `json:"stream_ids,omitempty"`
+	ConnectionIds []string  `json:"connection_ids,omitempty"`
+	DryRun        bool      `json:"dry_run"`
+	StartFile     string    `json:"start_file,omitempty"`
+	StartLine     int64     `json:"start_line,omitempty"`
+	BatchSize     int       `json:"batch_size,omitempty"`
+	DateFrom      time.Time `json:"date_from,omitempty"` // Filter messages created after this date
+	DateTo        time.Time `json:"date_to,omitempty"`   // Filter messages created before this date
+	Limit         int64     `json:"limit,omitempty"`     // Maximum number of events to process
 }
 
 // ReprocessingJob represents a failover reprocessing job
@@ -73,7 +72,6 @@ type ReprocessingJob struct {
 	TotalFiles       int                   `json:"total_files"`
 	ProcessedFiles   int                   `json:"processed_files"`
 	TotalLines       int64                 `json:"total_lines"`
-	ProcessedLines   int64                 `json:"processed_lines"`
 	SuccessCount     int64                 `json:"success_count"`
 	ErrorCount       int64                 `json:"error_count"`
 	SkippedCount     int64                 `json:"skipped_count"`
@@ -134,9 +132,6 @@ func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*Reproc
 	}
 
 	// Set defaults
-	if config.MaxConcurrency <= 0 {
-		config.MaxConcurrency = 5
-	}
 	if config.BatchSize <= 0 {
 		config.BatchSize = 100
 	}
@@ -492,7 +487,7 @@ func (m *ReprocessingJobManager) processFile(job *ReprocessingJob, filePath stri
 			}
 		default:
 		}
-
+		atomic.AddInt64(&job.TotalLines, 1)
 		lineNum++
 
 		// Check if we've reached the limit
@@ -529,7 +524,6 @@ func (m *ReprocessingJobManager) processFile(job *ReprocessingJob, filePath stri
 		job.mu.Lock()
 		job.CurrentLine = lineNum
 		job.CurrentTimestamp = ingestMsg.MessageCreated // Update current timestamp based on message
-		job.ProcessedLines++
 		job.mu.Unlock()
 	}
 
@@ -574,18 +568,6 @@ func (m *ReprocessingJobManager) filterMessage(job *ReprocessingJob, ingestMsg *
 
 // processBatch processes a batch of messages
 func (m *ReprocessingJobManager) processBatch(job *ReprocessingJob, batch []*IngestMessage) error {
-	// Check if we need to trim the batch due to limit
-	if job.Config.Limit > 0 {
-		currentCount := atomic.LoadInt64(&job.SuccessCount)
-		remaining := job.Config.Limit - currentCount
-		if remaining <= 0 {
-			return nil // Already reached limit
-		}
-		if int64(len(batch)) > remaining {
-			batch = batch[:remaining]
-		}
-	}
-
 	if job.Config.DryRun {
 		// In dry run mode, just count the messages
 		atomic.AddInt64(&job.SuccessCount, int64(len(batch)))
@@ -597,16 +579,17 @@ func (m *ReprocessingJobManager) processBatch(job *ReprocessingJob, batch []*Ing
 		// Get connection IDs
 		connectionIds := job.Config.ConnectionIds
 		if len(connectionIds) == 0 {
+			streamId := utils.DefaultString(message.Origin.SourceId, message.Origin.Slug)
 			// Get from repository
-			stream := streams.GetStreamByPlainKeyOrId(message.Origin.SourceId)
+			stream := streams.GetStreamByPlainKeyOrId(streamId)
 			if stream == nil {
-				m.Errorf("Stream not found for source id: %s", message.Origin.SourceId)
-				atomic.AddInt64(&job.ErrorCount, int64(len(batch)))
+				m.Errorf("Stream not found for source id: %s", streamId)
+				atomic.AddInt64(&job.ErrorCount, 1)
 				continue
 			} else {
 				if len(stream.AsynchronousDestinations) == 0 {
-					m.Errorf("No destinations found for stream: %s", message.Origin.SourceId)
-					atomic.AddInt64(&job.ErrorCount, int64(len(batch)))
+					m.Errorf("No destinations found for stream: %s", streamId)
+					atomic.AddInt64(&job.ErrorCount, 1)
 					continue
 				}
 				for _, dest := range stream.AsynchronousDestinations {
@@ -637,7 +620,11 @@ func (m *ReprocessingJobManager) processBatch(job *ReprocessingJob, batch []*Ing
 			return fmt.Errorf("failed to produce message: %w", err)
 		}
 
-		atomic.AddInt64(&job.SuccessCount, 1)
+		successCount := atomic.AddInt64(&job.SuccessCount, 1)
+		if job.Config.Limit > 0 && successCount >= job.Config.Limit {
+			m.Infof("Reached event limit of %d, stopping processing", job.Config.Limit)
+			return nil
+		}
 	}
 
 	return nil
@@ -835,10 +822,9 @@ func (m *ReprocessingJobManager) Close() error {
 			"current_timestamp": job.CurrentTimestamp,
 			"total_files":       job.TotalFiles,
 			"processed_files":   job.ProcessedFiles,
-			"processed_lines":   job.ProcessedLines,
-			"success_count":     job.SuccessCount,
-			"error_count":       job.ErrorCount,
-			"skipped_count":     job.SkippedCount,
+			"success_count":     atomic.LoadInt64(&job.SuccessCount),
+			"error_count":       atomic.LoadInt64(&job.ErrorCount),
+			"skipped_count":     atomic.LoadInt64(&job.SkippedCount),
 			"created_at":        job.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
 

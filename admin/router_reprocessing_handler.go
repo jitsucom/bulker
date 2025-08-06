@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +18,6 @@ type ReprocessingStartRequest struct {
 	DryRun         bool      `json:"dry_run"`
 	StartFile      string    `json:"start_file,omitempty"`
 	StartLine      int64     `json:"start_line,omitempty"`
-	MaxConcurrency int       `json:"max_concurrency,omitempty"`
 	BatchSize      int       `json:"batch_size,omitempty"`
 	DateFrom       time.Time `json:"date_from,omitempty"`
 	DateTo         time.Time `json:"date_to,omitempty"`
@@ -38,7 +38,6 @@ type ReprocessingJobResponse struct {
 	TotalFiles       int                   `json:"total_files"`
 	ProcessedFiles   int                   `json:"processed_files"`
 	TotalLines       int64                 `json:"total_lines"`
-	ProcessedLines   int64                 `json:"processed_lines"`
 	SuccessCount     int64                 `json:"success_count"`
 	ErrorCount       int64                 `json:"error_count"`
 	SkippedCount     int64                 `json:"skipped_count"`
@@ -58,11 +57,10 @@ func jobToResponse(job *ReprocessingJob) ReprocessingJobResponse {
 		CurrentTimestamp: job.CurrentTimestamp,
 		TotalFiles:       job.TotalFiles,
 		ProcessedFiles:   job.ProcessedFiles,
-		TotalLines:       job.TotalLines,
-		ProcessedLines:   job.ProcessedLines,
-		SuccessCount:     job.SuccessCount,
-		ErrorCount:       job.ErrorCount,
-		SkippedCount:     job.SkippedCount,
+		TotalLines:       atomic.LoadInt64(&job.TotalLines),
+		SuccessCount:     atomic.LoadInt64(&job.SuccessCount),
+		ErrorCount:       atomic.LoadInt64(&job.ErrorCount),
+		SkippedCount:     atomic.LoadInt64(&job.SkippedCount),
 		LastError:        job.LastError,
 	}
 
@@ -89,7 +87,6 @@ func (r *Router) startReprocessingJob(c *gin.Context) {
 		return
 	}
 
-
 	// Get or create reprocessing manager
 	manager := r.getReprocessingManager()
 	if manager == nil {
@@ -99,18 +96,17 @@ func (r *Router) startReprocessingJob(c *gin.Context) {
 
 	// Create job config
 	config := ReprocessingJobConfig{
-		S3Path:         req.S3Path,
-		LocalPath:      req.LocalPath,
-		StreamIds:      req.StreamIds,
-		ConnectionIds:  req.ConnectionIds,
-		DryRun:         req.DryRun,
-		StartFile:      req.StartFile,
-		StartLine:      req.StartLine,
-		MaxConcurrency: req.MaxConcurrency,
-		BatchSize:      req.BatchSize,
-		DateFrom:       req.DateFrom,
-		DateTo:         req.DateTo,
-		Limit:          req.Limit,
+		S3Path:        req.S3Path,
+		LocalPath:     req.LocalPath,
+		StreamIds:     req.StreamIds,
+		ConnectionIds: req.ConnectionIds,
+		DryRun:        req.DryRun,
+		StartFile:     req.StartFile,
+		StartLine:     req.StartLine,
+		BatchSize:     req.BatchSize,
+		DateFrom:      req.DateFrom,
+		DateTo:        req.DateTo,
+		Limit:         req.Limit,
 	}
 
 	// Start job
@@ -133,12 +129,12 @@ func (r *Router) listReprocessingJobs(c *gin.Context) {
 	}
 
 	jobs := manager.ListJobs()
-	
+
 	// Sort jobs by created date (newest first)
 	sort.Slice(jobs, func(i, j int) bool {
 		return jobs[i].CreatedAt.After(jobs[j].CreatedAt)
 	})
-	
+
 	responses := make([]ReprocessingJobResponse, len(jobs))
 	for i, job := range jobs {
 		responses[i] = jobToResponse(job)
@@ -154,7 +150,6 @@ func (r *Router) getReprocessingJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "job id required"})
 		return
 	}
-
 
 	manager := r.getReprocessingManager()
 	if manager == nil {
@@ -179,7 +174,6 @@ func (r *Router) pauseReprocessingJob(c *gin.Context) {
 		return
 	}
 
-
 	manager := r.getReprocessingManager()
 	if manager == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "reprocessing manager not initialized"})
@@ -203,7 +197,6 @@ func (r *Router) resumeReprocessingJob(c *gin.Context) {
 		return
 	}
 
-
 	manager := r.getReprocessingManager()
 	if manager == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "reprocessing manager not initialized"})
@@ -226,7 +219,6 @@ func (r *Router) cancelReprocessingJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "job id required"})
 		return
 	}
-
 
 	manager := r.getReprocessingManager()
 	if manager == nil {
@@ -360,6 +352,22 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
         .btn-resume { background-color: #28a745; color: white; }
         .btn-cancel { background-color: #dc3545; color: white; }
         .btn-refresh { background-color: #007bff; color: white; }
+        .btn-expand {
+            background: none;
+            border: 1px solid #dee2e6;
+            color: #495057;
+            font-size: 12px;
+            padding: 2px 6px;
+            margin-right: 8px;
+            cursor: pointer;
+            border-radius: 3px;
+            font-family: monospace;
+            min-width: 20px;
+            text-align: center;
+        }
+        .btn-expand:hover {
+            background-color: #e9ecef;
+        }
         .progress-bar {
             width: 100px;
             height: 10px;
@@ -371,6 +379,30 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
             height: 100%;
             background-color: #28a745;
             transition: width 0.3s ease;
+        }
+        .job-details {
+            background-color: #f8f9fa;
+            padding: 0;
+            margin: 0;
+        }
+        .job-details pre {
+            background-color: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 0;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        tr.expandable {
+            cursor: pointer;
+        }
+        tr.expanded {
+            background-color: #f0f0f0;
+        }
+        td span[title] {
+            cursor: help;
+            text-decoration: underline dotted;
         }
         .error-message {
             color: #dc3545;
@@ -427,10 +459,6 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
                     <input type="number" id="startLine" placeholder="0">
                 </div>
                 <div class="form-group">
-                    <label for="maxConcurrency">Max Concurrency:</label>
-                    <input type="number" id="maxConcurrency" placeholder="10">
-                </div>
-                <div class="form-group">
                     <label for="batchSize">Batch Size:</label>
                     <input type="number" id="batchSize" placeholder="1000">
                 </div>
@@ -484,6 +512,9 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
     </div>
 
     <script>
+        // Track expanded jobs in memory
+        let expandedJobIds = [];
+        
         function getAuthToken() {
             return document.getElementById('authToken').value;
         }
@@ -492,6 +523,34 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
             if (!dateStr) return true; // Empty is valid (optional field)
             const regex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$/;
             return regex.test(dateStr);
+        }
+        
+        function toggleJobDetails(index, event) {
+            event.stopPropagation();
+            const detailsRow = document.getElementById('job-details-' + index);
+            const expandBtn = event.target;
+            const jobRow = document.querySelector('tr[data-job-index="' + index + '"]');
+            
+            if (detailsRow.style.display === 'none') {
+                detailsRow.style.display = '';
+                expandBtn.textContent = '[-]';
+                jobRow.classList.add('expanded');
+                // Add to expanded state
+                const jobId = window.jobsData[index].id;
+                if (!expandedJobIds.includes(jobId)) {
+                    expandedJobIds.push(jobId);
+                }
+            } else {
+                detailsRow.style.display = 'none';
+                expandBtn.textContent = '[+]';
+                jobRow.classList.remove('expanded');
+                // Remove from expanded state
+                const jobId = window.jobsData[index].id;
+                const idx = expandedJobIds.indexOf(jobId);
+                if (idx > -1) {
+                    expandedJobIds.splice(idx, 1);
+                }
+            }
         }
 
         function showError(message) {
@@ -571,7 +630,6 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
                 connection_ids: connectionIds.length > 0 ? connectionIds : undefined,
                 start_file: document.getElementById('startFile').value || undefined,
                 start_line: parseInt(document.getElementById('startLine').value) || 0,
-                max_concurrency: parseInt(document.getElementById('maxConcurrency').value) || undefined,
                 batch_size: parseInt(document.getElementById('batchSize').value) || undefined,
                 date_from: document.getElementById('dateFrom').value || undefined,
                 date_to: document.getElementById('dateTo').value || undefined,
@@ -604,12 +662,17 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
             const tbody = document.getElementById('jobsTableBody');
             tbody.innerHTML = '';
             
-            jobs.forEach(job => {
+            jobs.forEach((job, index) => {
                 const row = document.createElement('tr');
+                row.className = 'expandable';
+                row.setAttribute('data-job-index', index);
                 const progress = job.progress * 100;
                 
                 row.innerHTML = ` + "`" + `
-                    <td>${job.id.substring(0, 8)}...</td>
+                    <td>
+                        <button class="btn-expand" onclick="toggleJobDetails(${index}, event)">[+]</button>
+                        ${job.id.substring(0, 8)}...
+                    </td>
                     <td><span class="status status-${job.status}">${job.status}</span></td>
                     <td>
                         <div class="progress-bar">
@@ -618,9 +681,9 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
                         ${progress.toFixed(1)}%
                     </td>
                     <td>${job.processed_files}/${job.total_files}</td>
-                    <td>${job.processed_lines}/${job.total_lines}</td>
+                    <td>${job.total_lines}</td>
                     <td>${job.success_count}/${job.error_count}/${job.skipped_count}</td>
-                    <td>${job.current_file || '-'}</td>
+                    <td>${job.current_file ? '<span title="' + job.current_file + '">' + job.current_file.split('/').pop() + '</span>' : '-'}</td>
                     <td class="actions">
                         ${job.status === 'running' ? '<button class="btn-pause" onclick="pauseJob(\'' + job.id + '\')">Pause</button>' : ''}
                         ${job.status === 'paused' ? '<button class="btn-resume" onclick="resumeJob(\'' + job.id + '\')">Resume</button>' : ''}
@@ -628,6 +691,38 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
                     </td>
                 ` + "`" + `;
                 tbody.appendChild(row);
+                
+                // Add details row
+                const detailsRow = document.createElement('tr');
+                detailsRow.id = 'job-details-' + index;
+                detailsRow.style.display = 'none';
+                const detailsDiv = document.createElement('div');
+                detailsDiv.className = 'job-details';
+                const pre = document.createElement('pre');
+                pre.textContent = JSON.stringify(job, null, 2);
+                detailsDiv.appendChild(pre);
+                
+                detailsRow.innerHTML = '<td colspan="8"></td>';
+                detailsRow.querySelector('td').appendChild(detailsDiv);
+                tbody.appendChild(detailsRow);
+            });
+            
+            // Store jobs data for toggle function
+            window.jobsData = jobs;
+            
+            // Restore expanded state from in-memory array
+            jobs.forEach((job, index) => {
+                if (expandedJobIds.includes(job.id)) {
+                    const detailsRow = document.getElementById('job-details-' + index);
+                    const expandBtn = document.querySelector('tr[data-job-index="' + index + '"] .btn-expand');
+                    const jobRow = document.querySelector('tr[data-job-index="' + index + '"]');
+                    
+                    if (detailsRow && expandBtn && jobRow) {
+                        detailsRow.style.display = '';
+                        expandBtn.textContent = '[-]';
+                        jobRow.classList.add('expanded');
+                    }
+                }
             });
         }
 
@@ -665,7 +760,7 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
     </script>
 </body>
 </html>`
-	
+
 	c.Header("Content-Type", "text/html")
 	c.String(http.StatusOK, htmlContent)
 }
