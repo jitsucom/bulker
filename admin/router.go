@@ -33,7 +33,7 @@ func NewRouter(context *Context) *Router {
 	adminAPI := engine.Group("/api/admin")
 	adminAPI.Use(router.CorsMiddleware)
 	reprocessingAPI := adminAPI.Group("/reprocessing")
-	reprocessingAPI.Match([]string{"OPTIONS", "POST"}, "/jobs", router.startReprocessingJob)
+	reprocessingAPI.Match([]string{"POST"}, "/jobs", router.startReprocessingJob)
 	reprocessingAPI.Match([]string{"OPTIONS", "GET"}, "/jobs", router.listReprocessingJobs)
 	reprocessingAPI.Match([]string{"OPTIONS", "GET"}, "/jobs/:id", router.getReprocessingJob)
 	reprocessingAPI.Match([]string{"OPTIONS", "POST"}, "/jobs/:id/pause", router.pauseReprocessingJob)
