@@ -5,9 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/jitsucom/bulker/jitsubase/jsonorder"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,6 +14,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -323,7 +324,7 @@ func (m *ReprocessingJobManager) processJob(job *ReprocessingJob) {
 			m.Infof("Reached event limit of %d, stopping processing", job.Config.Limit)
 			break
 		}
-		
+
 		select {
 		case <-job.ctx.Done():
 			return
@@ -493,13 +494,13 @@ func (m *ReprocessingJobManager) processFile(job *ReprocessingJob, filePath stri
 		}
 
 		lineNum++
-		
+
 		// Check if we've reached the limit
 		if job.Config.Limit > 0 && atomic.LoadInt64(&job.SuccessCount) >= job.Config.Limit {
 			m.Infof("Reached event limit of %d, stopping processing", job.Config.Limit)
 			break
 		}
-		
+
 		line := scanner.Bytes()
 		// Parse message as IngestMessage
 		var ingestMsg IngestMessage
@@ -564,7 +565,8 @@ func (m *ReprocessingJobManager) filterMessage(job *ReprocessingJob, ingestMsg *
 
 	// Filter by streamIds if specified
 	if len(job.Config.StreamIds) > 0 {
-		return utils.ArrayContains(job.Config.StreamIds, ingestMsg.Origin.SourceId)
+		return utils.ArrayContains(job.Config.StreamIds, ingestMsg.Origin.SourceId) ||
+			utils.ArrayContains(job.Config.StreamIds, ingestMsg.Origin.Slug)
 	}
 
 	return true
@@ -583,7 +585,7 @@ func (m *ReprocessingJobManager) processBatch(job *ReprocessingJob, batch []*Ing
 			batch = batch[:remaining]
 		}
 	}
-	
+
 	if job.Config.DryRun {
 		// In dry run mode, just count the messages
 		atomic.AddInt64(&job.SuccessCount, int64(len(batch)))
