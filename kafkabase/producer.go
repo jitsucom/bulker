@@ -2,13 +2,14 @@ package kafkabase
 
 import (
 	"fmt"
+	"sync/atomic"
+	"time"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/hashicorp/go-multierror"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"sync/atomic"
-	"time"
 )
 
 const MessageIdHeader = "message_id"
@@ -50,7 +51,7 @@ func NewProducer(config *KafkaConfig, kafkaConfig *kafka.ConfigMap, reportQueueL
 	if metricsLabelFunc == nil {
 		metricsLabelFunc = defaultMetricsLabelFunc
 	}
-	
+
 	// Create failover logger if configured
 	var failoverLogger *FailoverLogger
 	if config.FailoverLoggerEnabled {
@@ -65,7 +66,7 @@ func NewProducer(config *KafkaConfig, kafkaConfig *kafka.ConfigMap, reportQueueL
 			}
 		}
 	}
-	
+
 	return &Producer{
 		Service:              base,
 		producer:             producer,
@@ -82,23 +83,28 @@ func (p *Producer) Start() {
 	if p.failoverLogger != nil {
 		p.failoverLogger.Start()
 	}
-	
+
 	safego.RunWithRestart(func() {
 		for e := range p.producer.Events() {
 			switch ev := e.(type) {
 			case *kafka.Message:
-				//messageId := GetKafkaHeader(ev, MessageIdHeader)
+				failover := false
+				messageId := ""
+				mp, ok := ev.Opaque.(map[string]any)
+				if ok {
+					messageId, _ = mp[MessageIdHeader].(string)
+					failover, _ = mp["failover"].(bool)
+				}
 				if ev.TopicPartition.Error != nil {
-					//TODO: check for retrieable errors
 					ProducerMessages(p.metricsLabelFunc(*ev.TopicPartition.Topic, "error", KafkaErrorCode(ev.TopicPartition.Error))).Inc()
-					p.Errorf("Error sending message to kafka topic %s: %s", *ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
+					p.Errorf("Error sending message %s to kafka topic %s: %s", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Error.Error())
 				} else {
 					ProducerMessages(p.metricsLabelFunc(*ev.TopicPartition.Topic, "delivered", "")).Inc()
 					//p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *ev.TopicPartition.Topic, ev.TopicPartition.Partition, ev.TopicPartition.Offset)
 				}
-				
+
 				// Log to failover logger if configured and conditions are met
-				if p.failoverLogger != nil && p.failoverLogger.ShouldLog(ev.TopicPartition.Error) {
+				if failover && p.failoverLogger != nil && p.failoverLogger.ShouldLog(ev.TopicPartition.Error) {
 					if err := p.failoverLogger.LogPayload(ev.Value); err != nil {
 						p.Errorf("Failed to log message to failover logger: %v", err)
 					}
@@ -156,7 +162,7 @@ func (p *Producer) ProduceSync(topic string, event kafka.Message) error {
 			ProducerMessages(p.metricsLabelFunc(topic, "delivered", "")).Inc()
 			//p.Debugf("Message ID: %s delivered to topic %s [%d] at offset %v", messageId, *m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
 		}
-		
+
 		// Log to failover logger if configured and conditions are met
 		if p.failoverLogger != nil && p.failoverLogger.ShouldLog(m.TopicPartition.Error) {
 			if err := p.failoverLogger.LogPayload(m.Value); err != nil {
@@ -174,7 +180,7 @@ func (p *Producer) ProduceSync(topic string, event kafka.Message) error {
 
 // ProduceAsync TODO: transactional delivery?
 // produces messages to kafka
-func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte, headers map[string]string, partition int32) error {
+func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte, headers map[string]string, partition int32, messageId string, failover bool) error {
 	if p.isClosed() {
 		return p.NewError("producer is closed")
 	}
@@ -190,13 +196,17 @@ func (p *Producer) ProduceAsync(topic string, messageKey string, event []byte, h
 		}),
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: partition},
 		Value:          event,
+		Opaque: map[string]any{
+			MessageIdHeader: messageId,
+			"failover":      failover,
+		},
 	}, nil)
 	if err != nil {
 		ProducerMessages(p.metricsLabelFunc(topic, "error", KafkaErrorCode(err))).Inc()
 		errors.Errors = append(errors.Errors, err)
-		
+
 		// Log to failover logger for async production errors
-		if p.failoverLogger != nil && p.failoverLogger.ShouldLog(err) {
+		if failover && p.failoverLogger != nil && p.failoverLogger.ShouldLog(err) {
 			if err := p.failoverLogger.LogPayload(event); err != nil {
 				p.Errorf("Failed to log message to failover logger: %v", err)
 			}
@@ -221,14 +231,14 @@ func (p *Producer) Close() error {
 	p.Infof("Closing producer.")
 	p.producer.Close()
 	close(p.asyncDeliveryChannel)
-	
+
 	// Close failover logger
 	if p.failoverLogger != nil {
 		if err := p.failoverLogger.Close(); err != nil {
 			p.Errorf("Failed to close failover logger: %v", err)
 		}
 	}
-	
+
 	return nil
 }
 

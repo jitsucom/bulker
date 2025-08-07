@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/kafkabase"
 	"io"
 	"net/http"
 	"net/http/pprof"
@@ -14,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/kafkabase"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
@@ -176,7 +177,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	if streamOptions != "" {
 		headers[streamOptionsKeyHeader] = streamOptions
 	}
-	err = r.producer.ProduceAsync(topicId, uuid.New(), body, headers, kafka.PartitionAny)
+	err = r.producer.ProduceAsync(topicId, uuid.New(), body, headers, kafka.PartitionAny, "", false)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true, false)
 		return
@@ -203,7 +204,7 @@ func (r *Router) ProfilesHandler(c *gin.Context) {
 		return
 	}
 
-	err = r.producer.ProduceAsync(topicId, profileId, nil, nil, kafka.PartitionAny)
+	err = r.producer.ProduceAsync(topicId, profileId, nil, nil, kafka.PartitionAny, "", false)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true, false)
 		return

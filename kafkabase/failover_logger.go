@@ -136,7 +136,7 @@ func NewS3Destination(bucket, prefix string, awsConfig aws.Config) (*S3Destinati
 
 func (s *S3Destination) Store(filePath string) error {
 	filename := strings.Replace(filepath.Base(filePath), ".rotating", "", 1)
-	key := filepath.Join(s.prefix, filename)
+	key := s.prefix + filename
 
 	// Open file for streaming
 	file, err := os.Open(filePath)
@@ -159,7 +159,6 @@ func (s *S3Destination) Store(filePath string) error {
 func (s *S3Destination) Name() string {
 	return "s3"
 }
-
 
 // FailoverLoggerConfig configuration for failover logger
 type FailoverLoggerConfig struct {
@@ -263,8 +262,10 @@ func (f *FailoverLogger) ShouldLog(err error) bool {
 
 	// Check if it's a KafkaError
 	if kafkaErr, ok := err.(kafka.Error); ok {
-		// Only log retriable errors
-		return kafkaErr.IsRetriable()
+		// Ignore "Message size too large" error
+		if kafkaErr.Code() == kafka.ErrMsgSizeTooLarge {
+			return false
+		}
 	}
 
 	// If it's not a KafkaError, log it
@@ -300,10 +301,8 @@ func (f *FailoverLogger) LogPayload(payload []byte) error {
 	return nil
 }
 
-
 func (f *FailoverLogger) shouldRotate() bool {
 	if f.config.MaxSize > 0 && f.currentSize >= f.config.MaxSize {
-		f.Infof("Checking if failover log file should rotate", "currentSize", f.currentSize, "maxSize", f.config.MaxSize, "rotationPeriod", f.config.RotationPeriod)
 		return true
 	}
 
@@ -315,7 +314,6 @@ func (f *FailoverLogger) shouldRotate() bool {
 }
 
 func (f *FailoverLogger) rotate() error {
-	f.Infof("Rotating failover log file")
 	// Rotate the file synchronously
 	rotatedPath, err := f.rotateFile()
 	if err != nil {
@@ -345,6 +343,10 @@ func (f *FailoverLogger) rotateFile() (string, error) {
 		return "", nil
 	}
 
+	if f.currentSize == 0 {
+		return "", nil // No data to rotate
+	}
+
 	// Close current file
 	if err := f.currentFile.Close(); err != nil {
 		return "", fmt.Errorf("failed to close current file: %w", err)
@@ -361,7 +363,7 @@ func (f *FailoverLogger) rotateFile() (string, error) {
 	// Open new file immediately
 	if err := f.openNewFile(); err != nil {
 		// Try to rename back on failure
-		os.Rename(rotatedPath, currentPath)
+		_ = os.Rename(rotatedPath, currentPath)
 		return "", fmt.Errorf("failed to open new file: %w", err)
 	}
 
@@ -369,7 +371,7 @@ func (f *FailoverLogger) rotateFile() (string, error) {
 }
 
 func (f *FailoverLogger) processRotatedFile(rotatedPath string) {
-
+	f.Infof("Rotating failover log file: " + rotatedPath)
 	// Compress if needed
 	finalPath := rotatedPath
 	if f.config.CompressOnRotate {
@@ -380,7 +382,7 @@ func (f *FailoverLogger) processRotatedFile(rotatedPath string) {
 		}
 		finalPath = compressedPath
 		// Remove uncompressed file
-		os.Remove(rotatedPath)
+		_ = os.Remove(rotatedPath)
 	}
 
 	// Store to destinations (LocalFileDestination should be last as it moves the file)

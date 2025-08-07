@@ -4,6 +4,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"strings"
+
 	kafka2 "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/eventslog"
@@ -14,10 +19,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"golang.org/x/net/publicsuffix"
-	"net"
-	"net/http"
-	"net/url"
-	"strings"
 )
 
 const (
@@ -40,6 +41,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 	var ingestMessageBytes []byte
 	var asyncDestinations []string
 	ingestType := IngestTypeWriteKeyDefined
+	var messageId string
 
 	defer func() {
 		if len(ingestMessageBytes) > 0 {
@@ -49,7 +51,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": utils.Ternary(rError.ErrorType == ErrThrottledType, "SKIPPED", "FAILED")}
 			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelError, ActorId: eventsLogId, Event: obj})
 			IngestHandlerRequests(domain, utils.Ternary(rError.ErrorType == ErrThrottledType, "throttled", "error"), rError.ErrorType).Inc()
-			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), utils.TruncateBytes(ingestMessageBytes, r.config.MaxIngestPayloadSize), map[string]string{"error": rError.Error.Error()}, kafka2.PartitionAny)
+			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), utils.TruncateBytes(ingestMessageBytes, r.config.MaxIngestPayloadSize), map[string]string{"error": rError.Error.Error()}, kafka2.PartitionAny, messageId, false)
 		} else {
 			obj := map[string]any{"body": string(ingestMessageBytes), "asyncDestinations": asyncDestinations}
 			if len(asyncDestinations) > 0 {
@@ -78,7 +80,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusOK, "error parsing message", false, err, true, true, false)
 		return
 	}
-	messageId := message.GetS("messageId")
+	messageId = message.GetS("messageId")
 	if messageId == "" {
 		messageId = uuid.New()
 	} else {
@@ -112,7 +114,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true, true, true)
 		return
 	}
-	asyncDestinations, _, rError = r.sendToRotor(c, ingestMessageBytes, stream, true)
+	asyncDestinations, _, rError = r.sendToRotor(c, messageId, ingestMessageBytes, stream, true)
 	if rError != nil {
 		return
 	}

@@ -609,13 +609,7 @@ func (m *ReprocessingJobManager) processBatch(job *ReprocessingJob, batch []*Ing
 			continue
 		}
 
-		if err := m.producer.ProduceAsync(
-			m.config.KafkaDestinationsTopicName,
-			uuid.New(),
-			ingestMessageBytes,
-			headers,
-			kafka.PartitionAny,
-		); err != nil {
+		if err := m.producer.ProduceAsync(m.config.KafkaDestinationsTopicName, uuid.New(), ingestMessageBytes, headers, kafka.PartitionAny, "", false); err != nil {
 			atomic.AddInt64(&job.ErrorCount, 1)
 			return fmt.Errorf("failed to produce message: %w", err)
 		}

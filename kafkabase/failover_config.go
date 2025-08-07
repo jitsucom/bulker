@@ -3,8 +3,9 @@ package kafkabase
 import (
 	"context"
 	"fmt"
-	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"time"
+
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 )
@@ -31,7 +32,7 @@ type FailoverLoggerEnvConfig struct {
 	// S3 destination settings
 	FailoverLoggerS3Enabled bool   `mapstructure:"FAILOVER_LOGGER_S3_ENABLED" default:"false"`
 	FailoverLoggerS3Bucket  string `mapstructure:"FAILOVER_LOGGER_S3_BUCKET"`
-	FailoverLoggerS3Prefix  string `mapstructure:"FAILOVER_LOGGER_S3_PREFIX" default:"kafka_failover"`
+	FailoverLoggerS3Prefix  string `mapstructure:"FAILOVER_LOGGER_S3_PREFIX" default:""`
 	FailoverLoggerS3Region  string `mapstructure:"FAILOVER_LOGGER_S3_REGION" default:"us-east-1"`
 }
 

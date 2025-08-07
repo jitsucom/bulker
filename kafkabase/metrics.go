@@ -2,7 +2,9 @@ package kafkabase
 
 import (
 	"fmt"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -30,8 +32,20 @@ func KafkaErrorCode(err error) string {
 	}
 
 	if kafkaError, ok := err.(kafka.Error); ok {
-		return fmt.Sprintf("kafka error: %s", kafkaError.Code().String())
+		return fmt.Sprintf("kafka %serror: %s", utils.Ternary(kafkaError.IsRetriable(), "retriable ", ""), kafkaError.Code().String())
 	}
 
 	return "kafka_error"
+}
+
+func KafkaRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if kafkaError, ok := err.(kafka.Error); ok {
+		return kafkaError.IsRetriable()
+	}
+
+	return true
 }
