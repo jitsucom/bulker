@@ -233,15 +233,8 @@ func (r *Router) Health(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": "kafka config is missing"})
 		return
 	}
-	size, err := r.producer.QueueSize()
-	if err != nil {
-		logging.Errorf("Health check: FAILED: producer queue size error: %v", err)
-		size = -1
-		//c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": "producer queue size error: " + err.Error()})
-		//return
-	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "pass", "producerQueueSize": size})
+	c.JSON(http.StatusOK, gin.H{"status": "pass"})
 	return
 }
 

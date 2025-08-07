@@ -17,6 +17,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
 // FailoverDestination represents where to store rotated logs
@@ -136,7 +137,7 @@ func NewS3Destination(bucket, prefix string, awsConfig aws.Config) (*S3Destinati
 
 func (s *S3Destination) Store(filePath string) error {
 	filename := strings.Replace(filepath.Base(filePath), ".rotating", "", 1)
-	key := s.prefix + filename
+	key := utils.JoinNonEmptyStrings("_", s.prefix, filename)
 
 	// Open file for streaming
 	file, err := os.Open(filePath)
