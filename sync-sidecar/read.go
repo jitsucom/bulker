@@ -559,14 +559,20 @@ func (s *ReadSideCar) processTrace(rec *TraceRow, line string) {
 		if errMsg == somethingWentWrongError && r.InternalMessage != "" {
 			errMsg = r.InternalMessage
 		}
+		streamErr := errMsg
 		if streamName != "" {
 			stream, ok := s.processedStreams[streamName]
 			if ok {
-				stream.RegisterError(fmt.Errorf("%s", errMsg))
+				if streamErr == somethingWentWrongError && stream.errorFromLogs != "" {
+					streamErr = stream.errorFromLogs
+				}
+				stream.RegisterError(fmt.Errorf("%s", streamErr))
 			}
 		} else {
-			if errMsg != somethingWentWrongError || s.firstErr == nil {
+			if errMsg != somethingWentWrongError {
 				s.firstErr = fmt.Errorf("%s", errMsg)
+			} else if s.firstErr == nil {
+				s.firstErr = fmt.Errorf("%s", streamErr)
 			}
 		}
 	default:
