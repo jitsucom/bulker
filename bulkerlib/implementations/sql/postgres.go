@@ -1,10 +1,18 @@
 package sql
 
 import (
-	"cloud.google.com/go/cloudsqlconn"
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
+	"net"
+	"os"
+	"path"
+	"strings"
+	"text/template"
+	"time"
+
+	"cloud.google.com/go/cloudsqlconn"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -15,13 +23,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"io"
-	"net"
-	"os"
-	"path"
-	"strings"
-	"text/template"
-	"time"
 )
 
 func init() {
@@ -72,7 +73,7 @@ var (
 		types2.STRING:    {"text", "varchar", "uuid"},
 		types2.INT64:     {"bigint"},
 		types2.FLOAT64:   {"double precision"},
-		types2.TIMESTAMP: {"timestamp with time zone", "timestamp", "timestamp without time zone"},
+		types2.TIMESTAMP: {"timestamp with time zone", "timestamp", "timestamp without time zone", "date"},
 		types2.BOOL:      {"boolean"},
 		types2.JSON:      {"jsonb", "json"},
 		types2.UNKNOWN:   {"text"},

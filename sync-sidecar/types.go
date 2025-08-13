@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
@@ -176,7 +177,8 @@ func StreamSchemaPropertyToDataType(ssp *types2.OrderedMap[string, any]) types.D
 	}
 	switch tp {
 	case "string":
-		if ssp.GetS("format") == "date-time" {
+		f := ssp.GetS("format")
+		if f == "date-time" || f == "date" {
 			return types.TIMESTAMP
 		}
 		return types.STRING
