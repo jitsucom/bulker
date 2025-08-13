@@ -5,6 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/eventslog"
@@ -14,14 +20,10 @@ import (
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
-	"os"
-	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 const interruptError = "Stream was interrupted. Check logs for errors."
+const somethingWentWrongError = "Something went wrong in the connector. See the logs for more details."
 const cancelledError = "Sync job was cancelled"
 
 var forceTemporaryBatchesDestinations = map[string]int{
@@ -552,14 +554,20 @@ func (s *ReadSideCar) processTrace(rec *TraceRow, line string) {
 		} else {
 			s.errprint("TRACE ERROR: %s", r.Message)
 		}
-		fmt.Printf("ERROR DETAILS: %s\n%s", r.InternalMessage, r.StackTrace)
+		fmt.Printf("ERROR DETAILS: %+v", r)
+		errMsg := r.Message
+		if errMsg == somethingWentWrongError && r.InternalMessage != "" {
+			errMsg = r.InternalMessage
+		}
 		if streamName != "" {
 			stream, ok := s.processedStreams[streamName]
 			if ok {
-				stream.RegisterError(fmt.Errorf("%s", r.Message))
+				stream.RegisterError(fmt.Errorf("%s", errMsg))
 			}
 		} else {
-			s.firstErr = fmt.Errorf("%s", r.Message)
+			if errMsg != somethingWentWrongError || s.firstErr == nil {
+				s.firstErr = fmt.Errorf("%s", errMsg)
+			}
 		}
 	default:
 		s.log("TRACE: %s", line)
