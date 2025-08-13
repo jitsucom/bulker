@@ -556,20 +556,20 @@ func (s *ReadSideCar) processTrace(rec *TraceRow, line string) {
 		}
 		fmt.Printf("ERROR DETAILS: %+v", r)
 		errMsg := r.Message
-		if errMsg == somethingWentWrongError && r.InternalMessage != "" {
+		if (errMsg == somethingWentWrongError || errMsg == "") && r.InternalMessage != "" {
 			errMsg = r.InternalMessage
 		}
 		streamErr := errMsg
 		if streamName != "" {
 			stream, ok := s.processedStreams[streamName]
 			if ok {
-				if streamErr == somethingWentWrongError && stream.errorFromLogs != "" {
+				if (streamErr == somethingWentWrongError || streamErr == "") && stream.errorFromLogs != "" {
 					streamErr = stream.errorFromLogs
 				}
 				stream.RegisterError(fmt.Errorf("%s", streamErr))
 			}
 		} else {
-			if errMsg != somethingWentWrongError {
+			if errMsg != somethingWentWrongError && errMsg != "" {
 				s.firstErr = fmt.Errorf("%s", errMsg)
 			} else if s.firstErr == nil {
 				s.firstErr = fmt.Errorf("%s", streamErr)
