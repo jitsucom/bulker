@@ -6,6 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/hjson/hjson-go/v4"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
@@ -21,13 +29,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/utils/ptr"
-	"math"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 const (
@@ -827,6 +828,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			RestartPolicy:                 v1.RestartPolicyNever,
 			NodeSelector:                  nodeSelector,
 			TerminationGracePeriodSeconds: ptr.To(int64(j.config.ContainerGraceShutdownSeconds)),
+			ServiceAccountName:            j.config.PodsServiceAccount,
 			//SecurityContext:               &v1.PodSecurityContext{FSGroup: ptr.To(int64(65534))},
 			Containers: []v1.Container{
 				{Name: "source",

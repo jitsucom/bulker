@@ -554,7 +554,7 @@ func (s *ReadSideCar) processTrace(rec *TraceRow, line string) {
 		} else {
 			s.errprint("TRACE ERROR: %s", r.Message)
 		}
-		fmt.Printf("ERROR DETAILS: %+v", r)
+		s.log("ERROR DETAILS: %+v", r)
 		errMsg := r.Message
 		if (errMsg == somethingWentWrongError || errMsg == "") && r.InternalMessage != "" {
 			errMsg = r.InternalMessage
