@@ -142,7 +142,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId), true, true, false)
 		return
 	}
-	mode = utils.DefaultString(modeOverride, string(destination.Mode()))
+	mode = utils.NvlString(modeOverride, string(destination.Mode()), string(bulker.Batch))
 	if mode != string(bulker.Batch) && mode != string(bulker.Stream) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "invalid bulker mode", false, fmt.Errorf("invalid bulker mode: %s", mode), true, true, false)
 		return
