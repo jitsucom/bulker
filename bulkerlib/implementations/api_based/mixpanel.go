@@ -6,16 +6,17 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	bulker "github.com/jitsucom/bulker/bulkerlib"
-	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/appbase"
-	"github.com/jitsucom/bulker/jitsubase/jsoniter"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	bulker "github.com/jitsucom/bulker/bulkerlib"
+	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
 const MixpanelBulkerTypeId = "mixpanel"
@@ -28,6 +29,7 @@ func init() {
 }
 
 type MixpanelConfig struct {
+	DataResidency          string `mapstructure:"dataResidency" json:"dataResidency" yaml:"dataResidency"`
 	ProjectId              string `mapstructure:"projectId" json:"projectId" yaml:"projectId"`
 	ServiceAccountUserName string `mapstructure:"serviceAccountUserName" json:"serviceAccountUserName" yaml:"serviceAccountUserName"`
 	ServiceAccountPassword string `mapstructure:"serviceAccountPassword" json:"serviceAccountPassword" yaml:"serviceAccountPassword"`
@@ -90,6 +92,8 @@ func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ m
 		return 0, "", fmt.Errorf("attempt to use closed Mixpanel instance")
 	}
 
+	apiHost := utils.Ternary(mp.config.DataResidency == "EU", "api-eu.mixpanel.com", "api.mixpanel.com")
+
 	body, err := io.ReadAll(reader)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to read request body: %v", err)
@@ -97,7 +101,7 @@ func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ m
 	for _, retryDelayMs := range retryDelaysMs {
 		var req *http.Request
 		//bytes reader
-		req, err = http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, bytes.NewReader(body))
+		req, err = http.NewRequest("POST", "https://"+apiHost+"/import?strict=1&project_id="+mp.config.ProjectId, bytes.NewReader(body))
 		if err != nil {
 			return 0, "", err
 		}
