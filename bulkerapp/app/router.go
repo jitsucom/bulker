@@ -122,11 +122,16 @@ func (r *Router) Health(c *gin.Context) {
 func (r *Router) EventsHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
+	partitionStr := c.Query("partition")
 	modeOverride := c.Query("modeOverride")
 	metricsMeta := utils.NvlString(c.GetHeader("metricsMeta"), c.Query("metricsMeta"))
 	streamOptions := utils.NvlString(c.GetHeader("streamOptions"), c.Query("streamOptions"))
 	mode := ""
 	bytesRead := 0
+	partition := 0
+	if partitionStr != "" {
+		partition, _ = strconv.Atoi(partitionStr)
+	}
 	var rError *appbase.RouterError
 	defer func() {
 		if rError != nil {
@@ -151,7 +156,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), true, true, false)
 		return
 	}
-	topicId, err := destination.TopicId(tableName, mode, r.config.KafkaTopicPrefix)
+	topicId, err := destination.TopicId(tableName, mode, r.config.KafkaTopicPrefix, partition)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true, true, false)
 		return
@@ -198,7 +203,7 @@ func (r *Router) ProfilesHandler(c *gin.Context) {
 		}
 	}()
 
-	topicId, err := MakeTopicId(profileBuilderId, profilesTopicMode, priority, r.config.KafkaTopicPrefix, false)
+	topicId, err := MakeTopicId(profileBuilderId, profilesTopicMode, priority, r.config.KafkaTopicPrefix, 0, false)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true, true, false)
 		return
@@ -373,9 +378,9 @@ func (r *Router) FailedHandler(c *gin.Context) {
 	}
 	topicId := r.config.KafkaDestinationsDeadLetterTopicName
 	if status == retryTopicMode {
-		topicId, _ = MakeTopicId(destinationId, retryTopicMode, allTablesToken, r.config.KafkaTopicPrefix, false)
+		topicId, _ = MakeTopicId(destinationId, retryTopicMode, allTablesToken, r.config.KafkaTopicPrefix, 0, false)
 	}
-	ogTopicId, _ := MakeTopicId(destinationId, mode, tableName, r.config.KafkaTopicPrefix, false)
+	ogTopicId, _ := MakeTopicId(destinationId, mode, tableName, r.config.KafkaTopicPrefix, 0, false)
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"auto.offset.reset":             "earliest",
 		"group.id":                      uuid.New(),

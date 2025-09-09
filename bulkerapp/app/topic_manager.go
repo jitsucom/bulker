@@ -295,7 +295,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 	for _, destination := range tm.repository.GetDestinations() {
 		dstTopics, hasTopics := tm.destinationTopics[destination.Id()]
 		for mode, config := range tm.requiredDestinationTopics {
-			topicId, _ := MakeTopicId(destination.Id(), mode, allTablesToken, tm.config.KafkaTopicPrefix, false)
+			topicId, _ := MakeTopicId(destination.Id(), mode, allTablesToken, tm.config.KafkaTopicPrefix, 0, false)
 			if (!hasTopics || !dstTopics.Contains(topicId)) && !staleTopics.Contains(topicId) {
 				//tm.Debugf("Creating topic %s for destination %s", topicId, destination.Id())
 				err := tm.createDestinationTopic(topicId, config)
@@ -326,7 +326,7 @@ func (tm *TopicManager) processMetadata(metadata *kafka.Metadata, nonEmptyTopics
 				tables = append(tables, "active_incoming")
 			}
 			for _, table := range tables {
-				topicId, _ := MakeTopicId(destination.Id(), "batch", table, tm.config.KafkaTopicPrefix, false)
+				topicId, _ := MakeTopicId(destination.Id(), "batch", table, tm.config.KafkaTopicPrefix, 0, false)
 				if (!hasTopics || !dstTopics.Contains(topicId)) && !staleTopics.Contains(topicId) {
 					tm.Infof("Creating topic %s for destination %s", topicId, destination.Id())
 					err := tm.createDestinationTopic(topicId, nil)
@@ -736,7 +736,7 @@ func ParseTopicId(topic string) (destinationId, mode, tableName string, err erro
 	// "(.*).m.(.*).(t|b64).(.*)"
 	usefulTopicInfo := topicSplit[1]
 
-	// "(.*).m.(.*).(t|b64).(.*)"
+	// "(.*).m.(.*).(t|b64).(.*).p.(.*)"
 	topicGroups := strings.SplitN(usefulTopicInfo, ".", 5)
 	if len(topicGroups) == 5 {
 		m := topicGroups[1]
@@ -747,7 +747,8 @@ func ParseTopicId(topic string) (destinationId, mode, tableName string, err erro
 		}
 		destinationId = topicGroups[0]
 		mode = topicGroups[2]
-		tableName = topicGroups[4]
+		namegroups := strings.Split(topicGroups[4], ".p.")
+		tableName = namegroups[0]
 		if tableEncoding == "b64" {
 			b, err := base64.RawURLEncoding.DecodeString(tableName)
 			if err != nil {
@@ -761,7 +762,7 @@ func ParseTopicId(topic string) (destinationId, mode, tableName string, err erro
 	return
 }
 
-func MakeTopicId(destinationId, mode, tableName, prefix string, checkLength bool) (string, error) {
+func MakeTopicId(destinationId, mode, tableName, prefix string, partition int, checkLength bool) (string, error) {
 	validName := true
 	if mode == retryTopicMode || mode == deadTopicMode {
 		tableName = allTablesToken
@@ -774,6 +775,9 @@ func MakeTopicId(destinationId, mode, tableName, prefix string, checkLength bool
 		topicId = prefix + "in.id." + destinationId + ".m." + mode + ".b64." + tableName
 	} else {
 		topicId = prefix + "in.id." + destinationId + ".m." + mode + ".t." + tableName
+	}
+	if partition > 0 {
+		topicId += fmt.Sprintf(".p.%d", partition)
 	}
 	if checkLength && len(topicId) > topicLengthLimit {
 		return "", fmt.Errorf("topic name %s length %d exceeds limit (%d). Please choose shorter table name. Recommended table name length is <= 63 symbols", topicId, len(topicId), topicLengthLimit)

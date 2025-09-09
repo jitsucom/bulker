@@ -58,7 +58,7 @@ func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, event
 	if metricsDst == nil {
 		return
 	}
-	topicId, err := metricsDst.TopicId("metrics", "", ac.config.KafkaTopicPrefix)
+	topicId, err := metricsDst.TopicId("metrics", "", ac.config.KafkaTopicPrefix, 0)
 	if err != nil {
 		ac.Errorf("Error getting topicId for metrics destination: %v", err)
 		return

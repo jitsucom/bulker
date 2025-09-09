@@ -214,11 +214,11 @@ type Destination struct {
 }
 
 // TopicId generates topic id for Destination
-func (d *Destination) TopicId(tableName string, modeOverride, prefix string) (string, error) {
+func (d *Destination) TopicId(tableName, modeOverride, prefix string, partition int) (string, error) {
 	if tableName == "" {
 		tableName = d.config.StreamConfig.TableName
 	}
-	return MakeTopicId(d.Id(), utils.DefaultString(modeOverride, string(d.mode)), tableName, prefix, true)
+	return MakeTopicId(d.Id(), utils.DefaultString(modeOverride, string(d.mode)), tableName, prefix, partition, true)
 }
 
 // Id returns destination id

@@ -49,7 +49,7 @@ func TestMakeTopicId(t *testing.T) {
 		tc := tC
 
 		t.Run(tc.desc, func(t *testing.T) {
-			topicId, err := MakeTopicId(tc.destinationId, tc.mode, tc.tableName, tc.prefix, tc.checkLength)
+			topicId, err := MakeTopicId(tc.destinationId, tc.mode, tc.tableName, tc.prefix, 0, tc.checkLength)
 
 			tc.requireErr(t, err)
 
@@ -70,6 +70,14 @@ func TestParseTopicId(t *testing.T) {
 		{
 			desc:                  "should parse a batch events topic",
 			topic:                 "in.id.clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT.m.batch.t.events",
+			expectedDestinationId: "clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT",
+			expectedMode:          "batch",
+			expectedTableName:     "events",
+			requireErr:            require.NoError,
+		},
+		{
+			desc:                  "should parse a batch events topic with partition",
+			topic:                 "in.id.clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT.m.batch.t.events.p.1",
 			expectedDestinationId: "clyzlw9m10006az0lhwqg34u9-pq7h-vjyr-gKxdFT",
 			expectedMode:          "batch",
 			expectedTableName:     "events",

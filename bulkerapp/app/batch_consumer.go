@@ -31,7 +31,7 @@ func NewBatchConsumer(repository *Repository, destinationId string, batchPeriodS
 		AbstractBatchConsumer: base,
 		eventsLogService:      eventsLogService,
 	}
-	retryTopic, _ := MakeTopicId(destinationId, retryTopicMode, allTablesToken, config.KafkaTopicPrefix, false)
+	retryTopic, _ := MakeTopicId(destinationId, retryTopicMode, allTablesToken, config.KafkaTopicPrefix, 0, false)
 	bc.retryTopic = retryTopic
 	bc.batchSizeFunc = bc.batchSizes
 	bc.batchFunc = bc.processBatchImpl
