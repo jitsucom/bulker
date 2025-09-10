@@ -7,6 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path"
+	"strings"
+	"time"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/implementations"
 	"github.com/jitsucom/bulker/bulkerlib/types"
@@ -15,11 +21,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"io"
-	"os"
-	"path"
-	"strings"
-	"time"
 )
 
 type AbstractTransactionalSQLStream struct {
@@ -36,6 +37,7 @@ type AbstractTransactionalSQLStream struct {
 	marshaller            types.Marshaller
 	targetMarshaller      types.Marshaller
 	eventsInBatch         int
+	minTimestampInBatch   *time.Time
 	s3                    *implementations.S3
 	batchFileLinesByPK    map[string]*DeduplicationLine
 	batchFileSkipLines    types2.Set[int]
@@ -446,6 +448,12 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 			return err
 		}
 	}
+	ts, _ := ps.getTimestampColumnValue(processedObject)
+	if ps.minTimestampInBatch == nil {
+		ps.minTimestampInBatch = &ts
+	} else if ts.Before(*ps.minTimestampInBatch) {
+		ps.minTimestampInBatch = &ts
+	}
 	ps.adjustTables(ctx, targetTable, processedObject)
 	err := ps.marshaller.InitSchema(ps.batchFile, nil, nil)
 	if err != nil {
@@ -596,4 +604,19 @@ func (ps *AbstractTransactionalSQLStream) getPKValue(object types.Object) (strin
 		pkArr = append(pkArr, fmt.Sprint(pkValue))
 	}
 	return strings.Join(pkArr, "_###_"), nil
+}
+
+func (ps *AbstractTransactionalSQLStream) getTimestampColumnValue(object types.Object) (time.Time, bool) {
+	if ps.timestampColumn == "" {
+		return time.Time{}, false
+	}
+	value := object.GetN(ps.timestampColumn)
+	if value == nil {
+		return time.Time{}, false
+	}
+	timeValue, ok := value.(time.Time)
+	if !ok {
+		return time.Time{}, false
+	}
+	return timeValue, true
 }

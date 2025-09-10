@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"regexp"
 )
 
 const ContextTransactionKey = "transaction"

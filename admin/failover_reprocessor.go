@@ -701,7 +701,7 @@ func (m *ReprocessingJobManager) filterFilesByDateRange(ctx context.Context, fil
 
 	for _, file := range files {
 		// Parse timestamp from filename (file creation time)
-		filenameTime, err := parseFilenameTimestamp(file)
+		createdTime, err := parseFilenameTimestamp(file)
 		if err != nil {
 			// If we can't parse the filename, skip this file
 			m.Warnf("Skipping file with unparseable filename: %s: %v", file, err)
@@ -740,13 +740,9 @@ func (m *ReprocessingJobManager) filterFilesByDateRange(ctx context.Context, fil
 			modTime = info.ModTime()
 		}
 
-		// Check for date range overlap:
-		// File time span: [filenameTime, modTime]
-		// Requested range: [dateFrom, dateTo]
-		// Overlap exists if: filenameTime <= dateTo && modTime >= dateFrom
-
-		// Skip if file was created after the end of requested range
-		if !dateTo.IsZero() && filenameTime.After(dateTo) {
+		// Skip if file was created day later than the end of requested range
+		// batches that was created after end of the period may still contain events from the period
+		if !dateTo.IsZero() && createdTime.Add(time.Hour*24).After(dateTo) {
 			continue
 		}
 

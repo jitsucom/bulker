@@ -1,8 +1,12 @@
 package main
 
 import (
+	"os"
+
 	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
@@ -16,6 +20,10 @@ type Config struct {
 
 	// Cache dir for repository data
 	CacheDir string `mapstructure:"CACHE_DIR"`
+}
+
+func init() {
+	viper.SetDefault("HTTP_PORT", utils.NvlString(os.Getenv("PORT"), "3049"))
 }
 
 func (c *Config) PostInit(settings *appbase.AppSettings) error {

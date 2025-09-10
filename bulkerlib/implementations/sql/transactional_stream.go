@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"math/rand"
+	"time"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"math/rand"
-	"time"
 )
 
 // TODO: Use real temporary tables
@@ -84,8 +87,18 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 		}
 		ps.dstTable = dstTable
 		ps.updateRepresentationTable(ps.dstTable)
+		mergeWindowDays := ps.mergeWindow
+		if mergeWindowDays > 0 {
+			if !ps.minTimestampInBatch.IsZero() {
+				batchInterval := time.Since(*ps.minTimestampInBatch)
+				mergeWindowDays = int(math.Ceil(batchInterval.Hours() / 24))
+				mergeWindowDays = min(mergeWindowDays, ps.mergeWindow)
+				mergeWindowDays = max(mergeWindowDays, 1)
+			}
+			logging.Infof("[%s] Merge window set to %d days. Min ts: %s", ps.id, mergeWindowDays, ps.minTimestampInBatch.Format(time.RFC3339))
+		}
 		//copy data from tmp table to destination table
-		ws, err := ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.mergeWindow)
+		ws, err := ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, mergeWindowDays)
 		ps.state.AddWarehouseState(ws)
 		if err != nil {
 			return ps.state, err

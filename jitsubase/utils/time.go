@@ -53,3 +53,43 @@ func (t *Ticker) Stop() {
 	t.ticker.Stop()
 	close(t.Closed)
 }
+
+func MinTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+func MaxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+func MaxTimePtr(a, b *time.Time) *time.Time {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	if a.After(*b) {
+		return a
+	}
+	return b
+}
+
+func MinTimePtr(a, b *time.Time) *time.Time {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	if a.Before(*b) {
+		return a
+	}
+	return b
+}

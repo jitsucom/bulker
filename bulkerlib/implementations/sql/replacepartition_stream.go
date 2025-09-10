@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"math/rand"
+	"time"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"math/rand"
-	"time"
 )
 
 type ReplacePartitionStream struct {
@@ -110,7 +113,17 @@ func (ps *ReplacePartitionStream) Complete(ctx context.Context) (state bulker.St
 			ps.dstTable = dstTable
 			ps.updateRepresentationTable(ps.dstTable)
 			//copy data from tmp table to destination table
-			ws, err := ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, ps.mergeWindow)
+			mergeWindowDays := ps.mergeWindow
+			if mergeWindowDays > 0 {
+				if !ps.minTimestampInBatch.IsZero() {
+					batchInterval := time.Since(*ps.minTimestampInBatch)
+					mergeWindowDays = int(math.Ceil(batchInterval.Hours() / 24))
+					mergeWindowDays = min(mergeWindowDays, ps.mergeWindow)
+					mergeWindowDays = max(mergeWindowDays, 1)
+				}
+				logging.Infof("[%s] Merge window set to %d days. Min ts: %s", ps.id, mergeWindowDays, ps.minTimestampInBatch.Format(time.RFC3339))
+			}
+			ws, err := ps.tx.CopyTables(ctx, ps.dstTable, ps.tmpTable, mergeWindowDays)
 			ps.state.AddWarehouseState(ws)
 			if err != nil {
 				return ps.state, err
