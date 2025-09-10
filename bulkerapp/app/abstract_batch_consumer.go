@@ -2,18 +2,19 @@ package app
 
 import (
 	"fmt"
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/jitsucom/bulker/bulkerapp/metrics"
-	bulker "github.com/jitsucom/bulker/bulkerlib"
-	"github.com/jitsucom/bulker/jitsubase/safego"
-	"github.com/jitsucom/bulker/jitsubase/utils"
-	"github.com/jitsucom/bulker/kafkabase"
 	"math"
 	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/jitsucom/bulker/bulkerapp/metrics"
+	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/jitsubase/safego"
+	"github.com/jitsucom/bulker/jitsubase/utils"
+	"github.com/jitsucom/bulker/kafkabase"
 )
 
 // retryTimeHeader - time of scheduled retry
@@ -35,6 +36,7 @@ type BatchConsumer interface {
 	ConsumeAll() (consumed BatchCounters, err error)
 	BatchPeriodSec() int
 	UpdateBatchPeriod(batchPeriodSec int)
+	Options() *bulker.StreamOptions
 }
 
 type AbstractBatchConsumer struct {
@@ -608,6 +610,16 @@ func (bc *AbstractBatchConsumer) Retire() {
 }
 func (bc *AbstractBatchConsumer) errorMetric(errorType string) {
 	metrics.ConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, errorType).Inc()
+}
+
+func (bc *AbstractBatchConsumer) Options() *bulker.StreamOptions {
+	if bc.destinationId != "" {
+		currentDst := bc.repository.GetDestination(bc.destinationId)
+		if currentDst != nil {
+			return currentDst.streamOptions
+		}
+	}
+	return &bulker.StreamOptions{}
 }
 
 func (bc *AbstractBatchConsumer) countersMetric(counters BatchCounters) {

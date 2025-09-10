@@ -12,6 +12,7 @@ import (
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/timestamp"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
@@ -90,7 +91,7 @@ func (ps *TransactionalStream) Complete(ctx context.Context) (state bulker.State
 		mergeWindowDays := ps.mergeWindow
 		if mergeWindowDays > 0 {
 			if !ps.minTimestampInBatch.IsZero() {
-				batchInterval := time.Since(*ps.minTimestampInBatch)
+				batchInterval := timestamp.Now().Sub(*ps.minTimestampInBatch)
 				mergeWindowDays = int(math.Ceil(batchInterval.Hours() / 24))
 				mergeWindowDays = min(mergeWindowDays, ps.mergeWindow)
 				mergeWindowDays = max(mergeWindowDays, 1)

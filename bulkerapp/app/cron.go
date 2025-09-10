@@ -1,10 +1,12 @@
 package app
 
 import (
+	"time"
+
 	"github.com/go-co-op/gocron/v2"
+	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"time"
 )
 
 type Cron struct {
@@ -24,10 +26,18 @@ func (c *Cron) AddBatchConsumer(destinationId string, batchConsumer BatchConsume
 	options := []gocron.JobOption{gocron.WithTags(batchConsumer.TopicId())}
 	batchPeriodSec := batchConsumer.BatchPeriodSec()
 	if batchPeriodSec > 1 {
+		var delay uint32
+		spreadTablesSchedule := bulker.SpreadTablesSchedule.Get(batchConsumer.Options())
 		// spread start time to avoid all batch run at the same time
-		delay := utils.HashStringInt(destinationId) % uint32(batchPeriodSec)
-		// introduce small fluctuation to avoid all batches starting at the same time for multi table destinations
-		delay += utils.HashStringInt(batchConsumer.TopicId()) % 30
+		if spreadTablesSchedule {
+			// all topics(topics) for the same destination will spread across the batch period
+			delay = utils.HashStringInt(batchConsumer.TopicId()) % uint32(batchPeriodSec)
+		} else {
+			// all topics(topics) for the same destination processing about the same time
+			delay = utils.HashStringInt(destinationId) % uint32(batchPeriodSec)
+			// introduce small fluctuation to avoid all batches starting exactly at the same time for multi table destinations
+			delay += utils.HashStringInt(batchConsumer.TopicId()) % 30
+		}
 		startTime := time.Now().Truncate(time.Duration(batchPeriodSec) * time.Second).Add(time.Duration(delay) * time.Second)
 		if startTime.Sub(time.Now().UTC()) < 5*time.Second {
 			// we are too late to run at this time. add batchPeriodSec to start time

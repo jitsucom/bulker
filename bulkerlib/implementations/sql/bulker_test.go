@@ -4,6 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	testcontainers2 "github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers/clickhouse"
@@ -15,11 +21,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/stretchr/testify/require"
-	"os"
-	"slices"
-	"strings"
-	"testing"
-	"time"
 )
 
 var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z")

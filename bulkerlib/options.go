@@ -119,6 +119,13 @@ var (
 		ParseFunc:    utils.ParseBool,
 	}
 
+	// SpreadTablesSchedule - when true cron tasks for processing different tables batches will be spread in time to avoid spikes
+	SpreadTablesSchedule = ImplementationOption[bool]{
+		Key:          "spreadTablesSchedule",
+		DefaultValue: false,
+		ParseFunc:    utils.ParseBool,
+	}
+
 	// DiscriminatorFieldOption - array represents path to the object property. when deduplicate is true, and multiple rows has the same primary key, row with the highest value of this field will be selected
 	DiscriminatorFieldOption = ImplementationOption[[]string]{
 		Key:          "discriminatorField",
@@ -191,6 +198,8 @@ func init() {
 	RegisterOption(&NamespaceOption)
 	RegisterOption(&ToSameCaseOption)
 	RegisterOption(&FunctionsEnvOption)
+	RegisterOption(&SpreadTablesSchedule)
+	RegisterOption(&DiscriminatorFieldOption)
 
 	dummyParse := func(_ any) (any, error) { return nil, nil }
 	for _, ignoredOption := range ignoredOptions {
