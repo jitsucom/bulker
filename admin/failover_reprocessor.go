@@ -742,7 +742,7 @@ func (m *ReprocessingJobManager) filterFilesByDateRange(ctx context.Context, fil
 
 		// Skip if file was created day later than the end of requested range
 		// batches that was created after end of the period may still contain events from the period
-		if !dateTo.IsZero() && createdTime.Add(time.Hour*24).After(dateTo) {
+		if !dateTo.IsZero() && createdTime.Add(time.Hour*-24).After(dateTo) {
 			continue
 		}
 
