@@ -6,13 +6,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/hashicorp/go-multierror"
-	bulker "github.com/jitsucom/bulker/bulkerlib"
-	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/errorj"
-	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/types"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"os"
 	"path"
 	"regexp"
@@ -20,6 +13,14 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/hashicorp/go-multierror"
+	bulker "github.com/jitsucom/bulker/bulkerlib"
+	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/types"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 
 	sf "github.com/snowflakedb/gosnowflake"
 )
@@ -47,8 +48,11 @@ const (
 )
 
 var (
-	sfReservedWords             = []string{"all", "alter", "and", "any", "as", "between", "by", "case", "cast", "check", "column", "connect", "constraint", "create", "cross", "current", "current_date", "current_time", "current_timestamp", "current_user", "default", "delete", "distinct", "drop", "else", "exists", "false", "following", "for", "from", "full", "grant", "group", "having", "ilike", "in", "increment", "inner", "insert", "intersect", "into", "is", "join", "lateral", "left", "like", "localtime", "localtimestamp", "minus", "natural", "not", "null", "of", "on", "or", "order", "qualify", "regexp", "revoke", "right", "rlike", "row", "rows", "sample", "select", "set", "some", "start", "table", "tablesample", "then", "to", "trigger", "true", "try_cast", "union", "unique", "update", "using", "values", "when", "whenever", "where", "with"}
+	sfReservedWords       = []string{"all", "alter", "and", "any", "as", "between", "by", "case", "cast", "check", "column", "connect", "constraint", "create", "cross", "current", "current_date", "current_time", "current_timestamp", "current_user", "default", "delete", "distinct", "drop", "else", "exists", "false", "following", "for", "from", "full", "grant", "group", "having", "ilike", "in", "increment", "inner", "insert", "intersect", "into", "is", "join", "lateral", "left", "like", "localtime", "localtimestamp", "minus", "natural", "not", "null", "of", "on", "or", "order", "qualify", "regexp", "revoke", "right", "rlike", "row", "rows", "sample", "select", "set", "some", "start", "table", "tablesample", "then", "to", "trigger", "true", "try_cast", "union", "unique", "update", "using", "values", "when", "whenever", "where", "with"}
+	sfReservedColumnNames = []string{"constraint", "current_date", "current_time", "current_timestamp", "current_user", "localtime", "localtimestamp"}
+
 	sfReservedWordsSet          = types.NewSet(sfReservedWords...)
+	sfReservedColumnNamesSet    = types.NewSet(sfReservedColumnNames...)
 	sfUnquotedIdentifierPattern = regexp.MustCompile(`^[a-z_][0-9a-z_]*$|^[A-Z_][0-9A-Z_]*$`)
 
 	sfMergeQueryTemplate, _ = template.New("snowflakeMergeQuery").Parse(sfMergeStatement)
@@ -83,6 +87,9 @@ type SnowflakeConfig struct {
 func init() {
 	for _, word := range sfReservedWords {
 		sfReservedWordsSet.Put(strings.ToUpper(word))
+	}
+	for _, word := range sfReservedColumnNames {
+		sfReservedColumnNamesSet.Put(strings.ToUpper(word))
 	}
 }
 
@@ -537,6 +544,9 @@ func (s *Snowflake) Select(ctx context.Context, namespace string, tableName stri
 }
 
 func sfIdentifierFunction(value string, alphanumeric bool) (adapted string, needQuotes bool) {
+	if sfReservedColumnNamesSet.Contains(value) {
+		return "_" + strings.ToUpper(value), false
+	}
 	if sfReservedWordsSet.Contains(value) {
 		return strings.ToUpper(value), true
 	}

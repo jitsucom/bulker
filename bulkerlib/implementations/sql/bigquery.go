@@ -1,11 +1,19 @@
 package sql
 
 import (
-	"cloud.google.com/go/bigquery"
-	"cloud.google.com/go/civil"
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"net/http"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"cloud.google.com/go/bigquery"
+	"cloud.google.com/go/civil"
 	"github.com/hashicorp/go-multierror"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/implementations"
@@ -19,13 +27,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
-	"math"
-	"net/http"
-	"os"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 func init() {
@@ -241,7 +242,8 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 		columnsString := strings.Join(quotedColumns, ",")
 		updateSet := make([]string, len(quotedColumns))
 		for i, name := range quotedColumns {
-			updateSet[i] = fmt.Sprintf("T.%s = S.%s", name, name)
+			n := forceQuote(name)
+			updateSet[i] = fmt.Sprintf("T.%s = S.%s", n, n)
 		}
 		var joinConditions []string
 		targetTable.PKFields.ForEach(func(pkField string) {
@@ -1172,4 +1174,11 @@ func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription
 		bq.Debugf("Successfully %s.%s%s in %.2f s.", jobDescription, jobID, bytesProcessed, time.Since(startTime).Seconds())
 		return job, state, nil
 	}
+}
+
+func forceQuote(identifier string) string {
+	if strings.HasPrefix(identifier, "`") && strings.HasSuffix(identifier, "`") {
+		return identifier
+	}
+	return "`" + identifier + "`"
 }
