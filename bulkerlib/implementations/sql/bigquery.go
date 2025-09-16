@@ -242,8 +242,7 @@ func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTa
 		columnsString := strings.Join(quotedColumns, ",")
 		updateSet := make([]string, len(quotedColumns))
 		for i, name := range quotedColumns {
-			n := forceQuote(name)
-			updateSet[i] = fmt.Sprintf("T.%s = S.%s", n, n)
+			updateSet[i] = fmt.Sprintf("T.%s = S.%s", name, name)
 		}
 		var joinConditions []string
 		targetTable.PKFields.ForEach(func(pkField string) {
@@ -1174,11 +1173,4 @@ func (bq *BigQuery) RunJob(ctx context.Context, runner JobRunner, jobDescription
 		bq.Debugf("Successfully %s.%s%s in %.2f s.", jobDescription, jobID, bytesProcessed, time.Since(startTime).Seconds())
 		return job, state, nil
 	}
-}
-
-func forceQuote(identifier string) string {
-	if strings.HasPrefix(identifier, "`") && strings.HasSuffix(identifier, "`") {
-		return identifier
-	}
-	return "`" + identifier + "`"
 }
