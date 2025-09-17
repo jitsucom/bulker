@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"fmt"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
@@ -63,7 +64,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		currentTable := table.WithoutColumns()
 		if ps.schemaFromOptions != nil {
 			//just to convert values to schema data types
-			ps.adjustTableColumnTypes(currentTable, ps.existingTable, ps.schemaFromOptions, object)
+			ps.adjustTableColumnTypes(currentTable, ps.existingTable, ps.schemaFromOptions, processedObject)
 		}
 		columnsAdded := ps.adjustTableColumnTypes(currentTable, ps.existingTable, table, processedObject)
 		if columnsAdded || !currentTable.PKFields.Equals(ps.existingTable.PKFields) {
@@ -107,8 +108,10 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		err = ps.sqlAdapter.Insert(ctx, currentTable, ps.merge, processedObject)
 	} else {
 		if ps.schemaFromOptions != nil {
+			desiredTable := table.Clone()
 			//just to convert values to schema data types
-			ps.adjustTableColumnTypes(table, nil, ps.schemaFromOptions, object)
+			ps.adjustTableColumnTypes(table, nil, ps.schemaFromOptions, nil)
+			ps.adjustTableColumnTypes(table, nil, desiredTable, processedObject)
 		}
 		var existingTable *Table
 		existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)

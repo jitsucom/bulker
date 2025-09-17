@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
+	"time"
+
 	"github.com/hashicorp/go-multierror"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
@@ -11,8 +14,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/joomcode/errorx"
-	"math/rand"
-	"time"
 )
 
 type ReplaceTableStream struct {
@@ -28,15 +29,19 @@ func newReplaceTableStream(id string, p SQLAdapter, tableName string, streamOpti
 		return nil, err
 	}
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
+		columns := tableForObject.Columns
+		if ps.schemaFromOptions != nil {
+			columns = ps.schemaFromOptions.Columns.Copy()
+		}
 		tmpTable := &Table{
 			Namespace:       ps.namespace,
 			Name:            fmt.Sprintf("%s_tmp%d%03d", utils.ShortenString(ps.tableName, 43), time.Now().UnixMilli(), rand.Intn(1000)),
 			PKFields:        tableForObject.PKFields,
-			Columns:         tableForObject.Columns,
+			Columns:         columns,
 			TimestampColumn: tableForObject.TimestampColumn,
 		}
 		if ps.schemaFromOptions != nil {
-			ps.adjustTableColumnTypes(tmpTable, nil, ps.schemaFromOptions, object)
+			ps.adjustTableColumnTypes(tmpTable, nil, tableForObject, object)
 		}
 		return tmpTable
 	}

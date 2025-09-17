@@ -37,10 +37,10 @@ func newTransactionalStream(id string, p SQLAdapter, tableName string, streamOpt
 	ps.loadExistingTable = true
 	ps.tmpTableFunc = func(ctx context.Context, tableForObject *Table, object types.Object) (table *Table) {
 		tmpTable := tableForObject.WithoutColumns()
-		ps.adjustTableColumnTypes(tmpTable, ps.existingTable, tableForObject, object)
 		if ps.schemaFromOptions != nil {
-			ps.adjustTableColumnTypes(tmpTable, ps.existingTable, ps.schemaFromOptions, object)
+			ps.adjustTableColumnTypes(tmpTable, ps.existingTable, ps.schemaFromOptions, nil)
 		}
+		ps.adjustTableColumnTypes(tmpTable, ps.existingTable, tableForObject, object)
 		tmpTableName := fmt.Sprintf("%s_tmp%d%03d", utils.ShortenString(ps.tableName, 43), time.Now().UnixMilli(), rand.Intn(1000))
 		t := &Table{
 			Namespace:       utils.Ternary(disableTemporaryTables, ps.namespace, p.TmpNamespace(ps.namespace)),
