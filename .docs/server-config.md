@@ -99,6 +99,10 @@ Skip SSL verification of kafka server certificate.
 
 Kafka authorization as JSON object `{"mechanism": "SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}`
 
+### `BULKER_KAFKA_SECURITY_PROTOCOL`
+
+Allow to pass security.protocol
+
 
 ## Batching
 
