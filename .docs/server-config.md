@@ -2,7 +2,7 @@
 
 * [Running Bulker](#running-bulker)
 * [Common Parameters](#common-parameters)
-* [Kafka Connection](#connection-to-kafka) 
+* [Kafka Connection](#connection-to-kafka)
 * [Batching](#batching)
 * [Streaming](#streaming)
 * [Error Handling and Retries](#error-handling-and-retries)
@@ -100,6 +100,11 @@ Skip SSL verification of kafka server certificate.
 Kafka authorization as JSON object `{"mechanism": "SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}`
 
 
+### `BULKER_KAFKA_SECURITY_PROTOCOL`
+
+Allow to pass security.protocol
+
+
 ## Batching
 
 Bulker buffers events and sends them to destination in batches if mode=`batch`. The batch is sent when
@@ -138,8 +143,8 @@ If Bulker fails to send events to destination, it can retry sending them with ex
 When error occurs, Bulker move events to Kafka topic dedicated to  Retry Consumer.
 In streaming mode single failed event is moved to `retry` topic while in batch mode whole batch is moved to `retry` topic.
 
-Retry Consumer is responsible for requeuing events from `retry` topic. It runs periodically and 
-relocate events from `retry` topic to the original topic while incrementing retries attempt counter. 
+Retry Consumer is responsible for requeuing events from `retry` topic. It runs periodically and
+relocate events from `retry` topic to the original topic while incrementing retries attempt counter.
 
 If stream or batch consumer reaches max retry attempts for specific event, that event is moved to `dead` topic.
 
@@ -262,7 +267,7 @@ Enable SSL for Clickhouse connection
 
 Bulker operates with destinations. Each destination is a connection to database or storage services (GCS, S3, etc).
 
-Each destination is a JSON-object 
+Each destination is a JSON-object
 
 
 There are two ways how to define list of destinations:
@@ -313,7 +318,7 @@ Each destination is a JSON object:
   type: "string", // destination type, see below
   //optional (time in ISO8601 format) when destination has been updated
   updatedAt: "2020-01-01T00:00:00Z",
-  //how to connect to destination. Values are destination specific. See 
+  //how to connect to destination. Values are destination specific. See
   credentials: {},
   options: {
     mode: "string", // "stream" or "batch"
@@ -324,24 +329,24 @@ Each destination is a JSON object:
     //period of running batch consumer in minutes (float). If not set, value of BULKER_BATCH_RUNNER_DEFAULT_PERIOD_SEC is used
     //see "Batching" section above
     //default value: 5
-    frequency: 5, 
+    frequency: 5,
     //name of the field that contains unique event id.
     //optional
-    primaryKey: "id", 
-    //whether bulker should deduplicate events by primary key. See db-feature-matrix.md Requires primaryKey to be set. 
+    primaryKey: "id",
+    //whether bulker should deduplicate events by primary key. See db-feature-matrix.md Requires primaryKey to be set.
     //default value: false
-    deduplicate: false, 
+    deduplicate: false,
     //field that contains timestamp of an event. If set bulker will create destination tables optimized for range queries and sorting by provided column
     //optional
     timestamp: "timestamp",
     //batch size of retry consumer. If not set, value of BULKER_BATCH_RUNNER_DEFAULT_RETRY_BATCH_SIZE is used
     //see "Error Handling and Retries" section above
     //default value: 100
-    retryBatchSize: 100, 
+    retryBatchSize: 100,
     //period of running retry consumer in minutes (float). If not set batchPeriodSec is used or BULKER_BATCH_RUNNER_DEFAULT_RETRY_PERIOD_SEC if batchPeriodSec is not set too.
     //see "Error Handling and Retries" section above
     //default value: 5
-    retryFrequency: 5, 
+    retryFrequency: 5,
   },
 }
 ```
@@ -381,9 +386,9 @@ Postrgres, MySQL, Redshift and Snowflake `credentials` shares same configuration
 {
   //Clickhouse protocol: clickhouse, clickhouse-secure, http or https
   protocol: "string",
-  //list of clickhouse servers as host:port. If port is not specified, default port for respective protocol will be used. http → 8123, https → 8443, clickhouse → 9000, clickhouse-secure → 9440  
+  //list of clickhouse servers as host:port. If port is not specified, default port for respective protocol will be used. http → 8123, https → 8443, clickhouse → 9000, clickhouse-secure → 9440
   hosts: ["string"],
-  //map of parameters. See https://clickhouse.com/docs/en/integrations/go/clickhouse-go/database-sql-api/#connection-settings 
+  //map of parameters. See https://clickhouse.com/docs/en/integrations/go/clickhouse-go/database-sql-api/#connection-settings
   parameters: {},
   username: "string",
   password: "string",
@@ -413,9 +418,3 @@ Postrgres, MySQL, Redshift and Snowflake `credentials` shares same configuration
   bqDataset: "string",
 }
 ```
-
-
-
-
-
-

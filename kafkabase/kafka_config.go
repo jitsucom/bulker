@@ -15,6 +15,7 @@ type KafkaConfig struct {
 	KafkaSSLSkipVerify    bool   `mapstructure:"KAFKA_SSL_SKIP_VERIFY" default:"false"`
 	KafkaSSLCA            string `mapstructure:"KAFKA_SSL_CA"`
 	KafkaSSLCAFile        string `mapstructure:"KAFKA_SSL_CA_FILE"`
+	KakfaSecurityProtocol string `mapstructure:"KAFKA_SECURITY_PROTOCOL"`
 
 	// Kafka authorization as JSON object {"mechanism": "SCRAM-SHA-256|PLAIN", "username": "user", "password": "password"}
 	KafkaSASL string `mapstructure:"KAFKA_SASL"`
@@ -48,7 +49,7 @@ type KafkaConfig struct {
 	ProducerBatchSize          int     `mapstructure:"PRODUCER_BATCH_SIZE" default:"65535"`
 	ProducerLingerMs           int     `mapstructure:"PRODUCER_LINGER_MS" default:"1000"`
 	ProducerWaitForDeliveryMs  int     `mapstructure:"PRODUCER_WAIT_FOR_DELIVERY_MS" default:"1000"`
-	
+
 	// Failover logger configuration
 	FailoverLoggerEnvConfig `mapstructure:",squash"`
 }
@@ -89,6 +90,10 @@ func (ac *KafkaConfig) GetKafkaConfig() *kafka.ConfigMap {
 		for k, v := range sasl {
 			_ = kafkaConfig.SetKey("sasl."+k, v)
 		}
+	}
+
+	if ac.KakfaSecurityProtocol != "" {
+		_ = kafkaConfig.SetKey("security.protocol", ac.KakfaSecurityProtocol)
 	}
 
 	return kafkaConfig
