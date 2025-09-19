@@ -104,7 +104,6 @@ Kafka authorization as JSON object `{"mechanism": "SCRAM-SHA-256|PLAIN", "userna
 
 Allow to pass security.protocol
 
-
 ## Batching
 
 Bulker buffers events and sends them to destination in batches if mode=`batch`. The batch is sent when
