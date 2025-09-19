@@ -101,7 +101,7 @@ Kafka authorization as JSON object `{"mechanism": "SCRAM-SHA-256|PLAIN", "userna
 
 ### `BULKER_KAFKA_SECURITY_PROTOCOL`
 
-Allow to pass security.protocol
+Allows setting Kafka `security.protocol`
 
 
 ## Batching
