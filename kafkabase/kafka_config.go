@@ -94,10 +94,11 @@ func (ac *KafkaConfig) GetKafkaConfig() *kafka.ConfigMap {
 
 func (c *KafkaConfig) TopicConfig(mode string) map[string]string {
 	config := map[string]string{}
+	config["compression.type"] = c.KafkaTopicCompression
 
 	switch mode {
 	case "retry":
-		config["retention.ms"] = fmt.Sprint(c.KafkaTopicRetentionHours * 60 * 60 * 1000)
+		config["retention.ms"] = fmt.Sprint(c.KafkaRetryTopicRetentionHours * 60 * 60 * 1000)
 		config["cleanup.policy"] = "delete,compact"
 
 		if c.KafkaAllowSegmentConfig {
@@ -111,7 +112,6 @@ func (c *KafkaConfig) TopicConfig(mode string) map[string]string {
 			config["segment.ms"] = fmt.Sprint(c.KafkaTopicSegmentHours * 60 * 60 * 1000)
 		}
 	default:
-		config["compression.type"] = c.KafkaTopicCompression
 		config["retention.ms"] = fmt.Sprint(c.KafkaTopicRetentionHours * 60 * 60 * 1000)
 		if c.KafkaAllowSegmentConfig {
 			config["segment.ms"] = fmt.Sprint(c.KafkaTopicSegmentHours * 60 * 60 * 1000)

@@ -282,7 +282,7 @@ func (sc *StreamConsumerImpl) start() {
 						metrics.ConnectionMessageStatuses(sc.destination.Id(), sc.tableName, "deadLettered").Inc()
 						failedTopic = sc.config.KafkaDestinationsDeadLetterTopicName
 					} else {
-						err = sc.topicManager.ensureTopic(sc.retryTopic, 1, sc.topicManager.config.TopicConfig("retry"))
+						err = sc.topicManager.ensureTopic(sc.retryTopic, 1, sc.config.TopicConfig("retry"))
 						if err != nil {
 							sc.Errorf("failed to create retry topic %s: %v", sc.retryTopic, err)
 						}
