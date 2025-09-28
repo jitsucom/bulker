@@ -2,6 +2,7 @@ package logging
 
 import (
 	"fmt"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"log"
 	"strings"
@@ -83,7 +84,7 @@ func (l *QueryLogger) LogQuery(query string, err error, values ...any) {
 			levelPrefix = errPrefix
 			errorString = "; error: " + err.Error()
 		}
-		logger.Printf("%s [%s] %s%s%s\n", levelPrefix, l.identifier, strings.ReplaceAll(query, "\n", ""), errorString, valuesString)
+		logger.Printf("%s [%s] %s%s%s\n", levelPrefix, l.identifier, strings.ReplaceAll(utils.ShortenStringWithEllipsis(query, 1000), "\n", ""), errorString, utils.ShortenStringWithEllipsis(valuesString, 1000))
 	}
 }
 

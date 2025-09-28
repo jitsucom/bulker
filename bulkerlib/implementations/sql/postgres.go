@@ -4,6 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
+	"net"
+	"os"
+	"path"
+	"strings"
+	"text/template"
+	"time"
+
+	"cloud.google.com/go/cloudsqlconn"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
@@ -12,12 +23,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"io"
-	"os"
-	"path"
-	"strings"
-	"text/template"
-	"time"
 )
 
 func init() {
@@ -68,7 +73,7 @@ var (
 		types2.STRING:    {"text", "varchar", "uuid"},
 		types2.INT64:     {"bigint"},
 		types2.FLOAT64:   {"double precision"},
-		types2.TIMESTAMP: {"timestamp with time zone", "timestamp", "timestamp without time zone"},
+		types2.TIMESTAMP: {"timestamp with time zone", "timestamp", "timestamp without time zone", "date"},
 		types2.BOOL:      {"boolean"},
 		types2.JSON:      {"jsonb", "json"},
 		types2.UNKNOWN:   {"text"},
@@ -76,8 +81,10 @@ var (
 )
 
 type PostgresConfig struct {
-	DataSourceConfig `mapstructure:",squash"`
-	SSLConfig        `mapstructure:",squash"`
+	DataSourceConfig       `mapstructure:",squash"`
+	SSLConfig              `mapstructure:",squash"`
+	AuthenticationMethod   string `mapstructure:"authenticationMethod,omitempty" json:"authenticationMethod,omitempty" yaml:"authenticationMethod,omitempty"`
+	InstanceConnectionName string `mapstructure:"instanceConnectionName,omitempty" json:"instanceConnectionName,omitempty" yaml:"instanceConnectionName,omitempty"`
 }
 
 // Postgres is adapter for creating,patching (schema or table), inserting data to postgres
@@ -110,6 +117,7 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	if config.Parameters == nil {
 		config.Parameters = map[string]string{}
 	}
+	utils.MapPutIfAbsent(config.Parameters, "connect_timeout", "90")
 
 	typecastFunc := func(placeholder string, column types2.SQLColumn) string {
 		if column.Override {
@@ -144,26 +152,64 @@ func NewPostgres(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
 
-	dbConnectFunction := func(cfg *PostgresConfig) (*sql.DB, error) {
-		connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
-			config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
-		//concat provided connection parameters
-		for k, v := range config.Parameters {
-			connectionString += " " + k + "=" + v + " "
+	dbConnectFunction := func(ctx context.Context, cfg *PostgresConfig) (*sql.DB, error) {
+		if cfg.AuthenticationMethod == "google-psc" {
+			dialer, err := cloudsqlconn.NewDialer(
+				ctx,
+				cloudsqlconn.WithIAMAuthN(),
+				cloudsqlconn.WithLazyRefresh(),
+				cloudsqlconn.WithDNSResolver(),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create cloudsql dialer: %v", err)
+			}
+			username := cfg.Username
+			if username == "" {
+				username = utils.DefaultString(os.Getenv("GOOGLE_PSC_SQL_USERNAME"), os.Getenv("BULKER_GOOGLE_PSC_SQL_USERNAME"))
+			}
+			connectionString := fmt.Sprintf("user=%s database=%s search_path=%s", username, cfg.Db, config.Schema)
+			for k, v := range config.Parameters {
+				connectionString += " " + k + "=" + v + " "
+			}
+			pgxConfig, err := pgx.ParseConfig(connectionString)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse dsn: %v", err)
+			}
+			pgxConfig.DialFunc = func(ctx context.Context, network, instance string) (net.Conn, error) {
+				return dialer.Dial(ctx, cfg.InstanceConnectionName, cloudsqlconn.WithPSC())
+			}
+			dbURI := stdlib.RegisterConnConfig(pgxConfig)
+			dataSource, err := sql.Open("pgx", dbURI)
+			if err != nil {
+				return nil, err
+			}
+			if err := dataSource.PingContext(ctx); err != nil {
+				_ = dataSource.Close()
+				return nil, err
+			}
+			dataSource.SetConnMaxIdleTime(3 * time.Minute)
+			dataSource.SetMaxIdleConns(10)
+			return dataSource, nil
+		} else {
+			connectionString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s search_path=%s",
+				config.Host, config.Port, config.Db, config.Username, config.Password, config.Schema)
+			//concat provided connection parameters
+			for k, v := range config.Parameters {
+				connectionString += " " + k + "=" + v + " "
+			}
+			logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
+			dataSource, err := sql.Open("pgx", connectionString)
+			if err != nil {
+				return nil, err
+			}
+			if err := dataSource.PingContext(ctx); err != nil {
+				_ = dataSource.Close()
+				return nil, err
+			}
+			dataSource.SetConnMaxIdleTime(3 * time.Minute)
+			dataSource.SetMaxIdleConns(10)
+			return dataSource, nil
 		}
-		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, connectionString)
-
-		dataSource, err := sql.Open("pgx", connectionString)
-		if err != nil {
-			return nil, err
-		}
-		if err := dataSource.Ping(); err != nil {
-			_ = dataSource.Close()
-			return nil, err
-		}
-		dataSource.SetConnMaxIdleTime(3 * time.Minute)
-		dataSource.SetMaxIdleConns(10)
-		return dataSource, nil
 	}
 	sqlAdapterBase, err := newSQLAdapterBase(bulkerConfig.Id, PostgresBulkerTypeId, config, config.Schema, dbConnectFunction, postgresDataTypes, queryLogger, typecastFunc, IndexParameterPlaceholder, pgColumnDDL, valueMappingFunc, checkErr, true)
 	p := &Postgres{sqlAdapterBase, tmpDir}
@@ -209,7 +255,7 @@ func (p *Postgres) createSchemaIfNotExists(ctx context.Context, schema string) e
 	if schema == "" {
 		return nil
 	}
-	n := p.namespaceName(schema)
+	n := p.NamespaceName(schema)
 	if n == "" {
 		return nil
 	}
@@ -260,7 +306,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, namespace string, tableNa
 
 func (p *Postgres) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
-	namespace = p.namespaceName(namespace)
+	namespace = p.NamespaceName(namespace)
 	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, namespace, tableName)
 	if err != nil {
@@ -446,7 +492,7 @@ func getDefaultValueStatement(sqlType string) string {
 // getPrimaryKey returns primary key name and fields
 func (p *Postgres) getPrimaryKey(ctx context.Context, namespace string, tableName string) (string, types.OrderedSet[string], error) {
 	tableName = p.TableName(tableName)
-	namespace = p.namespaceName(namespace)
+	namespace = p.NamespaceName(namespace)
 	primaryKeys := types.NewOrderedSet[string]()
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, pgPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {

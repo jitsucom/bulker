@@ -2,18 +2,21 @@ package api_based
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"errors"
 	"fmt"
-	bulker "github.com/jitsucom/bulker/bulkerlib"
-	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/appbase"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	bulker "github.com/jitsucom/bulker/bulkerlib"
+	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
 const MixpanelBulkerTypeId = "mixpanel"
@@ -26,6 +29,7 @@ func init() {
 }
 
 type MixpanelConfig struct {
+	DataResidency          string `mapstructure:"dataResidency" json:"dataResidency" yaml:"dataResidency"`
 	ProjectId              string `mapstructure:"projectId" json:"projectId" yaml:"projectId"`
 	ServiceAccountUserName string `mapstructure:"serviceAccountUserName" json:"serviceAccountUserName" yaml:"serviceAccountUserName"`
 	ServiceAccountPassword string `mapstructure:"serviceAccountPassword" json:"serviceAccountPassword" yaml:"serviceAccountPassword"`
@@ -36,6 +40,21 @@ type MixpanelBulker struct {
 	httpClient *http.Client
 
 	closed *atomic.Bool
+}
+
+type MixpanelValidationError struct {
+	Code               int                    `json:"code"`
+	Error              string                 `json:"error"`
+	FailedRecords      []MixpanelFailedRecord `json:"failed_records"`
+	NumRecordsImported int                    `json:"num_records_imported"`
+	Status             string                 `json:"status"`
+}
+
+type MixpanelFailedRecord struct {
+	Index    int    `json:"index"`
+	InsertId string `json:"$insert_id"`
+	Field    string `json:"field"`
+	Message  string `json:"message"`
 }
 
 func NewMixpanelBulker(bulkerConfig bulker.Config) (bulker.Bulker, error) {
@@ -73,6 +92,8 @@ func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ m
 		return 0, "", fmt.Errorf("attempt to use closed Mixpanel instance")
 	}
 
+	apiHost := utils.Ternary(mp.config.DataResidency == "EU", "api-eu.mixpanel.com", "api.mixpanel.com")
+
 	body, err := io.ReadAll(reader)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to read request body: %v", err)
@@ -80,7 +101,7 @@ func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ m
 	for _, retryDelayMs := range retryDelaysMs {
 		var req *http.Request
 		//bytes reader
-		req, err = http.NewRequest("POST", "https://api.mixpanel.com/import?strict=1&project_id="+mp.config.ProjectId, bytes.NewReader(body))
+		req, err = http.NewRequest("POST", "https://"+apiHost+"/import?strict=1&project_id="+mp.config.ProjectId, bytes.NewReader(body))
 		if err != nil {
 			return 0, "", err
 		}
@@ -112,7 +133,35 @@ func (mp *MixpanelBulker) Upload(reader io.Reader, eventsName string, _ int, _ m
 				return statusCode, respBody, nil
 			case 400:
 				if strings.Contains(respBody, "some data points in the request failed validation") {
-					return statusCode, respBody, nil
+					var validationError MixpanelValidationError
+					err1 := jsoniter.UnmarshalFromString(respBody, &validationError)
+					if err1 != nil {
+						return statusCode, respBody, nil
+					}
+					if validationError.NumRecordsImported == 0 {
+						return statusCode, respBody, mp.NewError("http status: %v%s", statusCode, errText)
+					}
+					if len(validationError.FailedRecords) == 0 {
+						return statusCode, respBody, nil
+					}
+					gz, err1 := gzip.NewReader(bytes.NewReader(body))
+					if err1 != nil {
+						return statusCode, respBody, nil
+					}
+					ndjson, err1 := io.ReadAll(gz)
+					if err1 != nil {
+						return statusCode, respBody, nil
+					}
+					var builder strings.Builder
+					builder.WriteString(fmt.Sprintf("Some data points in the request failed validation. Imported records: %d Failed records: %d:\n", validationError.NumRecordsImported, len(validationError.FailedRecords)))
+					for _, failedRecord := range validationError.FailedRecords {
+						builder.WriteString(fmt.Sprintf("$insert_id:%s %s:%s\n",
+							failedRecord.InsertId, failedRecord.Field, failedRecord.Message))
+						builder.WriteString("Event:\n")
+						builder.Write(utils.SubstringBetweenSeparators(ndjson, '\n', failedRecord.Index))
+						builder.WriteString("\n\n")
+					}
+					return statusCode, builder.String(), nil
 				} else {
 					return statusCode, respBody, mp.NewError("http status: %v%s", statusCode, errText)
 				}

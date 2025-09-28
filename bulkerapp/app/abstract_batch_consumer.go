@@ -2,18 +2,19 @@ package app
 
 import (
 	"fmt"
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-	"github.com/jitsucom/bulker/bulkerapp/metrics"
-	bulker "github.com/jitsucom/bulker/bulkerlib"
-	"github.com/jitsucom/bulker/jitsubase/safego"
-	"github.com/jitsucom/bulker/jitsubase/utils"
-	"github.com/jitsucom/bulker/kafkabase"
 	"math"
 	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/jitsucom/bulker/bulkerapp/metrics"
+	bulker "github.com/jitsucom/bulker/bulkerlib"
+	"github.com/jitsucom/bulker/jitsubase/safego"
+	"github.com/jitsucom/bulker/jitsubase/utils"
+	"github.com/jitsucom/bulker/kafkabase"
 )
 
 // retryTimeHeader - time of scheduled retry
@@ -27,7 +28,7 @@ const pauseHeartBeatInterval = 120 * time.Second
 
 type BatchSizesFunction func(*bulker.StreamOptions) (batchSize int, batchSizeBytes int, retryBatchSize int)
 type BatchFunction func(destination *Destination, batchNum, batchSize, batchSizeBytes, retryBatchSize int, highOffset int64, updatedHighOffset int) (counters BatchCounters, state bulker.State, nextBatch bool, err error)
-type ShouldConsumeFunction func(committedOffset, highOffset int64) bool
+type ShouldConsumeFunction func(partitionId int32, committedOffset, highOffset int64) bool
 
 type BatchConsumer interface {
 	Consumer
@@ -35,6 +36,7 @@ type BatchConsumer interface {
 	ConsumeAll() (consumed BatchCounters, err error)
 	BatchPeriodSec() int
 	UpdateBatchPeriod(batchPeriodSec int)
+	Options() *bulker.StreamOptions
 }
 
 type AbstractBatchConsumer struct {
@@ -43,6 +45,7 @@ type AbstractBatchConsumer struct {
 	repository      *Repository
 	destinationId   string
 	batchPeriodSec  int
+	kafkaConfig     *kafka.ConfigMap
 	consumerConfig  kafka.ConfigMap
 	consumer        atomic.Pointer[kafka.Consumer]
 	producerConfig  kafka.ConfigMap
@@ -108,6 +111,7 @@ func NewAbstractBatchConsumer(repository *Repository, destinationId string, batc
 		tableName:        tableName,
 		batchPeriodSec:   batchPeriodSec,
 		mode:             mode,
+		kafkaConfig:      kafkaConfig,
 		consumerConfig:   consumerConfig,
 		producerConfig:   producerConfig,
 		waitForMessages:  time.Duration(config.BatchRunnerWaitForMessagesSec) * time.Second,
@@ -262,9 +266,26 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.errorMetric("resume_error")
 		return BatchCounters{}, bc.NewError("Failed to resume kafka consumer: %v", err)
 	}
-	_, highOffset, err = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+	var partition int32 = 0
+	if bc.mode == "retry" && bc.topicId == bc.config.KafkaDestinationsRetryTopicName {
+		var ass []kafka.TopicPartition
+		var err error
+		for i := 0; i < 10; i++ {
+			ass, err = consumer.Assignment()
+			if err != nil || len(ass) != 1 {
+				time.Sleep(time.Second * time.Duration(i+1))
+			}
+		}
+		if err != nil || len(ass) != 1 {
+			bc.errorMetric("assignment_error")
+			return BatchCounters{}, bc.NewError("Failed to get consumer assignment (%d): %v", len(ass), err)
+		}
+		partition = ass[0].Partition
+		bc.Infof("Assigned partition: %d", partition)
+	}
+	_, highOffset, err = consumer.QueryWatermarkOffsets(bc.topicId, partition, 10_000)
 	updatedHighOffset = highOffset
-	offsets, erro := consumer.Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: 0}}, 10_000)
+	offsets, erro := consumer.Committed([]kafka.TopicPartition{{Topic: &bc.topicId, Partition: partition}}, 10_000)
 	if len(offsets) > 0 {
 		if offsets[0].Offset != kafka.OffsetInvalid {
 			commitedOffset = int64(offsets[0].Offset)
@@ -278,7 +299,7 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		bc.errorMetric("query_watermark_failed")
 		return BatchCounters{}, bc.NewError("Failed to query watermark offsets: %v", err)
 	}
-	if !bc.shouldConsume(commitedOffset, highOffset) {
+	if !bc.shouldConsume(partition, commitedOffset, highOffset) {
 		bc.Debugf("Consumer should not consume. offsets: %d-%d", commitedOffset, highOffset)
 		return BatchCounters{}, nil
 	}
@@ -308,9 +329,10 @@ func (bc *AbstractBatchConsumer) ConsumeAll() (counters BatchCounters, err error
 		if batchCounters.consumed > 0 {
 			if time.Since(lastOffsetQueryTime) > 1*time.Minute || !nextBatch {
 				var err1 error
-				_, updatedHighOffset, err1 = consumer.QueryWatermarkOffsets(bc.topicId, 0, 10_000)
+				consumer = bc.consumer.Load()
+				_, updatedHighOffset, err1 = consumer.QueryWatermarkOffsets(bc.topicId, partition, 10_000)
 				if err1 != nil {
-					bc.Errorf("Failed to query watermark offsets: %v", err)
+					bc.Errorf("Failed to query watermark offsets: %v", err1)
 					bc.errorMetric("query_watermark_failed")
 				}
 				lastOffsetQueryTime = time.Now()
@@ -345,13 +367,13 @@ func (bc *AbstractBatchConsumer) processBatch(destination *Destination, batchNum
 	return bc.batchFunc(destination, batchNum, batchSize, batchSizeBytes, retryBatchSize, highOffset, updatedHighOffset)
 }
 
-func (bc *AbstractBatchConsumer) shouldConsume(committedOffset, highOffset int64) bool {
+func (bc *AbstractBatchConsumer) shouldConsume(partitionId int32, committedOffset, highOffset int64) bool {
 	if highOffset == 0 || committedOffset == highOffset {
 		return false
 	}
 	if bc.shouldConsumeFunc != nil {
 		bc.resume()
-		return bc.shouldConsumeFunc(committedOffset, highOffset)
+		return bc.shouldConsumeFunc(partitionId, committedOffset, highOffset)
 	}
 	return true
 }
@@ -403,7 +425,7 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 			if !firstPoll {
 				select {
 				case <-bc.resumeChannel:
-					bc.paused.Store(false)
+					bc.paused.CompareAndSwap(true, false)
 					bc.Debugf("Consumer resumed.")
 					break loop
 				case <-pauseTicker.C:
@@ -430,7 +452,7 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 				if kafkaErr.IsRetriable() {
 					time.Sleep(10 * time.Second)
 				} else {
-					bc.restartConsumer()
+					bc.restartConsumer(nil)
 				}
 			} else if message != nil {
 				bc.Debugf("Unexpected message on paused consumer: %v", message)
@@ -439,6 +461,7 @@ func (bc *AbstractBatchConsumer) pause(immediatePoll bool) {
 				if err != nil {
 					bc.errorMetric("ROLLBACK_ON_PAUSE_ERR")
 					bc.SystemErrorf("Failed to rollback offset on paused consumer: %v", err)
+					bc.restartConsumer(nil)
 				}
 				bc.pauseKafkaConsumer()
 			}
@@ -462,24 +485,27 @@ func (bc *AbstractBatchConsumer) initConsumer(force bool) (consumer *kafka.Consu
 			bc.Errorf("Failed to subscribe to topic: %v", err)
 			return nil, err
 		}
+		if bc.mode == "retry" && bc.topicId == bc.config.KafkaDestinationsRetryTopicName {
+			consumer.Assign([]kafka.TopicPartition{kafka.TopicPartition{Topic: &bc.topicId, Offset: kafka.OffsetStored, Partition: int32(bc.config.InstanceIndex)}})
+		}
 		bc.Infof("Consumer created: %s", consumer.String())
 		bc.consumer.Store(consumer)
 	}
 	return consumer, nil
 }
 
-func (bc *AbstractBatchConsumer) restartConsumer() {
+func (bc *AbstractBatchConsumer) restartConsumer(beforeInit func()) {
 	if bc.retired.Load() {
 		return
 	}
 	bc.Infof("Restarting consumer")
 	go func(c *kafka.Consumer) {
-		bc.Infof("Closing previous consumer")
-		err := c.Close()
-		bc.Infof("Previous consumer closed: %v", err)
+		e1 := c.Unsubscribe()
+		e2 := c.Close()
+		bc.Infof("Previous consumer closed: %v %v", e1, e2)
 	}(bc.consumer.Load())
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(time.Duration(bc.config.KafkaSessionTimeoutMs+15000) * time.Millisecond)
 	defer ticker.Stop()
 	// for faster reaction on retiring
 	pauseTicker := time.NewTicker(1 * time.Second)
@@ -492,7 +518,9 @@ func (bc *AbstractBatchConsumer) restartConsumer() {
 				return
 			}
 		case <-ticker.C:
-			bc.Infof("Restarting consumer")
+			if beforeInit != nil {
+				beforeInit()
+			}
 			_, err := bc.initConsumer(true)
 			if err != nil {
 				break
@@ -511,6 +539,7 @@ func (bc *AbstractBatchConsumer) pauseKafkaConsumer() {
 	if err != nil {
 		bc.errorMetric("pause_error")
 		bc.SystemErrorf("Failed to pause kafka consumer: %v", err)
+		bc.restartConsumer(nil)
 	} else {
 		if len(partitions) > 0 {
 			bc.Debugf("Consumer paused.")
@@ -581,6 +610,16 @@ func (bc *AbstractBatchConsumer) Retire() {
 }
 func (bc *AbstractBatchConsumer) errorMetric(errorType string) {
 	metrics.ConsumerErrors(bc.topicId, bc.mode, bc.destinationId, bc.tableName, errorType).Inc()
+}
+
+func (bc *AbstractBatchConsumer) Options() *bulker.StreamOptions {
+	if bc.destinationId != "" {
+		currentDst := bc.repository.GetDestination(bc.destinationId)
+		if currentDst != nil {
+			return currentDst.streamOptions
+		}
+	}
+	return &bulker.StreamOptions{}
 }
 
 func (bc *AbstractBatchConsumer) countersMetric(counters BatchCounters) {

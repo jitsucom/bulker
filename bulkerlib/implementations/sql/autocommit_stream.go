@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"fmt"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
@@ -39,6 +40,9 @@ func (ps *AutoCommitStream) ConsumeMap(ctx context.Context, mp map[string]any) (
 
 func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (state bulker.State, processedObject types.Object, err error) {
 	defer func() {
+		if err != nil {
+			ps.sqlAdapter.TableHelper().ClearCached(ps.sqlAdapter.NamespaceName(ps.namespace), ps.tableName)
+		}
 		err = ps.postConsume(err)
 		state = ps.state
 	}()
@@ -60,7 +64,7 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		currentTable := table.WithoutColumns()
 		if ps.schemaFromOptions != nil {
 			//just to convert values to schema data types
-			ps.adjustTableColumnTypes(currentTable, ps.existingTable, ps.schemaFromOptions, object)
+			ps.adjustTableColumnTypes(currentTable, ps.existingTable, ps.schemaFromOptions, processedObject)
 		}
 		columnsAdded := ps.adjustTableColumnTypes(currentTable, ps.existingTable, table, processedObject)
 		if columnsAdded || !currentTable.PKFields.Equals(ps.existingTable.PKFields) {
@@ -104,14 +108,18 @@ func (ps *AutoCommitStream) Consume(ctx context.Context, object types.Object) (s
 		err = ps.sqlAdapter.Insert(ctx, currentTable, ps.merge, processedObject)
 	} else {
 		if ps.schemaFromOptions != nil {
+			desiredTable := table.Clone()
 			//just to convert values to schema data types
-			ps.adjustTableColumnTypes(table, nil, ps.schemaFromOptions, object)
+			ps.adjustTableColumnTypes(table, nil, ps.schemaFromOptions, nil)
+			ps.adjustTableColumnTypes(table, nil, desiredTable, processedObject)
 		}
-		ps.existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
+		var existingTable *Table
+		existingTable, err = ps.sqlAdapter.TableHelper().EnsureTableWithCaching(ctx, ps.sqlAdapter, ps.id, table)
 		if err != nil {
 			err = errorj.Decorate(err, "failed to ensure table")
 			return
 		}
+		ps.existingTable = existingTable
 		ps.updateRepresentationTable(ps.existingTable)
 		currentTable := ps.existingTable.Clone()
 		// remove columns with missed data from Insert statements

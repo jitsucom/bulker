@@ -127,6 +127,7 @@ func main() {
 			tableNamePrefix: os.Getenv("TABLE_NAME_PREFIX"),
 			toSameCase:      os.Getenv("TO_SAME_CASE") == "true",
 			addMeta:         os.Getenv("ADD_META") == "true",
+			deduplicate:     os.Getenv("DEDUPLICATE") == "true" || os.Getenv("DEDUPLICATE") == "",
 		}
 	} else {
 		sidecar = &SpecCatalogSideCar{AbstractSideCar: abstract}

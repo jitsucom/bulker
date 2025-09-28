@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
@@ -149,7 +150,7 @@ func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		queryLogger = logging.NewQueryLogger(bulkerConfig.Id, os.Stderr, os.Stderr)
 	}
 
-	dbConnectFunction := func(cfg *DuckDBConfig) (*sql.DB, error) {
+	dbConnectFunction := func(ctx context.Context, cfg *DuckDBConfig) (*sql.DB, error) {
 		connectionString := duckDBDsn(cfg)
 		logging.Infof("[%s] connecting: %s", bulkerConfig.Id, cfg.Db)
 
@@ -157,7 +158,7 @@ func NewDuckDB(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := dataSource.Ping(); err != nil {
+		if err := dataSource.PingContext(ctx); err != nil {
 			_ = dataSource.Close()
 			return nil, err
 		}
@@ -218,7 +219,7 @@ func (d *DuckDB) createSchemaIfNotExists(ctx context.Context, schema string) err
 	if schema == "" || schema == DuckDBMemoryDBAlias {
 		return nil
 	}
-	n := d.namespaceName(schema)
+	n := d.NamespaceName(schema)
 	if n == "" {
 		return nil
 	}
@@ -270,7 +271,7 @@ func (d *DuckDB) GetTableSchema(ctx context.Context, namespace string, tableName
 func (d *DuckDB) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	db := d.TableName(d.config.Db)
 	tableName = d.TableName(tableName)
-	namespace = d.namespaceName(namespace)
+	namespace = d.NamespaceName(namespace)
 	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	rows, err := d.txOrDb(ctx).QueryContext(ctx, duckDBTableSchemaQuery, db, namespace, tableName)
 	if err != nil {
@@ -398,7 +399,13 @@ func (d *DuckDB) LoadTable(ctx context.Context, targetTable *Table, loadSource *
 			if ok {
 				val, _ = types2.ReformatValue(val)
 			}
-			args[i] = d.valueMappingFunction(val, ok, col)
+			v := d.valueMappingFunction(val, ok, col)
+			if col.DataType == types2.JSON {
+				if vv, ok := v.(string); ok {
+					v = json.RawMessage(vv)
+				}
+			}
+			args[i] = v
 		})
 		err = appender.AppendRow(args...)
 		if err != nil {
@@ -432,7 +439,7 @@ func runStatement(con driver.Conn, statement string) error {
 func (d *DuckDB) getPrimaryKey(ctx context.Context, namespace string, tableName string) (string, types.OrderedSet[string], error) {
 	db := d.TableName(d.config.Db)
 	tableName = d.TableName(tableName)
-	namespace = d.namespaceName(namespace)
+	namespace = d.NamespaceName(namespace)
 	primaryKeys := types.NewOrderedSet[string]()
 	pkFieldsRows, err := d.txOrDb(ctx).QueryContext(ctx, duckDBPrimaryKeyFieldsQuery, db, namespace, tableName)
 	if err != nil {

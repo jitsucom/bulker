@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"regexp"
 )
 
 const ContextTransactionKey = "transaction"
@@ -56,6 +57,7 @@ type SQLAdapter interface {
 	ColumnName(rawColumn string) string
 	// TableName adapts table name to sql identifier rules of database
 	TableName(rawTableName string) string
+	NamespaceName(namespace string) string
 	DefaultNamespace() string
 	// TmpNamespace returns namespace used by temporary tables, e.g. for warehouses where temporary tables
 	// must not be specified with schema or db prefix NoNamespaceValue constant must be used
@@ -230,4 +232,8 @@ func (tx *TxSQLAdapter) ColumnName(identifier string) string {
 
 func (tx *TxSQLAdapter) TableName(identifier string) string {
 	return tx.sqlAdapter.TableName(identifier)
+}
+
+func (tx *TxSQLAdapter) NamespaceName(namespace string) string {
+	return tx.sqlAdapter.NamespaceName(namespace)
 }

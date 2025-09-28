@@ -93,14 +93,14 @@ func NewMySQL(bulkerConfig bulker.Config) (bulker.Bulker, error) {
 	utils.MapPutIfAbsent(config.Parameters, "readTimeout", "60s")
 	utils.MapPutIfAbsent(config.Parameters, "charset", "utf8mb4,utf8")
 
-	dbConnectFunction := func(cfg *DataSourceConfig) (*sql.DB, error) {
+	dbConnectFunction := func(ctx context.Context, cfg *DataSourceConfig) (*sql.DB, error) {
 		connectionString := mySQLDriverConnectionString(config)
 		dataSource, err := sql.Open("mysql", connectionString)
 		if err != nil {
 			return nil, err
 		}
 
-		if err := dataSource.Ping(); err != nil {
+		if err := dataSource.PingContext(ctx); err != nil {
 			dataSource.Close()
 			return nil, err
 		}
@@ -179,7 +179,7 @@ func (m *MySQL) createDatabaseIfNotExists(ctx context.Context, database string) 
 	if database == "" {
 		return nil
 	}
-	n := m.namespaceName(database)
+	n := m.NamespaceName(database)
 	if n == "" {
 		return nil
 	}
@@ -354,7 +354,7 @@ func (m *MySQL) GetTableSchema(ctx context.Context, namespace string, tableName 
 
 func (m *MySQL) getTable(ctx context.Context, namespace, tableName string) (*Table, error) {
 	tableName = m.TableName(tableName)
-	namespace = m.namespaceName(namespace)
+	namespace = m.NamespaceName(namespace)
 	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
@@ -407,7 +407,7 @@ func (m *MySQL) getTable(ctx context.Context, namespace, tableName string) (*Tab
 
 func (m *MySQL) getPrimaryKeys(ctx context.Context, namespace, tableName string) (types.OrderedSet[string], error) {
 	tableName = m.TableName(tableName)
-	namespace = m.namespaceName(namespace)
+	namespace = m.NamespaceName(namespace)
 	pkFieldsRows, err := m.dataSource.QueryContext(ctx, mySQLPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {
 		return types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
@@ -460,7 +460,7 @@ func (m *MySQL) ReplaceTable(ctx context.Context, targetTableName string, replac
 
 func (m *MySQL) renameTable(ctx context.Context, ifExists bool, namespace, tableName, newTableName string) error {
 	if ifExists {
-		db := m.namespaceName(namespace)
+		db := m.NamespaceName(namespace)
 		tableName = m.TableName(tableName)
 		row := m.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s')`, db, tableName))
 		exists := false

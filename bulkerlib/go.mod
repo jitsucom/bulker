@@ -5,16 +5,17 @@ go 1.24
 require (
 	cloud.google.com/go v0.116.0
 	cloud.google.com/go/bigquery v1.64.0
+	cloud.google.com/go/cloudsqlconn v1.17.2
 	cloud.google.com/go/storage v1.43.0
-	github.com/ClickHouse/clickhouse-go/v2 v2.36.0
+	github.com/ClickHouse/clickhouse-go/v2 v2.37.1
 	github.com/jackc/pgx/v5 v5.7.5
-	github.com/aws/aws-sdk-go-v2 v1.32.5
-	github.com/marcboeker/go-duckdb/v2 v2.2.1
-	github.com/aws/aws-sdk-go-v2/config v1.28.1
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.42
-	github.com/aws/aws-sdk-go-v2/service/redshiftdata v1.31.3
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.69.0
-	github.com/aws/aws-sdk-go-v2/service/sts v1.32.3
+	github.com/aws/aws-sdk-go-v2 v1.39.0
+	github.com/marcboeker/go-duckdb/v2 v2.3.2
+	github.com/aws/aws-sdk-go-v2/config v1.31.8
+	github.com/aws/aws-sdk-go-v2/credentials v1.18.12
+	github.com/aws/aws-sdk-go-v2/service/redshiftdata v1.37.4
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.88.1
+	github.com/aws/aws-sdk-go-v2/service/sts v1.38.4
 	github.com/docker/go-connections v0.5.0
 	github.com/go-sql-driver/mysql v1.9.0
 	github.com/hamba/avro/v2 v2.24.0

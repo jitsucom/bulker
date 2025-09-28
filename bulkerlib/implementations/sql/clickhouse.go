@@ -222,7 +222,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 	utils.MapPutIfAbsent(config.Parameters, "insert_distributed_sync", "1")
 	utils.MapPutIfAbsent(config.Parameters, "compress", "true")
 
-	dbConnectFunction := func(config *ClickHouseConfig) (*sql.DB, error) {
+	dbConnectFunction := func(ctx context.Context, config *ClickHouseConfig) (*sql.DB, error) {
 		dsn := clickhouseDriverConnectionString(config)
 		dataSource, err := sql.Open("clickhouse", dsn)
 		if err != nil {
@@ -233,7 +233,7 @@ func NewClickHouse(bulkerConfig bulkerlib.Config) (bulkerlib.Bulker, error) {
 		dataSource.SetConnMaxLifetime(time.Minute * 10)
 		dataSource.SetConnMaxIdleTime(time.Minute * 3)
 
-		if err := chPing(dataSource); err != nil {
+		if err := chPing(ctx, dataSource); err != nil {
 			_ = dataSource.Close()
 			return nil, err
 		}
@@ -391,7 +391,7 @@ func (ch *ClickHouse) createDatabaseIfNotExists(ctx context.Context, db string) 
 		return nil
 	}
 	var dbname string
-	db = ch.namespaceName(db)
+	db = ch.NamespaceName(db)
 	if db == "" {
 		return nil
 	}
@@ -495,7 +495,7 @@ func (ch *ClickHouse) CreateTable(ctx context.Context, table *Table) (*Table, er
 func (ch *ClickHouse) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	//local table name since schema of distributed table lacks primary keys
 	queryTableName := ch.TableName(ch.localTableName(tableName))
-	namespace = ch.namespaceName(namespace)
+	namespace = ch.NamespaceName(namespace)
 	tableName = ch.TableName(tableName)
 	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types2.NewOrderedSet[string]()}
 	rows, err := ch.txOrDb(ctx).QueryContext(ctx, chTableSchemaQuery, namespace, queryTableName)
@@ -554,7 +554,7 @@ func (ch *ClickHouse) GetTableSchema(ctx context.Context, namespace string, tabl
 // getPrimaryKey returns primary key name and fields
 func (ch *ClickHouse) getPrimaryKey(ctx context.Context, namespace, tableName string) (string, types2.OrderedSet[string], error) {
 	tableName = ch.TableName(tableName)
-	namespace = ch.namespaceName(namespace)
+	namespace = ch.NamespaceName(namespace)
 	queryTableName := ch.TableName(ch.localTableName(tableName))
 	pkFieldsRows, err := ch.txOrDb(ctx).QueryContext(ctx, chPrimaryKeyFieldsQuery, namespace, queryTableName)
 	if err != nil {
@@ -957,7 +957,7 @@ func (ch *ClickHouse) createDistributedTableInTransaction(ctx context.Context, o
 		shardingKey = "halfMD5(" + strings.Join(originTable.GetPKFields(), ",") + ")"
 	}
 	statement := fmt.Sprintf(chCreateDistributedTableTemplate,
-		namespace, ch.quotedTableName(originTable.Name), ch.getOnClusterClause(), namespace, ch.quotedLocalTableName(originTableName), ch.config.Cluster, ch.namespaceName(originTable.Namespace), ch.quotedLocalTableName(originTableName), shardingKey)
+		namespace, ch.quotedTableName(originTable.Name), ch.getOnClusterClause(), namespace, ch.quotedLocalTableName(originTableName), ch.config.Cluster, ch.NamespaceName(originTable.Namespace), ch.quotedLocalTableName(originTableName), shardingKey)
 
 	if _, err := ch.txOrDb(ctx).ExecContext(ctx, statement); err != nil {
 		return fmt.Errorf("error creating distributed table statement with statement [%s] for [%s] : %v", statement, ch.quotedTableName(originTableName), err)
@@ -1245,11 +1245,11 @@ func (ch *ClickHouse) TmpNamespace(string) string {
 	return NoNamespaceValue
 }
 
-func (ch *ClickHouse) Ping(_ context.Context) error {
+func (ch *ClickHouse) Ping(ctx context.Context) error {
 	if ch.dataSource != nil {
-		err := chPing(ch.dataSource)
+		err := chPing(ctx, ch.dataSource)
 		if err != nil {
-			dataSource, err := ch.dbConnectFunction(ch.config)
+			dataSource, err := ch.dbConnectFunction(ctx, ch.config)
 			if err == nil {
 				_ = ch.dataSource.Close()
 				ch.dataSource = dataSource
@@ -1258,7 +1258,7 @@ func (ch *ClickHouse) Ping(_ context.Context) error {
 		}
 	} else {
 		var err error
-		ch.dataSource, err = ch.dbConnectFunction(ch.config)
+		ch.dataSource, err = ch.dbConnectFunction(ctx, ch.config)
 		if err != nil {
 			return err
 		}
@@ -1266,6 +1266,6 @@ func (ch *ClickHouse) Ping(_ context.Context) error {
 	return nil
 }
 
-func chPing(db *sql.DB) error {
-	return db.Ping()
+func chPing(ctx context.Context, db *sql.DB) error {
+	return db.PingContext(ctx)
 }

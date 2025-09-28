@@ -584,7 +584,7 @@ func TestJSONTypes(t *testing.T) {
 		},
 		{
 			name:                      "json_test_clickhouse_json",
-			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			modes:                     []bulker.BulkMode{bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
 			expectPartitionId:         true,
 			dataFile:                  "test_data/types_json.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
@@ -689,6 +689,42 @@ func TestJSONTypes(t *testing.T) {
 				},
 			})},
 			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{BigqueryBulkerTypeId}),
+		},
+		{
+			name:                      "json_testduckdb",
+			modes:                     []bulker.BulkMode{bulker.Stream, bulker.Batch, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId:         true,
+			dataFile:                  "test_data/types_json.ndjson",
+			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
+			expectedTable: ExpectedTable{
+				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+					{"_timestamp", types2.SQLColumn{Type: "timestamp with time zone"}},
+					{"id", types2.SQLColumn{Type: "bigint"}},
+					{"name", types2.SQLColumn{Type: "varchar"}},
+					{"json1_nested", types2.SQLColumn{Type: "bigint"}},
+					{"json2", types2.SQLColumn{Type: "json"}},
+					{"array1", types2.SQLColumn{Type: "json"}},
+					{"json1_nested2_nested", types2.SQLColumn{Type: "bigint"}},
+				}),
+			},
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "a", "json1_nested": 1, "json2": map[string]any{"nested": 1.0}, "array1": []any{"1", "2", "3"}, "json1_nested2_nested": nil},
+				{"_timestamp": constantTime, "id": 2, "name": "b", "json1_nested": nil, "json2": map[string]any{"nested": map[string]any{"nested": 2.0}}, "array1": []any{1.0, 2.0, 3.0}, "json1_nested2_nested": 2},
+				{"_timestamp": constantTime, "id": 3, "name": "c", "json1_nested": 1, "json2": map[string]any{"nested": 1.0}, "array1": []any{map[string]any{"nested": 1.0}, map[string]any{"nested": 2.0}, map[string]any{"nested": 3.0}}, "json1_nested2_nested": nil},
+			},
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "name", Type: types2.STRING},
+					{Name: "json1_nested", Type: types2.INT64},
+					{Name: "json2", Type: types2.JSON},
+					{Name: "array1", Type: types2.JSON},
+					{Name: "json1_nested2_nested", Type: types2.INT64},
+				},
+			})},
+			configIds: utils.ArrayIntersection(allBulkerConfigs, []string{DuckDBBulkerTypeId}),
 		},
 	}
 	for _, tt := range tests {

@@ -4,6 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	testcontainers2 "github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers/clickhouse"
@@ -15,11 +21,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/stretchr/testify/require"
-	"os"
-	"slices"
-	"strings"
-	"testing"
-	"time"
 )
 
 var constantTime = timestamp.MustParseTime(time.RFC3339Nano, "2022-08-18T14:17:22.375Z")
@@ -510,6 +511,61 @@ func TestBasics(t *testing.T) {
 			},
 			configIds: allBulkerConfigs,
 		},
+		{
+			name:              "date_type",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/date_type.ndjson",
+			expectedRowsCount: 3,
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "test1", "dt": timestamp.CopyTime(constantTime).Truncate(24 * time.Hour)},
+				{"_timestamp": constantTime, "id": 2, "name": "test2", "dt": timestamp.CopyTime(constantTime).Truncate(24 * time.Hour)},
+				{"_timestamp": constantTime, "id": 3, "name": "test3", "dt": timestamp.CopyTime(constantTime).Truncate(24 * time.Hour)},
+			},
+			configIds: allBulkerConfigs,
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "dt", Type: types2.TIMESTAMP},
+				},
+			})},
+		},
+		{
+			name:              "date_mix",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/date_mix.ndjson",
+			expectedRowsCount: 3,
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "test1", "dt": constantTime},
+				{"_timestamp": constantTime, "id": 2, "name": "test2", "dt": timestamp.CopyTime(constantTime).Truncate(24 * time.Hour)},
+				{"_timestamp": constantTime, "id": 3, "name": "test3", "dt": constantTime},
+			},
+			configIds: allBulkerConfigs,
+			streamOptions: []bulker.StreamOption{bulker.WithSchema(types2.Schema{
+				Name: "d",
+				Fields: []types2.SchemaField{
+					{Name: "_timestamp", Type: types2.TIMESTAMP},
+					{Name: "id", Type: types2.INT64},
+					{Name: "dt", Type: types2.TIMESTAMP},
+				},
+			})},
+		},
+		{
+			name:              "date_mix_no_schema",
+			modes:             []bulker.BulkMode{bulker.Batch, bulker.Stream, bulker.ReplaceTable, bulker.ReplacePartition},
+			expectPartitionId: true,
+			dataFile:          "test_data/date_mix.ndjson",
+			expectedRowsCount: 3,
+			expectedRows: []map[string]any{
+				{"_timestamp": constantTime, "id": 1, "name": "test1", "dt": constantTime},
+				{"_timestamp": constantTime, "id": 2, "name": "test2", "dt": timestamp.CopyTime(constantTime).Truncate(24 * time.Hour)},
+				{"_timestamp": constantTime, "id": 3, "name": "test3", "dt": constantTime},
+			},
+			configIds: allBulkerConfigs,
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -537,7 +593,7 @@ func runTestConfig(t *testing.T, tt bulkerTestConfig, testFunc func(*testing.T, 
 			if !ok {
 				t.Fatalf("No config found for %s", testConfigId)
 			}
-			newTd.config = &bulker.Config{Id: testConfigId, BulkerType: testConfig.BulkerType, DestinationConfig: testConfig.Config, LogLevel: bulker.Default}
+			newTd.config = &bulker.Config{Id: testConfigId, BulkerType: testConfig.BulkerType, DestinationConfig: testConfig.Config, LogLevel: bulker.Verbose}
 			for _, mode := range newTd.modes {
 				tc := newTd
 				mode := mode
@@ -707,7 +763,9 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			table.PKFields = newPKFields
 
 			table.Name = strings.ToLower(table.Name)
+			table.Namespace = strings.ToLower(table.Namespace)
 			expectedTable.Name = strings.ToLower(expectedTable.Name)
+			expectedTable.Namespace = strings.ToLower(expectedTable.Namespace)
 		}
 		actualColumns := table.Columns
 		expectedColumns := expectedTable.Columns
@@ -766,8 +824,18 @@ func adaptConfig(t *testing.T, testConfig *bulkerTestConfig, mode bulker.BulkMod
 					}
 				}
 				newExpectedTable := ExpectedTable{Name: testConfig.expectedTable.Name, Columns: NewColumns(0), PKFields: slices.Clone(testConfig.expectedTable.PKFields)}
-				newExpectedTable.Columns.Set(PartitonIdKeyword, textColumn)
-				newExpectedTable.Columns.SetAll(testConfig.expectedTable.Columns)
+				streamOptions := bulker.StreamOptions{}
+				for _, so := range testConfig.streamOptions {
+					streamOptions.Add(so)
+				}
+				schema := bulker.SchemaOption.Get(&streamOptions)
+				if !schema.IsEmpty() {
+					newExpectedTable.Columns.SetAll(testConfig.expectedTable.Columns)
+					newExpectedTable.Columns.Set(PartitonIdKeyword, textColumn)
+				} else {
+					newExpectedTable.Columns.Set(PartitonIdKeyword, textColumn)
+					newExpectedTable.Columns.SetAll(testConfig.expectedTable.Columns)
+				}
 				testConfig.expectedTable = newExpectedTable
 			}
 			//add partition id value to all expected rows

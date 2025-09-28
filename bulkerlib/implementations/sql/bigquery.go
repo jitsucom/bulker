@@ -1,11 +1,19 @@
 package sql
 
 import (
-	"cloud.google.com/go/bigquery"
-	"cloud.google.com/go/civil"
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"net/http"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"cloud.google.com/go/bigquery"
+	"cloud.google.com/go/civil"
 	"github.com/hashicorp/go-multierror"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/implementations"
@@ -19,13 +27,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
-	"math"
-	"net/http"
-	"os"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 func init() {
@@ -51,7 +52,7 @@ const (
 )
 
 var (
-	bigqueryReservedWords    = []string{"all", "and", "any", "array", "as", "asc", "assert_rows_modified", "at", "between", "by", "case", "cast", "collate", "contains", "create", "cross", "cube", "current", "default", "define", "desc", "distinct", "else", "end", "enum", "escape", "except", "exclude", "exists", "extract", "false", "fetch", "following", "for", "from", "full", "group", "grouping", "groups", "hash", "having", "if", "ignore", "in", "inner", "intersect", "interval", "into", "is", "join", "lateral", "left", "like", "limit", "lookup", "merge", "natural", "new", "no", "not", "null", "nulls", "of", "on", "or", "order", "outer", "over", "partition", "preceding", "proto", "qualify", "range", "recursive", "respect", "right", "rollup", "rows", "select", "set", "some", "struct", "tablesample", "then", "to", "treat", "true", "unbounded", "union", "unnest", "using", "when", "where", "window", "with", "within"}
+	bigqueryReservedWords    = []string{"all", "and", "any", "array", "as", "asc", "assert_rows_modified", "at", "between", "by", "case", "cast", "collate", "contains", "create", "cross", "cube", "current", "current_time", "default", "define", "desc", "distinct", "else", "end", "enum", "escape", "except", "exclude", "exists", "extract", "false", "fetch", "following", "for", "from", "full", "group", "grouping", "groups", "hash", "having", "if", "ignore", "in", "inner", "intersect", "interval", "into", "is", "join", "lateral", "left", "like", "limit", "lookup", "merge", "natural", "new", "no", "not", "null", "nulls", "of", "on", "or", "order", "outer", "over", "partition", "preceding", "proto", "qualify", "range", "recursive", "respect", "right", "rollup", "rows", "select", "set", "some", "struct", "tablesample", "then", "to", "treat", "true", "unbounded", "union", "unnest", "using", "when", "where", "window", "with", "within"}
 	bigqueryReservedWordsSet = types.NewSet(bigqueryReservedWords...)
 	bigqueryReservedPrefixes = [...]string{"_table_", "_file_", "_partition", "_row_timestamp", "__root__", "_colidentifier"}
 
@@ -193,7 +194,7 @@ func (bq *BigQuery) validateOptions(streamOptions []bulker.StreamOption) error {
 }
 
 func (bq *BigQuery) CopyTables(ctx context.Context, targetTable *Table, sourceTable *Table, mergeWindow int) (state bulker.WarehouseState, err error) {
-	namespace := bq.namespaceName(targetTable.Namespace)
+	namespace := bq.NamespaceName(targetTable.Namespace)
 	if mergeWindow <= 0 {
 		defer func() {
 			if err != nil {
@@ -287,7 +288,7 @@ func (bq *BigQuery) Ping(ctx context.Context) error {
 // GetTableSchema return google BigQuery table (name,columns) representation wrapped in Table struct
 func (bq *BigQuery) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = bq.TableName(tableName)
-	namespace = bq.namespaceName(namespace)
+	namespace = bq.NamespaceName(namespace)
 	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
 	bqTable := bq.client.Dataset(namespace).Table(tableName)
 
@@ -345,7 +346,7 @@ func (bq *BigQuery) CreateTable(ctx context.Context, table *Table) (t *Table, er
 		return nil, err
 	}
 	tableName := bq.TableName(table.Name)
-	namespace := bq.namespaceName(table.Namespace)
+	namespace := bq.NamespaceName(table.Namespace)
 	bqTable := bq.client.Dataset(namespace).Table(tableName)
 
 	_, err = bqTable.Metadata(ctx)
@@ -429,7 +430,7 @@ func (bq *BigQuery) createDatasetIfNotExists(ctx context.Context, dataset string
 	if dataset == "" {
 		return nil
 	}
-	dataset = bq.namespaceName(dataset)
+	dataset = bq.NamespaceName(dataset)
 	if dataset == "" {
 		return nil
 	}
@@ -462,7 +463,7 @@ func (bq *BigQuery) InitDatabase(ctx context.Context) error {
 
 // PatchTableSchema adds Table columns to google BigQuery table
 func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) (*Table, error) {
-	namespace := bq.namespaceName(patchSchema.Namespace)
+	namespace := bq.NamespaceName(patchSchema.Namespace)
 	bqTable := bq.client.Dataset(namespace).Table(patchSchema.Name)
 	metadata, err := bqTable.Metadata(ctx)
 	if err != nil {
@@ -525,7 +526,7 @@ func (bq *BigQuery) PatchTableSchema(ctx context.Context, patchSchema *Table) (*
 
 func (bq *BigQuery) DeletePartition(ctx context.Context, namespace, tableName string, datePartiton *DatePartition) error {
 	tableName = bq.TableName(tableName)
-	namespace = bq.namespaceName(namespace)
+	namespace = bq.NamespaceName(namespace)
 	partitions := GranularityToPartitionIds(datePartiton.Granularity, datePartiton.Value)
 	for _, partition := range partitions {
 		bq.logQuery("DELETE partition "+partition+" in table"+tableName, "", nil)
@@ -580,7 +581,7 @@ func GranularityToPartitionIds(g Granularity, t time.Time) []string {
 }
 
 func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, objects ...types2.Object) (err error) {
-	namespace := bq.namespaceName(table.Namespace)
+	namespace := bq.NamespaceName(table.Namespace)
 	inserter := bq.client.Dataset(namespace).Table(table.Name).Inserter()
 	bq.logQuery(fmt.Sprintf("Inserting [%d] values to table %s using BigQuery Streaming API with chunks [%d]: ", len(objects), table.Name, bigqueryRowsLimitPerInsertOperation), objects, nil)
 
@@ -624,7 +625,7 @@ func (bq *BigQuery) Insert(ctx context.Context, table *Table, merge bool, object
 
 func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSource *LoadSource) (state bulker.WarehouseState, err error) {
 	tableName := bq.TableName(targetTable.Name)
-	dataset := bq.namespaceName(targetTable.Namespace)
+	dataset := bq.NamespaceName(targetTable.Namespace)
 	defer func() {
 		if err != nil {
 			err = errorj.ExecuteInsertInBatchError.Wrap(err, "failed to execute middle insert batch").
@@ -699,7 +700,7 @@ func (bq *BigQuery) LoadTable(ctx context.Context, targetTable *Table, loadSourc
 // DropTable drops table from BigQuery
 func (bq *BigQuery) DropTable(ctx context.Context, namespace string, tableName string, ifExists bool) error {
 	tableName = bq.TableName(tableName)
-	dataset := bq.namespaceName(namespace)
+	dataset := bq.NamespaceName(namespace)
 	bq.logQuery(fmt.Sprintf("DROP table %s if exists: %t", bq.fullTableName(dataset, tableName), ifExists), nil, nil)
 
 	bqTable := bq.client.Dataset(dataset).Table(tableName)
@@ -727,7 +728,7 @@ func (bq *BigQuery) Drop(ctx context.Context, table *Table, ifExists bool) error
 
 func (bq *BigQuery) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
 	targetTableName = bq.TableName(targetTableName)
-	namespace := bq.namespaceName(replacementTable.Namespace)
+	namespace := bq.NamespaceName(replacementTable.Namespace)
 	replacementTableName := bq.TableName(replacementTable.Name)
 	defer func() {
 		if err != nil {
@@ -1026,7 +1027,7 @@ func (bq *BigQuery) OpenTx(ctx context.Context) (*TxSQLAdapter, error) {
 }
 
 func (bq *BigQuery) fullTableName(namespace, tableName string) string {
-	return fmt.Sprintf("`%s`.`%s`", bq.config.Project, bq.namespaceName(namespace)) + "." + bq.tableHelper.quotedTableName(tableName)
+	return fmt.Sprintf("`%s`.`%s`", bq.config.Project, bq.NamespaceName(namespace)) + "." + bq.tableHelper.quotedTableName(tableName)
 }
 
 func tableNameFunc(identifier string, alphanumeric bool) (adapted string, needQuote bool) {
@@ -1128,7 +1129,7 @@ func (bq *BigQuery) TmpTableUsePK() bool {
 	return true
 }
 
-func (bq *BigQuery) namespaceName(namespace string) string {
+func (bq *BigQuery) NamespaceName(namespace string) string {
 	return bq.tableHelper.TableName(utils.DefaultString(namespace, bq.config.Dataset))
 }
 

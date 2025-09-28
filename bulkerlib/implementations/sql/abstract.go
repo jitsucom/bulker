@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"strings"
+	"time"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
@@ -11,9 +15,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"reflect"
-	"strings"
-	"time"
 )
 
 // TODO: check whether COPY is transactional ?
@@ -38,8 +39,9 @@ type AbstractSQLStream struct {
 	schemaFromOptions *Table
 	notFlatteningKeys types2.Set[string]
 
-	state  bulker.State
-	inited bool
+	state    bulker.State
+	inited   bool
+	lastPing time.Time
 
 	existingTable *Table
 
@@ -92,7 +94,7 @@ func newAbstractStream(id string, p SQLAdapter, tableName string, mode bulker.Bu
 	}
 	ps.namespace = bulker.NamespaceOption.Get(&ps.options)
 	if ps.namespace != "" {
-		ps.namespace = p.TableName(ps.nameTransformer(ps.namespace))
+		ps.namespace = p.NamespaceName(ps.nameTransformer(ps.namespace))
 	}
 	ps.omitNils = OmitNilsOption.Get(&ps.options)
 	ps.schemaFreeze = SchemaFreezeOption.Get(&ps.options)
@@ -392,14 +394,19 @@ func (ps *AbstractSQLStream) postComplete(err error) (bulker.State, error) {
 }
 
 func (ps *AbstractSQLStream) init(ctx context.Context) error {
-	if err := ps.sqlAdapter.Ping(ctx); err != nil {
-		return err
+	ctx1, cancel := context.WithTimeout(ctx, time.Second*290)
+	defer cancel()
+	if time.Since(ps.lastPing) > 5*time.Minute {
+		if err := ps.sqlAdapter.Ping(ctx1); err != nil {
+			return err
+		}
+		ps.lastPing = time.Now()
 	}
 	if ps.inited {
 		return nil
 	}
 	//setup required db object like 'schema' or 'dataset' if doesn't exist
-	err := ps.sqlAdapter.InitDatabase(ctx)
+	err := ps.sqlAdapter.InitDatabase(ctx1)
 	if err != nil {
 		return err
 	}
@@ -430,11 +437,13 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 			if !ok {
 				if ps.schemaFreeze || ps.initialColumnsCount+ps.addedColumns+columnsAdded >= ps.maxColumnsCount {
 					// when schemaFreeze=true all new columns values go to _unmapped_data
-					v, ok := values.Get(name)
-					if ok {
-						unmappedObj[name] = v
+					if values != nil {
+						v, ok := values.Get(name)
+						if ok {
+							unmappedObj[name] = v
+						}
+						values.Delete(name)
 					}
-					values.Delete(name)
 					continue
 				} else {
 					// column doesn't exist in database and in current batch - adding as New
@@ -457,44 +466,61 @@ func (ps *AbstractSQLStream) adjustTableColumnTypes(currentTable, existingTable,
 			current.Set(name, newCol)
 			continue
 		}
+		// if column exists in db (existingTable) or in current batch (currentTable)
 		if existingCol.Type != "" {
-			// if column exists in db (existingTable) or in current batch (currentTable)
-			if !existingCol.New {
-				//column exists in database - check if its DataType is castable to DataType of existing column
-				v, ok := values.Get(name)
-				if ok && v != nil {
-					if types.IsConvertible(newCol.DataType, existingCol.DataType) {
-						newVal, _, err := types.Convert(existingCol.DataType, v)
-						if err != nil {
-							//logging.Warnf("Can't convert '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), err)
+			// column exists in database or type is forced by Schema option or __sql_type hint
+			// check if its DataType is castable to DataType of existing column
+			if !existingCol.New || existingCol.Override || existingCol.Important {
+				if values != nil {
+					v, ok := values.Get(name)
+					if ok && v != nil {
+						if types.IsConvertible(newCol.DataType, existingCol.DataType) {
+							newVal, _, err := types.Convert(existingCol.DataType, v)
+							if err != nil {
+								//logging.Warnf("Can't convert '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), err)
+								unmappedObj[name] = v
+								//current.Delete(name)
+								values.Delete(name)
+								continue
+							} else {
+								//logging.Infof("Converted '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), newVal)
+								values.Set(name, newVal)
+							}
+						} else {
+							//logging.Warnf("Can't convert '%s' value '%v' from %s to %s", name, values[name], newCol.DataType.String(), existingCol.DataType.String())
 							unmappedObj[name] = v
 							//current.Delete(name)
 							values.Delete(name)
 							continue
-						} else {
-							//logging.Infof("Converted '%s' value '%v' from %s to %s: %v", name, values[name], newCol.DataType.String(), existingCol.DataType.String(), newVal)
-							values.Set(name, newVal)
 						}
-					} else {
-						//logging.Warnf("Can't convert '%s' value '%v' from %s to %s", name, values[name], newCol.DataType.String(), existingCol.DataType.String())
-						unmappedObj[name] = v
-						//current.Delete(name)
-						values.Delete(name)
-						continue
 					}
 				}
 			} else {
 				// column exists only in current batch - we have chance to change new column type to common ancestor
-				common := types.GetCommonAncestorType(existingCol.DataType, newCol.DataType)
-				if common != existingCol.DataType {
-					//logging.Warnf("Changed '%s' type from %s to %s because of %s", name, existingCol.DataType.String(), common.String(), newCol.DataType.String())
-					sqlType, ok := ps.sqlAdapter.GetSQLType(common)
+				converted := false
+				//special case: if existing column is timestamp and new is DATE string - leave timestamp
+				if existingCol.DataType == types.TIMESTAMP && newCol.DataType == types.STRING {
+					v, ok := values.Get(name)
 					if ok {
-						existingCol.DataType = common
-						existingCol.Type = sqlType
-						current.Set(name, existingCol)
-					} else {
-						logging.SystemErrorf("Unknown column type %s mapping for %s", common, ps.sqlAdapter.Type())
+						ts, ok, _ := types.Convert(types.TIMESTAMP, v)
+						if ok {
+							converted = true
+							values.Set(name, ts)
+						}
+					}
+				}
+				if !converted {
+					common := types.GetCommonAncestorType(existingCol.DataType, newCol.DataType)
+					if common != existingCol.DataType {
+						//logging.Warnf("Changed '%s' type from %s to %s because of %s", name, existingCol.DataType.String(), common.String(), newCol.DataType.String())
+						sqlType, ok := ps.sqlAdapter.GetSQLType(common)
+						if ok {
+							existingCol.DataType = common
+							existingCol.Type = sqlType
+							current.Set(name, existingCol)
+						} else {
+							logging.SystemErrorf("Unknown column type %s mapping for %s", common, ps.sqlAdapter.Type())
+						}
 					}
 				}
 			}

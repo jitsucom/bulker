@@ -5,6 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql"
 	"github.com/jitsucom/bulker/eventslog"
@@ -14,14 +20,10 @@ import (
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/sync-sidecar/db"
-	"os"
-	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 const interruptError = "Stream was interrupted. Check logs for errors."
+const somethingWentWrongError = "Something went wrong in the connector. See the logs for more details."
 const cancelledError = "Sync job was cancelled"
 
 var forceTemporaryBatchesDestinations = map[string]int{
@@ -35,8 +37,10 @@ type ReadSideCar struct {
 	tableNamePrefix string
 	toSameCase      bool
 	addMeta         bool
+	deduplicate     bool
 
 	lastMessageTime   atomic.Int64
+	bulkerStartTime   atomic.Int64
 	lastStateMessage  string
 	blk               bulker.Bulker
 	lastStream        *ActiveStream
@@ -52,6 +56,12 @@ type ReadSideCar struct {
 func (s *ReadSideCar) Run() {
 	var err error
 
+	s.dbpool, err = pg.NewPGPool(s.databaseURL)
+	if err != nil {
+		s.panic("Unable to create postgres connection pool: %v", err)
+	}
+	defer s.dbpool.Close()
+
 	s.log("Sidecar. command: read. syncId: %s, taskId: %s, package: %s:%s startedAt: %s", s.syncId, s.taskId, s.packageName, s.packageVersion, s.startedAt.Format(time.RFC3339))
 	s.fullSync = os.Getenv("FULL_SYNC") == "true"
 	if s.fullSync {
@@ -59,12 +69,6 @@ func (s *ReadSideCar) Run() {
 	}
 
 	s.lastMessageTime.Store(time.Now().Unix())
-
-	s.dbpool, err = pg.NewPGPool(s.databaseURL)
-	if err != nil {
-		s.panic("Unable to create postgres connection pool: %v", err)
-	}
-	defer s.dbpool.Close()
 
 	defer func() {
 		cancelled := s.cancelled.Load()
@@ -138,8 +142,8 @@ func (s *ReadSideCar) Run() {
 	defer ticker.Stop()
 	go func() {
 		for range ticker.C {
-			if time.Now().Unix()-s.lastMessageTime.Load() > 8000 {
-				s.panic("No messages from %s for 2 hour. Exiting", s.packageName)
+			if s.bulkerStartTime.Load() == 0 && time.Now().Unix()-s.lastMessageTime.Load() > 8000 {
+				s.panic("No messages from %s for 2 hours. Exiting", s.packageName)
 			}
 		}
 	}()
@@ -330,6 +334,23 @@ func (s *ReadSideCar) closeStream(streamName string, complete bool) {
 	s._closeStream(stream, complete, false)
 }
 
+func (s *ReadSideCar) manageBulkerTimeout(eventsCount int) func() {
+	s.bulkerStartTime.Store(time.Now().Unix())
+	period := time.Duration(max(eventsCount/185, 3600)) * time.Second
+	timer := time.NewTimer(period)
+	go func() {
+		t := <-timer.C
+		if !t.IsZero() {
+			s.panic("Bulker is running for more than %s. Exiting", period)
+		}
+	}()
+	return func() {
+		timer.Stop()
+		s.lastMessageTime.Store(time.Now().Unix())
+		s.bulkerStartTime.Store(0)
+	}
+}
+
 func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 	if stream == nil {
 		return
@@ -344,8 +365,8 @@ func (s *ReadSideCar) checkpointIfNecessary(stream *ActiveStream) {
 	if !stream.IsActive() {
 		return
 	}
-
 	if stream.bufferedEventsCount >= 500000 || (stream.mode == "incremental" && !s.fullSync) {
+		defer s.manageBulkerTimeout(stream.bufferedEventsCount)()
 		state := stream.Commit(false)
 		state.ProcessingTimeSec = time.Since(stream.started).Seconds()
 		if stream.Error != "" {
@@ -387,6 +408,7 @@ func (s *ReadSideCar) postEventsLog(destinationId string, state bulker.State, pr
 
 func (s *ReadSideCar) _closeStream(stream *ActiveStream, complete bool, strict bool) {
 	wasActive := stream.IsActive()
+	defer s.manageBulkerTimeout(stream.bufferedEventsCount)()
 	state := stream.Close(complete, s.cancelled.Load(), strict)
 	state.ProcessingTimeSec = time.Since(stream.started).Seconds()
 	if stream.Error != "" {
@@ -457,7 +479,7 @@ func (s *ReadSideCar) openStream(streamName string) (*ActiveStream, error) {
 	jobId := fmt.Sprintf("%s_%s_%s", s.syncId, s.taskId, tableName)
 
 	var streamOptions []bulker.StreamOption
-	if len(str.GetPrimaryKeys()) > 0 {
+	if s.deduplicate && len(str.GetPrimaryKeys()) > 0 {
 		streamOptions = append(streamOptions, bulker.WithPrimaryKey(str.GetPrimaryKeys()...), bulker.WithDeduplicate())
 	}
 	schema := str.ToSchema()
@@ -532,14 +554,26 @@ func (s *ReadSideCar) processTrace(rec *TraceRow, line string) {
 		} else {
 			s.errprint("TRACE ERROR: %s", r.Message)
 		}
-		fmt.Printf("ERROR DETAILS: %s\n%s", r.InternalMessage, r.StackTrace)
+		s.log("ERROR DETAILS: %+v", r)
+		errMsg := r.Message
+		if (errMsg == somethingWentWrongError || errMsg == "") && r.InternalMessage != "" {
+			errMsg = r.InternalMessage
+		}
+		streamErr := errMsg
 		if streamName != "" {
 			stream, ok := s.processedStreams[streamName]
 			if ok {
-				stream.RegisterError(fmt.Errorf("%s", r.Message))
+				if (streamErr == somethingWentWrongError || streamErr == "") && stream.errorFromLogs != "" {
+					streamErr = stream.errorFromLogs
+				}
+				stream.RegisterError(fmt.Errorf("%s", streamErr))
 			}
 		} else {
-			s.firstErr = fmt.Errorf("%s", r.Message)
+			if errMsg != somethingWentWrongError && errMsg != "" {
+				s.firstErr = fmt.Errorf("%s", errMsg)
+			} else if s.firstErr == nil {
+				s.firstErr = fmt.Errorf("%s", streamErr)
+			}
 		}
 	default:
 		s.log("TRACE: %s", line)

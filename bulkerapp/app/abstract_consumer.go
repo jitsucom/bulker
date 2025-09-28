@@ -58,7 +58,7 @@ func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, event
 	if metricsDst == nil {
 		return
 	}
-	topicId, err := metricsDst.TopicId("metrics", "", ac.config.KafkaTopicPrefix)
+	topicId, err := metricsDst.TopicId("metrics", "", ac.config.KafkaTopicPrefix, 0)
 	if err != nil {
 		ac.Errorf("Error getting topicId for metrics destination: %v", err)
 		return
@@ -74,7 +74,7 @@ func (ac *AbstractConsumer) SendMetrics(metricsMeta string, status string, event
 	meta["timestamp"] = timestamp.ToISOFormat(time.Now().UTC().Truncate(time.Minute))
 	payload, _ := jsoniter.Marshal(meta)
 	//ac.Infof("Sending metrics to topic %s: %+v", topicId, meta)
-	err = ac.bulkerProducer.ProduceAsync(topicId, uuid.New(), payload, nil, kafka2.PartitionAny)
+	err = ac.bulkerProducer.ProduceAsync(topicId, uuid.New(), payload, nil, kafka2.PartitionAny, "", false)
 	if err != nil {
 		ac.Errorf("Error producing metrics to metrics destination: %v", err)
 		return

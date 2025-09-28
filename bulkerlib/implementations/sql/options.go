@@ -2,10 +2,11 @@ package sql
 
 import (
 	"fmt"
+	"time"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"time"
 )
 
 var (
@@ -39,7 +40,7 @@ var (
 
 	DeduplicateWindow = bulker.ImplementationOption[int]{
 		Key:          "deduplicateWindow",
-		DefaultValue: 31,
+		DefaultValue: 365,
 		ParseFunc:    utils.ParseInt,
 	}
 

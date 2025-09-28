@@ -3,11 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
-	"github.com/jitsucom/bulker/jitsubase/logging"
 	"math"
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"github.com/jitsucom/bulker/jitsubase/logging"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/jitsucom/bulker/bulkerapp/metrics"
@@ -79,7 +80,7 @@ func NewStreamConsumer(repository *Repository, destination *Destination, topicId
 	//if destination == nil {
 	//	return nil, fmt.Errorf("[%s] Destination not found", destinationId)
 	//}
-	retryTopic, _ := MakeTopicId(destination.Id(), retryTopicMode, allTablesToken, config.KafkaTopicPrefix, false)
+	retryTopic, _ := MakeTopicId(destination.Id(), retryTopicMode, allTablesToken, config.KafkaTopicPrefix, 0, false)
 
 	sc := &StreamConsumerImpl{
 		AbstractConsumer: abstract,

@@ -44,3 +44,7 @@ func MustParseTime(layout, value string) time.Time {
 	}
 	return t
 }
+
+func CopyTime(t time.Time) time.Time {
+	return t
+}

@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/spf13/viper"
-	"os"
 )
 
 type Config struct {
@@ -33,7 +34,8 @@ type Config struct {
 
 	TaskTimeoutHours int `mapstructure:"TASK_TIMEOUT_HOURS" default:"48"`
 
-	SidecarImage string `mapstructure:"SIDECAR_IMAGE" default:"jitsucom/sidecar:latest"`
+	SidecarImage       string `mapstructure:"SIDECAR_IMAGE" default:"jitsucom/sidecar:latest"`
+	PodsServiceAccount string `mapstructure:"PODS_SERVICE_ACCOUNT"`
 
 	LocalIngestEndpoint  string `mapstructure:"LOCAL_INGEST_ENDPOINT"`
 	GlobalIngestEndpoint string `mapstructure:"GLOBAL_INGEST_ENDPOINT"`

@@ -6,6 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/hjson/hjson-go/v4"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/safego"
@@ -21,13 +29,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/utils/ptr"
-	"math"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 const (
@@ -148,7 +149,7 @@ func (j *JobRunner) watchPodStatuses() {
 								}
 								j.Infof("Pod %s is running", pod.Name)
 								j.runningPods[pod.Name] = time.Now()
-								if taskStatus.TaskType == "read" {
+								if taskStatus.TaskType == "read" || utils.IsTruish(taskStatus.ThenRun) {
 									j.runningSyncs.Store(taskStatus.SyncID, taskStatus.TaskID)
 								}
 							}
@@ -207,7 +208,7 @@ func (j *JobRunner) watchPodStatuses() {
 func (j *JobRunner) sendStatus(taskStatus *TaskStatus) {
 	select {
 	case j.taskStatusCh <- taskStatus:
-	default:
+	case <-time.After(time.Second * 5):
 		j.SystemErrorf("taskStatusCh is full. Dropping task status: %+v", *taskStatus)
 	}
 }
@@ -452,6 +453,11 @@ func (j *JobRunner) createJob(taskDescriptor TaskDescriptor, configuration *Task
 		secret := j.createSecret(podName, taskDescriptor, configuration)
 		_, err := j.clientset.CoreV1().Secrets(j.namespace).Create(context.Background(), secret, metav1.CreateOptions{})
 		if err != nil {
+			if strings.Contains(err.Error(), "already exists") {
+				j.Infof("Secret already exists. Looks like other instance already creating job: %s", taskDescriptor.TaskID)
+				taskStatus.Status = StatusAlreadyCreated
+				return taskStatus
+			}
 			taskStatus.Status = StatusCreateFailed
 			taskStatus.Error = err.Error()
 			j.sendStatus(&taskStatus)
@@ -461,6 +467,11 @@ func (j *JobRunner) createJob(taskDescriptor TaskDescriptor, configuration *Task
 	pod := j.createPod(podName, taskDescriptor, configuration)
 	pod, err := j.clientset.CoreV1().Pods(j.namespace).Create(context.Background(), pod, metav1.CreateOptions{})
 	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			j.Infof("Pod already exists. Looks like other instance already created job: %s", taskDescriptor.TaskID)
+			taskStatus.Status = StatusAlreadyCreated
+			return taskStatus
+		}
 		taskStatus.Status = StatusCreateFailed
 		taskStatus.Error = err.Error()
 	} else {
@@ -710,6 +721,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 		"NAMESPACE":              task.Namespace,
 		"TO_SAME_CASE":           task.ToSameCase,
 		"ADD_META":               task.AddMeta,
+		"DEDUPLICATE":            task.Deduplicate,
 		"TABLE_NAME_PREFIX":      task.TableNamePrefix,
 		"FULL_SYNC":              task.FullSync,
 		"DATABASE_URL":           databaseURL,
@@ -816,6 +828,7 @@ func (j *JobRunner) createPod(podName string, task TaskDescriptor, configuration
 			RestartPolicy:                 v1.RestartPolicyNever,
 			NodeSelector:                  nodeSelector,
 			TerminationGracePeriodSeconds: ptr.To(int64(j.config.ContainerGraceShutdownSeconds)),
+			ServiceAccountName:            j.config.PodsServiceAccount,
 			//SecurityContext:               &v1.PodSecurityContext{FSGroup: ptr.To(int64(65534))},
 			Containers: []v1.Container{
 				{Name: "source",

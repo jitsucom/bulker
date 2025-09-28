@@ -7,6 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path"
+	"strings"
+	"time"
+
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	"github.com/jitsucom/bulker/bulkerlib/implementations"
 	"github.com/jitsucom/bulker/bulkerlib/types"
@@ -15,11 +21,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"io"
-	"os"
-	"path"
-	"strings"
-	"time"
 )
 
 type AbstractTransactionalSQLStream struct {
@@ -36,6 +37,7 @@ type AbstractTransactionalSQLStream struct {
 	marshaller            types.Marshaller
 	targetMarshaller      types.Marshaller
 	eventsInBatch         int
+	minTimestampInBatch   *time.Time
 	s3                    *implementations.S3
 	batchFileLinesByPK    map[string]*DeduplicationLine
 	batchFileSkipLines    types2.Set[int]
@@ -125,9 +127,11 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 		return err
 	}
 	if ps.loadExistingTable {
-		ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(context.Background(), ps.namespace, ps.tableName)
+		ctx1, cancel := context.WithTimeout(ctx, time.Second*290)
+		defer cancel()
+		ps.existingTable, _ = ps.sqlAdapter.GetTableSchema(ctx1, ps.namespace, ps.tableName)
 		if ps.existingTable.Exists() {
-			ps.sqlAdapter.TableHelper().UpdateCached(ps.existingTable.Name, ps.existingTable)
+			ps.sqlAdapter.TableHelper().UpdateCached(ps.existingTable)
 			//for el := ps.existingTable.Columns.Front(); el != nil; el = el.Next() {
 			//	if el.Value.DataType == types.JSON {
 			//		if ps.notFlatteningKeys == nil {
@@ -137,6 +141,8 @@ func (ps *AbstractTransactionalSQLStream) init(ctx context.Context) (err error) 
 			//		}
 			//	}
 			//}
+		} else {
+			ps.sqlAdapter.TableHelper().ClearCached(ps.sqlAdapter.NamespaceName(ps.namespace), ps.tableName)
 		}
 		ps.initialColumnsCount = ps.existingTable.ColumnsCount()
 	}
@@ -149,8 +155,13 @@ func (ps *AbstractTransactionalSQLStream) initTx(ctx context.Context) (err error
 		return err
 	}
 	if ps.tx == nil {
-		if err = ps.sqlAdapter.Ping(ctx); err != nil {
-			return err
+		ctx1, cancel := context.WithTimeout(ctx, time.Second*290)
+		defer cancel()
+		if time.Since(ps.lastPing) > 5*time.Minute {
+			if err = ps.sqlAdapter.Ping(ctx1); err != nil {
+				return err
+			}
+			ps.lastPing = time.Now()
 		}
 		ps.tx, err = ps.sqlAdapter.OpenTx(ctx)
 		if err != nil {
@@ -437,6 +448,12 @@ func (ps *AbstractTransactionalSQLStream) writeToBatchFile(ctx context.Context, 
 			return err
 		}
 	}
+	ts, _ := ps.getTimestampColumnValue(processedObject)
+	if ps.minTimestampInBatch == nil {
+		ps.minTimestampInBatch = &ts
+	} else if ts.Before(*ps.minTimestampInBatch) {
+		ps.minTimestampInBatch = &ts
+	}
 	ps.adjustTables(ctx, targetTable, processedObject)
 	err := ps.marshaller.InitSchema(ps.batchFile, nil, nil)
 	if err != nil {
@@ -587,4 +604,19 @@ func (ps *AbstractTransactionalSQLStream) getPKValue(object types.Object) (strin
 		pkArr = append(pkArr, fmt.Sprint(pkValue))
 	}
 	return strings.Join(pkArr, "_###_"), nil
+}
+
+func (ps *AbstractTransactionalSQLStream) getTimestampColumnValue(object types.Object) (time.Time, bool) {
+	if ps.timestampColumn == "" {
+		return time.Time{}, false
+	}
+	value := object.GetN(ps.timestampColumn)
+	if value == nil {
+		return time.Time{}, false
+	}
+	timeValue, ok := value.(time.Time)
+	if !ok {
+		return time.Time{}, false
+	}
+	return timeValue, true
 }

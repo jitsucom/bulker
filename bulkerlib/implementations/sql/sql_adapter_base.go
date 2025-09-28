@@ -50,7 +50,7 @@ var (
 )
 
 // DbConnectFunction function is used to connect to database
-type DbConnectFunction[T any] func(config *T) (*sql.DB, error)
+type DbConnectFunction[T any] func(ctx context.Context, config *T) (*sql.DB, error)
 
 // ColumnDDLFunction generate column DDL for CREATE TABLE statement based on type (SQLColumn) and whether it is used for PK
 type ColumnDDLFunction func(quotedName, name string, table *Table, column types2.SQLColumn) string
@@ -121,7 +121,9 @@ func newSQLAdapterBase[T any](id string, typeId string, config *T, namespace str
 	s.batchFileFormat = types2.FileFormatNDJSON
 	s.batchFileCompression = types2.FileCompressionNONE
 	var err error
-	s.dataSource, err = dbConnectFunction(config)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*290)
+	defer cancel()
+	s.dataSource, err = dbConnectFunction(ctx, config)
 	s.typesMapping, s.reverseTypesMapping = InitTypes(dataTypes, supportsJSON)
 	return &s, err
 }
@@ -163,7 +165,7 @@ func (b *SQLAdapterBase[T]) Ping(ctx context.Context) error {
 	if b.dataSource != nil {
 		err := b.dataSource.PingContext(ctx)
 		if err != nil {
-			dataSource, err := b.dbConnectFunction(b.config)
+			dataSource, err := b.dbConnectFunction(ctx, b.config)
 			if err == nil {
 				_ = b.dataSource.Close()
 				b.dataSource = dataSource
@@ -174,7 +176,7 @@ func (b *SQLAdapterBase[T]) Ping(ctx context.Context) error {
 		}
 	} else {
 		var err error
-		b.dataSource, err = b.dbConnectFunction(b.config)
+		b.dataSource, err = b.dbConnectFunction(ctx, b.config)
 		if err != nil {
 			return fmt.Errorf("failed to connect to %s. error: %v", b.typeId, err)
 		}
@@ -751,7 +753,7 @@ func (b *SQLAdapterBase[T]) quotedTableName(tableName string) string {
 	return b.tableHelper.quotedTableName(tableName)
 }
 
-func (b *SQLAdapterBase[T]) namespaceName(namespace string) string {
+func (b *SQLAdapterBase[T]) NamespaceName(namespace string) string {
 	if namespace == NoNamespaceValue {
 		return ""
 	}

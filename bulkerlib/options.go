@@ -2,11 +2,12 @@ package bulkerlib
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
 	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"strings"
 )
 
 type StreamOption func(*StreamOptions)
@@ -14,7 +15,7 @@ type StreamOption func(*StreamOptions)
 var optionsRegistry = make(map[string]ParseableOption)
 
 // Not used by bulker. Just added here to be treated as known options and don't print errors
-var ignoredOptions = []string{"functions", "streams", "dataLayout", "events", "debugTill", "hosts", "schedule", "timezone", "storageKey", "tableNamePrefix", "multithreading", "keepOriginalNames", "addMeta"}
+var ignoredOptions = []string{"functions", "streams", "dataLayout", "events", "debugTill", "hosts", "schedule", "timezone", "storageKey", "tableNamePrefix", "multithreading", "threadsCount", "keepOriginalNames", "addMeta", "disabled"}
 
 var (
 	BatchSizeOption = ImplementationOption[int]{
@@ -118,6 +119,13 @@ var (
 		ParseFunc:    utils.ParseBool,
 	}
 
+	// SpreadTablesSchedule - when true cron tasks for processing different tables batches will be spread in time to avoid spikes
+	SpreadTablesSchedule = ImplementationOption[bool]{
+		Key:          "spreadTablesSchedule",
+		DefaultValue: false,
+		ParseFunc:    utils.ParseBool,
+	}
+
 	// DiscriminatorFieldOption - array represents path to the object property. when deduplicate is true, and multiple rows has the same primary key, row with the highest value of this field will be selected
 	DiscriminatorFieldOption = ImplementationOption[[]string]{
 		Key:          "discriminatorField",
@@ -190,6 +198,8 @@ func init() {
 	RegisterOption(&NamespaceOption)
 	RegisterOption(&ToSameCaseOption)
 	RegisterOption(&FunctionsEnvOption)
+	RegisterOption(&SpreadTablesSchedule)
+	RegisterOption(&DiscriminatorFieldOption)
 
 	dummyParse := func(_ any) (any, error) { return nil, nil }
 	for _, ignoredOption := range ignoredOptions {

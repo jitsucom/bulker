@@ -135,6 +135,7 @@ func (t *TaskManager) ReadHandler(c *gin.Context) {
 		TableNamePrefix: c.Query("tableNamePrefix"),
 		ToSameCase:      c.Query("toSameCase"),
 		AddMeta:         c.Query("addMeta"),
+		Deduplicate:     c.Query("deduplicate"),
 		FullSync:        c.Query("fullSync"),
 		Debug:           c.Query("debug"),
 		Nodelay:         c.Query("nodelay"),

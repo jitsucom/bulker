@@ -330,7 +330,7 @@ func (p *Redshift) CopyTables(ctx context.Context, targetTable *Table, sourceTab
 }
 
 func (p *Redshift) ReplaceTable(ctx context.Context, targetTableName string, replacementTable *Table, dropOldTable bool) (err error) {
-	row := p.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema ilike '%s' AND table_name = '%s')`, p.namespaceName(replacementTable.Namespace), targetTableName))
+	row := p.txOrDb(ctx).QueryRowContext(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT * FROM information_schema.tables WHERE table_schema ilike '%s' AND table_name = '%s')`, p.NamespaceName(replacementTable.Namespace), targetTableName))
 	exists := false
 	err = row.Scan(&exists)
 	if err != nil {
@@ -393,7 +393,7 @@ func (p *Redshift) GetTableSchema(ctx context.Context, namespace string, tableNa
 
 func (p *Redshift) getSortKey(ctx context.Context, namespace, tableName string) (string, error) {
 	tableName = p.TableName(tableName)
-	namespace = p.namespaceName(namespace)
+	namespace = p.NamespaceName(namespace)
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftGetSortKeyQuery, namespace, tableName)
 	if err != nil {
 		return "", errorj.GetPrimaryKeysError.Wrap(err, "failed to get sort key").
@@ -424,7 +424,7 @@ func (p *Redshift) getSortKey(ctx context.Context, namespace, tableName string) 
 
 func (p *Redshift) getPrimaryKeys(ctx context.Context, namespace, tableName string) (string, types.OrderedSet[string], error) {
 	tableName = p.TableName(tableName)
-	namespace = p.namespaceName(namespace)
+	namespace = p.NamespaceName(namespace)
 	primaryKeys := types.NewOrderedSet[string]()
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {

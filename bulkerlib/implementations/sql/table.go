@@ -196,7 +196,7 @@ func (t *Table) GetPKFieldsSet() types2.OrderedSet[string] {
 // 1) another one is empty
 // 2) all fields from another schema exist in current schema
 // NOTE: Diff method doesn't take types into account
-func (t *Table) Diff(sqlAdapter SQLAdapter, another *Table) *Table {
+func (t *Table) Diff(another *Table) *Table {
 	diff := &Table{Name: t.Name, Namespace: t.Namespace, Columns: NewColumns(0), PKFields: types2.NewOrderedSet[string]()}
 
 	if !another.Exists() {

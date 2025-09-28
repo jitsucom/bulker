@@ -51,6 +51,7 @@ RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags=
 RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o syncctl ./sync-controller
 RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o ingmgr ./ingress-manager
 RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o cfgkpr ./config-keeper
+RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o admin ./admin
 
 FROM base as bulker
 
@@ -81,3 +82,8 @@ FROM base as cfgkpr
 
 COPY --from=builder /app/cfgkpr ./
 CMD ["/app/cfgkpr"]
+
+FROM base as admin
+
+COPY --from=builder /app/admin ./
+CMD ["/app/admin"]

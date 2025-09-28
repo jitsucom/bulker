@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/kafkabase"
 	"io"
 	"net/http"
 	"net/http/pprof"
@@ -14,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/kafkabase"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
@@ -121,11 +122,16 @@ func (r *Router) Health(c *gin.Context) {
 func (r *Router) EventsHandler(c *gin.Context) {
 	destinationId := c.Param("destinationId")
 	tableName := c.Query("tableName")
+	partitionStr := c.Query("partition")
 	modeOverride := c.Query("modeOverride")
 	metricsMeta := utils.NvlString(c.GetHeader("metricsMeta"), c.Query("metricsMeta"))
 	streamOptions := utils.NvlString(c.GetHeader("streamOptions"), c.Query("streamOptions"))
 	mode := ""
 	bytesRead := 0
+	partition := 0
+	if partitionStr != "" {
+		partition, _ = strconv.Atoi(partitionStr)
+	}
 	var rError *appbase.RouterError
 	defer func() {
 		if rError != nil {
@@ -141,7 +147,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusNotFound, "destination not found", false, fmt.Errorf("destination not found: %s", destinationId), true, true, false)
 		return
 	}
-	mode = utils.DefaultString(modeOverride, string(destination.Mode()))
+	mode = utils.NvlString(modeOverride, string(destination.Mode()), string(bulker.Batch))
 	if mode != string(bulker.Batch) && mode != string(bulker.Stream) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "invalid bulker mode", false, fmt.Errorf("invalid bulker mode: %s", mode), true, true, false)
 		return
@@ -150,7 +156,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "missing required parameter", false, fmt.Errorf("tableName query parameter is required"), true, true, false)
 		return
 	}
-	topicId, err := destination.TopicId(tableName, mode, r.config.KafkaTopicPrefix)
+	topicId, err := destination.TopicId(tableName, mode, r.config.KafkaTopicPrefix, partition)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true, true, false)
 		return
@@ -176,7 +182,7 @@ func (r *Router) EventsHandler(c *gin.Context) {
 	if streamOptions != "" {
 		headers[streamOptionsKeyHeader] = streamOptions
 	}
-	err = r.producer.ProduceAsync(topicId, uuid.New(), body, headers, kafka.PartitionAny)
+	err = r.producer.ProduceAsync(topicId, uuid.New(), body, headers, kafka.PartitionAny, "", false)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true, false)
 		return
@@ -197,13 +203,13 @@ func (r *Router) ProfilesHandler(c *gin.Context) {
 		}
 	}()
 
-	topicId, err := MakeTopicId(profileBuilderId, profilesTopicMode, priority, r.config.KafkaTopicPrefix, false)
+	topicId, err := MakeTopicId(profileBuilderId, profilesTopicMode, priority, r.config.KafkaTopicPrefix, 0, false)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "couldn't generate topicId", false, err, true, true, false)
 		return
 	}
 
-	err = r.producer.ProduceAsync(topicId, profileId, nil, nil, kafka.PartitionAny)
+	err = r.producer.ProduceAsync(topicId, profileId, nil, nil, kafka.PartitionAny, "", false)
 	if err != nil {
 		rError = r.ResponseError(c, http.StatusInternalServerError, "producer error", true, err, true, true, false)
 		return
@@ -372,9 +378,9 @@ func (r *Router) FailedHandler(c *gin.Context) {
 	}
 	topicId := r.config.KafkaDestinationsDeadLetterTopicName
 	if status == retryTopicMode {
-		topicId, _ = MakeTopicId(destinationId, retryTopicMode, allTablesToken, r.config.KafkaTopicPrefix, false)
+		topicId, _ = MakeTopicId(destinationId, retryTopicMode, allTablesToken, r.config.KafkaTopicPrefix, 0, false)
 	}
-	ogTopicId, _ := MakeTopicId(destinationId, mode, tableName, r.config.KafkaTopicPrefix, false)
+	ogTopicId, _ := MakeTopicId(destinationId, mode, tableName, r.config.KafkaTopicPrefix, 0, false)
 	consumerConfig := kafka.ConfigMap(utils.MapPutAll(kafka.ConfigMap{
 		"auto.offset.reset":             "earliest",
 		"group.id":                      uuid.New(),

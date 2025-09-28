@@ -5,6 +5,16 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"math/rand"
+	"net/http"
+	"net/http/pprof"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gin-gonic/gin"
 	"github.com/jitsucom/bulker/eventslog"
@@ -18,15 +28,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/jitsucom/bulker/kafkabase"
 	"github.com/penglongli/gin-metrics/ginmetrics"
-	"io"
-	"math/rand"
-	"net/http"
-	"net/http/pprof"
-	"net/url"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 var eventTypesDict = map[string]string{
@@ -232,20 +233,8 @@ func (r *Router) Health(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": "kafka config is missing"})
 		return
 	}
-	size, err := r.producer.QueueSize()
-	if err != nil {
-		logging.Errorf("Health check: FAILED: producer queue size error: %v", err)
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": "producer queue size error: " + err.Error()})
-		return
-	}
-	if float64(size) > r.config.ProducerQueueSizeThreshold*float64(r.config.ProducerQueueSize) {
-		// we need to start worrying about the queue size before it reaches the limit
-		logging.Errorf("Health check: FAILED: producer queue size: %d", size)
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "fail", "output": fmt.Sprintf("producer queue size: %d", size)})
-		return
-	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "pass", "producerQueueSize": size})
+	c.JSON(http.StatusOK, gin.H{"status": "pass"})
 	return
 }
 
@@ -256,11 +245,11 @@ type BatchPayload struct {
 	WriteKey   string       `json:"writeKey"`
 }
 
-func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *StreamWithDestinations, sendResponse bool) (asyncDestinations []string, tagsDestinations []string, rError *appbase.RouterError) {
+func (r *Router) sendToRotor(c *gin.Context, messageId string, ingestMessageBytes []byte, stream *StreamWithDestinations, sendResponse bool) (asyncDestinations []string, tagsDestinations []string, rError *appbase.RouterError) {
 	var err error
 	if stream.BackupEnabled {
 		backupTopic := fmt.Sprintf("%sin.id.%s_backup.m.batch.t.backup", r.config.KafkaTopicPrefix, stream.Stream.WorkspaceId)
-		err2 := r.producer.ProduceAsync(backupTopic, uuid.New(), ingestMessageBytes, nil, kafka.PartitionAny)
+		err2 := r.producer.ProduceAsync(backupTopic, uuid.New(), ingestMessageBytes, nil, kafka.PartitionAny, messageId, false)
 		if err2 != nil {
 			r.Errorf("Error producing to backup topic %s: %v", backupTopic, err2)
 		}
@@ -285,7 +274,7 @@ func (r *Router) sendToRotor(c *gin.Context, ingestMessageBytes []byte, stream *
 			partition = r.partitionSelector.SelectPartition()
 		}
 		messageKey := uuid.New()
-		err = r.producer.ProduceAsync(topic, messageKey, ingestMessageBytes, map[string]string{ConnectionIdsHeader: strings.Join(asyncDestinations, ",")}, partition)
+		err = r.producer.ProduceAsync(topic, messageKey, ingestMessageBytes, map[string]string{ConnectionIdsHeader: strings.Join(asyncDestinations, ",")}, partition, messageId, true)
 		if err != nil {
 			for _, id := range asyncDestinations {
 				IngestedMessages(id, "error", "producer error").Inc()
@@ -320,11 +309,11 @@ func patchEvent(c *gin.Context, messageId string, ev types.Json, tp string, inge
 		if eventName == "" {
 			return fmt.Errorf("'event' property is required for 'track' event")
 		}
-		if strings.Contains(eventName, "--") || strings.Contains(eventName, ";") || strings.Contains(eventName, "=") || strings.Contains(eventName, "/*") {
-			return fmt.Errorf("Invalid track event name '%s'. Only alpha-numeric characters, underscores and spaces are allowed in track event name.", eventName)
-		}
-		if len(eventName) > 64 {
-			return fmt.Errorf("Invalid track event name '%s'. Max length is 64 characters.", eventName)
+		//if strings.Contains(eventName, "--") || strings.Contains(eventName, ";") || strings.Contains(eventName, "=") || strings.Contains(eventName, "/*") {
+		//	return fmt.Errorf("Invalid track event name '%s'. Only alpha-numeric characters, underscores and spaces are allowed in track event name.", eventName)
+		//}
+		if len(eventName) > 128 {
+			return fmt.Errorf("Invalid track event name '%s'. Max length is 128 characters.", eventName)
 		}
 		if defaultEventName != "" {
 			ev.SetIfAbsent("event", eventName)

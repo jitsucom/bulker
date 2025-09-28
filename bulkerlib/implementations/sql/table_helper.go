@@ -143,7 +143,7 @@ func (th *TableHelper) EnsureTableWithoutCaching(ctx context.Context, sqlAdapter
 func (th *TableHelper) ensureTable(ctx context.Context, sqlAdapter SQLAdapter, destinationID string, desiredSchema *Table, cacheTable bool) (actualSchema *Table, err error) {
 	defer func() {
 		if err != nil {
-			th.clearCache(desiredSchema.Name)
+			th.ClearCached(sqlAdapter.NamespaceName(desiredSchema.Namespace), desiredSchema.Name)
 		}
 	}()
 
@@ -157,32 +157,36 @@ func (th *TableHelper) ensureTable(ctx context.Context, sqlAdapter SQLAdapter, d
 	}
 
 	if actualSchema.Cached {
-		actualSchema, err = th.patchTableIfNeeded(ctx, sqlAdapter, destinationID, actualSchema, desiredSchema)
+		actualSchema, err = th.patchTableIfNeeded(ctx, sqlAdapter, destinationID, actualSchema, desiredSchema, true)
 		if err == nil {
 			return
 		}
 		// if patching of cached table failed - that may mean table was changed outside of bulker
 		// get fresh table schema from db and try again
 		actualSchema, err = th.getOrCreateWithLock(ctx, sqlAdapter, destinationID, desiredSchema)
+		if err != nil {
+			return nil, err
+		}
+		th.UpdateCached(actualSchema)
 	}
 
-	return th.patchTableIfNeeded(ctx, sqlAdapter, destinationID, actualSchema, desiredSchema)
+	return th.patchTableIfNeeded(ctx, sqlAdapter, destinationID, actualSchema, desiredSchema, cacheTable)
 }
 
-func (th *TableHelper) patchTableIfNeeded(ctx context.Context, sqlAdapter SQLAdapter, destinationID string, currentSchema, desiredSchema *Table) (*Table, error) {
+func (th *TableHelper) patchTableIfNeeded(ctx context.Context, sqlAdapter SQLAdapter, destinationID string, currentSchema, desiredSchema *Table, cache bool) (*Table, error) {
 	//if diff doesn't exist - do nothing
-	diff := currentSchema.Diff(sqlAdapter, desiredSchema)
+	diff := currentSchema.Diff(desiredSchema)
 	if !diff.Exists() {
 		return currentSchema, nil
 	}
 
 	//** Diff exists **
 	//patch table schema
-	return th.patchTableWithLock(ctx, sqlAdapter, destinationID, currentSchema, diff)
+	return th.patchTableWithLock(ctx, sqlAdapter, destinationID, currentSchema, diff, cache)
 }
 
 // patchTable locks table, get from DWH and patch
-func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAdapter, destinationID string, currentSchema, diff *Table) (*Table, error) {
+func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAdapter, destinationID string, currentSchema, diff *Table, cache bool) (*Table, error) {
 	tableIdentifier := th.getTableIdentifier(destinationID, diff.Name)
 	tableLock, err := th.lockTable(destinationID, diff.Name, tableIdentifier)
 	if err != nil {
@@ -209,12 +213,14 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAda
 		currentSchema.PKFields = types.OrderedSet[string]{}
 		currentSchema.PrimaryKeyName = ""
 	}
-
-	return th.UpdateCached(diff.Name, currentSchema), nil
+	if cache {
+		currentSchema = th.UpdateCached(currentSchema)
+	}
+	return currentSchema, nil
 }
 
 func (th *TableHelper) getCachedOrCreateTableSchema(ctx context.Context, sqlAdapter SQLAdapter, destinationName string, dataSchema *Table) (*Table, error) {
-	dbSchema, ok := th.GetCached(dataSchema.Name)
+	dbSchema, ok := th.GetCached(sqlAdapter.NamespaceName(dataSchema.Namespace), sqlAdapter.TableName(dataSchema.Name))
 	if ok {
 		return dbSchema, nil
 	}
@@ -225,7 +231,7 @@ func (th *TableHelper) getCachedOrCreateTableSchema(ctx context.Context, sqlAdap
 		return nil, err
 	}
 
-	return th.UpdateCached(dataSchema.Name, dbSchema), nil
+	return th.UpdateCached(dbSchema), nil
 }
 
 // refreshTableSchema force get (or create) db table schema and update it in-memory
@@ -235,7 +241,7 @@ func (th *TableHelper) refreshTableSchema(ctx context.Context, sqlAdapter SQLAda
 		return nil, err
 	}
 
-	return th.UpdateCached(dataSchema.Name, dbTableSchema), nil
+	return th.UpdateCached(dbTableSchema), nil
 }
 
 // lock table -> get existing schema -> create a new one if doesn't exist -> return schema with version
@@ -300,7 +306,7 @@ func (th *TableHelper) Get(ctx context.Context, sqlAdapter SQLAdapter, namespace
 	var table *Table
 	var ok bool
 	if cacheTable {
-		table, ok = th.GetCached(tableName)
+		table, ok = th.GetCached(sqlAdapter.NamespaceName(namespace), sqlAdapter.TableName(tableName))
 		if ok {
 			return table, nil
 		}
@@ -310,14 +316,15 @@ func (th *TableHelper) Get(ctx context.Context, sqlAdapter SQLAdapter, namespace
 		return nil, err
 	}
 	if table.Exists() && cacheTable {
-		return th.UpdateCached(table.Name, table), nil
+		return th.UpdateCached(table), nil
 	}
 	return table, nil
 }
 
-func (th *TableHelper) GetCached(tableName string) (*Table, bool) {
+func (th *TableHelper) GetCached(namespace string, tableName string) (*Table, bool) {
+	key := fmt.Sprintf("%s.%s", namespace, tableName)
 	th.RLock()
-	dbSchema, ok := th.tablesCache[tableName]
+	dbSchema, ok := th.tablesCache[key]
 	th.RUnlock()
 
 	if ok {
@@ -326,19 +333,21 @@ func (th *TableHelper) GetCached(tableName string) (*Table, bool) {
 	return nil, false
 }
 
-func (th *TableHelper) UpdateCached(tableName string, dbSchema *Table) *Table {
+func (th *TableHelper) UpdateCached(dbSchema *Table) *Table {
+	key := fmt.Sprintf("%s.%s", dbSchema.Namespace, dbSchema.Name)
 	th.Lock()
 	cloned := dbSchema.CleanClone()
 	cloned.Cached = true
-	th.tablesCache[tableName] = cloned
+	th.tablesCache[key] = cloned
 	th.Unlock()
 	return cloned
 }
 
-// clearCache removes cached table schema for cache for provided table
-func (th *TableHelper) clearCache(tableName string) {
+// ClearCached removes cached table schema for cache for provided table
+func (th *TableHelper) ClearCached(namespace string, tableName string) {
+	key := fmt.Sprintf("%s.%s", namespace, tableName)
 	th.Lock()
-	delete(th.tablesCache, tableName)
+	delete(th.tablesCache, key)
 	th.Unlock()
 }
 
