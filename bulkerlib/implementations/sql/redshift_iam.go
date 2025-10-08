@@ -4,18 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	bulker "github.com/jitsucom/bulker/bulkerlib"
-	driver "github.com/jitsucom/bulker/bulkerlib/implementations/sql/redshift_driver"
-	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/errorj"
-	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/timestamp"
-	"github.com/jitsucom/bulker/jitsubase/types"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"math/rand"
 	"os"
 	"strings"
 	"time"
+
+	bulker "github.com/jitsucom/bulker/bulkerlib"
+	driver "github.com/jitsucom/bulker/bulkerlib/implementations/sql/redshift_driver"
+	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
 const redshiftCopyTemplateIam = `copy %s%s (%s)
@@ -265,13 +266,13 @@ func (p *RedshiftIAM) getSortKey(ctx context.Context, namespace, tableName strin
 	return "", nil
 }
 
-func (p *RedshiftIAM) getPrimaryKeys(ctx context.Context, namespace, tableName string) (string, types.OrderedSet[string], error) {
+func (p *RedshiftIAM) getPrimaryKeys(ctx context.Context, namespace, tableName string) (string, jsonorder.OrderedSet[string], error) {
 	tableName = p.TableName(tableName)
 	namespace = p.NamespaceName(namespace)
-	primaryKeys := types.NewOrderedSet[string]()
+	primaryKeys := jsonorder.NewOrderedSet[string]()
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, redshiftPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {
-		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+		return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    namespace,
 				Table:     tableName,
@@ -286,7 +287,7 @@ func (p *RedshiftIAM) getPrimaryKeys(ctx context.Context, namespace, tableName s
 	for pkFieldsRows.Next() {
 		var constraintName, fieldName string
 		if err := pkFieldsRows.Scan(&constraintName, &fieldName); err != nil {
-			return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
+			return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Schema:    namespace,
 					Table:     tableName,
@@ -300,7 +301,7 @@ func (p *RedshiftIAM) getPrimaryKeys(ctx context.Context, namespace, tableName s
 		pkFields = append(pkFields, fieldName)
 	}
 	if err := pkFieldsRows.Err(); err != nil {
-		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
+		return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    namespace,
 				Table:     tableName,
@@ -318,7 +319,7 @@ func (p *RedshiftIAM) getPrimaryKeys(ctx context.Context, namespace, tableName s
 func (p *RedshiftIAM) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
 	namespace = p.NamespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: jsonorder.NewOrderedSet[string]()}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, utils.DefaultString(namespace, "pg_temp_11"), tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").

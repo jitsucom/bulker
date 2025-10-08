@@ -4,16 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/jitsucom/bulker/bulkerlib"
-	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/coordination"
-	"github.com/jitsucom/bulker/jitsubase/locks"
-	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/types"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/jitsucom/bulker/bulkerlib"
+	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/coordination"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/jitsucom/bulker/jitsubase/locks"
+	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
 const tableLockTimeout = time.Minute
@@ -64,7 +65,7 @@ func NewTableHelper(bulkerTypeId string, maxIdentifierLength int, identifierQuot
 // applies column types mapping
 // adjusts object properties names to column names
 func (th *TableHelper) MapTableSchema(sqlAdapter SQLAdapter, batchHeader *TypesHeader, object types2.Object, pkColumns []string, timestampColumn string, namespace string) (*Table, types2.Object) {
-	adaptedPKFields := types.NewOrderedSet[string](pkColumns...)
+	adaptedPKFields := jsonorder.NewOrderedSet[string](pkColumns...)
 	if namespace != "" {
 		namespace = th.TableName(namespace)
 	}
@@ -210,7 +211,7 @@ func (th *TableHelper) patchTableWithLock(ctx context.Context, sqlAdapter SQLAda
 		currentSchema.PKFields = diff.PKFields
 		currentSchema.PrimaryKeyName = patched.PrimaryKeyName
 	} else if diff.DeletePrimaryKeyNamed != "" {
-		currentSchema.PKFields = types.OrderedSet[string]{}
+		currentSchema.PKFields = jsonorder.OrderedSet[string]{}
 		currentSchema.PrimaryKeyName = ""
 	}
 	if cache {

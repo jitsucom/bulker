@@ -20,8 +20,8 @@ import (
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
@@ -307,7 +307,7 @@ func (p *Postgres) GetTableSchema(ctx context.Context, namespace string, tableNa
 func (p *Postgres) getTable(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	tableName = p.TableName(tableName)
 	namespace = p.NamespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: jsonorder.NewOrderedSet[string]()}
 	rows, err := p.txOrDb(ctx).QueryContext(ctx, pgTableSchemaQuery, namespace, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -490,13 +490,13 @@ func getDefaultValueStatement(sqlType string) string {
 }
 
 // getPrimaryKey returns primary key name and fields
-func (p *Postgres) getPrimaryKey(ctx context.Context, namespace string, tableName string) (string, types.OrderedSet[string], error) {
+func (p *Postgres) getPrimaryKey(ctx context.Context, namespace string, tableName string) (string, jsonorder.OrderedSet[string], error) {
 	tableName = p.TableName(tableName)
 	namespace = p.NamespaceName(namespace)
-	primaryKeys := types.NewOrderedSet[string]()
+	primaryKeys := jsonorder.NewOrderedSet[string]()
 	pkFieldsRows, err := p.txOrDb(ctx).QueryContext(ctx, pgPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {
-		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+		return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    namespace,
 				Table:     tableName,
@@ -511,7 +511,7 @@ func (p *Postgres) getPrimaryKey(ctx context.Context, namespace string, tableNam
 	for pkFieldsRows.Next() {
 		var constraintName, keyColumn string
 		if err := pkFieldsRows.Scan(&constraintName, &keyColumn); err != nil {
-			return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
+			return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Schema:    namespace,
 					Table:     tableName,
@@ -527,7 +527,7 @@ func (p *Postgres) getPrimaryKey(ctx context.Context, namespace string, tableNam
 	}
 
 	if err := pkFieldsRows.Err(); err != nil {
-		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
+		return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    namespace,
 				Table:     tableName,

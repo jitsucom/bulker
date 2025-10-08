@@ -1,13 +1,14 @@
 package main
 
 import (
+	"os"
+	"strings"
+
 	"github.com/jitsucom/bulker/eventslog"
 	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/kafkabase"
 	"github.com/spf13/viper"
-	"os"
-	"strings"
 )
 
 type Config struct {

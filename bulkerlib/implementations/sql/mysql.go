@@ -4,20 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
+	"os"
+	"strings"
+	"text/template"
+	"time"
+
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
-	"io"
-	"os"
-	"strings"
-	"text/template"
-	"time"
 )
 
 func init() {
@@ -355,7 +356,7 @@ func (m *MySQL) GetTableSchema(ctx context.Context, namespace string, tableName 
 func (m *MySQL) getTable(ctx context.Context, namespace, tableName string) (*Table, error) {
 	tableName = m.TableName(tableName)
 	namespace = m.NamespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: jsonorder.NewOrderedSet[string]()}
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 	rows, err := m.dataSource.QueryContext(ctx, mySQLTableSchemaQuery, namespace, tableName)
@@ -405,12 +406,12 @@ func (m *MySQL) getTable(ctx context.Context, namespace, tableName string) (*Tab
 	return table, nil
 }
 
-func (m *MySQL) getPrimaryKeys(ctx context.Context, namespace, tableName string) (types.OrderedSet[string], error) {
+func (m *MySQL) getPrimaryKeys(ctx context.Context, namespace, tableName string) (jsonorder.OrderedSet[string], error) {
 	tableName = m.TableName(tableName)
 	namespace = m.NamespaceName(namespace)
 	pkFieldsRows, err := m.dataSource.QueryContext(ctx, mySQLPrimaryKeyFieldsQuery, namespace, tableName)
 	if err != nil {
-		return types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+		return jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Database:  namespace,
 				Table:     tableName,
@@ -421,11 +422,11 @@ func (m *MySQL) getPrimaryKeys(ctx context.Context, namespace, tableName string)
 
 	defer pkFieldsRows.Close()
 
-	pkFields := types.NewOrderedSet[string]()
+	pkFields := jsonorder.NewOrderedSet[string]()
 	for pkFieldsRows.Next() {
 		var fieldName string
 		if err := pkFieldsRows.Scan(&fieldName); err != nil {
-			return types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
+			return jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Database:  namespace,
 					Table:     tableName,
@@ -436,7 +437,7 @@ func (m *MySQL) getPrimaryKeys(ctx context.Context, namespace, tableName string)
 		pkFields.Put(fieldName)
 	}
 	if err := pkFieldsRows.Err(); err != nil {
-		return types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
+		return jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Database:  namespace,
 				Table:     tableName,

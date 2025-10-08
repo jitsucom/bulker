@@ -6,7 +6,7 @@ import (
 
 	"github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/jsoniter"
-	types2 "github.com/jitsucom/bulker/jitsubase/types"
+	types2 "github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 

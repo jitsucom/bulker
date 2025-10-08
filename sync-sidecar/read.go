@@ -45,7 +45,7 @@ type ReadSideCar struct {
 	blk               bulker.Bulker
 	lastStream        *ActiveStream
 	processedStreams  map[string]*ActiveStream
-	catalog           *types2.OrderedMap[string, *Stream]
+	catalog           *jsonorder.OrderedMap[string, *Stream]
 	destinationConfig map[string]any
 	initialState      string
 	fullSync          bool
@@ -80,7 +80,7 @@ func (s *ReadSideCar) Run() {
 			s.closeActiveStreams(!cancelled && !s.isCriticalError())
 		}
 		if len(s.processedStreams) > 0 {
-			statusMap := types2.NewOrderedMap[string, any](0)
+			statusMap := jsonorder.NewOrderedMap[string, any](0)
 			s.catalog.ForEach(func(streamName string, _ *Stream) {
 				if stream, ok := s.processedStreams[streamName]; ok {
 					statusMap.Set(streamName, stream.StreamStat)
@@ -626,7 +626,7 @@ func (s *ReadSideCar) storeState(stream, state string) {
 }
 
 func (s *ReadSideCar) updateRunningStatus() {
-	statusMap := types2.NewOrderedMap[string, any](0)
+	statusMap := jsonorder.NewOrderedMap[string, any](0)
 	s.catalog.ForEach(func(streamName string, _ *Stream) {
 		if stream, ok := s.processedStreams[streamName]; ok {
 			statusMap.Set(streamName, stream.StreamStat)
@@ -690,7 +690,7 @@ func (s *ReadSideCar) loadCatalog() error {
 	if err != nil {
 		return fmt.Errorf("error parsing catalog file: %v", err)
 	}
-	mp := types2.NewOrderedMap[string, *Stream](len(catalog.Streams))
+	mp := jsonorder.NewOrderedMap[string, *Stream](len(catalog.Streams))
 	for _, stream := range catalog.Streams {
 		mp.Set(joinStrings(stream.Namespace, stream.Name, "."), stream)
 	}
@@ -835,7 +835,7 @@ func (s *ActiveStream) Close(complete, cancelled, strict bool) (state bulker.Sta
 	return
 }
 
-func (s *ActiveStream) Consume(p *types2.OrderedMap[string, any], originalSize int) error {
+func (s *ActiveStream) Consume(p *jsonorder.OrderedMap[string, any], originalSize int) error {
 	if s.Error != "" {
 		return nil
 	}

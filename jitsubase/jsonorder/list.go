@@ -1,4 +1,4 @@
-package types
+package jsonorder
 
 // Element is an element of a null terminated (non circular) intrusive doubly linked list that contains the key of the correspondent element in the ordered map too.
 type Element[K comparable, V any] struct {

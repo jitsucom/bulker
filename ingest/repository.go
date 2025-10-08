@@ -3,11 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jitsucom/bulker/jitsubase/appbase"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"io"
 	"sync/atomic"
 	"time"
+
+	"github.com/jitsucom/bulker/jitsubase/appbase"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
 type RepositoryConfig struct {
@@ -176,6 +177,7 @@ type StreamConfig struct {
 	Domains                     []string `json:"domains"`
 	AuthorizedJavaScriptDomains string   `json:"authorizedJavaScriptDomains"`
 	Strict                      bool     `json:"strict"`
+	DeduplicateWindowMs         int      `json:"deduplicateWindowMs"`
 	PublicKeys                  []ApiKey `json:"publicKeys"`
 	PrivateKeys                 []ApiKey `json:"privateKeys"`
 }

@@ -3,10 +3,10 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
-	"github.com/jitsucom/bulker/jitsubase/jsonorder"
-	types2 "github.com/jitsucom/bulker/jitsubase/types"
-	"github.com/mitchellh/mapstructure"
 	"time"
+
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/mitchellh/mapstructure"
 )
 
 type TaskDescriptor struct {
@@ -80,11 +80,11 @@ const (
 )
 
 type TaskConfiguration struct {
-	Config            map[string]any                  `json:"config"`
-	Catalog           *types2.OrderedMap[string, any] `json:"catalog"`
-	State             any                             `json:"state"`
-	DestinationConfig map[string]any                  `json:"destinationConfig"`
-	FunctionsEnv      map[string]any                  `json:"functionsEnv"`
+	Config            map[string]any                     `json:"config"`
+	Catalog           *jsonorder.OrderedMap[string, any] `json:"catalog"`
+	State             any                                `json:"state"`
+	DestinationConfig map[string]any                     `json:"destinationConfig"`
+	FunctionsEnv      map[string]any                     `json:"functionsEnv"`
 }
 
 func (t *TaskConfiguration) IsEmpty() bool {

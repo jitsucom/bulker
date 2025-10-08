@@ -2,12 +2,12 @@ package jsonorder
 
 import (
 	"fmt"
-	"github.com/jitsucom/bulker/jitsubase/types"
-	"github.com/modern-go/reflect2"
 	"unsafe"
+
+	"github.com/modern-go/reflect2"
 )
 
-var orderedMapPtr = &types.OrderedMap[string, any]{}
+var orderedMapPtr = &OrderedMap[string, any]{}
 var orderedMapType = reflect2.TypeOf(orderedMapPtr)
 
 func decoderOfOrderedMap(ctx *ctx, typ reflect2.Type) ValDecoder {
@@ -55,7 +55,7 @@ func (decoder *orderedMapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 		return
 	}
 	if orderedMapType.UnsafeIsNil(ptr) {
-		mp := types.NewOrderedMap[string, any](0)
+		mp := NewOrderedMap[string, any](0)
 		orderedMapType.UnsafeSet(ptr, unsafe.Pointer(&mp))
 	}
 	if c != '{' {
@@ -77,7 +77,7 @@ func (decoder *orderedMapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 	}
 	elem := elemType.UnsafeNew()
 	decoder.elemDecoder.Decode(elem, iter)
-	orderedMap := orderedMapType.UnsafeIndirect(ptr).(*types.OrderedMap[string, any])
+	orderedMap := orderedMapType.UnsafeIndirect(ptr).(*OrderedMap[string, any])
 	orderedMap.Set(keyType.UnsafeIndirect(key).(string), elemType.UnsafeIndirect(elem))
 	for c = iter.nextToken(); c == ','; c = iter.nextToken() {
 		key := keyType.UnsafeNew()
@@ -109,7 +109,7 @@ func (encoder *orderedMapEncoder) Encode(ptr unsafe.Pointer, stream *Stream) {
 		return
 	}
 	stream.WriteObjectStart()
-	orderedMap := orderedMapType.UnsafeIndirect(ptr).(*types.OrderedMap[string, any])
+	orderedMap := orderedMapType.UnsafeIndirect(ptr).(*OrderedMap[string, any])
 	orderedMap.ForEachIndexed(func(i int, key string, elem any) {
 		if i != 0 {
 			stream.WriteMore()
@@ -126,6 +126,6 @@ func (encoder *orderedMapEncoder) Encode(ptr unsafe.Pointer, stream *Stream) {
 }
 
 func (encoder *orderedMapEncoder) IsEmpty(ptr unsafe.Pointer) bool {
-	orderedMap := orderedMapType.UnsafeIndirect(ptr).(*types.OrderedMap[string, any])
+	orderedMap := orderedMapType.UnsafeIndirect(ptr).(*OrderedMap[string, any])
 	return orderedMap.Len() == 0
 }

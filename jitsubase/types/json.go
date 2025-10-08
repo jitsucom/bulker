@@ -1,13 +1,17 @@
 package types
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+)
 
 const SqlTypePrefix = "__sql_type"
 
-type Json = *OrderedMap[string, any]
+type Json = *jsonorder.OrderedMap[string, any]
 
 func NewJson(defaultCapacity int) Json {
-	return NewOrderedMap[string, any](defaultCapacity)
+	return jsonorder.NewOrderedMap[string, any](defaultCapacity)
 }
 
 func JsonFromMap(mp map[string]any) Json {
@@ -19,6 +23,18 @@ func JsonFromMap(mp map[string]any) Json {
 		} else {
 			om.Set(k, v)
 		}
+	}
+	return om
+}
+
+func JsonFromKV(kv ...any) Json {
+	om := NewJson(len(kv) / 2)
+	for i := 0; i < len(kv)-1; i += 2 {
+		key, ok := kv[i].(string)
+		if !ok {
+			continue
+		}
+		om.Set(key, kv[i+1])
 	}
 	return om
 }

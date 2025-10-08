@@ -1,9 +1,10 @@
-package types
+package jsonorder
 
 import (
 	"cmp"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"strconv"
+
+	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
 type OrderedSet[K cmp.Ordered] struct {

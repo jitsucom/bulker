@@ -1,8 +1,7 @@
-package types
+package jsonorder
 
 import (
 	"cmp"
-	"encoding/json"
 	"strings"
 )
 
@@ -365,8 +364,8 @@ func (m *OrderedMap[K, V]) String() string {
 			buf.WriteString(",")
 		}
 		first = false
-		key, _ := json.Marshal(el.Key)
-		value, _ := json.Marshal(el.Value)
+		key, _ := Marshal(el.Key)
+		value, _ := Marshal(el.Value)
 		buf.Write(key)
 		buf.WriteString(":")
 		buf.Write(value)

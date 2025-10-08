@@ -1,28 +1,29 @@
 package sql
 
 import (
-	"github.com/jitsucom/bulker/bulkerlib/types"
-	types2 "github.com/jitsucom/bulker/jitsubase/types"
 	"strings"
+
+	"github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 )
 
 const BulkerManagedPkConstraintPrefix = "jitsu_pk_"
 
 // Columns is a list of columns representation
-type Columns = *types2.OrderedMap[string, types.SQLColumn]
+type Columns = *jsonorder.OrderedMap[string, types.SQLColumn]
 
 func NewColumns(defaultCapacity int) Columns {
-	return types2.NewOrderedMap[string, types.SQLColumn](defaultCapacity)
+	return jsonorder.NewOrderedMap[string, types.SQLColumn](defaultCapacity)
 }
 
 func NewColumnsFromMap(mp map[string]types.SQLColumn) Columns {
-	m := types2.NewOrderedMap[string, types.SQLColumn](len(mp))
+	m := jsonorder.NewOrderedMap[string, types.SQLColumn](len(mp))
 	m.SetAllMap(mp)
 	return m
 }
 
-func NewColumnsFromArrays(arr []types2.El[string, types.SQLColumn]) Columns {
-	m := types2.NewOrderedMap[string, types.SQLColumn](len(arr))
+func NewColumnsFromArrays(arr []jsonorder.El[string, types.SQLColumn]) Columns {
+	m := jsonorder.NewOrderedMap[string, types.SQLColumn](len(arr))
 	for _, a := range arr {
 		m.Set(a.Key, a.Value)
 	}
@@ -45,7 +46,7 @@ type Table struct {
 	Cached    bool
 
 	Columns         Columns
-	PKFields        types2.OrderedSet[string]
+	PKFields        jsonorder.OrderedSet[string]
 	PrimaryKeyName  string
 	TimestampColumn string
 
@@ -187,7 +188,7 @@ func (t *Table) GetPKFields() []string {
 	return t.PKFields.ToSlice()
 }
 
-func (t *Table) GetPKFieldsSet() types2.OrderedSet[string] {
+func (t *Table) GetPKFieldsSet() jsonorder.OrderedSet[string] {
 	return t.PKFields
 }
 
@@ -197,7 +198,7 @@ func (t *Table) GetPKFieldsSet() types2.OrderedSet[string] {
 // 2) all fields from another schema exist in current schema
 // NOTE: Diff method doesn't take types into account
 func (t *Table) Diff(another *Table) *Table {
-	diff := &Table{Name: t.Name, Namespace: t.Namespace, Columns: NewColumns(0), PKFields: types2.NewOrderedSet[string]()}
+	diff := &Table{Name: t.Name, Namespace: t.Namespace, Columns: NewColumns(0), PKFields: jsonorder.NewOrderedSet[string]()}
 
 	if !another.Exists() {
 		return diff
@@ -234,8 +235,8 @@ func (t *Table) Diff(another *Table) *Table {
 	return diff
 }
 
-func (t *Table) ToSimpleMap() *types2.OrderedMap[string, any] {
-	simple := types2.NewOrderedMap[string, any](t.ColumnsCount())
+func (t *Table) ToSimpleMap() *jsonorder.OrderedMap[string, any] {
+	simple := jsonorder.NewOrderedMap[string, any](t.ColumnsCount())
 	for el := t.Columns.Front(); el != nil; el = el.Next() {
 		simple.Set(el.Key, el.Value.Type)
 	}

@@ -2,9 +2,11 @@ package types
 
 import (
 	"cmp"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"sort"
 	"strconv"
+
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
 type Set[K cmp.Ordered] map[K]struct{}
@@ -30,7 +32,7 @@ func (s Set[K]) PutAll(keys []K) {
 	}
 }
 
-func (s Set[K]) PutAllOrderedKeys(m *OrderedMap[K, any]) {
+func (s Set[K]) PutAllOrderedKeys(m *jsonorder.OrderedMap[K, any]) {
 	for el := m.Front(); el != nil; el = el.Next() {
 		s.Put(el.Key)
 	}

@@ -1,15 +1,16 @@
 package sql
 
 import (
-	"cloud.google.com/go/bigquery"
-	bulker "github.com/jitsucom/bulker/bulkerlib"
-	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/timestamp"
-	"github.com/jitsucom/bulker/jitsubase/types"
-	"github.com/jitsucom/bulker/jitsubase/utils"
 	"sync"
 	"testing"
 	"time"
+
+	"cloud.google.com/go/bigquery"
+	bulker "github.com/jitsucom/bulker/bulkerlib"
+	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/jitsucom/bulker/jitsubase/timestamp"
+	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 
 func TestTypesMappingAndCollision(t *testing.T) {
@@ -160,7 +161,7 @@ func TestReverseDataTypeMapping(t *testing.T) {
 			dataFile:                  "test_data/data_types.ndjson",
 			expectedTableTypeChecking: TypeCheckingDataTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"id", types2.SQLColumn{DataType: types2.INT64}},
 					{"float_type", types2.SQLColumn{DataType: types2.FLOAT64}},
 					{"time_type", types2.SQLColumn{DataType: types2.TIMESTAMP}},
@@ -190,7 +191,7 @@ func TestSQLTypeHints(t *testing.T) {
 			dataFile:                  "test_data/type_hints.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"id", types2.SQLColumn{Type: "bigint"}},
 					{"time1", types2.SQLColumn{Type: "timestamp with time zone"}},
 					{"name", types2.SQLColumn{Type: "text"}},
@@ -215,7 +216,7 @@ func TestSQLTypeHints(t *testing.T) {
 			dataFile:                  "test_data/type_hints_bq.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"id", types2.SQLColumn{Type: string(bigquery.IntegerFieldType)}},
 					{"time1", types2.SQLColumn{Type: string(bigquery.TimestampFieldType)}},
 					{"name", types2.SQLColumn{Type: string(bigquery.StringFieldType)}},
@@ -404,7 +405,7 @@ func TestTypeCoalesce(t *testing.T) {
 			expectedTableTypeChecking: TypeCheckingDataTypesOnly,
 			batchSize:                 4,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"id", types2.SQLColumn{DataType: types2.INT64}},
 					{"str_1", types2.SQLColumn{DataType: types2.STRING}},
 					{"float_1", types2.SQLColumn{DataType: types2.FLOAT64}},
@@ -445,7 +446,7 @@ func TestJSONTypes(t *testing.T) {
 			dataFile:                  "test_data/types_json.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"_timestamp", types2.SQLColumn{Type: "timestamp with time zone"}},
 					{"id", types2.SQLColumn{Type: "bigint"}},
 					{"name", types2.SQLColumn{Type: "text"}},
@@ -481,7 +482,7 @@ func TestJSONTypes(t *testing.T) {
 			dataFile:                  "test_data/types_json.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"_timestamp", types2.SQLColumn{Type: "timestamp(6)"}},
 					{"id", types2.SQLColumn{Type: "bigint"}},
 					{"name", types2.SQLColumn{Type: "text"}},
@@ -517,7 +518,7 @@ func TestJSONTypes(t *testing.T) {
 			dataFile:                  "test_data/types_json.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"_timestamp", types2.SQLColumn{Type: "timestamp with time zone"}},
 					{"id", types2.SQLColumn{Type: "bigint"}},
 					{"name", types2.SQLColumn{Type: "character varying(65535)"}},
@@ -553,7 +554,7 @@ func TestJSONTypes(t *testing.T) {
 			dataFile:                  "test_data/types_json.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"_timestamp", types2.SQLColumn{Type: "DateTime64(6)"}},
 					{"id", types2.SQLColumn{Type: "Int64"}},
 					{"name", types2.SQLColumn{Type: "String"}},
@@ -589,7 +590,7 @@ func TestJSONTypes(t *testing.T) {
 			dataFile:                  "test_data/types_json.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"_timestamp", types2.SQLColumn{Type: "DateTime64(6)"}},
 					{"id", types2.SQLColumn{Type: "Int64"}},
 					{"name", types2.SQLColumn{Type: "String"}},
@@ -625,7 +626,7 @@ func TestJSONTypes(t *testing.T) {
 			dataFile:                  "test_data/types_json.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"_timestamp", types2.SQLColumn{Type: "TIMESTAMP_TZ(6)"}},
 					{"id", types2.SQLColumn{Type: "NUMBER(38,0)"}},
 					{"name", types2.SQLColumn{Type: "VARCHAR(16777216)"}},
@@ -661,7 +662,7 @@ func TestJSONTypes(t *testing.T) {
 			dataFile:                  "test_data/types_json.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"_timestamp", types2.SQLColumn{Type: "TIMESTAMP"}},
 					{"id", types2.SQLColumn{Type: "INTEGER"}},
 					{"name", types2.SQLColumn{Type: "STRING"}},
@@ -697,7 +698,7 @@ func TestJSONTypes(t *testing.T) {
 			dataFile:                  "test_data/types_json.ndjson",
 			expectedTableTypeChecking: TypeCheckingSQLTypesOnly,
 			expectedTable: ExpectedTable{
-				Columns: NewColumnsFromArrays([]types.El[string, types2.SQLColumn]{
+				Columns: NewColumnsFromArrays([]jsonorder.El[string, types2.SQLColumn]{
 					{"_timestamp", types2.SQLColumn{Type: "timestamp with time zone"}},
 					{"id", types2.SQLColumn{Type: "bigint"}},
 					{"name", types2.SQLColumn{Type: "varchar"}},

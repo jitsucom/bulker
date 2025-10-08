@@ -111,7 +111,7 @@ func (r *Router) PixelHandler(c *gin.Context) {
 		return
 	}
 	if len(stream.AsynchronousDestinations) == 0 {
-		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true, true, true)
+		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf("%s", stream.Stream.Id), true, true, true)
 		return
 	}
 	asyncDestinations, _, rError = r.sendToRotor(c, messageId, ingestMessageBytes, stream, true)

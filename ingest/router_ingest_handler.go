@@ -116,7 +116,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 		return
 	}
 	if len(stream.AsynchronousDestinations) == 0 && (len(stream.SynchronousDestinations) == 0 || s2sEndpoint) {
-		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true, true, true)
+		rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf("%s", stream.Stream.Id), true, true, true)
 		return
 	}
 	asyncDestinations, tagsDestinations, rError = r.sendToRotor(c, messageId, ingestMessageBytes, stream, true)

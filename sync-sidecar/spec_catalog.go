@@ -3,14 +3,14 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/jitsucom/bulker/jitsubase/jsonorder"
-	"github.com/jitsucom/bulker/jitsubase/pg"
-	types2 "github.com/jitsucom/bulker/jitsubase/types"
-	"github.com/jitsucom/bulker/sync-sidecar/db"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/jitsucom/bulker/jitsubase/pg"
+	"github.com/jitsucom/bulker/sync-sidecar/db"
 )
 
 type SpecCatalogSideCar struct {
@@ -107,7 +107,7 @@ func (s *SpecCatalogSideCar) Run() {
 	stdOutErrWaitGroup.Wait()
 }
 
-func (s *SpecCatalogSideCar) processSpec(spec *types2.OrderedMap[string, any]) {
+func (s *SpecCatalogSideCar) processSpec(spec *jsonorder.OrderedMap[string, any]) {
 	// ignore previous error messages since we got result
 	s.firstErr = nil
 	specJson, _ := jsonorder.Marshal(spec)
@@ -129,7 +129,7 @@ func (s *SpecCatalogSideCar) processConnectionStatus(status *StatusRow) {
 	}
 }
 
-func (s *SpecCatalogSideCar) processCatalog(catalog *types2.OrderedMap[string, any]) {
+func (s *SpecCatalogSideCar) processCatalog(catalog *jsonorder.OrderedMap[string, any]) {
 	// ignore previous error messages since we got result
 	s.firstErr = nil
 	catalogJson, _ := jsonorder.Marshal(catalog)

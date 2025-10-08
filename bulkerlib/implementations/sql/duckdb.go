@@ -6,21 +6,22 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	bulker "github.com/jitsucom/bulker/bulkerlib"
-	types2 "github.com/jitsucom/bulker/bulkerlib/types"
-	"github.com/jitsucom/bulker/jitsubase/errorj"
-	"github.com/jitsucom/bulker/jitsubase/jsoniter"
-	"github.com/jitsucom/bulker/jitsubase/logging"
-	"github.com/jitsucom/bulker/jitsubase/types"
-	"github.com/jitsucom/bulker/jitsubase/utils"
-	"github.com/jitsucom/bulker/jitsubase/uuid"
-	"github.com/marcboeker/go-duckdb/v2"
-	_ "github.com/marcboeker/go-duckdb/v2"
 	"io"
 	"os"
 	"strings"
 	"text/template"
 	"time"
+
+	bulker "github.com/jitsucom/bulker/bulkerlib"
+	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsoniter"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
+	"github.com/jitsucom/bulker/jitsubase/logging"
+	"github.com/jitsucom/bulker/jitsubase/utils"
+	"github.com/jitsucom/bulker/jitsubase/uuid"
+	"github.com/marcboeker/go-duckdb/v2"
+	_ "github.com/marcboeker/go-duckdb/v2"
 )
 
 func init() {
@@ -272,7 +273,7 @@ func (d *DuckDB) getTable(ctx context.Context, namespace string, tableName strin
 	db := d.TableName(d.config.Db)
 	tableName = d.TableName(tableName)
 	namespace = d.NamespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: jsonorder.NewOrderedSet[string]()}
 	rows, err := d.txOrDb(ctx).QueryContext(ctx, duckDBTableSchemaQuery, db, namespace, tableName)
 	if err != nil {
 		return nil, errorj.GetTableError.Wrap(err, "failed to get table columns").
@@ -436,14 +437,14 @@ func runStatement(con driver.Conn, statement string) error {
 }
 
 // getPrimaryKey returns primary key name and fields
-func (d *DuckDB) getPrimaryKey(ctx context.Context, namespace string, tableName string) (string, types.OrderedSet[string], error) {
+func (d *DuckDB) getPrimaryKey(ctx context.Context, namespace string, tableName string) (string, jsonorder.OrderedSet[string], error) {
 	db := d.TableName(d.config.Db)
 	tableName = d.TableName(tableName)
 	namespace = d.NamespaceName(namespace)
-	primaryKeys := types.NewOrderedSet[string]()
+	primaryKeys := jsonorder.NewOrderedSet[string]()
 	pkFieldsRows, err := d.txOrDb(ctx).QueryContext(ctx, duckDBPrimaryKeyFieldsQuery, db, namespace, tableName)
 	if err != nil {
-		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+		return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    namespace,
 				Table:     tableName,
@@ -458,7 +459,7 @@ func (d *DuckDB) getPrimaryKey(ctx context.Context, namespace string, tableName 
 	for pkFieldsRows.Next() {
 		var constraintName, keyColumn string
 		if err := pkFieldsRows.Scan(&constraintName, &keyColumn); err != nil {
-			return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
+			return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to scan result").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Schema:    namespace,
 					Table:     tableName,
@@ -474,7 +475,7 @@ func (d *DuckDB) getPrimaryKey(ctx context.Context, namespace string, tableName 
 	}
 
 	if err := pkFieldsRows.Err(); err != nil {
-		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
+		return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    namespace,
 				Table:     tableName,

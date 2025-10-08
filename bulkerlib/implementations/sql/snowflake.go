@@ -18,6 +18,7 @@ import (
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
@@ -282,7 +283,7 @@ func (s *Snowflake) InitDatabase(ctx context.Context) error {
 func (s *Snowflake) GetTableSchema(ctx context.Context, namespace string, tableName string) (*Table, error) {
 	quotedTableName, tableName := s.tableHelper.adaptTableName(tableName)
 	namespace = s.NamespaceName(namespace)
-	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: types.NewOrderedSet[string]()}
+	table := &Table{Name: tableName, Namespace: namespace, Columns: NewColumns(0), PKFields: jsonorder.NewOrderedSet[string]()}
 
 	query := fmt.Sprintf(sfDescTableQuery, s.namespacePrefix(namespace), quotedTableName)
 	rows, err := s.txOrDb(ctx).QueryContext(ctx, query)
@@ -345,14 +346,14 @@ func (s *Snowflake) GetTableSchema(ctx context.Context, namespace string, tableN
 }
 
 // getPrimaryKey returns primary key name and fields
-func (s *Snowflake) getPrimaryKey(ctx context.Context, namespace, tableName string) (string, types.OrderedSet[string], error) {
+func (s *Snowflake) getPrimaryKey(ctx context.Context, namespace, tableName string) (string, jsonorder.OrderedSet[string], error) {
 	quotedTableName := s.quotedTableName(tableName)
 
-	primaryKeys := types.NewOrderedSet[string]()
+	primaryKeys := jsonorder.NewOrderedSet[string]()
 	statement := fmt.Sprintf(sfPrimaryKeyFieldsQuery, s.namespacePrefix(namespace), quotedTableName)
 	pkFieldsRows, err := s.txOrDb(ctx).QueryContext(ctx, statement)
 	if err != nil {
-		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+		return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    namespace,
 				Table:     quotedTableName,
@@ -367,7 +368,7 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, namespace, tableName stri
 		var row map[string]any
 		row, err = rowToMap(pkFieldsRows)
 		if err != nil {
-			return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
+			return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed to get primary key").
 				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 					Schema:    namespace,
 					Table:     quotedTableName,
@@ -393,7 +394,7 @@ func (s *Snowflake) getPrimaryKey(ctx context.Context, namespace, tableName stri
 	}
 
 	if err := pkFieldsRows.Err(); err != nil {
-		return "", types.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
+		return "", jsonorder.OrderedSet[string]{}, errorj.GetPrimaryKeysError.Wrap(err, "failed read last row").
 			WithProperty(errorj.DBInfo, &types2.ErrorPayload{
 				Schema:    namespace,
 				Table:     quotedTableName,

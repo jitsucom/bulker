@@ -173,7 +173,7 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 		if err != nil {
 			rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "event error", false, err, true, true, false)
 		} else if len(stream.AsynchronousDestinations) == 0 {
-			rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf(stream.Stream.Id), true, true, true)
+			rError = r.ResponseError(c, http.StatusOK, ErrNoDst, false, fmt.Errorf("%s", stream.Stream.Id), true, true, true)
 		} else {
 			asyncDestinations, _, rError = r.sendToRotor(c, messageId, ingestMessageBytes, stream, true)
 		}

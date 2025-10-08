@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/jitsucom/bulker/bulkerlib/types"
-	types2 "github.com/jitsucom/bulker/jitsubase/types"
+	types2 "github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 )
 

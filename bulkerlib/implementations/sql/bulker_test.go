@@ -15,9 +15,9 @@ import (
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers/clickhouse"
 	"github.com/jitsucom/bulker/bulkerlib/implementations/sql/testcontainers/clickhouse_noshards"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
+	"github.com/jitsucom/bulker/jitsubase/jsonorder"
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/timestamp"
-	"github.com/jitsucom/bulker/jitsubase/types"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
 	"github.com/stretchr/testify/require"
@@ -531,6 +531,7 @@ func TestBasics(t *testing.T) {
 					{Name: "dt", Type: types2.TIMESTAMP},
 				},
 			})},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 		},
 		{
 			name:              "date_mix",
@@ -552,6 +553,7 @@ func TestBasics(t *testing.T) {
 					{Name: "dt", Type: types2.TIMESTAMP},
 				},
 			})},
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 		},
 		{
 			name:              "date_mix_no_schema",
@@ -564,7 +566,8 @@ func TestBasics(t *testing.T) {
 				{"_timestamp": constantTime, "id": 2, "name": "test2", "dt": timestamp.CopyTime(constantTime).Truncate(24 * time.Hour)},
 				{"_timestamp": constantTime, "id": 3, "name": "test3", "dt": constantTime},
 			},
-			configIds: allBulkerConfigs,
+			configIds:      allBulkerConfigs,
+			expectedErrors: map[string]any{"create_stream_bigquery_stream": BigQueryAutocommitUnsupported},
 		},
 	}
 	for _, tt := range tests {
@@ -717,7 +720,7 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 				el.Value = types2.SQLColumn{Type: el.Value.Type}
 			}
 		}
-		expectedPKFields := types.NewOrderedSet[string]()
+		expectedPKFields := jsonorder.NewOrderedSet[string]()
 		if len(testConfig.expectedTable.PKFields) > 0 {
 			expectedPKFields.PutAll(testConfig.expectedTable.PKFields)
 		}
@@ -751,12 +754,12 @@ func testStream(t *testing.T, testConfig bulkerTestConfig, mode bulker.BulkMode)
 			}
 			table.Columns = newColumns
 
-			newPKFields := types.NewOrderedSet[string]()
+			newPKFields := jsonorder.NewOrderedSet[string]()
 			expectedTable.PKFields.ForEach(func(k string) {
 				newPKFields.Put(strings.ToLower(k))
 			})
 			expectedTable.PKFields = newPKFields
-			newPKFields = types.NewOrderedSet[string]()
+			newPKFields = jsonorder.NewOrderedSet[string]()
 			table.PKFields.ForEach(func(k string) {
 				newPKFields.Put(strings.ToLower(k))
 			})

@@ -46,7 +46,7 @@ type AbstractSQLStream struct {
 	existingTable *Table
 
 	customTypes     types.SQLTypes
-	pkColumns       types2.OrderedSet[string]
+	pkColumns       jsonorder.OrderedSet[string]
 	pkColumnsArrays []string
 	timestampColumn string
 
@@ -568,10 +568,10 @@ func (ps *AbstractSQLStream) updateRepresentationTable(table *Table) {
 }
 
 type RepresentationTable struct {
-	Name             string                          `json:"name"`
-	TargetName       string                          `json:"targetName,omitempty"`
-	Schema           *types2.OrderedMap[string, any] `json:"schema"`
-	PrimaryKeyFields []string                        `json:"primaryKeyFields,omitempty"`
-	PrimaryKeyName   string                          `json:"primaryKeyName,omitempty"`
-	Temporary        bool                            `json:"temporary,omitempty"`
+	Name             string      `json:"name"`
+	TargetName       string      `json:"targetName,omitempty"`
+	Schema           types2.Json `json:"schema"`
+	PrimaryKeyFields []string    `json:"primaryKeyFields,omitempty"`
+	PrimaryKeyName   string      `json:"primaryKeyName,omitempty"`
+	Temporary        bool        `json:"temporary,omitempty"`
 }
