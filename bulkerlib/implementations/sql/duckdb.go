@@ -12,6 +12,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/duckdb/duckdb-go/v2"
+	_ "github.com/duckdb/duckdb-go/v2"
 	bulker "github.com/jitsucom/bulker/bulkerlib"
 	types2 "github.com/jitsucom/bulker/bulkerlib/types"
 	"github.com/jitsucom/bulker/jitsubase/errorj"
@@ -20,8 +22,6 @@ import (
 	"github.com/jitsucom/bulker/jitsubase/logging"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	"github.com/jitsucom/bulker/jitsubase/uuid"
-	"github.com/marcboeker/go-duckdb/v2"
-	_ "github.com/marcboeker/go-duckdb/v2"
 )
 
 func init() {
