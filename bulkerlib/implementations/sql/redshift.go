@@ -472,6 +472,33 @@ func (p *Redshift) getPrimaryKeys(ctx context.Context, namespace, tableName stri
 
 	return primaryKeyName, primaryKeys, nil
 }
+
+// PatchTableSchema RedShift doesnt support altering of primary keys and other constraints, so here we only add new columns
+func (p *Redshift) PatchTableSchema(ctx context.Context, patchTable *Table) (*Table, error) {
+	quotedTableName := p.quotedTableName(patchTable.Name)
+	quotedSchema := p.namespacePrefix(patchTable.Namespace)
+
+	//patch columns
+	err := patchTable.Columns.ForEachIndexedE(func(_ int, columnName string, column types2.SQLColumn) error {
+		columnDDL := p.columnDDL(columnName, patchTable, column)
+		query := fmt.Sprintf(addColumnTemplate, quotedSchema, quotedTableName, columnDDL)
+
+		if _, err := p.txOrDb(ctx).ExecContext(ctx, query); err != nil {
+			return errorj.PatchTableError.Wrap(err, "failed to patch table").
+				WithProperty(errorj.DBInfo, &types2.ErrorPayload{
+					Table:       quotedTableName,
+					PrimaryKeys: patchTable.GetPKFields(),
+					Statement:   query,
+				})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return patchTable, nil
+}
+
 func (p *Redshift) TmpNamespace(string) string {
 	return NoNamespaceValue
 }
