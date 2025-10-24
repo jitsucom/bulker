@@ -73,20 +73,20 @@ var (
 
 	clickhouseTypes = map[types.DataType][]string{
 		types.STRING:    {"String", "%String%", "%CHAR%", "%TEXT%", "%BLOB%", "%Enum%", "%UUID%"},
-		types.INT64:     {"Int64", "Int", "LowCardinality(Int"},
-		types.FLOAT64:   {"Float64", "Float32", "Decimal"},
-		types.TIMESTAMP: {"DateTime64(6)", "DateTime", "Date"},
-		types.BOOL:      {"UInt8"},
+		types.INT64:     {"Int64", "Int%", "LowCardinality(Int%", "Nullable(Int%", "LowCardinality(Nullable(Int%", "%UInt16%", "%UInt32%", "%UInt64%", "%UInt128%", "%UInt256%"},
+		types.FLOAT64:   {"Float64", "Float32", "Decimal%", "Nullable(Float%", "Nullable(Decimal%"},
+		types.TIMESTAMP: {"DateTime64(6)", "DateTime", "Date", "Nullable(Date%"},
+		types.BOOL:      {"UInt8", "Nullable(UInt8)"},
 		types.JSON:      {"String"},
 		types.UNKNOWN:   {"String"},
 	}
 	clickhouseTypesWithJSON = map[types.DataType][]string{
 		types.STRING:    {"String", "%String%", "%CHAR%", "%TEXT%", "%BLOB%", "%Enum%", "%UUID%"},
-		types.INT64:     {"Int64", "Int", "LowCardinality(Int"},
-		types.FLOAT64:   {"Float64", "Float32", "Decimal"},
-		types.TIMESTAMP: {"DateTime64(6)", "DateTime", "Date"},
-		types.BOOL:      {"UInt8"},
-		types.JSON:      {"JSON", "Array(JSON)"},
+		types.INT64:     {"Int64", "Int%", "LowCardinality(Int%", "Nullable(Int%", "LowCardinality(Nullable(Int%", "%UInt16%", "%UInt32%", "%UInt64%", "%UInt128%", "%UInt256%"},
+		types.FLOAT64:   {"Float64", "Float32", "Decimal%", "Nullable(Float%", "Nullable(Decimal%"},
+		types.TIMESTAMP: {"DateTime64(6)", "DateTime", "Date", "Nullable(Date%"},
+		types.BOOL:      {"UInt8", "Nullable(UInt8)"},
+		types.JSON:      {"JSON", "Array(JSON)", "Nullable(JSON)", "Nullable(Array(JSON))"},
 		types.UNKNOWN:   {"String"},
 	}
 
