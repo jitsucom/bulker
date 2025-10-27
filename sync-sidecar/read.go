@@ -28,6 +28,7 @@ const cancelledError = "Sync job was cancelled"
 
 var forceTemporaryBatchesDestinations = map[string]int{
 	"webhook": 100,
+	"duckdb":  10000,
 }
 
 type ReadSideCar struct {
