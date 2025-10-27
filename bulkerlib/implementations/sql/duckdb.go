@@ -344,21 +344,19 @@ func (d *DuckDB) LoadTable(ctx context.Context, targetTable *Table, loadSource *
 	if loadSource.Format != d.batchFileFormat {
 		return state, fmt.Errorf("LoadTable: only %s format is supported", d.batchFileFormat)
 	}
-	memoryTable := targetTable
-	if !targetTable.Temporary {
-		// MotherDuck doesn't support Appender API
-		// so we need to create memory database to use Appender API on it
-		memoryTable = targetTable.Clone()
-		memoryTable.TimestampColumn = ""
-		memoryTable.Namespace = DuckDBMemoryDBAlias
-		_, err = d.CreateTable(ctx, memoryTable)
-		if err != nil {
-			return state, err
-		}
-		defer func() {
-			_ = d.DropTable(ctx, memoryTable.Namespace, memoryTable.Name, true)
-		}()
+
+	// MotherDuck doesn't support Appender API
+	// so we need to create memory database to use Appender API on it
+	memoryTable := targetTable.Clone()
+	memoryTable.TimestampColumn = ""
+	memoryTable.Namespace = DuckDBMemoryDBAlias
+	_, err = d.CreateTable(ctx, memoryTable)
+	if err != nil {
+		return state, err
 	}
+	defer func() {
+		_ = d.DropTable(ctx, memoryTable.Namespace, memoryTable.Name, true)
+	}()
 
 	con, err := d.dataSource.Driver().Open(duckDBDsn(d.config))
 	if err != nil {
@@ -416,12 +414,10 @@ func (d *DuckDB) LoadTable(ctx context.Context, targetTable *Table, loadSource *
 	if err = appender.Flush(); err != nil {
 		return state, err
 	}
-	if !targetTable.Temporary {
-		s2, err := d.CopyTables(ctx, targetTable, memoryTable, 0)
-		state.Merge(s2)
-		if err != nil {
-			return state, err
-		}
+	s2, err := d.CopyTables(ctx, targetTable, memoryTable, 0)
+	state.Merge(s2)
+	if err != nil {
+		return state, err
 	}
 	return state, nil
 }
@@ -573,10 +569,6 @@ func (d *DuckDB) Ping(ctx context.Context) error {
 		return err
 	}
 	return nil
-}
-
-func (d *DuckDB) TmpNamespace(namespace string) string {
-	return DuckDBMemoryDBAlias
 }
 
 // Close underlying sql.DB
