@@ -514,11 +514,12 @@ func (r *Router) buildIngestMessage(c *gin.Context, messageId string, event type
 		WriteKey:       maskWriteKey(loc.WriteKey),
 		Type:           utils.NvlString(bodyType, tp),
 		Origin: IngestMessageOrigin{
-			BaseURL:    fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host),
-			Slug:       loc.Slug,
-			SourceId:   stream.Stream.Id,
-			SourceName: stream.Stream.Name,
-			Domain:     loc.Domain,
+			BaseURL:     fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host),
+			Slug:        loc.Slug,
+			WorkspaceId: stream.Stream.WorkspaceId,
+			SourceId:    stream.Stream.Id,
+			SourceName:  stream.Stream.Name,
+			Domain:      loc.Domain,
 		},
 		HttpHeaders: headers,
 		HttpPayload: event,
@@ -561,12 +562,13 @@ func (r *Router) checkHash(hash string, secret string) bool {
 }
 
 type IngestMessageOrigin struct {
-	BaseURL    string `json:"baseUrl,omitempty"`
-	Slug       string `json:"slug,omitempty"`
-	SourceId   string `json:"sourceId,omitempty"`
-	SourceName string `json:"sourceName,omitempty"`
-	Domain     string `json:"domain,omitempty"`
-	Classic    bool   `json:"classic,omitempty"`
+	BaseURL     string `json:"baseUrl,omitempty"`
+	Slug        string `json:"slug,omitempty"`
+	WorkspaceId string `json:"workspaceId,omitempty"`
+	SourceId    string `json:"sourceId,omitempty"`
+	SourceName  string `json:"sourceName,omitempty"`
+	Domain      string `json:"domain,omitempty"`
+	Classic     bool   `json:"classic,omitempty"`
 }
 
 type IngestMessage struct {

@@ -16,6 +16,16 @@ var (
 		return ingestHandlerRequests.WithLabelValues(slug, status, errorType)
 	}
 
+	ingestedMessagesReceived = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "bulkerapp",
+		Subsystem: "ingest",
+		Name:      "messages_received",
+		Help:      "Messages ingested by stream Id",
+	}, []string{"streamId", "status"})
+	IngestedMessagesReceived = func(streamId, status string) prometheus.Counter {
+		return ingestedMessagesReceived.WithLabelValues(streamId, status)
+	}
+
 	ingestedMessages = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "bulkerapp",
 		Subsystem: "ingest",

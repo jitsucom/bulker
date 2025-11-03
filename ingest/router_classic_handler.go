@@ -78,13 +78,16 @@ func (r *Router) ClassicScriptHandler(c *gin.Context) {
 
 func (r *Router) ClassicHandler(c *gin.Context) {
 	domain := ""
+	metricsId := "UNKNOWN"
 	var rError *appbase.RouterError
 	ingestType := IngestTypeBrowser
 	var s2sEndpoint bool
 
 	defer func() {
+		IngestedMessagesReceived(metricsId, "received").Inc()
 		if rError != nil {
 			IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
+			IngestedMessagesReceived(metricsId, "errors").Inc()
 		}
 	}()
 	defer func() {
@@ -119,8 +122,8 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 		rError = r.ResponseError(c, utils.Ternary(s2sEndpoint, http.StatusBadRequest, http.StatusOK), "error processing message", false, err, true, true, false)
 		return
 	}
-
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
+	metricsId = domain
 	c.Set(appbase.ContextDomain, domain)
 	c.Set("_classic_api_key", loc.WriteKey)
 
@@ -131,7 +134,7 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 	}
 	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S
 
-	eventsLogId := stream.Stream.Id
+	metricsId = stream.Stream.Id
 	ids.Store(stream.Stream.Id, stream.Stream.WorkspaceId)
 	var body []byte
 	body, err = io.ReadAll(c.Request.Body)
@@ -178,11 +181,11 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 			asyncDestinations, _, rError = r.sendToRotor(c, messageId, ingestMessageBytes, stream, true)
 		}
 		if len(ingestMessageBytes) > 0 {
-			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
+			_ = r.backupsLogger.Log(utils.DefaultString(metricsId, "UNKNOWN"), ingestMessageBytes)
 		}
 		if rError != nil && rError.ErrorType != ErrNoDst {
 			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": utils.Ternary(rError.ErrorType == ErrThrottledType, "SKIPPED", "FAILED")}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelError, ActorId: eventsLogId, Event: obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelError, ActorId: metricsId, Event: obj})
 			IngestHandlerRequests(domain, utils.Ternary(rError.ErrorType == ErrThrottledType, "throttled", "error"), rError.ErrorType).Inc()
 			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), utils.TruncateBytes(ingestMessageBytes, r.config.MaxIngestPayloadSize), map[string]string{"error": rError.Error.Error()}, kafka2.PartitionAny, messageId, false)
 		} else {
@@ -193,7 +196,7 @@ func (r *Router) ClassicHandler(c *gin.Context) {
 				obj["status"] = "SKIPPED"
 				obj["error"] = ErrNoDst
 			}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelInfo, ActorId: eventsLogId, Event: obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelInfo, ActorId: metricsId, Event: obj})
 			IngestHandlerRequests(domain, "success", "").Inc()
 		}
 	}

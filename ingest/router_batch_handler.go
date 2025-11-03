@@ -110,11 +110,15 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	var rError *appbase.RouterError
 	var payload BatchPayload
 	domain := "BATCH"
+	metricsId := "UNKNOWN"
+	metricsBatchSize := 1
 	var s2sEndpoint bool
 
 	defer func() {
+		IngestedMessagesReceived(metricsId, "received").Add(float64(metricsBatchSize))
 		if rError != nil {
 			IngestHandlerRequests(domain, "error", rError.ErrorType).Inc()
+			IngestedMessagesReceived(metricsId, "errors").Add(float64(metricsBatchSize))
 		}
 	}()
 	defer func() {
@@ -140,6 +144,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 		rError = r.ResponseError(c, http.StatusBadRequest, "error parsing message", false, err, true, true, false)
 		return
 	}
+	metricsBatchSize = len(payload.Batch)
 	if c.FullPath() == "/api/s/s2s/batch" {
 		// may still be overridden by write key type
 		s2sEndpoint = true
@@ -150,6 +155,7 @@ func (r *Router) BatchHandler(c *gin.Context) {
 		return
 	}
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
+	metricsId = domain
 	c.Set(appbase.ContextDomain, domain)
 
 	stream := r.getStream(&loc, true, s2sEndpoint)
@@ -159,19 +165,18 @@ func (r *Router) BatchHandler(c *gin.Context) {
 	}
 	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S
 
-	eventsLogId := stream.Stream.Id
+	metricsId = stream.Stream.Id
 	//if err = r.checkOrigin(c, &loc, stream); err != nil {
 	//	r.Warnf("[batch] %v", err)
 	//}
 
 	// Apply in-batch deduplication if any destination has deduplication enabled
 	batch := payload.Batch
+	deduplicated := 0
 	if stream.Stream.DeduplicateWindowMs > 0 {
 		originalSize := len(batch)
 		batch = deduplicateBatch(batch, stream.Stream.DeduplicateWindowMs)
-		if len(batch) < originalSize {
-			r.Infof("[batch] Deduplicated %d events from batch (original: %d, deduplicated: %d)", originalSize-len(batch), originalSize, len(batch))
-		}
+		deduplicated = originalSize - len(batch)
 	}
 
 	okEvents := 0
@@ -196,11 +201,11 @@ func (r *Router) BatchHandler(c *gin.Context) {
 			rError = r.ResponseError(c, http.StatusOK, "event error", false, err1, false, true, false)
 		}
 		if len(ingestMessageBytes) >= 0 {
-			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
+			_ = r.backupsLogger.Log(utils.DefaultString(metricsId, "UNKNOWN"), ingestMessageBytes)
 		}
 		if rError != nil && rError.ErrorType != ErrNoDst {
 			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": utils.Ternary(rError.ErrorType == ErrThrottledType, "SKIPPED", "FAILED")}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelError, ActorId: eventsLogId, Event: obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelError, ActorId: metricsId, Event: obj})
 			IngestHandlerRequests(domain, utils.Ternary(rError.ErrorType == ErrThrottledType, "throttled", "error"), rError.ErrorType).Inc()
 			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), utils.TruncateBytes(ingestMessageBytes, r.config.MaxIngestPayloadSize), map[string]string{"error": rError.Error.Error()}, kafka2.PartitionAny, messageId, false)
 			errors = append(errors, fmt.Sprintf("Message ID: %s: %v", messageId, rError.PublicError))
@@ -214,25 +219,26 @@ func (r *Router) BatchHandler(c *gin.Context) {
 				obj["error"] = ErrNoDst
 				errors = append(errors, fmt.Sprintf("Message ID: %s: %v", messageId, rError.PublicError))
 			}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelInfo, ActorId: eventsLogId, Event: obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelInfo, ActorId: metricsId, Event: obj})
 			IngestHandlerRequests(domain, "success", "").Inc()
 		}
 	}
-	receivedEvents := len(payload.Batch)
 	processedEvents := len(batch)
 	response := gin.H{
 		"ok":             processedEvents == okEvents,
-		"receivedEvents": receivedEvents,
+		"receivedEvents": metricsBatchSize,
 		"okEvents":       okEvents,
 	}
 
 	// Include deduplication info if deduplication occurred
-	if receivedEvents != processedEvents {
-		response["deduplicatedEvents"] = receivedEvents - processedEvents
+	if deduplicated > 0 {
+		IngestedMessagesReceived(metricsId, "deduplicated").Add(float64(deduplicated))
+		response["deduplicatedEvents"] = deduplicated
 		response["processedEvents"] = processedEvents
 	}
 
 	if len(errors) > 0 {
+		IngestedMessagesReceived(metricsId, "errors").Add(float64(len(errors)))
 		response["ok"] = false
 		response["errors"] = errors
 	}

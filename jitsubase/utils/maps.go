@@ -115,6 +115,18 @@ func MapMap[K comparable, V any, R any](mp map[K]V, mappingFunc func(K, V) R) ma
 	return result
 }
 
+func MapMapKeys[K comparable, V any, J comparable](mp map[K]V, mappingFunc func(K) J) map[J]V {
+	if mp == nil {
+		return nil
+	}
+	result := make(map[J]V, len(mp))
+	for k, v := range mp {
+		newKey := mappingFunc(k)
+		result[newKey] = v
+	}
+	return result
+}
+
 func Values[V any, K comparable](mp map[K]V) []V {
 	if mp == nil {
 		return nil

@@ -21,7 +21,7 @@ import (
 func (r *Router) IngestHandler(c *gin.Context) {
 	domain := ""
 	// TODO: use workspaceId as default for all stream identification errors
-	var eventsLogId string
+	metricsId := "UNKNOWN"
 	var rError *appbase.RouterError
 	var body []byte
 	var ingestMessageBytes []byte
@@ -36,11 +36,13 @@ func (r *Router) IngestHandler(c *gin.Context) {
 			ingestMessageBytes = body
 		}
 		if len(ingestMessageBytes) > 0 {
-			_ = r.backupsLogger.Log(utils.DefaultString(eventsLogId, "UNKNOWN"), ingestMessageBytes)
+			_ = r.backupsLogger.Log(metricsId, ingestMessageBytes)
 		}
+		IngestedMessagesReceived(metricsId, "received").Inc()
 		if rError != nil && rError.ErrorType != ErrNoDst {
+			IngestedMessagesReceived(metricsId, "errors").Inc()
 			obj := map[string]any{"body": string(ingestMessageBytes), "error": rError.PublicError.Error(), "status": utils.Ternary(rError.ErrorType == ErrThrottledType, "SKIPPED", "FAILED")}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelError, ActorId: eventsLogId, Event: obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelError, ActorId: metricsId, Event: obj})
 			IngestHandlerRequests(domain, utils.Ternary(rError.ErrorType == ErrThrottledType, "throttled", "error"), rError.ErrorType).Inc()
 			_ = r.producer.ProduceAsync(r.config.KafkaDestinationsDeadLetterTopicName, uuid.New(), utils.TruncateBytes(ingestMessageBytes, r.config.MaxIngestPayloadSize), map[string]string{"error": rError.Error.Error()}, kafka2.PartitionAny, messageId, false)
 		} else {
@@ -51,7 +53,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 				obj["status"] = "SKIPPED"
 				obj["error"] = ErrNoDst
 			}
-			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelInfo, ActorId: eventsLogId, Event: obj})
+			r.eventsLogService.PostAsync(&eventslog.ActorEvent{EventType: eventslog.EventTypeIncoming, Level: eventslog.LevelInfo, ActorId: metricsId, Event: obj})
 			IngestHandlerRequests(domain, "success", "").Inc()
 		}
 	}()
@@ -97,6 +99,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	}
 
 	domain = utils.DefaultString(loc.Slug, loc.Domain)
+	metricsId = domain
 	c.Set(appbase.ContextDomain, domain)
 
 	stream := r.getStream(&loc, false, s2sEndpoint)
@@ -106,7 +109,7 @@ func (r *Router) IngestHandler(c *gin.Context) {
 	}
 	s2sEndpoint = s2sEndpoint || loc.IngestType == IngestTypeS2S
 
-	eventsLogId = stream.Stream.Id
+	metricsId = stream.Stream.Id
 	//if err = r.checkOrigin(c, &loc, stream); err != nil {
 	//	r.Warnf("%v", err)
 	//}
