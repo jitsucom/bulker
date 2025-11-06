@@ -18,7 +18,7 @@ RUN apt-get install gcc libc6-dev
 
 WORKDIR /app
 
-RUN mkdir jitsubase kafkabase eventslog bulkerlib bulkerapp ingest sync-sidecar sync-controller ingress-manager config-keeper admin
+RUN mkdir jitsubase kafkabase eventslog bulkerlib bulkerapp ingest sync-sidecar sync-controller ingress-manager config-keeper admin reprocessing-worker
 RUN mkdir connectors connectors/airbytecdk connectors/firebase
 
 COPY jitsubase/go.* ./jitsubase/
@@ -33,6 +33,7 @@ COPY ingress-manager/go.* ./ingress-manager/
 COPY config-keeper/go.* ./config-keeper/
 
 COPY admin/go.* ./admin/
+COPY reprocessing-worker/go.* ./reprocessing-worker/
 COPY connectors/airbytecdk/go.* ./connectors/airbytecdk/
 COPY connectors/firebase/go.* ./connectors/firebase/
 COPY go.work ./go.work
@@ -52,6 +53,7 @@ RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags=
 RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o ingmgr ./ingress-manager
 RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o cfgkpr ./config-keeper
 RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o admin ./admin
+RUN --mount=type=cache,id=go_mod,mode=0755,target=/go/pkg/mod go build -ldflags="-X main.Commit=$VERSION -X main.Timestamp=$BUILD_TIMESTAMP" -o reprocessing-worker ./reprocessing-worker
 
 FROM base as bulker
 
@@ -87,3 +89,8 @@ FROM base as admin
 
 COPY --from=builder /app/admin ./
 CMD ["/app/admin"]
+
+FROM base as reprocessing-worker
+
+COPY --from=builder /app/reprocessing-worker ./
+CMD ["/app/reprocessing-worker"]
