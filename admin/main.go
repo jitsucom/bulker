@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"os"
+
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 )
 
 func main() {

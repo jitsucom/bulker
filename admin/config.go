@@ -15,11 +15,25 @@ type Config struct {
 	// # KAFKA CONFIG - base kafka setting
 	kafkabase.KafkaConfig `mapstructure:",squash"`
 
-	// # REPOSITORY CONFIG - settings for loading streams from repository
-	RepositoryConfig `mapstructure:",squash"`
-
 	// Cache dir for repository data
 	CacheDir string `mapstructure:"CACHE_DIR"`
+
+	// # DATABASE CONFIG - PostgreSQL connection for job status tracking
+	DatabaseURL string `mapstructure:"DATABASE_URL" default:""`
+
+	// # KUBERNETES CONFIG - settings for K8s job management
+	KubernetesConfigPath   string `mapstructure:"KUBERNETES_CLIENT_CONFIG" default:"local"`
+	KubernetesNamespace    string `mapstructure:"KUBERNETES_NAMESPACE" default:"default"`
+	KubernetesContext      string `mapstructure:"KUBERNETES_CONTEXT"`
+	KubernetesNodeSelector string `mapstructure:"KUBERNETES_NODE_SELECTOR"`
+
+	K8sMaxParallelWorkers   int    `mapstructure:"K8S_MAX_PARALLEL_WORKERS" default:"10"`
+	ReprocessingWorkerImage string `mapstructure:"REPROCESSING_WORKER_IMAGE" default:"jitsucom/reprocessing-worker:latest"`
+
+	WorkerKafkaBootstrapServers string `mapstructure:"REPROCESSING_WORKER_KAFKA_BOOTSTRAP_SERVERS"`
+
+	RepositoryURL       string `mapstructure:"REPOSITORY_URL"`
+	RepositoryAuthToken string `mapstructure:"REPOSITORY_AUTH_TOKEN"`
 }
 
 func init() {

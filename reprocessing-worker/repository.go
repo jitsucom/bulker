@@ -3,26 +3,19 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jitsucom/bulker/jitsubase/appbase"
 	"io"
+	"net/http"
 	"sync/atomic"
 	"time"
+
+	"github.com/jitsucom/bulker/jitsubase/appbase"
 )
 
-type RepositoryConfig struct {
-	RepositoryURL              string `mapstructure:"REPOSITORY_URL"`
-	RepositoryAuthToken        string `mapstructure:"REPOSITORY_AUTH_TOKEN"`
-	RepositoryRefreshPeriodSec int    `mapstructure:"REPOSITORY_REFRESH_PERIOD_SEC" default:"2"`
-}
-
-func (r *RepositoryConfig) PostInit(settings *appbase.AppSettings) error {
-	return nil
-}
-
+// Streams repository types (same as admin/repository.go)
 type Streams struct {
-	streams                   []*StreamWithDestinations
-	streamsByPlainKeyOrIds    map[string]*StreamWithDestinations
-	lastModified              time.Time
+	streams                []*StreamWithDestinations
+	streamsByPlainKeyOrIds map[string]*StreamWithDestinations
+	lastModified           time.Time
 }
 
 func (s *Streams) GetStreamByPlainKeyOrId(plainKeyOrSlug string) *StreamWithDestinations {
@@ -46,7 +39,7 @@ func (s *StreamsRepositoryData) Init(reader io.Reader, tag any) error {
 	}
 	streams := make([]*StreamWithDestinations, 0)
 	streamsByPlainKeyOrIds := map[string]*StreamWithDestinations{}
-	
+
 	// while the array contains values
 	for dec.More() {
 		swd := StreamWithDestinations{}
@@ -115,11 +108,49 @@ type StreamWithDestinations struct {
 }
 
 func (s *StreamWithDestinations) init() {
-	// For admin app, initialize asynchronous destinations from destinations
+	// Initialize asynchronous destinations from destinations
 	s.AsynchronousDestinations = make([]ShortDestinationConfig, 0)
 	for _, d := range s.Destinations {
 		if d.Id != "" && d.DestinationType != "" {
 			s.AsynchronousDestinations = append(s.AsynchronousDestinations, d)
 		}
 	}
+}
+
+// fetchStreamsData fetches streams data from repository once (no refresh needed for short-lived workers)
+func fetchStreamsData(url, authToken string) (*Streams, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch streams: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("repository returned status %d", resp.StatusCode)
+	}
+
+	// Parse response using StreamsRepositoryData
+	data := &StreamsRepositoryData{}
+	err = data.Init(resp.Body, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse streams: %w", err)
+	}
+
+	streams := data.GetData()
+	if streams == nil {
+		return nil, fmt.Errorf("no streams data loaded")
+	}
+
+	return streams, nil
 }

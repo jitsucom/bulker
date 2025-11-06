@@ -1,9 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
-	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -41,8 +41,11 @@ type ReprocessingJobResponse struct {
 	SuccessCount     int64                 `json:"success_count"`
 	ErrorCount       int64                 `json:"error_count"`
 	SkippedCount     int64                 `json:"skipped_count"`
+	ProcessedBytes   int64                 `json:"processed_bytes"`
 	LastError        string                `json:"last_error,omitempty"`
 	Progress         float64               `json:"progress"`
+	TotalWorkers     int                   `json:"total_workers,omitempty"`
+	K8sJobName       string                `json:"k8s_job_name,omitempty"`
 }
 
 // jobToResponse converts a ReprocessingJob to a response format
@@ -57,11 +60,14 @@ func jobToResponse(job *ReprocessingJob) ReprocessingJobResponse {
 		CurrentTimestamp: job.CurrentTimestamp,
 		TotalFiles:       job.TotalFiles,
 		ProcessedFiles:   job.ProcessedFiles,
-		TotalLines:       atomic.LoadInt64(&job.TotalLines),
-		SuccessCount:     atomic.LoadInt64(&job.SuccessCount),
-		ErrorCount:       atomic.LoadInt64(&job.ErrorCount),
-		SkippedCount:     atomic.LoadInt64(&job.SkippedCount),
+		TotalLines:       job.TotalLines,
+		SuccessCount:     job.SuccessCount,
+		ErrorCount:       job.ErrorCount,
+		SkippedCount:     job.SkippedCount,
+		ProcessedBytes:   job.ProcessedBytes,
 		LastError:        job.LastError,
+		TotalWorkers:     job.TotalWorkers,
+		K8sJobName:       job.K8sJobName,
 	}
 
 	if job.StartedAt != nil {
@@ -166,8 +172,8 @@ func (r *Router) getReprocessingJob(c *gin.Context) {
 	c.JSON(http.StatusOK, jobToResponse(job))
 }
 
-// pauseReprocessingJob pauses a running job
-func (r *Router) pauseReprocessingJob(c *gin.Context) {
+// getJobWorkers gets worker status for a job
+func (r *Router) getJobWorkers(c *gin.Context) {
 	jobId := c.Param("id")
 	if jobId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "job id required"})
@@ -180,36 +186,13 @@ func (r *Router) pauseReprocessingJob(c *gin.Context) {
 		return
 	}
 
-	if err := manager.PauseJob(jobId); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	workers, err := manager.GetJobWorkers(jobId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	job, _ := manager.GetJob(jobId)
-	c.JSON(http.StatusOK, jobToResponse(job))
-}
-
-// resumeReprocessingJob resumes a paused job
-func (r *Router) resumeReprocessingJob(c *gin.Context) {
-	jobId := c.Param("id")
-	if jobId == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "job id required"})
-		return
-	}
-
-	manager := r.getReprocessingManager()
-	if manager == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "reprocessing manager not initialized"})
-		return
-	}
-
-	if err := manager.ResumeJob(jobId); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	job, _ := manager.GetJob(jobId)
-	c.JSON(http.StatusOK, jobToResponse(job))
+	c.JSON(http.StatusOK, gin.H{"workers": workers})
 }
 
 // cancelReprocessingJob cancels a job
@@ -336,7 +319,6 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
         }
         .status-pending { background-color: #ffc107; color: white; }
         .status-running { background-color: #28a745; color: white; }
-        .status-paused { background-color: #17a2b8; color: white; }
         .status-completed { background-color: #6c757d; color: white; }
         .status-failed { background-color: #dc3545; color: white; }
         .status-cancelled { background-color: #6c757d; color: white; }
@@ -348,10 +330,9 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
             border-radius: 3px;
             cursor: pointer;
         }
-        .btn-pause { background-color: #17a2b8; color: white; }
-        .btn-resume { background-color: #28a745; color: white; }
         .btn-cancel { background-color: #dc3545; color: white; }
         .btn-refresh { background-color: #007bff; color: white; }
+        .btn-logs { background-color: #28a745; color: white; margin-right: 5px; }
         .btn-expand {
             background: none;
             border: 1px solid #dee2e6;
@@ -685,8 +666,7 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
                     <td>${job.success_count}/${job.error_count}/${job.skipped_count}</td>
                     <td>${job.current_file ? '<span title="' + job.current_file + '">' + job.current_file.split('/').pop() + '</span>' : '-'}</td>
                     <td class="actions">
-                        ${job.status === 'running' ? '<button class="btn-pause" onclick="pauseJob(\'' + job.id + '\')">Pause</button>' : ''}
-                        ${job.status === 'paused' ? '<button class="btn-resume" onclick="resumeJob(\'' + job.id + '\')">Resume</button>' : ''}
+                        <button class="btn-logs" onclick="viewLogs('${job.id}')">View Logs</button>
                         ${job.status !== 'completed' && job.status !== 'cancelled' && job.status !== 'failed' ? '<button class="btn-cancel" onclick="cancelJob(\'' + job.id + '\')">Cancel</button>' : ''}
                     </td>
                 ` + "`" + `;
@@ -726,20 +706,14 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
             });
         }
 
-        async function pauseJob(jobId) {
-            const result = await apiCall('POST', '/jobs/' + jobId + '/pause');
-            if (result) {
-                showSuccess('Job paused');
-                refreshJobs();
+        function viewLogs(jobId) {
+            const token = getAuthToken();
+            if (!token) {
+                showError('Please enter auth token');
+                return;
             }
-        }
-
-        async function resumeJob(jobId) {
-            const result = await apiCall('POST', '/jobs/' + jobId + '/resume');
-            if (result) {
-                showSuccess('Job resumed');
-                refreshJobs();
-            }
+            const url = '/api/admin/reprocessing/jobs/' + jobId + '/logs/view?token=' + encodeURIComponent(token);
+            window.open(url, 'jobLogs_' + jobId, 'width=1200,height=800,scrollbars=yes,resizable=yes');
         }
 
         async function cancelJob(jobId) {
@@ -757,6 +731,515 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
         
         // Initial load
         refreshJobs();
+    </script>
+</body>
+</html>`
+
+	c.Header("Content-Type", "text/html")
+	c.String(http.StatusOK, htmlContent)
+}
+
+// getJobLogs returns logs from all worker pods for a job
+func (r *Router) getJobLogs(c *gin.Context) {
+	jobID := c.Param("id")
+
+	// Get tail lines parameter (default 50)
+	tailLines := int64(50)
+	if tail := c.Query("tail"); tail != "" {
+		if _, err := fmt.Sscanf(tail, "%d", &tailLines); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tail parameter"})
+			return
+		}
+	}
+
+	// Get sinceSeconds parameter for incremental updates
+	var sinceSeconds *int64
+	if since := c.Query("since"); since != "" {
+		var s int64
+		if _, err := fmt.Sscanf(since, "%d", &s); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid since parameter"})
+			return
+		}
+		sinceSeconds = &s
+	}
+
+	if r.context.k8sClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "kubernetes client not available"})
+		return
+	}
+
+	// Check if sorted view is requested
+	sortByTime := c.Query("sort") == "true"
+
+	if sortByTime {
+		// Return logs sorted by timestamp
+		sortedLogs, err := r.context.k8sClient.GetJobLogsSorted(c.Request.Context(), jobID, tailLines, sinceSeconds)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get logs: %v", err)})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"job_id": jobID,
+			"sorted": true,
+			"lines":  sortedLogs,
+		})
+	} else {
+		// Return logs grouped by worker
+		logs, err := r.context.k8sClient.GetJobLogs(c.Request.Context(), jobID, tailLines, sinceSeconds)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get logs: %v", err)})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"job_id": jobID,
+			"sorted": false,
+			"logs":   logs,
+		})
+	}
+}
+
+// viewJobLogs serves an HTML page to view job logs in real-time
+func (r *Router) viewJobLogs(c *gin.Context) {
+	jobID := c.Param("id")
+
+	htmlContent := `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Logs - ` + jobID + `</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #3e3e3e;
+        }
+        h1 {
+            font-size: 18px;
+            color: #4ec9b0;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .status.running {
+            background-color: #4caf50;
+            color: white;
+        }
+        .status.paused {
+            background-color: #ff9800;
+            color: white;
+        }
+        button {
+            padding: 6px 12px;
+            background-color: #0e639c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        button:hover {
+            background-color: #1177bb;
+        }
+        button.danger {
+            background-color: #d32f2f;
+        }
+        button.danger:hover {
+            background-color: #f44336;
+        }
+        .workers-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .worker-logs {
+            background-color: #252526;
+            border: 1px solid #3e3e3e;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .worker-header {
+            background-color: #2d2d30;
+            padding: 10px 15px;
+            border-bottom: 1px solid #3e3e3e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .worker-title {
+            font-weight: bold;
+            color: #4ec9b0;
+        }
+        .worker-info {
+            font-size: 11px;
+            color: #858585;
+        }
+        .log-content {
+            padding: 15px;
+            max-height: 600px;
+            overflow-y: auto;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        #sorted-logs {
+            max-height: 80vh;
+        }
+        .log-line {
+            margin-bottom: 2px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .log-line.error {
+            color: #f48771;
+        }
+        .log-line.warning {
+            color: #dcdcaa;
+        }
+        .log-line.info {
+            color: #4fc1ff;
+        }
+        .error-message {
+            color: #f48771;
+            padding: 10px;
+            background-color: #5a1d1d;
+            border-radius: 4px;
+            margin: 10px;
+        }
+        .no-logs {
+            color: #858585;
+            padding: 20px;
+            text-align: center;
+        }
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #424242;
+            border-radius: 5px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4e4e4e;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Job Logs: ` + jobID + `</h1>
+        <div class="controls">
+            <span class="status running" id="refreshStatus">Auto-refresh: ON</span>
+            <button onclick="toggleView()" id="viewToggle">Switch to Chronological</button>
+            <button onclick="toggleRefresh()">Pause/Resume</button>
+            <button onclick="clearLogs()">Clear</button>
+            <button class="danger" onclick="window.close()">Close</button>
+        </div>
+    </div>
+    <div class="workers-container" id="workersContainer">
+        <div class="no-logs">Loading logs...</div>
+    </div>
+
+    <script>
+        const jobId = '` + jobID + `';
+
+        // Extract auth token from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const authToken = urlParams.get('token');
+        if (!authToken) {
+            document.getElementById('workersContainer').innerHTML = '<div class="error-message">Error: No authentication token provided</div>';
+        }
+
+        let autoRefresh = true;
+        let refreshInterval;
+        let workersData = {};
+        let sortedLines = [];
+        let seenLineHashes = new Set();
+        let initialLoad = true;
+        let viewMode = 'workers'; // 'workers' or 'sorted'
+
+        function toggleRefresh() {
+            autoRefresh = !autoRefresh;
+            const status = document.getElementById('refreshStatus');
+            if (autoRefresh) {
+                status.textContent = 'Auto-refresh: ON';
+                status.classList.add('running');
+                status.classList.remove('paused');
+                startAutoRefresh();
+            } else {
+                status.textContent = 'Auto-refresh: OFF';
+                status.classList.remove('running');
+                status.classList.add('paused');
+                if (refreshInterval) {
+                    clearInterval(refreshInterval);
+                }
+            }
+        }
+
+        function toggleView() {
+            viewMode = viewMode === 'workers' ? 'sorted' : 'workers';
+            const button = document.getElementById('viewToggle');
+            button.textContent = viewMode === 'workers' ? 'Switch to Chronological' : 'Switch to Per-Worker';
+
+            // Clear and reload
+            workersData = {};
+            sortedLines = [];
+            seenLineHashes = new Set();
+            initialLoad = true;
+            document.getElementById('workersContainer').innerHTML = '<div class="no-logs">Loading logs...</div>';
+            fetchLogs();
+        }
+
+        function clearLogs() {
+            workersData = {};
+            sortedLines = [];
+            seenLineHashes = new Set();
+            document.getElementById('workersContainer').innerHTML = '<div class="no-logs">Logs cleared. Will refresh in next update...</div>';
+        }
+
+        function classifyLogLine(line) {
+            const lower = line.toLowerCase();
+            if (lower.includes('error') || lower.includes('fatal') || lower.includes('panic')) {
+                return 'error';
+            }
+            if (lower.includes('warn')) {
+                return 'warning';
+            }
+            if (lower.includes('info')) {
+                return 'info';
+            }
+            return '';
+        }
+
+        async function fetchLogs() {
+            if (!authToken) {
+                return;
+            }
+
+            try {
+                const tailParam = initialLoad ? '?tail=50' : '?since=10';
+                const sortParam = viewMode === 'sorted' ? '&sort=true' : '';
+                const response = await fetch('/api/admin/reprocessing/jobs/' + jobId + '/logs' + tailParam + sortParam, {
+                    headers: {
+                        'Authorization': 'Bearer ' + authToken
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error('Failed to fetch logs: ' + response.statusText);
+                }
+                const data = await response.json();
+
+                if (data.sorted) {
+                    updateSortedLogs(data.lines);
+                } else {
+                    updateWorkerLogs(data.logs);
+                }
+
+                initialLoad = false;
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+                document.getElementById('workersContainer').innerHTML =
+                    '<div class="error-message">Error fetching logs: ' + error.message + '</div>';
+            }
+        }
+
+        function updateWorkerLogs(logs) {
+            if (!logs || logs.length === 0) {
+                if (Object.keys(workersData).length === 0) {
+                    document.getElementById('workersContainer').innerHTML = '<div class="no-logs">No workers or logs available yet.</div>';
+                }
+                return;
+            }
+
+            logs.forEach(workerLog => {
+                const workerId = workerLog.worker_index;
+
+                if (!workersData[workerId]) {
+                    workersData[workerId] = {
+                        podName: workerLog.pod_name,
+                        lines: new Set(),
+                        orderedLines: []
+                    };
+                }
+
+                const worker = workersData[workerId];
+                worker.podName = workerLog.pod_name;
+
+                // Add new lines while avoiding duplicates
+                if (workerLog.lines) {
+                    workerLog.lines.forEach(line => {
+                        if (line && !worker.lines.has(line)) {
+                            worker.lines.add(line);
+                            worker.orderedLines.push(line);
+                        }
+                    });
+                }
+
+                // Store error if present
+                if (workerLog.error) {
+                    worker.error = workerLog.error;
+                }
+            });
+
+            renderWorkerLogs();
+        }
+
+        function updateSortedLogs(lines) {
+            if (!lines || lines.length === 0) {
+                if (sortedLines.length === 0) {
+                    document.getElementById('workersContainer').innerHTML = '<div class="no-logs">No logs available yet.</div>';
+                }
+                return;
+            }
+
+            // Add new lines while avoiding duplicates
+            lines.forEach(line => {
+                // Create a hash from timestamp + worker + message to detect duplicates
+                const hash = line.timestamp + '|' + line.worker_index + '|' + line.message;
+                if (!seenLineHashes.has(hash)) {
+                    seenLineHashes.add(hash);
+                    sortedLines.push(line);
+                }
+            });
+
+            renderSortedLogs();
+        }
+
+        function renderWorkerLogs() {
+            const container = document.getElementById('workersContainer');
+            const workerIds = Object.keys(workersData).sort((a, b) => parseInt(a) - parseInt(b));
+
+            if (workerIds.length === 0) {
+                container.innerHTML = '<div class="no-logs">No workers available yet.</div>';
+                return;
+            }
+
+            let html = '';
+            workerIds.forEach(workerId => {
+                const worker = workersData[workerId];
+                const lineCount = worker.orderedLines.length;
+
+                html += '<div class="worker-logs">';
+                html += '<div class="worker-header">';
+                html += '<div class="worker-title">Worker ' + workerId + '</div>';
+                html += '<div class="worker-info">Pod: ' + worker.podName + ' | Lines: ' + lineCount + '</div>';
+                html += '</div>';
+
+                if (worker.error) {
+                    html += '<div class="error-message">' + worker.error + '</div>';
+                } else if (worker.orderedLines.length > 0) {
+                    html += '<div class="log-content" id="worker-' + workerId + '-logs">';
+                    worker.orderedLines.forEach(line => {
+                        const lineClass = classifyLogLine(line);
+                        html += '<div class="log-line ' + lineClass + '">' + escapeHtml(line) + '</div>';
+                    });
+                    html += '</div>';
+                } else {
+                    html += '<div class="no-logs">No logs yet</div>';
+                }
+
+                html += '</div>';
+            });
+
+            container.innerHTML = html;
+
+            // Auto-scroll to bottom for each worker
+            workerIds.forEach(workerId => {
+                const logContent = document.getElementById('worker-' + workerId + '-logs');
+                if (logContent) {
+                    logContent.scrollTop = logContent.scrollHeight;
+                }
+            });
+        }
+
+        function renderSortedLogs() {
+            const container = document.getElementById('workersContainer');
+
+            if (sortedLines.length === 0) {
+                container.innerHTML = '<div class="no-logs">No logs available yet.</div>';
+                return;
+            }
+
+            let html = '<div class="worker-logs">';
+            html += '<div class="worker-header">';
+            html += '<div class="worker-title">All Workers (Chronological Order)</div>';
+            html += '<div class="worker-info">Total Lines: ' + sortedLines.length + '</div>';
+            html += '</div>';
+            html += '<div class="log-content" id="sorted-logs">';
+
+            sortedLines.forEach(line => {
+                const lineClass = classifyLogLine(line.message);
+                const workerBadge = '<span style="color: #4ec9b0; margin-right: 10px;">[W' + line.worker_index + ']</span>';
+                const timestamp = line.timestamp ? '<span style="color: #858585; margin-right: 10px;">' + escapeHtml(formatTimestamp(line.timestamp)) + '</span>' : '';
+                html += '<div class="log-line ' + lineClass + '">' + timestamp + workerBadge + escapeHtml(line.message) + '</div>';
+            });
+
+            html += '</div>';
+            html += '</div>';
+
+            container.innerHTML = html;
+
+            // Auto-scroll to bottom
+            const logContent = document.getElementById('sorted-logs');
+            if (logContent) {
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+        }
+
+        function formatTimestamp(timestamp) {
+            // Format: 2024-01-15T10:30:45.123456789Z -> 10:30:45.123
+            if (!timestamp) return '';
+            try {
+                const date = new Date(timestamp);
+                return date.toLocaleTimeString('en-US', { hour12: false }) + '.' + String(date.getMilliseconds()).padStart(3, '0');
+            } catch (e) {
+                return timestamp;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function startAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+            refreshInterval = setInterval(() => {
+                if (autoRefresh) {
+                    fetchLogs();
+                }
+            }, 5000);
+        }
+
+        // Initial load
+        if (authToken) {
+            fetchLogs();
+            startAutoRefresh();
+        }
     </script>
 </body>
 </html>`

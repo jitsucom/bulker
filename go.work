@@ -1,6 +1,7 @@
 go 1.24
 
 use (
+	./admin
 	./bulkerapp
 	./bulkerlib
 	./config-keeper
@@ -11,7 +12,7 @@ use (
 	./ingress-manager
 	./jitsubase
 	./kafkabase
+	./reprocessing-worker
 	./sync-controller
 	./sync-sidecar
-	admin
 )

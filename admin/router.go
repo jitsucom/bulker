@@ -18,6 +18,7 @@ func NewRouter(context *Context) *Router {
 	base := appbase.NewRouterBase(context.config.Config, []string{
 		"/health",
 		"/",
+		"/api/admin/reprocessing/jobs/:id/logs/view",
 	})
 	router := &Router{
 		Router:              base,
@@ -36,8 +37,9 @@ func NewRouter(context *Context) *Router {
 	reprocessingAPI.Match([]string{"POST"}, "/jobs", router.startReprocessingJob)
 	reprocessingAPI.Match([]string{"OPTIONS", "GET"}, "/jobs", router.listReprocessingJobs)
 	reprocessingAPI.Match([]string{"OPTIONS", "GET"}, "/jobs/:id", router.getReprocessingJob)
-	reprocessingAPI.Match([]string{"OPTIONS", "POST"}, "/jobs/:id/pause", router.pauseReprocessingJob)
-	reprocessingAPI.Match([]string{"OPTIONS", "POST"}, "/jobs/:id/resume", router.resumeReprocessingJob)
+	reprocessingAPI.Match([]string{"OPTIONS", "GET"}, "/jobs/:id/workers", router.getJobWorkers)
+	reprocessingAPI.Match([]string{"OPTIONS", "GET"}, "/jobs/:id/logs", router.getJobLogs)
+	reprocessingAPI.Match([]string{"OPTIONS", "GET"}, "/jobs/:id/logs/view", router.viewJobLogs)
 	reprocessingAPI.Match([]string{"OPTIONS", "POST"}, "/jobs/:id/cancel", router.cancelReprocessingJob)
 
 	// Serve HTML interface for admin (no auth required for UI, auth handled via form)
