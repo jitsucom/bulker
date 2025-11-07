@@ -112,11 +112,15 @@ func NewReprocessingJobManager(config *Config, dbpool *pgxpool.Pool, k8sClient *
 
 // StartJob starts a new reprocessing job
 func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*ReprocessingJob, error) {
+	m.Infof("[StartJob] Starting new reprocessing job")
+
 	// Validate that either S3 or local path is provided
 	if config.S3Path == "" && config.LocalPath == "" {
+		m.Errorf("[StartJob] Validation failed: no path provided")
 		return nil, fmt.Errorf("either s3_path or local_path must be provided")
 	}
 	if config.S3Path != "" && config.LocalPath != "" {
+		m.Errorf("[StartJob] Validation failed: both paths provided")
 		return nil, fmt.Errorf("only one of s3_path or local_path can be provided")
 	}
 
@@ -124,19 +128,24 @@ func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*Reproc
 	if config.BatchSize <= 0 {
 		config.BatchSize = 100
 	}
+	m.Infof("[StartJob] Config validated, batch_size=%d", config.BatchSize)
 
 	// Create Kubernetes Job for reprocessing
 	ctx := context.Background()
 
 	// List and prepare files with sizes
+	m.Infof("[StartJob] Preparing file list from %s%s", config.S3Path, config.LocalPath)
 	fileItems, err := m.prepareFileList(ctx, config)
 	if err != nil {
+		m.Errorf("[StartJob] Failed to prepare file list: %v", err)
 		return nil, fmt.Errorf("failed to prepare file list: %w", err)
 	}
 
 	if len(fileItems) == 0 {
+		m.Errorf("[StartJob] No files found to process")
 		return nil, fmt.Errorf("no files found to process")
 	}
+	m.Infof("[StartJob] Found %d files to process", len(fileItems))
 
 	// Determine number of workers (default: 1 worker per 10 files, max 50 workers)
 	workerCount := (len(fileItems) + 9) / 10
@@ -146,6 +155,7 @@ func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*Reproc
 	if workerCount < 1 {
 		workerCount = 1
 	}
+	m.Infof("[StartJob] Determined worker count: %d", workerCount)
 
 	// Create job record
 	job := &ReprocessingJob{
@@ -156,10 +166,13 @@ func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*Reproc
 		TotalFiles:   len(fileItems),
 		TotalWorkers: workerCount,
 	}
+	m.Infof("[StartJob] Created job record with ID %s", job.ID)
 
 	// Insert job into database
+	m.Infof("[StartJob] Inserting job %s into database", job.ID)
 	err = InsertReprocessingJob(m.dbpool, job)
 	if err != nil {
+		m.Errorf("[StartJob] Failed to insert job %s into database: %v", job.ID, err)
 		return nil, fmt.Errorf("failed to insert job into database: %w", err)
 	}
 
@@ -169,19 +182,25 @@ func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*Reproc
 		workerIndex := i % workerCount
 		filesPerWorker[workerIndex]++
 	}
+	m.Infof("[StartJob] Distributed %d files across %d workers", len(fileItems), workerCount)
 
 	// Initialize worker records
+	m.Infof("[StartJob] Initializing %d worker records for job %s", workerCount, job.ID)
 	err = InitializeWorkers(m.dbpool, job.ID, workerCount, filesPerWorker)
 	if err != nil {
+		m.Errorf("[StartJob] Failed to initialize workers for job %s: %v", job.ID, err)
 		return nil, fmt.Errorf("failed to initialize workers: %w", err)
 	}
 
 	// Create K8s Indexed Job
+	m.Infof("[StartJob] Creating K8s job for job %s", job.ID)
 	k8sJobName, err := m.k8sClient.CreateReprocessingJob(ctx, job.ID, fileItems, config, workerCount)
 	if err != nil {
+		m.Errorf("[StartJob] Failed to create K8s job for job %s: %v", job.ID, err)
 		_ = UpdateReprocessingJobStatus(m.dbpool, job.ID, JobStatusFailed, nil, nil, err.Error())
 		return nil, fmt.Errorf("failed to create k8s job: %w", err)
 	}
+	m.Infof("[StartJob] Created K8s job %s for job %s", k8sJobName, job.ID)
 
 	job.K8sJobName = k8sJobName
 	job.Status = JobStatusRunning
@@ -189,17 +208,19 @@ func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*Reproc
 	job.StartedAt = &now
 
 	// Update job with K8s job name and status
+	m.Infof("[StartJob] Updating job %s with K8s job name %s", job.ID, k8sJobName)
 	err = UpdateReprocessingJobK8sName(m.dbpool, job.ID, k8sJobName)
 	if err != nil {
-		m.Warnf("Failed to update k8s job name: %v", err)
+		m.Warnf("[StartJob] Failed to update k8s job name for job %s: %v", job.ID, err)
 	}
 
+	m.Infof("[StartJob] Updating job %s status to running", job.ID)
 	err = UpdateReprocessingJobStatus(m.dbpool, job.ID, JobStatusRunning, &now, nil, "")
 	if err != nil {
-		m.Warnf("Failed to update job status: %v", err)
+		m.Warnf("[StartJob] Failed to update job %s status: %v", job.ID, err)
 	}
 
-	m.Infof("Created K8s reprocessing job %s with %d workers processing %d files", job.ID, workerCount, len(fileItems))
+	m.Infof("[StartJob] Successfully created K8s reprocessing job %s with %d workers processing %d files", job.ID, workerCount, len(fileItems))
 
 	return job, nil
 }
@@ -240,41 +261,74 @@ func (m *ReprocessingJobManager) prepareFileList(ctx context.Context, config Rep
 
 // GetJob returns a job by ID with enriched K8s status
 func (m *ReprocessingJobManager) GetJob(id string) (*ReprocessingJob, error) {
+	m.Infof("[GetJob] Starting for job %s", id)
+
 	job, err := GetReprocessingJob(m.dbpool, id)
 	if err != nil {
+		m.Errorf("[GetJob] Failed to get job %s from database: %v", id, err)
 		return nil, err
 	}
+	m.Infof("[GetJob] Retrieved job %s from database: status=%s, k8s_job_name=%s", id, job.Status, job.K8sJobName)
 
 	// Enrich with K8s job status if available
 	if job.Status == JobStatusRunning && job.K8sJobName != "" && m.k8sClient != nil {
+		m.Infof("[GetJob] Job %s is running, enriching with K8s status", id)
 		if err := m.enrichJobWithK8sStatus(job); err != nil {
 			// Log warning but don't fail the request
-			m.Warnf("Failed to get K8s status for job %s: %v", id, err)
+			m.Warnf("[GetJob] Failed to get K8s status for job %s: %v", id, err)
+		} else {
+			m.Infof("[GetJob] Successfully enriched job %s with K8s status, new status=%s", id, job.Status)
 		}
+	} else {
+		m.Infof("[GetJob] Skipping K8s enrichment for job %s (status=%s, has_k8s_name=%v, has_k8s_client=%v)",
+			id, job.Status, job.K8sJobName != "", m.k8sClient != nil)
 	}
 
+	m.Infof("[GetJob] Completed for job %s", id)
 	return job, nil
 }
 
 // enrichJobWithK8sStatus adds Kubernetes job status information to the job
 func (m *ReprocessingJobManager) enrichJobWithK8sStatus(job *ReprocessingJob) error {
-	ctx := context.Background()
+	m.Infof("[enrichJobWithK8sStatus] Starting for job %s (k8s_job=%s)", job.ID, job.K8sJobName)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := m.enrichJobWithK8sStatusWithContext(ctx, job)
+	if err != nil {
+		m.Warnf("[enrichJobWithK8sStatus] Failed for job %s: %v", job.ID, err)
+	} else {
+		m.Infof("[enrichJobWithK8sStatus] Completed for job %s", job.ID)
+	}
+	return err
+}
+
+// enrichJobWithK8sStatusWithContext adds Kubernetes job status information to the job with a custom context
+func (m *ReprocessingJobManager) enrichJobWithK8sStatusWithContext(ctx context.Context, job *ReprocessingJob) error {
+	m.Infof("[enrichJobWithK8sStatusWithContext] Calling K8s API for job %s", job.K8sJobName)
+
 	k8sStatus, err := m.k8sClient.GetJobStatus(ctx, job.K8sJobName)
 	if err != nil {
+		m.Warnf("[enrichJobWithK8sStatusWithContext] K8s API call failed for job %s: %v", job.K8sJobName, err)
 		// If K8s Job not found, check worker statuses to determine completion
 		if strings.Contains(err.Error(), "job not found") {
-			m.Infof("K8s Job %s not found (likely cleaned up), checking worker statuses", job.K8sJobName)
+			m.Infof("[enrichJobWithK8sStatusWithContext] K8s Job %s not found (likely cleaned up), checking worker statuses", job.K8sJobName)
 			return m.checkCompletionFromWorkers(job)
 		}
 		return err
 	}
 
+	m.Infof("[enrichJobWithK8sStatusWithContext] K8s API returned for job %s: Active=%d, Succeeded=%d, Failed=%d, CompletionTime=%v",
+		job.K8sJobName, k8sStatus.Active, k8sStatus.Succeeded, k8sStatus.Failed, k8sStatus.CompletionTime != nil)
+
 	// K8s Job has CompletionTime when all pods are done (succeeded or failed)
 	k8sJobCompleted := k8sStatus.CompletionTime != nil || (k8sStatus.Failed == int32(job.TotalWorkers) && k8sStatus.Active == 0)
 
 	if !k8sJobCompleted {
+		m.Infof("[enrichJobWithK8sStatusWithContext] K8s Job %s not yet completed, skipping status update", job.K8sJobName)
 		return nil
 	}
+	m.Infof("[enrichJobWithK8sStatusWithContext] K8s Job %s is completed, updating status", job.K8sJobName)
 	// Update job status based on K8s job status if our status is stale
 	// Only update if job is in running state and K8s reports completion
 	hasFailures := k8sStatus.Failed > 0 && k8sStatus.Active == 0
@@ -282,6 +336,7 @@ func (m *ReprocessingJobManager) enrichJobWithK8sStatus(job *ReprocessingJob) er
 
 	if hasFailures {
 		// Job has failed pods and no active pods - mark as failed
+		m.Infof("[enrichJobWithK8sStatusWithContext] Marking job %s as failed (failed=%d, active=%d)", job.ID, k8sStatus.Failed, k8sStatus.Active)
 		now := time.Now()
 		if k8sStatus.CompletionTime != nil {
 			now = k8sStatus.CompletionTime.Time
@@ -290,12 +345,13 @@ func (m *ReprocessingJobManager) enrichJobWithK8sStatus(job *ReprocessingJob) er
 		job.Status = JobStatusFailed
 		err := UpdateReprocessingJobStatus(m.dbpool, job.ID, JobStatusFailed, nil, &now, "K8s job has failed pods")
 		if err != nil {
-			m.Warnf("Failed to update job status to failed: %v", err)
+			m.Errorf("[enrichJobWithK8sStatusWithContext] Failed to update job %s status to failed: %v", job.ID, err)
 		} else {
-			m.Infof("Job %s marked as failed based on K8s status (failed=%d, active=%d)", job.ID, k8sStatus.Failed, k8sStatus.Active)
+			m.Infof("[enrichJobWithK8sStatusWithContext] Job %s marked as failed based on K8s status (failed=%d, active=%d)", job.ID, k8sStatus.Failed, k8sStatus.Active)
 		}
 	} else if allSucceeded || k8sJobCompleted {
 		// All workers succeeded OR K8s job is complete - mark as completed
+		m.Infof("[enrichJobWithK8sStatusWithContext] Marking job %s as completed (succeeded=%d, active=%d)", job.ID, k8sStatus.Succeeded, k8sStatus.Active)
 		now := time.Now()
 		if k8sStatus.CompletionTime != nil {
 			now = k8sStatus.CompletionTime.Time
@@ -304,9 +360,9 @@ func (m *ReprocessingJobManager) enrichJobWithK8sStatus(job *ReprocessingJob) er
 		job.Status = JobStatusCompleted
 		err := UpdateReprocessingJobStatus(m.dbpool, job.ID, JobStatusCompleted, nil, &now, "")
 		if err != nil {
-			m.Warnf("Failed to update job status to completed: %v", err)
+			m.Errorf("[enrichJobWithK8sStatusWithContext] Failed to update job %s status to completed: %v", job.ID, err)
 		} else {
-			m.Infof("Job %s marked as completed based on K8s status (succeeded=%d, active=%d, completion_time=%v)",
+			m.Infof("[enrichJobWithK8sStatusWithContext] Job %s marked as completed based on K8s status (succeeded=%d, active=%d, completion_time=%v)",
 				job.ID, k8sStatus.Succeeded, k8sStatus.Active, k8sStatus.CompletionTime != nil)
 		}
 	}
@@ -316,13 +372,18 @@ func (m *ReprocessingJobManager) enrichJobWithK8sStatus(job *ReprocessingJob) er
 
 // checkCompletionFromWorkers checks worker statuses to determine if job is complete
 func (m *ReprocessingJobManager) checkCompletionFromWorkers(job *ReprocessingJob) error {
+	m.Infof("[checkCompletionFromWorkers] Starting for job %s", job.ID)
+
 	workers, err := GetAllWorkerStatuses(m.dbpool, job.ID)
 	if err != nil {
+		m.Errorf("[checkCompletionFromWorkers] Failed to get worker statuses for job %s: %v", job.ID, err)
 		return fmt.Errorf("failed to get worker statuses: %w", err)
 	}
+	m.Infof("[checkCompletionFromWorkers] Retrieved %d worker statuses for job %s", len(workers), job.ID)
 
 	if len(workers) == 0 {
 		// No workers found - cannot determine completion
+		m.Warnf("[checkCompletionFromWorkers] No workers found for job %s, cannot determine completion", job.ID)
 		return nil
 	}
 
@@ -341,30 +402,36 @@ func (m *ReprocessingJobManager) checkCompletionFromWorkers(job *ReprocessingJob
 		}
 	}
 
-	m.Infof("Worker status for job %s: completed=%d, failed=%d, total=%d", job.ID, completedCount, failedCount, len(workers))
+	m.Infof("[checkCompletionFromWorkers] Worker status for job %s: completed=%d, failed=%d, total=%d", job.ID, completedCount, failedCount, len(workers))
 
 	// If all workers are completed or failed, mark the job accordingly
 	if completedCount+failedCount == job.TotalWorkers {
+		m.Infof("[checkCompletionFromWorkers] All workers done for job %s, updating job status", job.ID)
 		now := time.Now()
 		job.CompletedAt = &now
 
 		if failedCount > 0 {
+			m.Infof("[checkCompletionFromWorkers] Marking job %s as failed (failed=%d)", job.ID, failedCount)
 			job.Status = JobStatusFailed
 			err := UpdateReprocessingJobStatus(m.dbpool, job.ID, JobStatusFailed, nil, &now, fmt.Sprintf("%d workers failed", failedCount))
 			if err != nil {
-				m.Warnf("Failed to update job status to failed: %v", err)
+				m.Errorf("[checkCompletionFromWorkers] Failed to update job %s status to failed: %v", job.ID, err)
 			} else {
-				m.Infof("Job %s marked as failed based on worker statuses (failed=%d)", job.ID, failedCount)
+				m.Infof("[checkCompletionFromWorkers] Job %s marked as failed based on worker statuses (failed=%d)", job.ID, failedCount)
 			}
 		} else {
+			m.Infof("[checkCompletionFromWorkers] Marking job %s as completed (completed=%d)", job.ID, completedCount)
 			job.Status = JobStatusCompleted
 			err := UpdateReprocessingJobStatus(m.dbpool, job.ID, JobStatusCompleted, nil, &now, "")
 			if err != nil {
-				m.Warnf("Failed to update job status to completed: %v", err)
+				m.Errorf("[checkCompletionFromWorkers] Failed to update job %s status to completed: %v", job.ID, err)
 			} else {
-				m.Infof("Job %s marked as completed based on worker statuses (completed=%d)", job.ID, completedCount)
+				m.Infof("[checkCompletionFromWorkers] Job %s marked as completed based on worker statuses (completed=%d)", job.ID, completedCount)
 			}
 		}
+	} else {
+		m.Infof("[checkCompletionFromWorkers] Not all workers done for job %s yet (completed+failed=%d, total=%d)",
+			job.ID, completedCount+failedCount, job.TotalWorkers)
 	}
 
 	return nil
@@ -377,11 +444,14 @@ func (m *ReprocessingJobManager) GetJobWorkers(id string) ([]map[string]interfac
 
 // ListJobs returns all jobs with enriched K8s status
 func (m *ReprocessingJobManager) ListJobs() []*ReprocessingJob {
+	m.Infof("[ListJobs] Starting")
+
 	jobs, err := ListReprocessingJobs(m.dbpool)
 	if err != nil {
-		m.Errorf("Failed to list jobs from database: %v", err)
+		m.Errorf("[ListJobs] Failed to list jobs from database: %v", err)
 		return []*ReprocessingJob{}
 	}
+	m.Infof("[ListJobs] Retrieved %d jobs from database", len(jobs))
 
 	// Enrich running jobs with K8s status to detect completion
 	if m.k8sClient != nil {
@@ -395,38 +465,49 @@ func (m *ReprocessingJobManager) ListJobs() []*ReprocessingJob {
 		}
 	}
 
+	m.Infof("[ListJobs] Completed, returning %d jobs", len(jobs))
 	return jobs
 }
 
 // CancelJob cancels a job
 func (m *ReprocessingJobManager) CancelJob(id string) error {
+	m.Infof("[CancelJob] Starting for job %s", id)
+
 	job, err := m.GetJob(id)
 	if err != nil {
+		m.Errorf("[CancelJob] Failed to get job %s: %v", id, err)
 		return err
 	}
 
 	if job.Status == JobStatusCompleted || job.Status == JobStatusCancelled {
+		m.Warnf("[CancelJob] Job %s is already finished (status=%s)", id, job.Status)
 		return fmt.Errorf("job %s is already finished", id)
 	}
 
 	// Delete the K8s job
 	ctx := context.Background()
 	if job.K8sJobName == "" {
-		m.Warnf("Job %s has no K8s job name, cannot delete K8s resources", id)
+		m.Warnf("[CancelJob] Job %s has no K8s job name, cannot delete K8s resources", id)
 	} else {
+		m.Infof("[CancelJob] Deleting K8s job %s for job %s", job.K8sJobName, id)
 		err = m.k8sClient.DeleteJob(ctx, job.K8sJobName, job.ID)
 		if err != nil {
-			m.Warnf("Failed to delete K8s job: %v", err)
+			m.Warnf("[CancelJob] Failed to delete K8s job %s: %v", job.K8sJobName, err)
+		} else {
+			m.Infof("[CancelJob] Successfully deleted K8s job %s", job.K8sJobName)
 		}
 	}
 
 	// Update status in database
+	m.Infof("[CancelJob] Updating job %s status to cancelled", id)
 	now := time.Now()
 	err = UpdateReprocessingJobStatus(m.dbpool, id, JobStatusCancelled, nil, &now, "")
 	if err != nil {
+		m.Errorf("[CancelJob] Failed to update job %s status: %v", id, err)
 		return fmt.Errorf("failed to update job status: %w", err)
 	}
 
+	m.Infof("[CancelJob] Successfully cancelled job %s", id)
 	return nil
 }
 
