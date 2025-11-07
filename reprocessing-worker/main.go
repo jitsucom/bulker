@@ -122,15 +122,66 @@ func main() {
 	// Update status to running
 	updateWorkerStatus(dbpool, config, &WorkerStatus{}, "running")
 
+	// Get retry attempts from config (default: 3)
+	retryAttempts := 3
+	if ra, ok := jobConfig["retry_attempts"].(float64); ok && ra > 0 {
+		retryAttempts = int(ra)
+	}
+
+	// Get dry run mode from config (default: false)
+	dryRun := false
+	if dr, ok := jobConfig["dry_run"].(bool); ok {
+		dryRun = dr
+	}
+
+	if dryRun {
+		fmt.Printf("DRY RUN MODE: Messages will be processed but NOT sent to Kafka\n")
+	}
+
 	// Process assigned files
 	status := &WorkerStatus{}
 	for _, fileItem := range myFiles {
-		fmt.Printf("Processing file: %s\n", fileItem.Path)
-		err := processFile(fileItem, jobConfig, producer, s3Client, streams, config, status, dbpool)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error processing file %s: %v\n", fileItem.Path, err)
-			status.LastError = err.Error()
+		fmt.Printf("Processing file: %s (retry attempts: %d, dry_run: %v)\n", fileItem.Path, retryAttempts, dryRun)
+
+		// Try processing file with retries
+		var lastErr error
+		for attempt := 1; attempt <= retryAttempts; attempt++ {
+			if attempt > 1 {
+				fmt.Printf("Retry attempt %d/%d for file: %s\n", attempt, retryAttempts, fileItem.Path)
+				// Wait a bit before retrying (exponential backoff)
+				time.Sleep(time.Duration(attempt-1) * time.Second)
+			}
+
+			// Save current counts in case we need to rollback on failure
+			savedTotalLines := status.TotalLines
+			savedSuccessCount := status.SuccessCount
+			savedErrorCount := status.ErrorCount
+			savedSkippedCount := status.SkippedCount
+
+			lastErr = processFile(fileItem, jobConfig, producer, s3Client, streams, config, status, dbpool, dryRun)
+			if lastErr == nil {
+				// Success - break retry loop
+				break
+			}
+
+			// Failed - rollback the counts from partial processing
+			// We want to retry from a clean state
+			status.TotalLines = savedTotalLines
+			status.SuccessCount = savedSuccessCount
+			status.ErrorCount = savedErrorCount
+			status.SkippedCount = savedSkippedCount
+
+			// Log the error but continue with retry
+			fmt.Fprintf(os.Stdout, "Error processing file %s (attempt %d/%d): %v\n", fileItem.Path, attempt, retryAttempts, lastErr)
 		}
+
+		// If all retries failed, record the error
+		if lastErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to process file %s after %d attempts: %v\n", fileItem.Path, retryAttempts, lastErr)
+			status.LastError = lastErr.Error()
+			status.ErrorCount++
+		}
+
 		status.ProcessedFiles++
 		status.ProcessedBytes += fileItem.Size
 
@@ -210,9 +261,9 @@ func loadConfig() (*WorkerConfig, error) {
 func initKafkaProducer(config *WorkerConfig) (*kafkabase.Producer, error) {
 	producerConfig := &kafka.ConfigMap{
 		"bootstrap.servers":            config.KafkaBootstrapServers,
-		"queue.buffering.max.messages": 10000,
-		"batch.size":                   65535,
-		"linger.ms":                    100,
+		"queue.buffering.max.messages": 200000,
+		"batch.size":                   1048576,
+		"linger.ms":                    1000,
 		"compression.type":             "zstd",
 	}
 
@@ -262,7 +313,7 @@ func selectWorkerFiles(files []FileItem, workerIndex, totalWorkers int) []FileIt
 	return myFiles
 }
 
-func processFile(fileItem FileItem, jobConfig map[string]interface{}, producer *kafkabase.Producer, s3Client *s3.Client, streams *Streams, config *WorkerConfig, status *WorkerStatus, dbpool *pgxpool.Pool) error {
+func processFile(fileItem FileItem, jobConfig map[string]interface{}, producer *kafkabase.Producer, s3Client *s3.Client, streams *Streams, config *WorkerConfig, status *WorkerStatus, dbpool *pgxpool.Pool, dryRun bool) error {
 	status.CurrentFile = fileItem.Path
 
 	// Get file reader
@@ -297,7 +348,7 @@ func processFile(fileItem FileItem, jobConfig map[string]interface{}, producer *
 	// Process lines
 	scanner := bufio.NewScanner(fileReader)
 	lineNum := int64(0)
-	batchSize := 100 // Default batch size
+	batchSize := 1000 // Default batch size
 	if bs, ok := jobConfig["batch_size"].(float64); ok {
 		batchSize = int(bs)
 	}
@@ -328,7 +379,7 @@ func processFile(fileItem FileItem, jobConfig map[string]interface{}, producer *
 		batch = append(batch, message)
 
 		if len(batch) >= batchSize {
-			if err := sendBatch(batch, producer, config.KafkaTopicName, jobConfig, streams, status); err != nil {
+			if err := sendBatch(batch, producer, config.KafkaTopicName, jobConfig, streams, status, dryRun); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to send batch: %v\n", err)
 				status.ErrorCount += int64(len(batch))
 			} else {
@@ -337,15 +388,15 @@ func processFile(fileItem FileItem, jobConfig map[string]interface{}, producer *
 			batch = batch[:0]
 		}
 
-		// Update status periodically (every 1000 lines)
-		if lineNum%1000 == 0 {
+		// Update status periodically (every 100000 lines)
+		if lineNum%100000 == 0 {
 			updateWorkerStatus(dbpool, config, status, "running")
 		}
 	}
 
 	// Send remaining batch
 	if len(batch) > 0 {
-		if err := sendBatch(batch, producer, config.KafkaTopicName, jobConfig, streams, status); err != nil {
+		if err := sendBatch(batch, producer, config.KafkaTopicName, jobConfig, streams, status, dryRun); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to send final batch: %v\n", err)
 			status.ErrorCount += int64(len(batch))
 		} else {
@@ -379,17 +430,16 @@ func downloadS3File(s3Client *s3.Client, s3Path string) (io.ReadCloser, error) {
 func shouldProcessMessage(message map[string]interface{}, jobConfig map[string]interface{}) bool {
 	// Apply filters from job config
 	if streamIds, ok := jobConfig["stream_ids"].([]interface{}); ok && len(streamIds) > 0 {
-		origin, ok := message["origin"].(map[string]interface{})
+		origin, ok := message["origin"].(*jsonorder.OrderedMap[string, interface{}])
 		if !ok {
 			return false
 		}
 
-		sourceId, _ := origin["source_id"].(string)
-		slug, _ := origin["slug"].(string)
-
+		sourceId := origin.GetS("sourceId")
+		slug := origin.GetS("slug")
 		found := false
 		for _, sid := range streamIds {
-			if sidStr, ok := sid.(string); ok && (sidStr == sourceId || sidStr == slug) {
+			if sid == sourceId || sid == slug {
 				found = true
 				break
 			}
@@ -398,10 +448,9 @@ func shouldProcessMessage(message map[string]interface{}, jobConfig map[string]i
 			return false
 		}
 	}
-
 	// Add date filtering if needed
-	if dateFrom, ok := jobConfig["date_from"].(string); ok && dateFrom != "" {
-		messageCreated, _ := message["message_created"].(string)
+	if dateFrom, ok := jobConfig["date_from"].(string); ok && dateFrom != "" && dateFrom != "0001-01-01T00:00:00Z" {
+		messageCreated, _ := message["messageCreated"].(string)
 		if messageCreated != "" {
 			msgTime, err := time.Parse(time.RFC3339Nano, messageCreated)
 			if err == nil {
@@ -413,8 +462,8 @@ func shouldProcessMessage(message map[string]interface{}, jobConfig map[string]i
 		}
 	}
 
-	if dateTo, ok := jobConfig["date_to"].(string); ok && dateTo != "" {
-		messageCreated, _ := message["message_created"].(string)
+	if dateTo, ok := jobConfig["date_to"].(string); ok && dateTo != "" && dateTo != "0001-01-01T00:00:00Z" {
+		messageCreated, _ := message["messageCreated"].(string)
 		if messageCreated != "" {
 			msgTime, err := time.Parse(time.RFC3339Nano, messageCreated)
 			if err == nil {
@@ -425,11 +474,10 @@ func shouldProcessMessage(message map[string]interface{}, jobConfig map[string]i
 			}
 		}
 	}
-
 	return true
 }
 
-func sendBatch(batch []map[string]interface{}, producer *kafkabase.Producer, topic string, jobConfig map[string]interface{}, streams *Streams, status *WorkerStatus) error {
+func sendBatch(batch []map[string]interface{}, producer *kafkabase.Producer, topic string, jobConfig map[string]interface{}, streams *Streams, status *WorkerStatus, dryRun bool) error {
 	for _, message := range batch {
 		// Get connection IDs from job config or repository
 		connectionIds := []string{}
@@ -443,10 +491,10 @@ func sendBatch(batch []map[string]interface{}, producer *kafkabase.Producer, top
 
 		// If no connection IDs provided, look them up from repository
 		if len(connectionIds) == 0 && streams != nil {
-			origin, _ := message["origin"].(map[string]interface{})
+			origin, _ := message["origin"].(*jsonorder.OrderedMap[string, interface{}])
 			if origin != nil {
-				sourceId, _ := origin["source_id"].(string)
-				slug, _ := origin["slug"].(string)
+				sourceId := origin.GetS("sourceId")
+				slug := origin.GetS("slug")
 				streamId := sourceId
 				if streamId == "" {
 					streamId = slug
@@ -481,6 +529,13 @@ func sendBatch(batch []map[string]interface{}, producer *kafkabase.Producer, top
 		messageBytes, err := jsonorder.Marshal(message)
 		if err != nil {
 			return err
+		}
+
+		// Skip Kafka send if in dry run mode
+		if dryRun {
+			// In dry run mode, just validate that we can marshal the message
+			// but don't actually send to Kafka
+			continue
 		}
 
 		err = producer.ProduceAsync(topic, uuid.New(), messageBytes, headers, kafka.PartitionAny, "", false)
