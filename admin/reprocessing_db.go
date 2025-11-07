@@ -120,8 +120,8 @@ func GetReprocessingJob(pool *pgxpool.Pool, jobID string) (*ReprocessingJob, err
 }
 
 // ListReprocessingJobs lists all reprocessing jobs
-func ListReprocessingJobs(pool *pgxpool.Pool) ([]*ReprocessingJob, error) {
-	rows, err := pool.Query(context.Background(),
+func ListReprocessingJobs(ctx context.Context, pool *pgxpool.Pool) ([]*ReprocessingJob, error) {
+	rows, err := pool.Query(ctx,
 		`SELECT id, config, status, created_at, started_at, completed_at, k8s_job_name, total_files, total_workers, error
 		 FROM reprocessing_jobs
 		 ORDER BY created_at DESC`)
@@ -154,7 +154,7 @@ func ListReprocessingJobs(pool *pgxpool.Pool) ([]*ReprocessingJob, error) {
 		}
 
 		// Get aggregated stats for this job
-		err = pool.QueryRow(context.Background(),
+		err = pool.QueryRow(ctx,
 			`SELECT
 				COALESCE(SUM(processed_files), 0),
 				COALESCE(SUM(total_lines), 0),

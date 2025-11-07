@@ -147,10 +147,9 @@ func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*Reproc
 	}
 	m.Infof("[StartJob] Found %d files to process", len(fileItems))
 
-	// Determine number of workers (default: 1 worker per 10 files, max 50 workers)
-	workerCount := (len(fileItems) + 9) / 10
-	if workerCount > 50 {
-		workerCount = 50
+	workerCount := len(fileItems)
+	if workerCount > m.config.K8sMaxParallelWorkers {
+		workerCount = m.config.K8sMaxParallelWorkers
 	}
 	if workerCount < 1 {
 		workerCount = 1
@@ -446,7 +445,12 @@ func (m *ReprocessingJobManager) GetJobWorkers(id string) ([]map[string]interfac
 func (m *ReprocessingJobManager) ListJobs() []*ReprocessingJob {
 	m.Infof("[ListJobs] Starting")
 
-	jobs, err := ListReprocessingJobs(m.dbpool)
+	// Create context with timeout for database query
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	m.Infof("[ListJobs] Querying database for jobs")
+	jobs, err := ListReprocessingJobs(ctx, m.dbpool)
 	if err != nil {
 		m.Errorf("[ListJobs] Failed to list jobs from database: %v", err)
 		return []*ReprocessingJob{}
@@ -455,14 +459,28 @@ func (m *ReprocessingJobManager) ListJobs() []*ReprocessingJob {
 
 	// Enrich running jobs with K8s status to detect completion
 	if m.k8sClient != nil {
+		runningJobCount := 0
 		for _, job := range jobs {
 			if job.Status == JobStatusRunning && job.K8sJobName != "" {
+				runningJobCount++
+			}
+		}
+		m.Infof("[ListJobs] Found %d running jobs to enrich with K8s status", runningJobCount)
+
+		for i, job := range jobs {
+			if job.Status == JobStatusRunning && job.K8sJobName != "" {
+				m.Infof("[ListJobs] Enriching job %d/%d: %s (k8s_job=%s)", i+1, runningJobCount, job.ID, job.K8sJobName)
 				if err := m.enrichJobWithK8sStatus(job); err != nil {
 					// Log but don't fail
-					m.Warnf("Failed to get K8s status for job %s: %v", job.ID, err)
+					m.Warnf("[ListJobs] Failed to get K8s status for job %s: %v", job.ID, err)
+				} else {
+					m.Infof("[ListJobs] Successfully enriched job %s, new status=%s", job.ID, job.Status)
 				}
 			}
 		}
+		m.Infof("[ListJobs] Finished enriching %d running jobs", runningJobCount)
+	} else {
+		m.Infof("[ListJobs] No K8s client available, skipping enrichment")
 	}
 
 	m.Infof("[ListJobs] Completed, returning %d jobs", len(jobs))
