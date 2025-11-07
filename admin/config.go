@@ -22,7 +22,7 @@ type Config struct {
 	DatabaseURL string `mapstructure:"DATABASE_URL" default:""`
 
 	// # KUBERNETES CONFIG - settings for K8s job management
-	KubernetesConfigPath   string `mapstructure:"KUBERNETES_CLIENT_CONFIG" default:"local"`
+	KubernetesClientConfig string `mapstructure:"KUBERNETES_CLIENT_CONFIG" default:"local"`
 	KubernetesNamespace    string `mapstructure:"KUBERNETES_NAMESPACE" default:"default"`
 	KubernetesContext      string `mapstructure:"KUBERNETES_CONTEXT"`
 	KubernetesNodeSelector string `mapstructure:"KUBERNETES_NODE_SELECTOR"`

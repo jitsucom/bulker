@@ -38,13 +38,15 @@ type ReprocessingJobConfig struct {
 	LocalPath     string    `json:"local_path,omitempty"` // Local filesystem path
 	StreamIds     []string  `json:"stream_ids,omitempty"`
 	ConnectionIds []string  `json:"connection_ids,omitempty"`
+	Files         []string  `json:"files,omitempty"` // Optional list of specific files to process
 	DryRun        bool      `json:"dry_run"`
 	StartFile     string    `json:"start_file,omitempty"`
 	StartLine     int64     `json:"start_line,omitempty"`
 	BatchSize     int       `json:"batch_size,omitempty"`
-	DateFrom      time.Time `json:"date_from,omitempty"` // Filter messages created after this date
-	DateTo        time.Time `json:"date_to,omitempty"`   // Filter messages created before this date
-	Limit         int64     `json:"limit,omitempty"`     // Maximum number of events to process
+	RetryAttempts int       `json:"retry_attempts,omitempty"` // Number of retry attempts for file processing (default: 3)
+	DateFrom      time.Time `json:"date_from,omitempty"`      // Filter messages created after this date
+	DateTo        time.Time `json:"date_to,omitempty"`        // Filter messages created before this date
+	Limit         int64     `json:"limit,omitempty"`          // Maximum number of events to process
 }
 
 // ReprocessingJob represents a failover reprocessing job
@@ -204,17 +206,17 @@ func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*Reproc
 
 // prepareFileList lists files and gets their sizes
 func (m *ReprocessingJobManager) prepareFileList(ctx context.Context, config ReprocessingJobConfig) ([]FileItem, error) {
-	var files []string
+	var fileItems []FileItem
 	var err error
 
-	// List files based on source type
+	// List files based on source type (with sizes)
 	if config.S3Path != "" {
-		files, err = m.listS3Files(ctx, config.S3Path)
+		fileItems, err = m.listS3Files(ctx, config.S3Path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list S3 files: %w", err)
 		}
 	} else if config.LocalPath != "" {
-		files, err = m.listLocalFiles(config.LocalPath)
+		fileItems, err = m.listLocalFiles(config.LocalPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list local files: %w", err)
 		}
@@ -222,64 +224,150 @@ func (m *ReprocessingJobManager) prepareFileList(ctx context.Context, config Rep
 
 	// Filter files by date range if specified
 	if !config.DateFrom.IsZero() || !config.DateTo.IsZero() {
-		files, err = m.filterFilesByDateRange(ctx, files, config.DateFrom, config.DateTo)
+		fileItems, err = m.filterFilesByDateRange(ctx, fileItems, config.DateFrom, config.DateTo)
 		if err != nil {
 			return nil, fmt.Errorf("failed to filter files by date range: %w", err)
 		}
 	}
 
-	// Get file sizes
-	fileItems := make([]FileItem, 0, len(files))
-	for _, filePath := range files {
-		size, err := m.getFileSize(ctx, filePath)
-		if err != nil {
-			m.Warnf("Failed to get size for file %s: %v", filePath, err)
-			size = 0
-		}
-		fileItems = append(fileItems, FileItem{
-			Path: filePath,
-			Size: size,
-		})
+	// Filter files by specific file list if provided
+	if len(config.Files) > 0 {
+		fileItems = m.filterFilesByList(fileItems, config.Files)
 	}
 
 	return fileItems, nil
 }
 
-// getFileSize returns the size of a file
-func (m *ReprocessingJobManager) getFileSize(ctx context.Context, filePath string) (int64, error) {
-	if strings.HasPrefix(filePath, "s3://") {
-		// Parse S3 path
-		parts := strings.SplitN(strings.TrimPrefix(filePath, "s3://"), "/", 2)
-		if len(parts) != 2 {
-			return 0, fmt.Errorf("invalid S3 path: %s", filePath)
-		}
-
-		bucket := parts[0]
-		key := parts[1]
-
-		// Get object metadata
-		headObj, err := m.s3Client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    aws.String(key),
-		})
-		if err != nil {
-			return 0, err
-		}
-
-		return *headObj.ContentLength, nil
-	} else {
-		// Local file
-		info, err := os.Stat(filePath)
-		if err != nil {
-			return 0, err
-		}
-		return info.Size(), nil
+// GetJob returns a job by ID with enriched K8s status
+func (m *ReprocessingJobManager) GetJob(id string) (*ReprocessingJob, error) {
+	job, err := GetReprocessingJob(m.dbpool, id)
+	if err != nil {
+		return nil, err
 	}
+
+	// Enrich with K8s job status if available
+	if job.Status == JobStatusRunning && job.K8sJobName != "" && m.k8sClient != nil {
+		if err := m.enrichJobWithK8sStatus(job); err != nil {
+			// Log warning but don't fail the request
+			m.Warnf("Failed to get K8s status for job %s: %v", id, err)
+		}
+	}
+
+	return job, nil
 }
 
-// GetJob returns a job by ID
-func (m *ReprocessingJobManager) GetJob(id string) (*ReprocessingJob, error) {
-	return GetReprocessingJob(m.dbpool, id)
+// enrichJobWithK8sStatus adds Kubernetes job status information to the job
+func (m *ReprocessingJobManager) enrichJobWithK8sStatus(job *ReprocessingJob) error {
+	ctx := context.Background()
+	k8sStatus, err := m.k8sClient.GetJobStatus(ctx, job.K8sJobName)
+	if err != nil {
+		// If K8s Job not found, check worker statuses to determine completion
+		if strings.Contains(err.Error(), "job not found") {
+			m.Infof("K8s Job %s not found (likely cleaned up), checking worker statuses", job.K8sJobName)
+			return m.checkCompletionFromWorkers(job)
+		}
+		return err
+	}
+
+	// K8s Job has CompletionTime when all pods are done (succeeded or failed)
+	k8sJobCompleted := k8sStatus.CompletionTime != nil || (k8sStatus.Failed == int32(job.TotalWorkers) && k8sStatus.Active == 0)
+
+	if !k8sJobCompleted {
+		return nil
+	}
+	// Update job status based on K8s job status if our status is stale
+	// Only update if job is in running state and K8s reports completion
+	hasFailures := k8sStatus.Failed > 0 && k8sStatus.Active == 0
+	allSucceeded := k8sStatus.Succeeded == int32(job.TotalWorkers) && k8sStatus.Active == 0
+
+	if hasFailures {
+		// Job has failed pods and no active pods - mark as failed
+		now := time.Now()
+		if k8sStatus.CompletionTime != nil {
+			now = k8sStatus.CompletionTime.Time
+		}
+		job.CompletedAt = &now
+		job.Status = JobStatusFailed
+		err := UpdateReprocessingJobStatus(m.dbpool, job.ID, JobStatusFailed, nil, &now, "K8s job has failed pods")
+		if err != nil {
+			m.Warnf("Failed to update job status to failed: %v", err)
+		} else {
+			m.Infof("Job %s marked as failed based on K8s status (failed=%d, active=%d)", job.ID, k8sStatus.Failed, k8sStatus.Active)
+		}
+	} else if allSucceeded || k8sJobCompleted {
+		// All workers succeeded OR K8s job is complete - mark as completed
+		now := time.Now()
+		if k8sStatus.CompletionTime != nil {
+			now = k8sStatus.CompletionTime.Time
+		}
+		job.CompletedAt = &now
+		job.Status = JobStatusCompleted
+		err := UpdateReprocessingJobStatus(m.dbpool, job.ID, JobStatusCompleted, nil, &now, "")
+		if err != nil {
+			m.Warnf("Failed to update job status to completed: %v", err)
+		} else {
+			m.Infof("Job %s marked as completed based on K8s status (succeeded=%d, active=%d, completion_time=%v)",
+				job.ID, k8sStatus.Succeeded, k8sStatus.Active, k8sStatus.CompletionTime != nil)
+		}
+	}
+
+	return nil
+}
+
+// checkCompletionFromWorkers checks worker statuses to determine if job is complete
+func (m *ReprocessingJobManager) checkCompletionFromWorkers(job *ReprocessingJob) error {
+	workers, err := GetAllWorkerStatuses(m.dbpool, job.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get worker statuses: %w", err)
+	}
+
+	if len(workers) == 0 {
+		// No workers found - cannot determine completion
+		return nil
+	}
+
+	completedCount := 0
+	failedCount := 0
+
+	for _, worker := range workers {
+		status, ok := worker["status"].(string)
+		if !ok {
+			continue
+		}
+		if status == "completed" {
+			completedCount++
+		} else if status == "failed" {
+			failedCount++
+		}
+	}
+
+	m.Infof("Worker status for job %s: completed=%d, failed=%d, total=%d", job.ID, completedCount, failedCount, len(workers))
+
+	// If all workers are completed or failed, mark the job accordingly
+	if completedCount+failedCount == job.TotalWorkers {
+		now := time.Now()
+		job.CompletedAt = &now
+
+		if failedCount > 0 {
+			job.Status = JobStatusFailed
+			err := UpdateReprocessingJobStatus(m.dbpool, job.ID, JobStatusFailed, nil, &now, fmt.Sprintf("%d workers failed", failedCount))
+			if err != nil {
+				m.Warnf("Failed to update job status to failed: %v", err)
+			} else {
+				m.Infof("Job %s marked as failed based on worker statuses (failed=%d)", job.ID, failedCount)
+			}
+		} else {
+			job.Status = JobStatusCompleted
+			err := UpdateReprocessingJobStatus(m.dbpool, job.ID, JobStatusCompleted, nil, &now, "")
+			if err != nil {
+				m.Warnf("Failed to update job status to completed: %v", err)
+			} else {
+				m.Infof("Job %s marked as completed based on worker statuses (completed=%d)", job.ID, completedCount)
+			}
+		}
+	}
+
+	return nil
 }
 
 // GetJobWorkers returns worker status for a job
@@ -287,13 +375,26 @@ func (m *ReprocessingJobManager) GetJobWorkers(id string) ([]map[string]interfac
 	return GetAllWorkerStatuses(m.dbpool, id)
 }
 
-// ListJobs returns all jobs
+// ListJobs returns all jobs with enriched K8s status
 func (m *ReprocessingJobManager) ListJobs() []*ReprocessingJob {
 	jobs, err := ListReprocessingJobs(m.dbpool)
 	if err != nil {
 		m.Errorf("Failed to list jobs from database: %v", err)
 		return []*ReprocessingJob{}
 	}
+
+	// Enrich running jobs with K8s status to detect completion
+	if m.k8sClient != nil {
+		for _, job := range jobs {
+			if job.Status == JobStatusRunning && job.K8sJobName != "" {
+				if err := m.enrichJobWithK8sStatus(job); err != nil {
+					// Log but don't fail
+					m.Warnf("Failed to get K8s status for job %s: %v", job.ID, err)
+				}
+			}
+		}
+	}
+
 	return jobs
 }
 
@@ -336,7 +437,7 @@ func (m *ReprocessingJobManager) Close() error {
 }
 
 // listS3Files lists all NDJSON files in the S3 path
-func (m *ReprocessingJobManager) listS3Files(ctx context.Context, s3Path string) ([]string, error) {
+func (m *ReprocessingJobManager) listS3Files(ctx context.Context, s3Path string) ([]FileItem, error) {
 	// Parse S3 path (s3://bucket/prefix)
 	parts := strings.SplitN(strings.TrimPrefix(s3Path, "s3://"), "/", 2)
 	if len(parts) < 1 {
@@ -349,7 +450,7 @@ func (m *ReprocessingJobManager) listS3Files(ctx context.Context, s3Path string)
 		prefix = parts[1]
 	}
 
-	var files []string
+	var files []FileItem
 	paginator := s3.NewListObjectsV2Paginator(m.s3Client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
 		Prefix: aws.String(prefix),
@@ -364,18 +465,26 @@ func (m *ReprocessingJobManager) listS3Files(ctx context.Context, s3Path string)
 		for _, obj := range page.Contents {
 			key := *obj.Key
 			if strings.HasSuffix(key, ".ndjson") || strings.HasSuffix(key, ".ndjson.gz") {
-				files = append(files, fmt.Sprintf("s3://%s/%s", bucket, key))
+				files = append(files, FileItem{
+					Path:         fmt.Sprintf("s3://%s/%s", bucket, key),
+					Size:         *obj.Size,
+					LastModified: *obj.LastModified,
+				})
 			}
 		}
 	}
-	sort.Strings(files)
+
+	// Sort by path for consistent processing order
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Path < files[j].Path
+	})
 
 	return files, nil
 }
 
 // listLocalFiles lists all NDJSON files in the local path recursively
-func (m *ReprocessingJobManager) listLocalFiles(localPath string) ([]string, error) {
-	var files []string
+func (m *ReprocessingJobManager) listLocalFiles(localPath string) ([]FileItem, error) {
+	var files []FileItem
 
 	err := filepath.Walk(localPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -389,7 +498,11 @@ func (m *ReprocessingJobManager) listLocalFiles(localPath string) ([]string, err
 
 		// Only include ndjson and ndjson.gz files
 		if strings.HasSuffix(path, ".ndjson") || strings.HasSuffix(path, ".ndjson.gz") {
-			files = append(files, path)
+			files = append(files, FileItem{
+				Path:         path,
+				Size:         info.Size(),
+				LastModified: info.ModTime(),
+			})
 		}
 
 		return nil
@@ -399,8 +512,10 @@ func (m *ReprocessingJobManager) listLocalFiles(localPath string) ([]string, err
 		return nil, err
 	}
 
-	// Sort files for consistent processing order
-	sort.Strings(files)
+	// Sort files by path for consistent processing order
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Path < files[j].Path
+	})
 
 	return files, nil
 }
@@ -429,48 +544,16 @@ func parseFilenameTimestamp(filename string) (time.Time, error) {
 // A file is included if its time span overlaps with the requested date range:
 // - File creation time (from filename) <= dateTo
 // - File modification time >= dateFrom
-func (m *ReprocessingJobManager) filterFilesByDateRange(ctx context.Context, files []string, dateFrom, dateTo time.Time) ([]string, error) {
-	var filteredFiles []string
+func (m *ReprocessingJobManager) filterFilesByDateRange(ctx context.Context, files []FileItem, dateFrom, dateTo time.Time) ([]FileItem, error) {
+	var filteredFiles []FileItem
 
-	for _, file := range files {
+	for _, fileItem := range files {
 		// Parse timestamp from filename (file creation time)
-		createdTime, err := parseFilenameTimestamp(file)
+		createdTime, err := parseFilenameTimestamp(fileItem.Path)
 		if err != nil {
 			// If we can't parse the filename, skip this file
-			m.Warnf("Skipping file with unparseable filename: %s: %v", file, err)
+			m.Warnf("Skipping file with unparseable filename: %s: %v", fileItem.Path, err)
 			continue
-		}
-
-		// Get file modification time
-		var modTime time.Time
-		if strings.HasPrefix(file, "s3://") {
-			// For S3 files, get the object metadata
-			parts := strings.SplitN(strings.TrimPrefix(file, "s3://"), "/", 2)
-			if len(parts) != 2 {
-				continue
-			}
-
-			bucket := parts[0]
-			key := parts[1]
-
-			headObj, err := m.s3Client.HeadObject(ctx, &s3.HeadObjectInput{
-				Bucket: aws.String(bucket),
-				Key:    aws.String(key),
-			})
-			if err != nil {
-				m.Warnf("Failed to get metadata for S3 file %s: %v", file, err)
-				continue
-			}
-
-			modTime = *headObj.LastModified
-		} else {
-			// For local files, get file info
-			info, err := os.Stat(file)
-			if err != nil {
-				m.Warnf("Failed to get file info for %s: %v", file, err)
-				continue
-			}
-			modTime = info.ModTime()
 		}
 
 		// Skip if file was created day later than the end of requested range
@@ -480,12 +563,44 @@ func (m *ReprocessingJobManager) filterFilesByDateRange(ctx context.Context, fil
 		}
 
 		// Skip if file was last modified before the start of requested range
-		if !dateFrom.IsZero() && modTime.Before(dateFrom) {
+		if !dateFrom.IsZero() && fileItem.LastModified.Before(dateFrom) {
 			continue
 		}
 
-		filteredFiles = append(filteredFiles, file)
+		filteredFiles = append(filteredFiles, fileItem)
 	}
 
 	return filteredFiles, nil
+}
+
+// filterFilesByList filters files to only include those in the provided list
+// Matches either the full path or just the filename
+func (m *ReprocessingJobManager) filterFilesByList(files []FileItem, fileList []string) []FileItem {
+	// Build a map for fast lookup (both full paths and basenames)
+	fileMap := make(map[string]bool)
+	for _, f := range fileList {
+		f = strings.TrimSpace(f)
+		if f != "" {
+			fileMap[f] = true
+			// Also add just the basename for convenience
+			fileMap[filepath.Base(f)] = true
+		}
+	}
+
+	var filteredFiles []FileItem
+	for _, fileItem := range files {
+		// Check if the full path matches
+		if fileMap[fileItem.Path] {
+			filteredFiles = append(filteredFiles, fileItem)
+			continue
+		}
+		// Check if just the filename matches
+		if fileMap[filepath.Base(fileItem.Path)] {
+			filteredFiles = append(filteredFiles, fileItem)
+			continue
+		}
+	}
+
+	m.Infof("Filtered %d files to %d files based on provided file list", len(files), len(filteredFiles))
+	return filteredFiles
 }

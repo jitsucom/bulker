@@ -7,11 +7,13 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/hjson/hjson-go/v4"
 	"github.com/jitsucom/bulker/jitsubase/utils"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -26,26 +28,63 @@ type K8sJobClient struct {
 	config    *Config
 }
 
+func GetK8SClientSet(cfg *Config) (*kubernetes.Clientset, *rest.Config, error) {
+	config := cfg.KubernetesClientConfig
+	if config == "" || config == "local" {
+		// creates the in-cluster config
+		cc, err := rest.InClusterConfig()
+		if err != nil {
+			return nil, nil, fmt.Errorf("error getting in cluster config: %v", err)
+		}
+		clientset, err := kubernetes.NewForConfig(cc)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
+		}
+		return clientset, cc, nil
+	} else if strings.ContainsRune(config, '\n') {
+		// suppose yaml file
+		clientconfig, err := clientcmd.NewClientConfigFromBytes([]byte(config))
+		if err != nil {
+			return nil, nil, fmt.Errorf("error parsing kubernetes client config: %v", err)
+		}
+		rawConfig, _ := clientconfig.RawConfig()
+		clientconfig = clientcmd.NewNonInteractiveClientConfig(rawConfig,
+			utils.NvlString(cfg.KubernetesContext, rawConfig.CurrentContext),
+			&clientcmd.ConfigOverrides{},
+			&clientcmd.ClientConfigLoadingRules{})
+		cc, err := clientconfig.ClientConfig()
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating kubernetes client config: %v", err)
+		}
+		clientset, err := kubernetes.NewForConfig(cc)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
+		}
+		return clientset, cc, nil
+	} else {
+		// suppose kubeconfig file path
+		clientconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+			&clientcmd.ClientConfigLoadingRules{ExplicitPath: config},
+			&clientcmd.ConfigOverrides{
+				CurrentContext: cfg.KubernetesContext,
+			})
+		cc, err := clientconfig.ClientConfig()
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating kubernetes client config: %v", err)
+		}
+		clientset, err := kubernetes.NewForConfig(cc)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating kubernetes clientset: %v", err)
+		}
+		return clientset, cc, nil
+	}
+}
+
 // NewK8sJobClient creates a new K8s job client
 func NewK8sJobClient(config *Config) (*K8sJobClient, error) {
-	var clientConfig *rest.Config
 	var err error
-
-	// Try in-cluster config first
-	if config.KubernetesConfigPath == "" || config.KubernetesConfigPath == "local" {
-		clientConfig, err = rest.InClusterConfig()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
-		}
-	} else {
-		// Load from kubeconfig file
-		clientConfig, err = clientcmd.BuildConfigFromFlags("", config.KubernetesConfigPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load kubeconfig: %w", err)
-		}
-	}
-
-	clientset, err := kubernetes.NewForConfig(clientConfig)
+	
+	clientset, _, err := GetK8SClientSet(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes clientset: %w", err)
 	}
@@ -64,8 +103,9 @@ func NewK8sJobClient(config *Config) (*K8sJobClient, error) {
 
 // FileItem represents a file to be processed with its metadata
 type FileItem struct {
-	Path string `json:"path"`
-	Size int64  `json:"size"`
+	Path         string    `json:"path"`
+	Size         int64     `json:"size"`
+	LastModified time.Time `json:"last_modified,omitempty"`
 }
 
 // CreateReprocessingJob creates a Kubernetes Indexed Job for reprocessing
@@ -342,6 +382,10 @@ func (k *K8sJobClient) DeleteJob(ctx context.Context, jobName, jobID string) err
 func (k *K8sJobClient) GetJobStatus(ctx context.Context, jobName string) (*batchv1.JobStatus, error) {
 	job, err := k.clientset.BatchV1().Jobs(k.namespace).Get(ctx, jobName, metav1.GetOptions{})
 	if err != nil {
+		if errors.IsNotFound(err) {
+			// Job was deleted/cleaned up - return a special error
+			return nil, fmt.Errorf("job not found: %w", err)
+		}
 		return nil, fmt.Errorf("failed to get job: %w", err)
 	}
 

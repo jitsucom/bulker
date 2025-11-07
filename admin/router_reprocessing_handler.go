@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sort"
@@ -15,10 +16,12 @@ type ReprocessingStartRequest struct {
 	LocalPath      string    `json:"local_path,omitempty"`
 	StreamIds      []string  `json:"stream_ids,omitempty"`
 	ConnectionIds  []string  `json:"connection_ids,omitempty"`
+	Files          []string  `json:"files,omitempty"`
 	DryRun         bool      `json:"dry_run"`
 	StartFile      string    `json:"start_file,omitempty"`
 	StartLine      int64     `json:"start_line,omitempty"`
 	BatchSize      int       `json:"batch_size,omitempty"`
+	RetryAttempts  int       `json:"retry_attempts,omitempty"`
 	DateFrom       time.Time `json:"date_from,omitempty"`
 	DateTo         time.Time `json:"date_to,omitempty"`
 	Limit          int64     `json:"limit,omitempty"`
@@ -46,6 +49,17 @@ type ReprocessingJobResponse struct {
 	Progress         float64               `json:"progress"`
 	TotalWorkers     int                   `json:"total_workers,omitempty"`
 	K8sJobName       string                `json:"k8s_job_name,omitempty"`
+	K8sJobStatus     *K8sJobStatusInfo     `json:"k8s_job_status,omitempty"`
+}
+
+// K8sJobStatusInfo contains Kubernetes Job status information
+type K8sJobStatusInfo struct {
+	Active         int32  `json:"active"`          // Number of active pods
+	Succeeded      int32  `json:"succeeded"`       // Number of succeeded pods
+	Failed         int32  `json:"failed"`          // Number of failed pods
+	Ready          *int32 `json:"ready,omitempty"` // Number of ready pods
+	CompletionTime string `json:"completion_time,omitempty"`
+	StartTime      string `json:"start_time,omitempty"`
 }
 
 // jobToResponse converts a ReprocessingJob to a response format
@@ -85,6 +99,43 @@ func jobToResponse(job *ReprocessingJob) ReprocessingJobResponse {
 	return resp
 }
 
+// jobToResponseWithK8sStatus converts a ReprocessingJob to a response format with K8s status
+func jobToResponseWithK8sStatus(job *ReprocessingJob, k8sStatus *K8sJobStatusInfo) ReprocessingJobResponse {
+	resp := jobToResponse(job)
+	resp.K8sJobStatus = k8sStatus
+	return resp
+}
+
+// getK8sJobStatusInfo fetches K8s job status information
+func (r *Router) getK8sJobStatusInfo(jobName string) *K8sJobStatusInfo {
+	if r.context.k8sClient == nil {
+		return nil
+	}
+
+	ctx := context.Background()
+	k8sStatus, err := r.context.k8sClient.GetJobStatus(ctx, jobName)
+	if err != nil {
+		// Log but don't fail - return nil
+		return nil
+	}
+
+	info := &K8sJobStatusInfo{
+		Active:    k8sStatus.Active,
+		Succeeded: k8sStatus.Succeeded,
+		Failed:    k8sStatus.Failed,
+		Ready:     k8sStatus.Ready,
+	}
+
+	if k8sStatus.StartTime != nil {
+		info.StartTime = k8sStatus.StartTime.Format("2006-01-02T15:04:05Z")
+	}
+	if k8sStatus.CompletionTime != nil {
+		info.CompletionTime = k8sStatus.CompletionTime.Format("2006-01-02T15:04:05Z")
+	}
+
+	return info
+}
+
 // startReprocessingJob starts a new reprocessing job
 func (r *Router) startReprocessingJob(c *gin.Context) {
 	var req ReprocessingStartRequest
@@ -106,10 +157,12 @@ func (r *Router) startReprocessingJob(c *gin.Context) {
 		LocalPath:     req.LocalPath,
 		StreamIds:     req.StreamIds,
 		ConnectionIds: req.ConnectionIds,
+		Files:         req.Files,
 		DryRun:        req.DryRun,
 		StartFile:     req.StartFile,
 		StartLine:     req.StartLine,
 		BatchSize:     req.BatchSize,
+		RetryAttempts: req.RetryAttempts,
 		DateFrom:      req.DateFrom,
 		DateTo:        req.DateTo,
 		Limit:         req.Limit,
@@ -169,7 +222,13 @@ func (r *Router) getReprocessingJob(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, jobToResponse(job))
+	// Get K8s job status if available
+	var k8sStatusInfo *K8sJobStatusInfo
+	if job.K8sJobName != "" && r.context.k8sClient != nil {
+		k8sStatusInfo = r.getK8sJobStatusInfo(job.K8sJobName)
+	}
+
+	c.JSON(http.StatusOK, jobToResponseWithK8sStatus(job, k8sStatusInfo))
 }
 
 // getJobWorkers gets worker status for a job
@@ -432,6 +491,10 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
                     <textarea id="connectionIds" placeholder="One per line"></textarea>
                 </div>
                 <div class="form-group">
+                    <label for="files">Files to Process:</label>
+                    <textarea id="files" placeholder="One per line (optional filter)"></textarea>
+                </div>
+                <div class="form-group">
                     <label for="startFile">Start File:</label>
                     <input type="text" id="startFile" placeholder="Optional">
                 </div>
@@ -442,6 +505,10 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
                 <div class="form-group">
                     <label for="batchSize">Batch Size:</label>
                     <input type="number" id="batchSize" placeholder="1000">
+                </div>
+                <div class="form-group">
+                    <label for="retryAttempts">Retry Attempts:</label>
+                    <input type="number" id="retryAttempts" placeholder="3 (default)">
                 </div>
                 <div class="form-group">
                     <label for="dateFrom">Date From (UTC):</label>
@@ -589,29 +656,32 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
         async function startJob() {
             const streamIds = document.getElementById('streamIds').value.split('\n').filter(id => id.trim());
             const connectionIds = document.getElementById('connectionIds').value.split('\n').filter(id => id.trim());
-            
+            const files = document.getElementById('files').value.split('\n').filter(f => f.trim());
+
             // Validate date formats
             const dateFrom = document.getElementById('dateFrom').value;
             const dateTo = document.getElementById('dateTo').value;
-            
+
             if (dateFrom && !validateISODate(dateFrom)) {
                 showError('Date From must be in ISO format: YYYY-MM-DDTHH:MM:SSZ');
                 return;
             }
-            
+
             if (dateTo && !validateISODate(dateTo)) {
                 showError('Date To must be in ISO format: YYYY-MM-DDTHH:MM:SSZ');
                 return;
             }
-            
+
             const jobData = {
                 s3_path: document.getElementById('s3Path').value || undefined,
                 local_path: document.getElementById('localPath').value || undefined,
                 stream_ids: streamIds.length > 0 ? streamIds : undefined,
                 connection_ids: connectionIds.length > 0 ? connectionIds : undefined,
+                files: files.length > 0 ? files : undefined,
                 start_file: document.getElementById('startFile').value || undefined,
                 start_line: parseInt(document.getElementById('startLine').value) || 0,
                 batch_size: parseInt(document.getElementById('batchSize').value) || undefined,
+                retry_attempts: parseInt(document.getElementById('retryAttempts').value) || undefined,
                 date_from: document.getElementById('dateFrom').value || undefined,
                 date_to: document.getElementById('dateTo').value || undefined,
                 limit: parseInt(document.getElementById('limit').value) || undefined,
@@ -726,8 +796,8 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
             }
         }
 
-        // Auto-refresh jobs every 5 seconds
-        setInterval(refreshJobs, 5000);
+        // Auto-refresh jobs every 1 minute
+        setInterval(refreshJobs, 60000);
         
         // Initial load
         refreshJobs();
