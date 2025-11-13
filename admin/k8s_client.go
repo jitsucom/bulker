@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -295,6 +297,7 @@ func (k *K8sJobClient) buildIndexedJob(jobName, filesConfigMapName, jobConfigMap
 						"job-id": jobID,
 					},
 				},
+
 				Spec: v1.PodSpec{
 					RestartPolicy: v1.RestartPolicyOnFailure,
 					NodeSelector:  nodeSelector,
@@ -335,6 +338,16 @@ func (k *K8sJobClient) buildIndexedJob(jobName, filesConfigMapName, jobConfigMap
 											Name: secretName,
 										},
 									},
+								},
+							},
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									v1.ResourceCPU:    *resource.NewMilliQuantity(int64(1000), resource.DecimalSI),
+									v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 31)), resource.BinarySI),
+								},
+								Requests: v1.ResourceList{
+									v1.ResourceCPU:    *resource.NewMilliQuantity(int64(310), resource.DecimalSI),
+									v1.ResourceMemory: *resource.NewQuantity(int64(math.Pow(2, 30)), resource.BinarySI),
 								},
 							},
 							VolumeMounts: []v1.VolumeMount{
