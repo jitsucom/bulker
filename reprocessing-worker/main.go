@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -276,11 +277,30 @@ func initKafkaProducer(config *WorkerConfig) (*kafkabase.Producer, error) {
 	return producer, nil
 }
 
+func gzipDecompress(data []byte) ([]byte, error) {
+	buf := bytes.NewBuffer(data)
+	gz, err := gzip.NewReader(buf)
+	if err != nil {
+		return nil, err
+	}
+	defer gz.Close()
+
+	var outBuf bytes.Buffer
+	if _, err := outBuf.ReadFrom(gz); err != nil {
+		return nil, err
+	}
+	return outBuf.Bytes(), nil
+}
+
 func loadJobData() ([]FileItem, map[string]interface{}, error) {
 	// Load files list from ConfigMap
-	filesData, err := os.ReadFile("/config/files/files.json")
+	filesDataGz, err := os.ReadFile("/config/files/files.json")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read files list: %w", err)
+	}
+	filesData, err := gzipDecompress(filesDataGz)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to decompress files list: %w", err)
 	}
 
 	var files []FileItem

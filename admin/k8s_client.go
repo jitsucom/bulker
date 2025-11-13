@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -143,11 +145,28 @@ func (k *K8sJobClient) CreateReprocessingJob(ctx context.Context, jobID string, 
 	return createdJob.Name, nil
 }
 
+func gzipCompress(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(data); err != nil {
+		return nil, err
+	}
+	if err := gz.Close(); err != nil { // important — flush and close
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 // createFileListConfigMap creates a ConfigMap containing the list of files to process
 func (k *K8sJobClient) createFileListConfigMap(ctx context.Context, name string, files []FileItem, workerCount int) error {
 	filesJSON, err := json.Marshal(files)
 	if err != nil {
 		return fmt.Errorf("failed to marshal files: %w", err)
+	}
+	//compress
+	gzipFilesJSON, err := gzipCompress(filesJSON)
+	if err != nil {
+		return fmt.Errorf("failed to gzip files json: %w", err)
 	}
 
 	configMap := &v1.ConfigMap{
@@ -159,8 +178,10 @@ func (k *K8sJobClient) createFileListConfigMap(ctx context.Context, name string,
 				"type": "file-list",
 			},
 		},
+		BinaryData: map[string][]byte{
+			"files.json": gzipFilesJSON,
+		},
 		Data: map[string]string{
-			"files.json":   string(filesJSON),
 			"worker_count": fmt.Sprintf("%d", workerCount),
 			"total_files":  fmt.Sprintf("%d", len(files)),
 		},
