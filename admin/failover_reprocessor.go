@@ -148,8 +148,8 @@ func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*Reproc
 	m.Infof("[StartJob] Found %d files to process", len(fileItems))
 
 	workerCount := len(fileItems)
-	if workerCount > m.config.K8sMaxParallelWorkers {
-		workerCount = m.config.K8sMaxParallelWorkers
+	if workerCount > 100 {
+		workerCount = 100
 	}
 	if workerCount < 1 {
 		workerCount = 1
