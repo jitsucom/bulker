@@ -702,10 +702,37 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
             }
         }
 
+        let isRefreshing = false;
+        let lastRefreshTime = 0;
+
         async function refreshJobs() {
-            const result = await apiCall('GET', '/jobs');
-            if (result && result.jobs) {
-                displayJobs(result.jobs);
+            // Prevent concurrent requests
+            if (isRefreshing) {
+                console.log('[refreshJobs] Already refreshing, skipping request');
+                return;
+            }
+
+            // Debounce: prevent refreshing more than once per second
+            const now = Date.now();
+            if (now - lastRefreshTime < 1000) {
+                console.log('[refreshJobs] Debounced, last refresh was ' + (now - lastRefreshTime) + 'ms ago');
+                return;
+            }
+
+            isRefreshing = true;
+            lastRefreshTime = now;
+            console.log('[refreshJobs] Starting refresh');
+
+            try {
+                const result = await apiCall('GET', '/jobs');
+                if (result && result.jobs) {
+                    displayJobs(result.jobs);
+                    console.log('[refreshJobs] Successfully refreshed ' + result.jobs.length + ' jobs');
+                }
+            } catch (error) {
+                console.error('[refreshJobs] Error:', error);
+            } finally {
+                isRefreshing = false;
             }
         }
 
@@ -796,9 +823,23 @@ func (r *Router) serveAdminHTML(c *gin.Context) {
             }
         }
 
-        // Auto-refresh jobs every 1 minute
-        setInterval(refreshJobs, 60000);
-        
+        // Auto-refresh jobs every 1 minute, but only when tab is visible
+        let refreshInterval = setInterval(() => {
+            if (!document.hidden) {
+                refreshJobs();
+            } else {
+                console.log('[Auto-refresh] Tab hidden, skipping refresh');
+            }
+        }, 60000);
+
+        // Refresh when tab becomes visible after being hidden
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                console.log('[Visibility] Tab visible, refreshing');
+                refreshJobs();
+            }
+        });
+
         // Initial load
         refreshJobs();
     </script>

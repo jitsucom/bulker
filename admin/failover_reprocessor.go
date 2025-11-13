@@ -126,7 +126,7 @@ func (m *ReprocessingJobManager) StartJob(config ReprocessingJobConfig) (*Reproc
 
 	// Set defaults
 	if config.BatchSize <= 0 {
-		config.BatchSize = 100
+		config.BatchSize = 1000
 	}
 	m.Infof("[StartJob] Config validated, batch_size=%d", config.BatchSize)
 
