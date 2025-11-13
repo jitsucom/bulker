@@ -83,7 +83,7 @@ func GetK8SClientSet(cfg *Config) (*kubernetes.Clientset, *rest.Config, error) {
 // NewK8sJobClient creates a new K8s job client
 func NewK8sJobClient(config *Config) (*K8sJobClient, error) {
 	var err error
-	
+
 	clientset, _, err := GetK8SClientSet(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes clientset: %w", err)
@@ -277,6 +277,14 @@ func (k *K8sJobClient) buildIndexedJob(jobName, filesConfigMapName, jobConfigMap
 				Spec: v1.PodSpec{
 					RestartPolicy: v1.RestartPolicyOnFailure,
 					NodeSelector:  nodeSelector,
+					Tolerations: []v1.Toleration{
+						{
+							Operator: v1.TolerationOpEqual,
+							Key:      "kubernetes.io/arch",
+							Value:    "arm64",
+							Effect:   v1.TaintEffectNoSchedule,
+						},
+					},
 					Containers: []v1.Container{
 						{
 							Name:  "worker",
