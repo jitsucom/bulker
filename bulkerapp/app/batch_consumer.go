@@ -294,7 +294,7 @@ func (bc *BatchConsumerImpl) processFailed(firstPosition *kafka.TopicPartition, 
 		}
 
 	}()
-	err = bc.topicManager.ensureTopic(bc.retryTopic, 1, bc.topicManager.RetryTopicConfig())
+	err = bc.topicManager.ensureTopic(bc.retryTopic, 1, bc.config.TopicConfig("retry"))
 	if err != nil {
 		return counters, fmt.Errorf("failed to create retry topic %s: %v", bc.retryTopic, err)
 	}
