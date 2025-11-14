@@ -367,6 +367,7 @@ func processFile(fileItem FileItem, jobConfig map[string]interface{}, producer *
 
 	// Process lines
 	scanner := bufio.NewScanner(fileReader)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024*10)
 	lineNum := int64(0)
 	batchSize := 1000 // Default batch size
 	if bs, ok := jobConfig["batch_size"].(float64); ok {
