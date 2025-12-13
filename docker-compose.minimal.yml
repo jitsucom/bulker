@@ -1,0 +1,89 @@
+version: "3.8"
+
+# Минимальная конфигурация для быстрого тестирования Bulker
+# Включает только необходимые сервисы
+
+services:
+  # Kafka (с встроенным Zookeeper)
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: bulker-kafka-minimal
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: localhost:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      # Встроенный Zookeeper (для упрощения)
+      KAFKA_ZOOKEEPER_SERVERS: localhost:2181
+      # KRaft mode (без Zookeeper)
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_LISTENERS: PLAINTEXT://localhost:9092,CONTROLLER://localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+    volumes:
+      - kafka_minimal_data:/tmp/kraft-combined-logs
+    command: >
+      bash -c "
+      # Форматирование хранилища для KRaft
+      kafka-storage format -t $(kafka-storage random-uuid) -c /etc/kafka/kafka.properties --ignore-formatted &&
+      # Запуск Kafka
+      kafka-server-start /etc/kafka/kafka.properties
+      "
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # PostgreSQL (упрощенная конфигурация)
+  postgres:
+    image: postgres:15-alpine
+    container_name: bulker-postgres-minimal
+    environment:
+      POSTGRES_DB: bulker
+      POSTGRES_USER: bulker
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_minimal_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bulker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Mock Bulker Server (для быстрого тестирования)
+  bulker-mock:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock
+    container_name: bulker-mock
+    ports:
+      - "3042:3042"
+    environment:
+      - MOCK_PORT=3042
+      - MOCK_TOKENS=local-token-123,test-token-456
+    volumes:
+      - ./mock-bulker-server.py:/app/server.py:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3042/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  kafka_minimal_data:
+  postgres_minimal_data:
+
+networks:
+  default:
+    name: bulker-minimal

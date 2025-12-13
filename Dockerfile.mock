@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Установка зависимостей
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Копирование mock сервера
+COPY mock-bulker-server.py /app/server.py
+
+# Создание директории для данных
+RUN mkdir -p /app/data
+
+# Установка переменных окружения
+ENV PYTHONUNBUFFERED=1
+ENV MOCK_PORT=3042
+ENV MOCK_TOKENS=local-token-123,test-token-456
+
+# Открытие порта
+EXPOSE 3042
+
+# Запуск сервера
+CMD ["python", "/app/server.py"]

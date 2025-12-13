@@ -1,0 +1,163 @@
+version: "3.8"
+
+services:
+  # Zookeeper для Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: bulker-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+
+  # Kafka
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: bulker-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # PostgreSQL для тестирования
+  postgres:
+    image: postgres:15
+    container_name: bulker-postgres
+    environment:
+      - POSTGRES_DB=bulker_test
+      - POSTGRES_USER=bulker
+      - POSTGRES_PASSWORD=bulker_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bulker -d bulker_test"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis (опционально, для кеширования конфигурации)
+  redis:
+    image: redis:7-alpine
+    container_name: bulker-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Основное приложение Bulker
+  bulker:
+    build:
+      context: .
+      dockerfile: all.Dockerfile
+      target: bulker
+      args:
+        - VERSION=test-build
+        - BUILD_TIMESTAMP=2025-12-13
+    container_name: bulker-app
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "12000:3042"  # Используем порт 12000 для внешнего доступа
+    environment:
+      # Основные настройки
+      - BULKER_HTTP_PORT=3042
+      - BULKER_INSTANCE_ID=test-instance-1
+      
+      # Аутентификация (простые токены для тестирования)
+      - BULKER_RAW_AUTH_TOKENS=test-token-123,admin-token-456
+      
+      # Kafka настройки
+      - BULKER_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - BULKER_KAFKA_SSL=false
+      
+      # Конфигурация источника (используем переменные окружения)
+      - BULKER_CONFIG_SOURCE=env://BULKER_DESTINATION
+      
+      # Настройки для PostgreSQL destination
+      - BULKER_DESTINATION_POSTGRES_TEST={"type":"postgres","options":{"mode":"batch","batchSize":100,"primaryKey":"id"},"credentials":{"host":"postgres","port":5432,"database":"bulker_test","username":"bulker","password":"bulker_password","defaultSchema":"public","parameters":{"sslmode":"disable"}}}
+      
+      # Redis для кеширования
+      - BULKER_REDIS_URL=redis://redis:6379
+      
+      # Логирование
+      - BULKER_LOG_LEVEL=INFO
+      - BULKER_LOG_FORMAT=json
+      
+      # Метрики
+      - BULKER_METRICS_ENABLED=true
+      - BULKER_METRICS_PORT=9090
+    volumes:
+      - bulker_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3042/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Ingest сервис (опционально)
+  ingest:
+    build:
+      context: .
+      dockerfile: all.Dockerfile
+      target: ingest
+      args:
+        - VERSION=test-build
+        - BUILD_TIMESTAMP=2025-12-13
+    container_name: bulker-ingest
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "12001:3043"
+    environment:
+      - BULKER_HTTP_PORT=3043
+      - BULKER_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - BULKER_LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3043/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  zookeeper_data:
+  kafka_data:
+  postgres_data:
+  redis_data:
+  bulker_data:
+
+networks:
+  default:
+    name: bulker-network
