@@ -4,7 +4,7 @@
 
 set -e
 
-COMPOSE_FILE="docker-compose.local.yml"
+COMPOSE_FILE="${1:-docker-compose.local.yml}"
 PROJECT_NAME="bulker-local"
 
 echo "🚚 Запуск Bulker в локальной среде"

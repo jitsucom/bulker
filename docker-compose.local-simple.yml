@@ -1,5 +1,7 @@
 version: "3.8"
 
+# Упрощенная версия без custom networking для избежания конфликтов
+
 services:
   # Zookeeper для Kafka
   zookeeper:
@@ -12,8 +14,6 @@ services:
       - "2181:2181"
     volumes:
       - zookeeper_data:/var/lib/zookeeper/data
-    networks:
-      - bulker-network
 
   # Kafka
   kafka:
@@ -42,8 +42,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-    networks:
-      - bulker-network
 
   # PostgreSQL для хранения данных
   postgres:
@@ -64,8 +62,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-    networks:
-      - bulker-network
 
   # Redis для кеширования
   redis:
@@ -81,8 +77,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-    networks:
-      - bulker-network
 
   # Основное приложение Bulker
   bulker:
@@ -150,8 +144,6 @@ services:
       retries: 5
       start_period: 120s
     restart: unless-stopped
-    networks:
-      - bulker-network
 
   # Ingest сервис (опционально)
   bulker-ingest:
@@ -181,8 +173,6 @@ services:
       retries: 5
       start_period: 60s
     restart: unless-stopped
-    networks:
-      - bulker-network
 
 volumes:
   zookeeper_data:
@@ -199,10 +189,3 @@ volumes:
     driver: local
   ingest_logs:
     driver: local
-
-networks:
-  bulker-network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.25.0.0/16
