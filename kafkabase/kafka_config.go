@@ -25,6 +25,7 @@ type KafkaConfig struct {
 	KafkaTopicCompression     string `mapstructure:"KAFKA_TOPIC_COMPRESSION" default:"snappy"`
 	KafkaTopicRetentionHours  int    `mapstructure:"KAFKA_TOPIC_RETENTION_HOURS" default:"48"`
 	KafkaTopicSegmentHours    int    `mapstructure:"KAFKA_TOPIC_SEGMENT_HOURS" default:"24"`
+	KafkaAllowSegmentConfig   bool   `mapstructure:"KAFKA_ALLOW_SEGMENT_CONFIG" default:"true"`
 	KafkaTopicPrefix          string `mapstructure:"KAFKA_TOPIC_PREFIX" default:""`
 	KafkaFetchMessageMaxBytes int    `mapstructure:"KAFKA_FETCH_MESSAGE_MAX_BYTES" default:"1048576"`
 
@@ -97,6 +98,34 @@ func (ac *KafkaConfig) GetKafkaConfig() *kafka.ConfigMap {
 	}
 
 	return kafkaConfig
+}
+
+func (c *KafkaConfig) TopicConfig(mode string) map[string]string {
+	config := map[string]string{}
+	config["compression.type"] = c.KafkaTopicCompression
+
+	switch mode {
+	case "retry":
+		config["retention.ms"] = fmt.Sprint(c.KafkaRetryTopicRetentionHours * 60 * 60 * 1000)
+		config["cleanup.policy"] = "delete,compact"
+
+		if c.KafkaAllowSegmentConfig {
+			config["segment.bytes"] = fmt.Sprint(c.KafkaRetryTopicSegmentBytes)
+			config["segment.ms"] = fmt.Sprint(c.KafkaTopicSegmentHours * 60 * 60 * 1000)
+		}
+	case "dead":
+		config["retention.ms"] = fmt.Sprint(c.KafkaDeadTopicRetentionHours * 60 * 60 * 1000)
+		config["cleanup.policy"] = "delete,compact"
+		if c.KafkaAllowSegmentConfig {
+			config["segment.ms"] = fmt.Sprint(c.KafkaTopicSegmentHours * 60 * 60 * 1000)
+		}
+	default:
+		config["retention.ms"] = fmt.Sprint(c.KafkaTopicRetentionHours * 60 * 60 * 1000)
+		if c.KafkaAllowSegmentConfig {
+			config["segment.ms"] = fmt.Sprint(c.KafkaTopicSegmentHours * 60 * 60 * 1000)
+		}
+	}
+	return config
 }
 
 func (c *KafkaConfig) PostInit(settings *appbase.AppSettings) error {
