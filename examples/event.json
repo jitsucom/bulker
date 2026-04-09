@@ -1,0 +1,12 @@
+{
+  "user_id": 12345,
+  "action": "page_view",
+  "page": "/dashboard",
+  "timestamp": "2025-12-13T06:00:00Z",
+  "properties": {
+    "browser": "Chrome",
+    "os": "Linux",
+    "referrer": "https://google.com",
+    "session_id": "sess_abc123"
+  }
+}
