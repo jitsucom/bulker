@@ -1,3 +1,13 @@
+> [!CAUTION]
+> ## 🚨 This repository has been archived
+>
+> **Bulker has moved.** The code now lives inside the main Jitsu monorepo:
+> **👉 [jitsucom/jitsu — /bulker](https://github.com/jitsucom/jitsu/tree/newjitsu/bulker)**
+>
+> This repo is read-only. Please open issues and PRs in the main repo.
+
+---
+
 # 🚚 Bulker
 
 Bulker is a tool for streaming and batching large amount of semi-structured data into data warehouses. It uses Kafka internally
@@ -101,9 +111,3 @@ Optionally, Bulker can deduplicate events by primary key. It is useful when you 
 If available, Bulker uses primary keys, but for some data warehouses alternative strategies are used.
 
 >[Read more about deduplication »](./.docs/db-feature-matrix.md)
-
-
-
-
-
-
